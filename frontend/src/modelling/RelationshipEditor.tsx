@@ -38,7 +38,7 @@ import {
   relationshipSentence,
   StateSegments,
   TypeNote,
-  TypeRadios,
+  TypeSegments,
 } from './relationships';
 
 interface RelationshipEditorProps {
@@ -610,8 +610,21 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
             </div>
           )}
           <section className="form-block">
+            <div className="field">
+              <label htmlFor="rf-label">Label</label>
+              <input
+                id="rf-label"
+                value={draft.label}
+                readOnly={saving}
+                aria-invalid={errors.has('label') || undefined}
+                onChange={(event) => {
+                  setDraft({ ...draft, label: event.target.value });
+                }}
+              />
+              {fieldError('label')}
+            </div>
             <div className="field" id="rf-type" tabIndex={-1}>
-              <TypeRadios
+              <TypeSegments
                 name="rf-type"
                 value={draft.type}
                 problems={problems}
@@ -635,7 +648,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                     />
                   )}
                 </div>
-              </TypeRadios>
+              </TypeSegments>
               {fieldError('type')}
               {canHaveInformationFlow(draft.type) && (
                 <InformationFlowBox
@@ -672,19 +685,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 }}
               />
               {fieldError('architectureState')}
-            </div>
-            <div className="field">
-              <label htmlFor="rf-label">Label</label>
-              <input
-                id="rf-label"
-                value={draft.label}
-                readOnly={saving}
-                aria-invalid={errors.has('label') || undefined}
-                onChange={(event) => {
-                  setDraft({ ...draft, label: event.target.value });
-                }}
-              />
-              {fieldError('label')}
             </div>
             <div className="field">
               <label htmlFor="rf-description">Description</label>

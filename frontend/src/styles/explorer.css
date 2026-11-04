@@ -2900,9 +2900,11 @@
   font-weight: 600;
 }
 
+/* One equal column per option, whatever their number, so no slot stays empty. */
 .seg-radios {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   height: 32px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2937,6 +2939,19 @@
 .seg-radios .lmark {
   width: 12px;
   height: 12px;
+}
+
+.seg-radios .edge-sample {
+  flex: none;
+}
+
+.seg-radios label.is-refused {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.type-segs .rel-reason {
+  margin: 4px 0 0;
 }
 
 .warn-note .ico {

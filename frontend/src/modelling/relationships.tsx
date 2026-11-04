@@ -176,25 +176,95 @@ export function TypeRadios(props: TypeRadiosProps) {
               {type}
             </label>
             {problem && (
-              <p className="rel-reason" id={`${id}-${type.replace(/\W/g, '')}`}>
-                {problem.kind === 'duplicate' ? 'Already exists.' : problem.message}
-                {problem.kind === 'duplicate' && props.onShow && (
-                  <>
-                    {' '}
-                    <button
-                      type="button"
-                      className="linkbtn"
-                      onClick={() => {
-                        props.onShow?.(problem.duplicateOf);
-                      }}
-                    >
-                      Show it
-                    </button>
-                  </>
-                )}
-              </p>
+              <TypeReason
+                id={`${id}-${type.replace(/\W/g, '')}`}
+                problem={problem}
+                onShow={props.onShow}
+              />
             )}
           </div>
+        );
+      })}
+      {props.children}
+    </fieldset>
+  );
+}
+
+/** Why a type is refused, with "Show it" for a duplicate. */
+function TypeReason(props: {
+  id: string;
+  problem: RelationshipProblem;
+  onShow: ((relationshipId: string) => void) | undefined;
+  /** The full message even for a duplicate, when the reason doesn't sit next to its type. */
+  full?: boolean;
+}) {
+  const { problem, onShow } = props;
+  return (
+    <p className="rel-reason" id={props.id}>
+      {problem.kind === 'duplicate' && props.full !== true ? 'Already exists.' : problem.message}
+      {problem.kind === 'duplicate' && onShow && (
+        <>
+          {' '}
+          <button
+            type="button"
+            className="linkbtn"
+            onClick={() => {
+              onShow(problem.duplicateOf);
+            }}
+          >
+            Show it
+          </button>
+        </>
+      )}
+    </p>
+  );
+}
+
+/** The relationship types as a segmented radio group, in the Direction control's style. */
+export function TypeSegments(props: TypeRadiosProps) {
+  const id = useId();
+  const reasonId = (type: EdgeType) => `${id}-${type.replace(/\W/g, '')}`;
+  return (
+    <fieldset className="state-segs type-segs" aria-describedby={props.describedBy}>
+      <legend>Type</legend>
+      <div className="seg-radios">
+        {edgeTypes.map((type) => {
+          const problem = props.problems?.get(type);
+          const classes = [props.value === type && 'is-checked', problem && 'is-refused']
+            .filter(Boolean)
+            .join(' ');
+          return (
+            <label key={type} className={classes || undefined}>
+              <input
+                type="radio"
+                className="vh"
+                name={props.name}
+                value={type}
+                checked={props.value === type}
+                disabled={props.disabled === true || problem !== undefined}
+                aria-describedby={problem ? reasonId(type) : undefined}
+                onChange={() => {
+                  props.onChange(type);
+                }}
+              />
+              <EdgeSample type={type} />
+              {type}
+            </label>
+          );
+        })}
+      </div>
+      {edgeTypes.map((type) => {
+        const problem = props.problems?.get(type);
+        return (
+          problem && (
+            <TypeReason
+              key={type}
+              id={reasonId(type)}
+              full
+              problem={problem}
+              onShow={props.onShow}
+            />
+          )
         );
       })}
       {props.children}
@@ -223,7 +293,6 @@ export function InformationFlowBox(props: {
   );
 }
 
-/** Architecture state as a segmented radio group: Deprecate, Current, Target. */
 /** "Direction: One way / Both ways", in the state's segmented style. */
 export function DirectionSegments(props: {
   name: string;
@@ -257,6 +326,7 @@ export function DirectionSegments(props: {
   );
 }
 
+/** Architecture state as a segmented radio group: Deprecate, Current, Target. */
 export function StateSegments(props: {
   name: string;
   value: ArchitectureState;

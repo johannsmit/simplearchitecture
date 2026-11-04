@@ -1,5 +1,7 @@
 import { buildModelGraph, type JgfEdge } from '@simplearchitecture/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { containsNote, problemsByType, relationshipSentence } from '../src/modelling/relationships';
 import { nameMatches } from '../src/modelling/NewElement';
@@ -1244,5 +1246,71 @@ describe('unsaved changes and the links', () => {
       within(screen.getByRole('form', { name: /^Edit / })).getByRole('textbox', { name: /^Name/ }),
     ).toHaveProperty('value', 'Typed name');
     expect(currentLocation()).toContain('view=catalog');
+  });
+});
+
+describe('The relationship form layout', () => {
+  it('starts with Label, in the same field style as Name on the element form', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const label = within(form).getByRole('textbox', { name: 'Label' });
+    // The first field, so the first stop in the tab order too.
+    expect(form.querySelector('input, select, textarea')).toBe(label);
+    const firstField = form.querySelector('.form-block > .field');
+    expect(firstField?.contains(label)).toBe(true);
+    const type = within(form).getByRole('group', { name: 'Type' });
+    expect(label.compareDocumentPosition(type) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows the type as a two-part radio group that still brings its notes', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const type = within(form).getByRole('group', { name: 'Type' });
+    const radios = within(type).getAllByRole('radio');
+    expect(radios.map((radio) => radio.getAttribute('name'))).toEqual(['rf-type', 'rf-type']);
+    expect(within(type).getByRole('radio', { name: 'Relation' })).toHaveProperty('checked', true);
+    expect(type.querySelectorAll('.seg-radios > label')).toHaveLength(2);
+
+    fireEvent.click(within(type).getByRole('radio', { name: 'Contains' }));
+    expect(within(type).getByRole('radio', { name: 'Contains' })).toHaveProperty('checked', true);
+    expect(within(form).getByText('Information flow is removed when you save.')).toBeDefined();
+  });
+
+  it('refuses a type under the two parts, with its reason and the link to the one that exists', async () => {
+    const contains = {
+      ...bakeryModel,
+      graph: {
+        ...bakeryModel.graph,
+        edges: [
+          ...(bakeryModel.graph.edges ?? []),
+          { id: 'c9', source: 'shop', target: 'ordering', relation: 'Contains' },
+        ],
+      },
+    };
+    await openShop((_method, url) =>
+      url === `/api/models/${bakeryId}` ? Response.json(contains) : undefined,
+    );
+    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const refused = within(form).getByRole('radio', { name: 'Contains' });
+    expect(refused).toHaveProperty('disabled', true);
+    const reason = document.getElementById(refused.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toMatch(/^Web Shop already contains Order to bake\./);
+    expect(within(form).getByRole('button', { name: 'Show it' })).toBeDefined();
+  });
+
+  it('gives each segmented control one equal column per option', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const options = (name: string) =>
+      within(form).getByRole('group', { name }).querySelectorAll('.seg-radios > label').length;
+    expect(options('Type')).toBe(2);
+    expect(options('Direction')).toBe(2);
+    expect(options('Architecture state')).toBe(3);
+    // The grid makes a column per label, so no count is fixed in the stylesheet.
+    const css = readFileSync(join(import.meta.dirname, '../src/styles/explorer.css'), 'utf8');
+    const rule = /\.seg-radios \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toContain('grid-auto-flow: column;');
+    expect(rule).toContain('grid-auto-columns: minmax(0, 1fr);');
+    expect(rule).not.toContain('grid-template-columns');
   });
 });
