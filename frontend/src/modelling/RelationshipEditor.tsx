@@ -1,12 +1,14 @@
 import {
   canBeTwoWay,
-  canHaveInformationFlow,
   containerOf,
   containsType,
   edgeTypes,
-  informationFlowKey,
+  hasStandardEdgeProperty,
+  isRelationTextProperty,
+  relationTextProperties,
   relationshipOfEdge,
   relationshipProblems,
+  relationshipMetadataNames,
   relationshipPropertyValues,
   type ArchitectureState,
   type DeletedRelationshipResult,
@@ -16,6 +18,8 @@ import {
   type ModelRelationship,
   type RelationshipChangeResult,
   type RelationshipProblem,
+  type RelationTextProperty,
+  standardProperties,
   type UpdateRelationshipRequest,
 } from '@simplearchitecture/shared';
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
@@ -29,10 +33,10 @@ import { customRow, customRowErrors, customValues, metadataChanges, type CustomR
 import type { EditorHandle, EditorState } from './ElementEditor';
 import { savedNoteMillis } from './ElementEditor';
 import { relationshipVersionToSave } from './save';
+import { ValueField } from './ValueField';
 import {
   containsNote,
   DirectionSegments,
-  InformationFlowBox,
   nameOf,
   refusalOf,
   relationshipSentence,
@@ -71,13 +75,24 @@ interface Draft {
   reversed: boolean;
   /** Both ways; always false for a type that can't be two-way. */
   twoWay: boolean;
-  /** Information flow; always false for a type that can't have it. */
-  informationFlow: boolean;
+  /** Identity, Identity Context and Data, as typed. */
+  texts: Record<RelationTextProperty, string>;
   custom: CustomRow[];
 }
 
 /** Metadata with a field of its own on the form, so it has no custom row. */
-const ownFields = new Set(['architectureState', 'description', informationFlowKey]);
+const ownFields = new Set<string>(['architectureState', 'description', ...relationTextProperties]);
+
+const noValues: readonly string[] = [];
+
+/** A stored Identity, Identity Context or Data as text: what the field shows. */
+function textOf(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+}
+
+const textsFit = (type: EdgeType, key: RelationTextProperty): boolean =>
+  hasStandardEdgeProperty(key, type);
 
 type Conflict = 'changed' | 'deleted' | { end: string } | null;
 
@@ -92,9 +107,17 @@ function draftOf(relationship: ModelRelationship): Draft {
     label: relationship.label ?? '',
     reversed: false,
     twoWay: relationship.twoWay === true,
-    informationFlow: relationship.informationFlow === true,
+    texts: {
+      identity: textOf(relationship.metadata.identity),
+      identityContext: textOf(relationship.metadata.identityContext),
+      data: textOf(relationship.metadata.data),
+    },
     custom: Object.entries(relationship.metadata)
-      .filter(([key]) => !ownFields.has(key))
+      // On a Contains these keys aren't fields, so a stored value shows as a custom row.
+      .filter(
+        ([key]) =>
+          !ownFields.has(key) || (isRelationTextProperty(key) && !textsFit(relationship.type, key)),
+      )
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([key, value]) => customRow(key, value)),
   };
@@ -104,7 +127,8 @@ const rowInputId = (slot: string): string => `rf-${slot.replace(/[^A-Za-z0-9_-]/
 
 /** Why a key can't be a custom row here, if so. */
 function reservedKeyWord(key: string): string | undefined {
-  if (key === 'type' || key === informationFlowKey) return `“${key}” is reserved.`;
+  if (key === 'type' || key === 'informationFlow') return `“${key}” is reserved.`;
+  if (isRelationTextProperty(key)) return `“${key}” is a standard property of a Relation.`;
   return ownFields.has(key) ? `“${key}” has its own field above.` : undefined;
 }
 
@@ -144,7 +168,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     draft.description.trim() !== base.description.trim() ||
     draft.label.trim() !== base.label.trim() ||
     draft.twoWay !== base.twoWay ||
-    draft.informationFlow !== base.informationFlow ||
+    relationTextProperties.some((key) => draft.texts[key].trim() !== base.texts[key].trim()) ||
     Object.keys(customChange).length > 0 ||
     draft.reversed;
 
@@ -281,8 +305,9 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       }
       if (draft.reversed) change.reverse = true;
       if (draft.twoWay !== base.twoWay) change.twoWay = draft.twoWay;
-      if (draft.informationFlow !== base.informationFlow) {
-        change.informationFlow = draft.informationFlow;
+      for (const key of relationTextProperties) {
+        const text = draft.texts[key].trim();
+        if (text !== base.texts[key].trim()) change[key] = text === '' ? null : text;
       }
       if (Object.keys(customChange).length > 0) change.metadata = customChange;
       const result = await updateRelationship(modelId, relationship.id, change);
@@ -322,7 +347,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
             'label',
             'reverse',
             'twoWay',
-            informationFlowKey,
+            ...relationTextProperties,
           ].includes(issue.field)
             ? issue.field
             : customSlot(issue.field);
@@ -623,6 +648,28 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               />
               {fieldError('label')}
             </div>
+            {relationTextProperties
+              .filter((key) => textsFit(draft.type, key))
+              .map((key) => (
+                <div className="field" key={key}>
+                  <label htmlFor={`rf-${key}`}>{standardProperties[key].label}</label>
+                  <div className="value-anchor">
+                    <ValueField
+                      id={`rf-${key}`}
+                      value={draft.texts[key]}
+                      values={relationshipPropertyValues(graph).get(key) ?? noValues}
+                      label={standardProperties[key].label}
+                      readOnly={saving}
+                      aria-invalid={errors.has(key) || undefined}
+                      aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
+                      onValue={(text) => {
+                        setDraft({ ...draft, texts: { ...draft.texts, [key]: text } });
+                      }}
+                    />
+                  </div>
+                  {fieldError(key)}
+                </div>
+              ))}
             <div className="field" id="rf-type" tabIndex={-1}>
               <TypeSegments
                 name="rf-type"
@@ -631,35 +678,36 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 onShow={props.onShow}
                 disabled={saving}
                 onChange={(type) => {
-                  // Contains is always one way, and never an Information flow.
+                  // Contains is always one way, and has no Identity, Identity Context or Data.
                   setDraft({
                     ...draft,
                     type,
                     twoWay: canBeTwoWay(type) && draft.twoWay,
-                    informationFlow: canHaveInformationFlow(type) && draft.informationFlow,
+                    texts: Object.fromEntries(
+                      relationTextProperties.map((key) => [
+                        key,
+                        textsFit(type, key) ? draft.texts[key] : '',
+                      ]),
+                    ) as Draft['texts'],
                   });
                 }}
               >
                 <div aria-live="polite">
                   <TypeNote note={typeNote} />
-                  {base.informationFlow && !canHaveInformationFlow(draft.type) && (
-                    <TypeNote
-                      note={{ kind: 'info', text: 'Information flow is removed when you save.' }}
-                    />
-                  )}
+                  {draft.type !== base.type &&
+                    relationTextProperties.some(
+                      (key) => base.texts[key].trim() !== '' && !textsFit(draft.type, key),
+                    ) && (
+                      <TypeNote
+                        note={{
+                          kind: 'info',
+                          text: 'Identity, Identity Context and Data are removed when you save.',
+                        }}
+                      />
+                    )}
                 </div>
               </TypeSegments>
               {fieldError('type')}
-              {canHaveInformationFlow(draft.type) && (
-                <InformationFlowBox
-                  checked={draft.informationFlow}
-                  disabled={saving}
-                  onChange={(informationFlow) => {
-                    setDraft({ ...draft, informationFlow });
-                  }}
-                />
-              )}
-              {fieldError(informationFlowKey)}
             </div>
             {canBeTwoWay(draft.type) && (
               <div className="field">
@@ -711,6 +759,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               renderError={fieldError}
               invalid={(slot) => errors.has(slot)}
               valuesOf={(key) => relationshipPropertyValues(graph).get(key) ?? []}
+              names={relationshipMetadataNames(graph)}
               onEdit={(slot, rows) => {
                 setDraft({ ...draft, custom: rows });
                 if (errors.has(slot)) {

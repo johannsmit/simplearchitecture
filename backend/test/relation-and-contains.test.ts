@@ -4,7 +4,6 @@ import { PGlite } from '@electric-sql/pglite';
 import {
   buildModelGraph,
   relationshipViewFields,
-  relationshipViewValues,
   type JgfDocument,
   type ModelAuthor,
 } from '@simplearchitecture/shared';
@@ -64,7 +63,7 @@ describe('older JGF', () => {
         target: 'b',
         relation: 'Relation',
         label: 'Orders',
-        metadata: { informationFlow: true },
+        metadata: { data: 'Orders' },
       },
       {
         id: 'both',
@@ -72,7 +71,7 @@ describe('older JGF', () => {
         target: 'c',
         relation: 'Relation',
         directed: false,
-        metadata: { architectureState: 'Target', protocol: 'REST', informationFlow: true },
+        metadata: { architectureState: 'Target', protocol: 'REST' },
       },
       { source: 'b', target: 'c', relation: 'Relation', metadata: { auth: 'OAuth' } },
       { id: 'holds', source: 'c', target: 'a', relation: 'Contains' },
@@ -99,7 +98,7 @@ describe('older JGF', () => {
     expect(validation.warnings[0]).toMatchObject({
       code: 'older-relationship-types',
       message:
-        'Document: 3 relationships with the older type Information flow or Integration converted to Relation.',
+        'Document: 3 relationships with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Data.',
     });
     expect(validation.summary.edges.byRelation).toEqual({ Relation: 3, Contains: 1 });
     expect(validateJgf(document).valid).toBe(true);
@@ -108,47 +107,29 @@ describe('older JGF', () => {
   });
 });
 
-describe('the Information flow property', () => {
+describe('Information flow, no longer a property', () => {
   const withEdge = (relation: string, metadata: Record<string, unknown>) => ({
     graph: { nodes, edges: [{ id: 'e', source: 'a', target: 'b', relation, metadata }] },
   });
 
-  it('is a warning when bad, and reads as no, so a stored model stays readable', () => {
-    for (const value of ['yes', 1, null, ['x']]) {
+  it('goes on reading, whatever its value, and the model stays valid either way', () => {
+    for (const value of [true, false, 'yes', 1, null, ['x']]) {
       const document = withEdge('Relation', { informationFlow: value });
-      const result = validateJgf(document);
-      expect(result.valid).toBe(true);
-      expect(result.warnings.map((issue) => [issue.code, issue.message])).toEqual([
-        [
-          'invalid-property-value',
-          'Edge "e": metadata.informationFlow must be true or false; it is read as no',
-        ],
-      ]);
-      const [relationship] = buildModelGraph(document).relationships;
-      expect(relationship?.informationFlow).toBeUndefined();
-      expect(relationship && relationshipViewValues(relationship, ['informationFlow'])).toEqual([]);
+      const converted = convertOlderTypes(document).document as JgfDocument;
+      expect(converted.graph.edges?.[0]?.metadata).toEqual({});
+      expect(validateJgf(converted).warnings).toEqual([]);
+      // Unconverted, it is plain custom metadata: never an error.
+      expect(validateJgf(document).valid).toBe(true);
     }
   });
 
-  it('accepts true and false on a Relation with no warning; only true is a yes', () => {
-    expect(validateJgf(withEdge('Relation', { informationFlow: true })).warnings).toEqual([]);
-    expect(validateJgf(withEdge('Relation', { informationFlow: false })).warnings).toEqual([]);
-    const read = (value: boolean) =>
-      buildModelGraph(withEdge('Relation', { informationFlow: value })).relationships[0];
-    const yes = read(true);
-    const no = read(false);
-    expect(yes?.informationFlow).toBe(true);
-    expect(no?.informationFlow).toBeUndefined();
-    expect(yes && relationshipViewValues(yes, ['informationFlow'])).toEqual(['Information flow']);
-    expect(no && relationshipViewValues(no, ['informationFlow'])).toEqual([]);
-  });
-
-  it('is a warning on a Contains, and reads as no', () => {
+  it('goes from a Contains too, which never takes the label as Data', () => {
     const document = withEdge('Contains', { informationFlow: true });
-    const result = validateJgf(document);
-    expect(result.valid).toBe(true);
-    expect(result.warnings.map((issue) => issue.code)).toEqual(['information-flow-not-for-type']);
-    expect(buildModelGraph(document).relationships[0]?.informationFlow).toBeUndefined();
+    const edge = { ...document.graph.edges[0], label: 'Holds' };
+    const converted = convertOlderTypes({ graph: { nodes, edges: [edge] } })
+      .document as JgfDocument;
+    expect(converted.graph.edges?.[0]?.metadata).toEqual({});
+    expect(validateJgf(converted).warnings).toEqual([]);
   });
 
   it('stays ordinary custom metadata on an element', () => {
@@ -163,13 +144,10 @@ describe('the Information flow property', () => {
   it('is offered whenever the model has a Relation, and only then', () => {
     const fields = (document: JgfDocument) =>
       relationshipViewFields(buildModelGraph(document)).map((field) => field.label);
-    expect(fields(withEdge('Relation', {}))).toEqual(['Architecture state', 'Information flow']);
+    const standard = ['Architecture state', 'Data', 'Identity', 'Identity Context'];
+    expect(fields(withEdge('Relation', {}))).toEqual(standard);
     expect(fields(withEdge('Contains', {}))).toEqual([]);
-    expect(fields(withEdge('Relation', { informationFlow: false, zone: 'x' }))).toEqual([
-      'Architecture state',
-      'Information flow',
-      'zone',
-    ]);
+    expect(fields(withEdge('Relation', { zone: 'x', data: 'y' }))).toEqual([...standard, 'zone']);
   });
 });
 
@@ -334,21 +312,22 @@ describe('migration 006', () => {
       expect(validateJgf(document).valid).toBe(true);
     }
     const graph = buildModelGraph((await store.get(first)) as JgfDocument);
+    // Read as today's: Information flow is gone, and a labelled flow has its label as Data.
     expect(
-      graph.relationships.map((r) => [r.id, r.type, r.informationFlow ?? false, r.twoWay ?? false]),
+      graph.relationships.map((r) => [r.id, r.type, r.metadata.data ?? null, r.twoWay ?? false]),
     ).toEqual([
-      ['flow-none', 'Relation', true, false],
-      ['flow-both', 'Relation', true, true],
-      ['edges[2]', 'Relation', true, false],
-      ['plain-both', 'Relation', false, true],
-      ['plain', 'Relation', false, false],
-      ['holds', 'Contains', false, false],
-      ['edges[6]', 'Relation', false, false],
+      ['flow-none', 'Relation', 'Orders', false],
+      ['flow-both', 'Relation', null, true],
+      ['edges[2]', 'Relation', null, false],
+      ['plain-both', 'Relation', null, true],
+      ['plain', 'Relation', null, false],
+      ['holds', 'Contains', null, false],
+      ['edges[6]', 'Relation', null, false],
     ]);
     expect(graph.relationships[0]?.label).toBe('Orders');
   });
 
-  it('makes a custom text key of that name a yes on a flow, and a read-as-no on the rest', async () => {
+  it('makes a custom text key of that name a yes on a flow, and reading drops it on the rest', async () => {
     await db.query(
       `update relationships set metadata = '{"informationFlow":"was text"}'
        where model_id = $1::uuid and id = 'twice-1'`,
@@ -361,8 +340,8 @@ describe('migration 006', () => {
     const document = (await store.get(second)) as JgfDocument;
     expect(validateJgf(document).valid).toBe(true);
     expect(
-      buildModelGraph(document).relationships.find((r) => r.id === 'twice-1')?.informationFlow,
-    ).toBeUndefined();
+      buildModelGraph(document).relationships.find((r) => r.id === 'twice-1')?.metadata,
+    ).toEqual({});
   });
 
   it('lets a migrated relationship be edited with the version it had', async () => {
@@ -372,18 +351,18 @@ describe('migration 006', () => {
     const stale = service.updateRelationship(
       first,
       'flow-none',
-      { version: 1, informationFlow: false },
+      { version: 1, description: 'Made-up' },
       author,
     );
     await expect(stale).rejects.toThrow();
     const saved = await service.updateRelationship(
       first,
       'flow-none',
-      { version: 7, informationFlow: false },
+      { version: 7, description: 'Made-up' },
       author,
     );
     expect(saved.relationship.version).toBe(8);
-    expect(saved.relationship.edge.metadata).toEqual({});
+    expect(saved.relationship.edge.metadata).toEqual({ data: 'Orders', description: 'Made-up' });
     // Several Relations with the same ends stay, and merge only on the UI.
     const twoAlike = (await rows(second)).filter((row) => row.id?.startsWith('twice'));
     expect(twoAlike).toHaveLength(4);
@@ -427,10 +406,9 @@ describe('migration 006', () => {
     const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
     expect(await store.listDamaged()).toEqual([]);
     const edges = (await store.get(second))?.graph.edges ?? [];
-    expect(edges.find((edge) => edge.id === 'flow')).toMatchObject({
-      relation: 'Relation',
-      metadata: { informationFlow: true },
-    });
+    const flow = edges.find((edge) => edge.id === 'flow');
+    expect(flow?.relation).toBe('Relation');
+    expect(flow?.metadata?.informationFlow).toBeUndefined();
   });
 
   it('db:import-files brings an older file in converted, with none damaged', async () => {
@@ -466,7 +444,7 @@ describe('migration 006', () => {
       expect(edges?.[1]).toMatchObject({
         relation: 'Relation',
         directed: false,
-        metadata: { informationFlow: true, protocol: 'REST', architectureState: 'Target' },
+        metadata: { protocol: 'REST', architectureState: 'Target' },
       });
       expect(edges?.[2]?.relation).toBe('Relation');
       expect(edges?.[3]?.relation).toBe('Contains');
@@ -476,7 +454,7 @@ describe('migration 006', () => {
   });
 });
 
-describe('RelationshipService: Information flow', () => {
+describe('RelationshipService: Information flow is gone', () => {
   let db: TestDb;
   const model: JgfDocument = {
     graph: {
@@ -488,6 +466,7 @@ describe('RelationshipService: Information flow', () => {
           target: 'b',
           relation: 'Relation',
           directed: false,
+          label: 'Orders',
           metadata: { informationFlow: true, zone: 'x' },
         },
         { id: 'plain', source: 'a', target: 'c', relation: 'Relation' },
@@ -516,99 +495,31 @@ describe('RelationshipService: Information flow', () => {
       () => undefined,
       (error: unknown) => (error as RejectedError).fields,
     );
-  const fieldsOfLastAudit = async () => {
-    const rows = await db.query<{ details: { fields: string[] } }>(
-      'select details from audit order by id desc limit 1',
-    );
-    return rows[0]?.details.fields;
-  };
 
-  it('adds a flow and a plain Relation between the same two elements', async () => {
+  it('adds several Relations between the same two elements', async () => {
     const { service, id } = await setup();
     const ends = { source: 'a', target: 'b', type: 'Relation' };
-    const flow = await service.addRelationship(id, { ...ends, informationFlow: true }, author);
-    expect(flow.relationship.edge.metadata).toMatchObject({ informationFlow: true });
-    expect(await fieldsOfLastAudit()).toContain('informationFlow');
-    const plain = await service.addRelationship(id, { ...ends, informationFlow: false }, author);
-    expect(plain.relationship.edge.metadata).not.toHaveProperty('informationFlow');
-    // A second of the same kind is fine as well.
+    await expect(service.addRelationship(id, ends, author)).resolves.toBeDefined();
     await expect(service.addRelationship(id, ends, author)).resolves.toBeDefined();
   });
 
-  it('refuses a yes on a Contains, naming the field', async () => {
+  it('refuses it as a field, and as a custom key', async () => {
     const { service, id } = await setup();
-    const expected = [
-      { field: 'informationFlow', message: "A Contains can't have Information flow." },
-    ];
-    expect(
-      await refused(
-        service.addRelationship(
-          id,
-          { source: 'a', target: 'c', type: 'Contains', informationFlow: true },
-          author,
-        ),
+    const asField = await refused(
+      service.addRelationship(
+        id,
+        { source: 'a', target: 'c', type: 'Relation', informationFlow: true },
+        author,
       ),
-    ).toEqual(expected);
+    );
+    expect(asField?.map((issue) => issue.field)).toEqual(['informationFlow']);
     expect(
-      await refused(
-        service.updateRelationship(id, 'holds', { version: 1, informationFlow: true }, author),
-      ),
-    ).toEqual(expected);
-    expect(
-      await refused(
-        service.updateRelationship(
-          id,
-          'plain',
-          { version: 1, type: 'Contains', informationFlow: true },
-          author,
-        ),
-      ),
-    ).toEqual(expected);
-  });
-
-  it('ticks and unticks, removing the key on a no and keeping the rest', async () => {
-    const { service, id } = await setup();
-    const off = await service.updateRelationship(
-      id,
-      'flow',
-      { version: 1, informationFlow: false },
-      author,
-    );
-    expect(off.relationship.edge.metadata).toEqual({ zone: 'x' });
-    expect(off.relationship.edge.directed).toBe(false);
-    expect(await fieldsOfLastAudit()).toEqual(['informationFlow']);
-    const on = await service.updateRelationship(
-      id,
-      'flow',
-      { version: 2, informationFlow: true },
-      author,
-    );
-    expect(on.relationship.edge.metadata).toEqual({ zone: 'x', informationFlow: true });
-    const same = await service.updateRelationship(
-      id,
-      'flow',
-      { version: 3, informationFlow: true },
-      author,
-    );
-    expect(same.relationship.version).toBe(3);
-  });
-
-  it('removes the key on a change to Contains, and causes no warning', async () => {
-    const { service, id } = await setup();
-    const result = await service.updateRelationship(
-      id,
-      'flow',
-      { version: 1, type: 'Contains' },
-      author,
-    );
-    expect(result.relationship.edge.metadata).toEqual({ zone: 'x' });
-    expect(result.warnings.map((issue) => issue.code)).not.toContain(
-      'information-flow-not-for-type',
-    );
-  });
-
-  it('never takes the key through custom metadata', async () => {
-    const { service, id } = await setup();
+      (
+        await refused(
+          service.updateRelationship(id, 'plain', { version: 1, informationFlow: true }, author),
+        )
+      )?.map((issue) => issue.field),
+    ).toEqual(['informationFlow']);
     for (const value of [true, 'yes', null]) {
       expect(
         await refused(
@@ -619,7 +530,21 @@ describe('RelationshipService: Information flow', () => {
             author,
           ),
         ),
-      ).toEqual([{ field: 'metadata.informationFlow', message: 'Set this in its own field.' }]);
+      ).toEqual([{ field: 'metadata.informationFlow', message: 'This key is reserved.' }]);
     }
+  });
+
+  it('reads a stored yes with a label as Data, and a change to Contains removes it', async () => {
+    const { service, id } = await setup();
+    const read = await service.getRelationship(id, 'flow');
+    expect(read.relationship.edge.metadata).toEqual({ zone: 'x', data: 'Orders' });
+    const result = await service.updateRelationship(
+      id,
+      'flow',
+      { version: 1, type: 'Contains' },
+      author,
+    );
+    expect(result.relationship.edge.metadata).toEqual({ zone: 'x' });
+    expect(result.warnings.map((issue) => issue.code)).toEqual(['multiple-containers']);
   });
 });

@@ -52,7 +52,7 @@ describe('the canvas without fixed viewpoints', () => {
     stubApi(viewer, api());
     renderAt(shop);
     await cardCount(6);
-    expect(lines()).toContain('Web Shop sends information to Oven Planner');
+    expect(lines()).toContain('Web Shop relates to Oven Planner');
     expect(lines()).toContain('Web Shop relates to Oven Planner');
     expect(screen.queryByRole('group', { name: 'Viewpoint' })).toBeNull();
   });
@@ -74,7 +74,7 @@ describe('the canvas without fixed viewpoints', () => {
     stubApi(viewer, api());
     renderAt(shop);
     await cardCount(6);
-    expect(lines()).toContain('Web Shop sends information to Oven Planner');
+    expect(lines()).toContain('Web Shop relates to Oven Planner');
   });
 
   it('says so when an element has no relationships', async () => {
@@ -105,22 +105,23 @@ describe('links and memory from older versions', () => {
     expect(search('depth=2')).toBeUndefined();
     expect(search('viewpoint=integration')).toBe('');
     expect(search('depth=2&viewpoint=integration&show=a')).toBe('?depth=2&show=a');
-    expect(search('viewpoint=information-flow')).toBe('?show=informationFlow');
-    expect(search('viewpoint=Information-Flow&show=a')).toBe('?show=a&show=informationFlow');
-    expect(search('viewpoint=information-flow&show=informationFlow')).toBe('?show=informationFlow');
+    // Information flow is gone; Data took its place.
+    expect(search('viewpoint=information-flow')).toBe('?show=data');
+    expect(search('viewpoint=Information-Flow&show=a')).toBe('?show=a&show=data');
+    expect(search('viewpoint=information-flow&show=data')).toBe('?show=data');
     expect(search('viewpoint=everything')).toBe('');
   });
 
-  it('opens ?viewpoint=information-flow with Information flow selected', async () => {
+  it('opens ?viewpoint=information-flow with Data selected', async () => {
     stubApi(viewer, api());
     renderAt(`${shop}&viewpoint=information-flow`);
     await cardCount(6);
     await waitFor(() => {
-      expect(currentLocation()).toBe(`${shop}&show=informationFlow`);
+      expect(currentLocation()).toBe(`${shop}&show=data`);
     });
     expect(button().textContent).toBe('Show Viewpoints: 1 selected');
     await waitFor(() => {
-      expect(restingLabels()).toContain('Information flow');
+      expect(restingLabels()).toContain('Places orders');
     });
   });
 
@@ -140,7 +141,7 @@ describe('links and memory from older versions', () => {
     renderAt(shop);
     await cardCount(6);
     expect(localStorage.getItem('sa-viewpoint')).toBeNull();
-    expect(lines()).toContain('Web Shop sends information to Oven Planner');
+    expect(lines()).toContain('Web Shop relates to Oven Planner');
   });
 });
 
@@ -208,7 +209,7 @@ describe('the details panel', () => {
     const headings = within(details())
       .getAllByRole('heading', { level: 4 })
       .map((heading) => heading.textContent.replace(/\s*\d+$/, ''));
-    expect(headings).toEqual(['Sends information to', 'Receives information from', 'Relates to']);
+    expect(headings).toEqual(['Relates to', 'Is related to']);
     expect(within(details()).queryByRole('button', { name: /viewpoint/i })).toBeNull();
   });
 });
@@ -219,7 +220,7 @@ describe('labels on the canvas', () => {
     renderAt(shop);
     await cardCount(6);
     await waitFor(() => {
-      expect(restingLabels()).toEqual(['Hosted on', 'Places orders', 'REST API', '×2']);
+      expect(restingLabels()).toEqual(['Places orders', '×2', '×3']);
     });
   });
 
@@ -228,10 +229,10 @@ describe('labels on the canvas', () => {
     renderAt(shop);
     await cardCount(6);
     await waitFor(() => {
-      expect(restingLabels()).toHaveLength(4);
+      expect(restingLabels()).toHaveLength(3);
     });
     const edge = [...canvas().querySelectorAll('.react-flow__edge')].find(
-      (e) => e.getAttribute('aria-label') === 'Till sends information to Web Shop',
+      (e) => e.getAttribute('aria-label') === 'Till relates to Web Shop',
     ) as HTMLElement;
     fireEvent.mouseEnter(edge);
     // A line with no label shows nothing while lit either.
@@ -239,15 +240,15 @@ describe('labels on the canvas', () => {
       expect(edge.classList.contains('is-lit')).toBe(true);
     });
     expect(document.querySelector('.edge-label.is-lit')).toBeNull();
-    expect(edge.getAttribute('aria-label')).toBe('Till sends information to Web Shop');
-    expect(document.querySelectorAll('.edge-label.is-dim')).toHaveLength(4);
+    expect(edge.getAttribute('aria-label')).toBe('Till relates to Web Shop');
+    expect(document.querySelectorAll('.edge-label.is-dim')).toHaveLength(3);
     const places = [...document.querySelectorAll('.edge-label')].find(
       (label) => label.textContent === 'Places orders',
     );
     expect(places?.getAttribute('title')).toBe('Places orders');
     fireEvent.mouseLeave(edge);
     await waitFor(() => {
-      expect(restingLabels()).toEqual(['Hosted on', 'Places orders', 'REST API', '×2']);
+      expect(restingLabels()).toEqual(['Places orders', '×2', '×3']);
     });
   });
 
@@ -262,7 +263,7 @@ describe('labels on the canvas', () => {
       expect(found).toBeDefined();
       return found as HTMLElement;
     });
-    const heading = { name: 'Customer sends information to Web Shop' };
+    const heading = { name: 'Customer relates to Web Shop' };
     fireEvent.pointerDown(label, { clientX: 100, clientY: 100 });
     fireEvent.click(label, { clientX: 140, clientY: 100 });
     expect(within(details()).queryByRole('heading', heading)).toBeNull();

@@ -177,7 +177,7 @@ describe('one layout link per relationship', () => {
   const list = [
     relationship('held', 'box', 'a', { type: 'Contains' }),
     relationship('m1', 'a', 'b'),
-    relationship('flow', 'a', 'b', { informationFlow: true }),
+    relationship('both', 'a', 'b', { twoWay: true }),
     relationship('m2', 'a', 'b'),
     relationship('two', 'a', 'b', { twoWay: true }),
     relationship('m3', 'a', 'b'),
@@ -188,7 +188,7 @@ describe('one layout link per relationship', () => {
     const laid = layoutLinks(list, (r) => r.id !== 'held');
     const ids = new Set(laid.map((link) => link.id));
     const drawn = lines.filter((line) => line.type !== 'Contains');
-    expect(drawn.map((line) => line.count)).toEqual([3, 1, 1]);
+    expect(drawn.map((line) => line.count)).toEqual([3, 2]);
     for (const line of drawn) {
       expect(ids.has(line.id), line.id).toBe(true);
       const link = laid.find((candidate) => candidate.id === line.id);
@@ -197,12 +197,12 @@ describe('one layout link per relationship', () => {
     expect(laid).toHaveLength(5);
   });
 
-  it('gives the layout the same input whatever a tick merges or splits', () => {
+  it('gives the layout the same input whatever a change of direction merges or splits', () => {
     const shape = (relationships: readonly ModelRelationship[]) =>
       layoutLinks(relationships, () => true);
-    const ticked = list.map((r) => (r.id === 'm2' ? { ...r, informationFlow: true } : r));
+    const ticked = list.map((r) => (r.id === 'm2' ? { ...r, twoWay: true } : r));
     expect(mergeRelationships(ticked).length).toBe(mergeRelationships(list).length);
-    const splitting = list.map((r) => (r.id === 'flow' ? { ...r, informationFlow: false } : r));
+    const splitting = list.map((r) => (r.twoWay === true ? { ...r, twoWay: false } : r));
     expect(mergeRelationships(splitting).length).toBe(mergeRelationships(list).length - 1);
     expect(shape(splitting)).toEqual(shape(list));
     expect(shape(ticked)).toEqual(shape(list));

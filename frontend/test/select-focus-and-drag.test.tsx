@@ -201,7 +201,7 @@ describe('relationship information in Viewing', () => {
     );
     await within(details()).findByRole('heading', {
       level: 2,
-      name: 'Customer sends information to Web Shop',
+      name: 'Customer relates to Web Shop',
     });
     return fetchMock;
   }
@@ -213,13 +213,15 @@ describe('relationship information in Viewing', () => {
     expect(within(panel).getByRole('button', { name: /^To: Web Shop/ })).toBeTruthy();
     expect(within(panel).getByText('Orders come in online.')).toBeTruthy();
     expect(within(panel).getByText('Target')).toBeTruthy();
-    // The type line, and the property as a row of its own, never a custom one.
-    expect(within(panel).getByText('Relation · Information flow')).toBeTruthy();
-    expect(within(panel).getByText('Yes')).toBeTruthy();
-    expect(within(panel).queryByText('informationFlow')).toBeNull();
+    // The type line, and Data as a row of its own, never a custom one.
+    expect(panel.querySelector('.d-type')?.textContent).toBe('Relation');
+    expect(within(panel).queryByText('Information flow')).toBeNull();
+    expect(within(panel).getByText('Data')).toBeTruthy();
+    expect(within(panel).queryByText('data')).toBeNull();
     expect(within(panel).getByText('archimateType')).toBeTruthy();
     expect(within(panel).getByText('Flow')).toBeTruthy();
-    expect(within(panel).getByText(/Places orders/)).toBeTruthy();
+    // The label, and Data (set from it where Information flow once was).
+    expect(within(panel).getAllByText(/Places orders/)).toHaveLength(2);
     // No inputs, no Delete, no Open in Modelling.
     expect(panel.querySelector('input, textarea, select')).toBeNull();
     expect(within(panel).queryByRole('button', { name: 'Delete relationship' })).toBeNull();
@@ -265,7 +267,7 @@ describe('relationship information in Viewing', () => {
     expect(currentLocation()).toBe(`/modelling/models/${bakeryId}/elements/shop?depth=1`);
     expect(
       await screen.findByRole('form', {
-        name: 'Relationship Customer sends information to Web Shop',
+        name: 'Relationship Customer relates to Web Shop',
       }),
     ).toBeTruthy();
   });

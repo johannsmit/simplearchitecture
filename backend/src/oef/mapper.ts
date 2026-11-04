@@ -1,10 +1,9 @@
 import {
   edgeTypes,
   canBeTwoWay,
-  canHaveInformationFlow,
-  informationFlowKey,
   hasStandardEdgeProperty,
   isStandardPropertyKey,
+  isStandardPropertyOf,
   nodeTypeKey,
   nodeTypes,
   standardProperties,
@@ -16,6 +15,7 @@ import {
   type NodeType,
   type OefMappingReport,
 } from '@simplearchitecture/shared';
+import { retiredInformationFlowKey } from '../jgf/older-types.js';
 import { maxEchoLength, reservedKey } from '../jgf/validate.js';
 import { ImportTooLargeError, maxImportEdges, maxImportNodes } from '../limits.js';
 import type { OefMapping, RelationshipRule } from './mapping-config.js';
@@ -361,7 +361,10 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
   const reservedNodeKeys = new Set<string>([
     nodeTypeKey,
     ...ownKeys,
-    ...Object.keys(standardProperties),
+    // Keys standard on edges only (such as data) are free for an element's custom metadata.
+    ...Object.keys(standardProperties).filter((key) =>
+      nodeTypes.some((type) => isStandardPropertyOf(type, key)),
+    ),
     ...mapping.properties.mappings.map((entry) => entry.key),
   ]);
   // Edges: custom keys never take a standard edge property's or a mapped property's key.
@@ -371,7 +374,7 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
       (key) => isStandardPropertyKey(key) && hasStandardEdgeProperty(key),
     ),
     ...mapping.properties.mappings.map((entry) => entry.key),
-    informationFlowKey,
+    retiredInformationFlowKey,
   ]);
   const reservedGraphKeys = new Set<string>(ownKeys);
   const mappingsByName = new Map(mapping.properties.mappings.map((entry) => [entry.name, entry]));
@@ -617,8 +620,14 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
     }
     applyProperties(meta, relationship.properties, reservedEdgeKeys, true);
     applyDefaults(meta, { relation: rule.relation });
-    if (rule.informationFlow === true && canHaveInformationFlow(rule.relation)) {
-      meta[informationFlowKey] = true;
+    // The option once set Information flow; now, as for older files, the label becomes its Data.
+    if (
+      rule.informationFlow === true &&
+      hasStandardEdgeProperty('data', rule.relation) &&
+      relationship.name.trim() !== '' &&
+      !Object.hasOwn(meta, 'data')
+    ) {
+      meta.data = relationship.name;
     }
     const [source, target] = rule.reverse
       ? [relationship.target, relationship.source]

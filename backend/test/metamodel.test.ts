@@ -8,9 +8,9 @@ import {
   isIsoCountryCode,
   nodeTypeDefinitions,
   nodeTypes,
+  relationTextProperties,
   sourcingOptions,
   standardProperties,
-  canHaveInformationFlow,
 } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -20,7 +20,7 @@ const template = JSON.parse(
 ) as {
   graph: {
     nodes: Record<string, { metadata: Record<string, unknown> }>;
-    edges: { relation: string }[];
+    edges: { relation: string; metadata: Record<string, unknown> }[];
   };
 };
 const templateNode = Object.values(template.graph.nodes)[0]?.metadata ?? {};
@@ -38,7 +38,12 @@ describe('the metamodel in shared/ matches metamodel/', () => {
     const keys = Object.keys(templateNode).filter(
       (key) => key !== 'type' && key !== 'anyCustomKey',
     );
-    expect(Object.keys(standardProperties).sort()).toEqual(keys.sort());
+    // The template's two-way Relation shows the properties only a Relation has.
+    const relationKeys = Object.keys(template.graph.edges[1]?.metadata ?? {}).filter(
+      (key) => !['architectureState', 'anyCustomKey'].includes(key),
+    );
+    expect(relationKeys).toEqual([...relationTextProperties]);
+    expect(Object.keys(standardProperties).sort()).toEqual([...keys, ...relationKeys].sort());
   });
 
   it('gives each node type its standard properties', () => {
@@ -69,10 +74,9 @@ describe('the metamodel in shared/ matches metamodel/', () => {
     expect(hasStandardProperty('Infrastructure', 'sourcing')).toBe(false);
   });
 
-  it('has two edge types, and Information flow on a Relation only', () => {
+  it('has two edge types, and no Information flow', () => {
     expect(edgeTypes).toEqual(['Relation', 'Contains']);
-    expect(canHaveInformationFlow('Relation')).toBe(true);
-    expect(canHaveInformationFlow('Contains')).toBe(false);
+    expect(JSON.stringify(template)).not.toContain('informationFlow');
     expect(template.graph.edges[1]?.relation).toBe('Relation');
   });
 
@@ -82,8 +86,15 @@ describe('the metamodel in shared/ matches metamodel/', () => {
       'utf8',
     );
     for (const type of edgeTypes) expect(doc).toContain(`- ${type} edge:`);
-    for (const type of edgeTypes) {
-      expect(edgeTypeDefinitions[type].properties).toEqual(['architectureState']);
+    expect(edgeTypeDefinitions.Relation.properties).toEqual([
+      'architectureState',
+      'identity',
+      'identityContext',
+      'data',
+    ]);
+    expect(edgeTypeDefinitions.Contains.properties).toEqual(['architectureState']);
+    for (const key of relationTextProperties) {
+      expect(doc).toContain(`\`"${key}"\``);
     }
   });
 });

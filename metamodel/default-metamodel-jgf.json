@@ -28,7 +28,6 @@
                 "label": "",
                 "metadata": {
                     "architectureState": "Deprecate | Current | Target",
-                    "informationFlow": true,
                     "anyCustomKey": "custom metadata, added by the modeller"
                 }
             },
@@ -41,7 +40,9 @@
                 "label": "",
                 "metadata": {
                     "architectureState": "Deprecate | Current | Target",
-                    "informationFlow": true,
+                    "identity": "the active identity used for the exchange",
+                    "identityContext": "additional context, such as the original user's ID",
+                    "data": "the data exchanged, sent or retrieved",
                     "anyCustomKey": "custom metadata, added by the modeller"
                 }
             }

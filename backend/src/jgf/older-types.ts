@@ -1,37 +1,51 @@
-import {
-  informationFlowKey,
-  type JgfValidationResult,
-  type ValidationIssue,
-} from '@simplearchitecture/shared';
+import type { JgfValidationResult, ValidationIssue } from '@simplearchitecture/shared';
 import { validateJgf } from './validate.js';
 
 /**
- * Older JGF has the edge types `Information flow` and `Integration`. Both are a
- * Relation now, and `Information flow` also sets the property. Older files and imports convert, so
- * a model never fails or reads as damaged for this. Migration 006 does the same in SQL.
+ * Older JGF has the edge types `Information flow` and `Integration`, and later the yes-or-no
+ * property `"informationFlow": true` on a Relation. All are a plain Relation now. Where Information
+ * flow was a yes on a Relation with a label, the label also becomes its Data, unless it has Data
+ * already; the label stays. Older files and imports convert, so a model never fails or reads as
+ * damaged for this. Migrations 006 and 009 do the same in SQL.
  */
+
+/** The retired property's key: never custom metadata, as reading a model removes it. */
+export const retiredInformationFlowKey = 'informationFlow';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** The edge in today's types; the same object when there is nothing to convert. */
-function convertedEdge(edge: unknown): unknown {
+export function convertedEdge(edge: unknown): unknown {
   if (!isPlainObject(edge)) return edge;
-  if (edge.relation === 'Integration') return { ...edge, relation: 'Relation' };
-  if (edge.relation !== 'Information flow') return edge;
-  // Metadata of the wrong shape stays as it is, for the validation to report.
+  const olderFlow = edge.relation === 'Information flow';
+  const relation = olderFlow || edge.relation === 'Integration' ? 'Relation' : edge.relation;
   const { metadata } = edge;
-  const flowing =
-    metadata === undefined || isPlainObject(metadata)
-      ? { ...metadata, [informationFlowKey]: true }
-      : metadata;
-  return { ...edge, relation: 'Relation', metadata: flowing };
+  const hasFlowKey = isPlainObject(metadata) && Object.hasOwn(metadata, retiredInformationFlowKey);
+  if (relation === edge.relation && !hasFlowKey) return edge;
+  // Metadata of the wrong shape stays as it is, for the validation to report. An older Information
+  // flow without metadata can still take its label as Data.
+  if (!isPlainObject(metadata) && !(olderFlow && metadata === undefined)) {
+    return { ...edge, relation };
+  }
+  const flowing = olderFlow || metadata?.[retiredInformationFlowKey] === true;
+  const rest = Object.fromEntries(
+    Object.entries(metadata ?? {}).filter(([key]) => key !== retiredInformationFlowKey),
+  );
+  const label = typeof edge.label === 'string' ? edge.label : '';
+  if (flowing && relation === 'Relation' && label.trim() !== '' && !Object.hasOwn(rest, 'data')) {
+    rest.data = label;
+  }
+  // An older Information flow without metadata gets none, unless its label became its Data.
+  if (metadata === undefined && Object.keys(rest).length === 0) return { ...edge, relation };
+  return { ...edge, relation, metadata: rest };
 }
 
 /**
- * The document with its older edge types converted, and how many were. Never throws, whatever the
- * input's shape, and leaves anything but those edges alone (and the input unchanged).
+ * The document with its older edge types and Information flow converted, and how many edges were.
+ * Never throws, whatever the input's shape, and leaves anything but those edges alone (and the
+ * input unchanged).
  */
 export function convertOlderTypes(input: unknown): { document: unknown; converted: number } {
   const graph = isPlainObject(input) ? input.graph : undefined;
@@ -62,7 +76,7 @@ export function validateImported(input: unknown): {
   const note: ValidationIssue = {
     severity: 'warning',
     code: 'older-relationship-types',
-    message: `Document: ${converted} ${converted === 1 ? 'relationship' : 'relationships'} with the older type Information flow or Integration converted to Relation.`,
+    message: `Document: ${converted} ${converted === 1 ? 'relationship' : 'relationships'} with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Data.`,
     field: '',
   };
   return {

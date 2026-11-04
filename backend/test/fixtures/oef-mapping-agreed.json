@@ -3,7 +3,7 @@
     "Test fixture: a pinned copy of the mapping defaults, so config/oef-mapping.json can change without breaking the tests.",
     "Mappings also apply to relationships, and the architectureState default also targets relations and Contains.",
     "Realization imports as Contains.",
-    "Flow imports as a Relation with Information flow."
+    "Flow imports as a Relation with its name as Data."
   ],
   "version": 1,
   "elements": {

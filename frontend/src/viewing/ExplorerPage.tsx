@@ -1,6 +1,7 @@
 import {
   buildModelGraph,
   type CatalogTab,
+  canRemoveFromCanvas,
   containerOf,
   degree,
   findElements,
@@ -9,8 +10,8 @@ import {
   neighbourhood,
   withAddedElements,
   withContainers,
+  withoutElements,
   type DeletedRelationshipResult,
-  informationFlowKey,
   relationshipOfEdge,
   relationshipViewFields,
   type ElementChangeResult,
@@ -554,14 +555,34 @@ function Explorer({ url, space, modelId, elementId, ask, editor, onEditorState }
   // Forget them as soon as the focus changes (even if it later changes back).
   if (added.key !== addedKey) setAdded({ key: addedKey, ids: [] });
   const addedIds = added.key === addedKey ? added.ids : noIds;
+  // Cards taken off the canvas: visual only, never saved. Like the added ones, they are forgotten
+  // when the focus changes, and stay off through a depth change or Tidy up.
+  const [removed, setRemoved] = useState<{ key: string; ids: string[] }>({
+    key: addedKey,
+    ids: [],
+  });
+  if (removed.key !== addedKey) setRemoved({ key: addedKey, ids: [] });
+  const removedIds = removed.key === addedKey ? removed.ids : noIds;
   const addElement = useCallback(
     (id: string) => {
       setAdded((current) => ({
         key: addedKey,
         ids: [...(current.key === addedKey ? current.ids : []), id],
       }));
+      // Back on the canvas, with the containers it is drawn inside.
+      setRemoved((current) => {
+        if (current.key !== addedKey || current.ids.length === 0) return current;
+        const back = new Set([id]);
+        if (graph) {
+          for (let up = containerOf(graph, id); up !== undefined && !back.has(up);) {
+            back.add(up);
+            up = containerOf(graph, up);
+          }
+        }
+        return { key: addedKey, ids: current.ids.filter((removedId) => !back.has(removedId)) };
+      });
     },
-    [addedKey],
+    [addedKey, graph],
   );
 
   // Cards moved on the canvas: visual only (never in the model or the URL), and dropped on a focus
@@ -595,8 +616,10 @@ function Explorer({ url, space, modelId, elementId, ask, editor, onEditorState }
     });
     // A nested element's containers are always brought onto the canvas, so nesting shows; they
     // count towards the cap.
-    return nest ? withContainers(graph, shown) : shown;
-  }, [graph, element, depth, addedIds, nest]);
+    return withoutElements(graph, nest ? withContainers(graph, shown) : shown, removedIds, {
+      nest,
+    });
+  }, [graph, element, depth, addedIds, removedIds, nest]);
 
   // "Nest contained elements" lays the canvas out again, like Tidy up.
   const toggleNest = useCallback(() => {
@@ -981,6 +1004,29 @@ function Explorer({ url, space, modelId, elementId, ask, editor, onEditorState }
     );
   }
   const canTidy = hood !== undefined && hasMovedCards(movedPositions, hood.hops);
+  const removable =
+    graph !== undefined &&
+    hood !== undefined &&
+    selectedId !== undefined &&
+    canRemoveFromCanvas(graph, hood, selectedId, { nest });
+  // Takes the selected card off the canvas; the element stays in the model and the list.
+  const removeFromCanvas = () => {
+    if (!removable) return;
+    const id = selectedId;
+    const name = graph.elements.get(id)?.name || '(unnamed)';
+    ask(() => {
+      setRemoved((current) => ({
+        key: addedKey,
+        ids: [...(current.key === addedKey ? current.ids : []), id],
+      }));
+      setPicked(null);
+      setSelection(null);
+      setAddBoxFor(null);
+      setAnnouncement(`Removed “${name}” from the canvas. It stays in the model.`);
+      // The button is disabled now: keep keyboard focus on the canvas, never on <body>.
+      document.getElementById('canvas')?.focus();
+    });
+  };
   const tidyUp = () => {
     setMoved({ key: movedKey, positions: noMovedPositions });
     setTidyCount((n) => n + 1);
@@ -1012,7 +1058,6 @@ function Explorer({ url, space, modelId, elementId, ask, editor, onEditorState }
             element={focused}
             onCanvas={onCanvas}
             nest={nest}
-            startsAsFlow={shownProperties.includes(informationFlowKey)}
             onAdded={onRelationshipAdded}
             onClose={() => {
               setAddBoxFor(null);
@@ -1233,6 +1278,19 @@ function Explorer({ url, space, modelId, elementId, ask, editor, onEditorState }
             >
               <Icon name="plus" />
               <span className="tidy-label">Element</span>
+            </button>
+          )}
+          {view === 'canvas' && element !== undefined && (
+            <button
+              type="button"
+              className="btn tidy"
+              aria-label="Remove from canvas"
+              title="Take the selected card off the canvas. The element stays in the model."
+              disabled={!removable}
+              onClick={removeFromCanvas}
+            >
+              <Icon name="minus" />
+              <span className="tidy-label">Remove</span>
             </button>
           )}
           {view === 'canvas' && (

@@ -1,4 +1,7 @@
-import { catalogTabs, informationFlowKey, type CatalogTab } from '@simplearchitecture/shared';
+import { catalogTabs, type CatalogTab } from '@simplearchitecture/shared';
+
+/** What the older Information Flow viewpoint shows today: a Relation's Data. */
+const olderFlowKey = 'data';
 
 /**
  * URLs of the explorer, in Viewing (read-only) and Modelling (editing). Both spaces use the same
@@ -36,19 +39,16 @@ export function elementPath(
 
 /**
  * An address from an older version named a fixed viewpoint. `viewpoint=information-flow` reads as
- * Information flow selected, and any other value as nothing more selected. The search to rewrite
- * the address with (without it), or undefined when it has none. "?" unless empty.
+ * Data selected (where Information flow went), and any other value as nothing more selected. The
+ * search to rewrite the address with (without it), or undefined when it has none. "?" unless empty.
  */
 export function withoutOldViewpoint(params: URLSearchParams): string | undefined {
   const old = params.get('viewpoint');
   if (old === null) return undefined;
   const next = new URLSearchParams(params);
   next.delete('viewpoint');
-  if (
-    old.toLowerCase() === 'information-flow' &&
-    !next.getAll('show').includes(informationFlowKey)
-  ) {
-    next.append('show', informationFlowKey);
+  if (old.toLowerCase() === 'information-flow' && !next.getAll('show').includes(olderFlowKey)) {
+    next.append('show', olderFlowKey);
   }
   const text = next.toString();
   return text === '' ? '' : `?${text}`;

@@ -1550,8 +1550,8 @@
         "label": "repair estimates",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "repair estimates"
         }
       },
       {
@@ -1574,8 +1574,8 @@
         "label": "regulatory returns",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "Secure file upload"
+          "protocol": "Secure file upload",
+          "data": "regulatory returns"
         }
       },
       {
@@ -1840,8 +1840,10 @@
         "label": "quotes and policy requests",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "quotes and policy requests",
+          "identity": "portal-gateway-client",
+          "identityContext": "The signed-in policyholder's customer number"
         }
       },
       {
@@ -1853,8 +1855,9 @@
         "label": "photo claims",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "photo claims",
+          "identity": "mobile-app-client"
         }
       },
       {
@@ -1866,8 +1869,8 @@
         "label": "broker quotes",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "broker quotes"
         }
       },
       {
@@ -1879,8 +1882,8 @@
         "label": "policy requests",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "policy requests"
         }
       },
       {
@@ -1892,8 +1895,8 @@
         "label": "new claims",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "new claims"
         }
       },
       {
@@ -1905,8 +1908,8 @@
         "label": "new claims",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "SOAP"
+          "protocol": "SOAP",
+          "data": "new claims"
         }
       },
       {
@@ -1918,8 +1921,8 @@
         "label": "quote requests",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "quote requests"
         }
       },
       {
@@ -1931,8 +1934,8 @@
         "label": "quote requests",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "SOAP"
+          "protocol": "SOAP",
+          "data": "quote requests"
         }
       },
       {
@@ -1944,8 +1947,8 @@
         "label": "policy changes",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "SOAP"
+          "protocol": "SOAP",
+          "data": "policy changes"
         }
       },
       {
@@ -1957,8 +1960,8 @@
         "label": "premium schedules",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "premium schedules"
         }
       },
       {
@@ -1970,8 +1973,8 @@
         "label": "policy events",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "Events"
+          "protocol": "Events",
+          "data": "policy events"
         }
       },
       {
@@ -1983,8 +1986,8 @@
         "label": "premium schedules",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "Events"
+          "protocol": "Events",
+          "data": "premium schedules"
         }
       },
       {
@@ -1996,8 +1999,8 @@
         "label": "claim events",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "Events"
+          "protocol": "Events",
+          "data": "claim events"
         }
       },
       {
@@ -2009,8 +2012,8 @@
         "label": "policy and claim events",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "Events"
+          "protocol": "Events",
+          "data": "policy and claim events"
         }
       },
       {
@@ -2022,8 +2025,8 @@
         "label": "nightly claims extract",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "nightly claims extract"
         }
       },
       {
@@ -2035,8 +2038,8 @@
         "label": "nightly policy extract",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "nightly policy extract"
         }
       },
       {
@@ -2048,8 +2051,8 @@
         "label": "finance marts",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "SQL"
+          "protocol": "SQL",
+          "data": "finance marts"
         }
       },
       {
@@ -2061,8 +2064,8 @@
         "label": "data products",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "SQL"
+          "protocol": "SQL",
+          "data": "data products"
         }
       },
       {
@@ -2074,8 +2077,8 @@
         "label": "loss history",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "SQL"
+          "protocol": "SQL",
+          "data": "loss history"
         }
       },
       {
@@ -2087,8 +2090,8 @@
         "label": "rating factors",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "rating factors"
         }
       },
       {
@@ -2100,8 +2103,8 @@
         "label": "batch fraud check",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "batch fraud check"
         }
       },
       {
@@ -2113,8 +2116,8 @@
         "label": "payment instructions",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "payment instructions"
         }
       },
       {
@@ -2126,8 +2129,8 @@
         "label": "payment files",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "payment files"
         }
       },
       {
@@ -2139,8 +2142,8 @@
         "label": "premium journals",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "premium journals"
         }
       },
       {
@@ -2152,8 +2155,8 @@
         "label": "payment journals",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "payment journals"
         }
       },
       {
@@ -2165,8 +2168,8 @@
         "label": "claim reserves",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "claim reserves"
         }
       },
       {
@@ -2178,8 +2181,8 @@
         "label": "price requests",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "price requests"
         }
       },
       {
@@ -2191,8 +2194,8 @@
         "label": "document requests",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "document requests"
         }
       },
       {
@@ -2204,8 +2207,8 @@
         "label": "sent letters",
         "metadata": {
           "architectureState": "Current",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "sent letters"
         }
       },
       {
@@ -2217,8 +2220,8 @@
         "label": "claim documents",
         "metadata": {
           "architectureState": "Target",
-          "informationFlow": true,
-          "protocol": "REST"
+          "protocol": "REST",
+          "data": "claim documents"
         }
       },
       {
@@ -2230,8 +2233,8 @@
         "label": "claim documents",
         "metadata": {
           "architectureState": "Deprecate",
-          "informationFlow": true,
-          "protocol": "File"
+          "protocol": "File",
+          "data": "claim documents"
         }
       },
       {

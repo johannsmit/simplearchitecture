@@ -4,7 +4,7 @@
  */
 import { filterValueOf, isFilterableKey } from './filters.js';
 import { compareNames, containsType, type ModelGraph, type ModelRelationship } from './graph.js';
-import { informationFlowKey, informationFlowLabel, standardProperties } from './metamodel.js';
+import { isRelationTextProperty, relationTextProperties, standardProperties } from './metamodel.js';
 
 /** A property that a viewpoint can show. */
 export interface RelationshipViewField {
@@ -23,16 +23,12 @@ export const isRelationshipViewKey = (key: string): boolean =>
 /**
  * A relationship's value for a property as text, or undefined when it doesn't have it. The rules
  * are the element filter's: an empty text, a list or an object counts as not having it. Every
- * relationship has an Architecture state, as none means Current. Information flow has only a yes,
- * shown by its name: a no or a bad value counts as not having it.
+ * relationship has an Architecture state, as none means Current.
  */
 export function relationshipValue(
   relationship: ModelRelationship,
   key: string,
 ): string | undefined {
-  if (key === informationFlowKey) {
-    return relationship.informationFlow === true ? informationFlowLabel : undefined;
-  }
   return key === stateKey ? relationship.architectureState : filterValueOf(relationship, key);
 }
 
@@ -58,7 +54,8 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
     if (relationship.type === containsType) continue;
     any = true;
     for (const [key, value] of Object.entries(relationship.metadata)) {
-      if (!isRelationshipViewKey(key) || key === stateKey || key === informationFlowKey) continue;
+      if (!isRelationshipViewKey(key) || key === stateKey) continue;
+      if (isRelationTextProperty(key)) continue;
       if (typeof value === 'object' && value !== null) structured.add(key);
       else if (relationshipValue(relationship, key) !== undefined) found.add(key);
     }
@@ -68,7 +65,9 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
     .map((key) => ({ key, label: key }));
   if (any) {
     fields.push({ key: stateKey, label: standardProperties[stateKey].label });
-    fields.push({ key: informationFlowKey, label: informationFlowLabel });
+    for (const key of relationTextProperties) {
+      fields.push({ key, label: standardProperties[key].label });
+    }
   }
   return fields.sort((a, b) => compareNames(a.label, b.label) || (a.key < b.key ? -1 : 1));
 }

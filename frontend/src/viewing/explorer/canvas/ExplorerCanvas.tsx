@@ -3,7 +3,6 @@ import {
   containsType,
   elementArchitectureState,
   defaultNeighbourhoodCap,
-  informationFlowKey,
   missingRelatedCount,
   missingRelatedElements,
   nodeTypeDefinitions,
@@ -675,7 +674,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         targetHandle: portId(link.id, 'target'),
         focusable: false,
         selectable: false,
-        ariaLabel: `${name(link.source)} ${relationshipVerb(link.type, link.twoWay ? 'both' : 'outgoing', link.informationFlow)} ${name(link.target)}`,
+        ariaLabel: `${name(link.source)} ${relationshipVerb(link.type, link.twoWay ? 'both' : 'outgoing')} ${name(link.target)}`,
         ...(highlight || grayed || link.state !== 'Current' || isSelected || isFresh
           ? {
               className: [
@@ -1377,7 +1376,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           target={pop.target}
           style={{ top: pop.top, left: pop.left }}
           nest={nest}
-          startsAsFlow={props.shownProperties.includes(informationFlowKey)}
           onAdded={(result) => {
             const { source } = pop;
             setPop(null);

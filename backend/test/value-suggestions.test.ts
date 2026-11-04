@@ -1,6 +1,8 @@
 import {
   buildModelGraph,
+  elementMetadataNames,
   elementPropertyValues,
+  relationshipMetadataNames,
   relationshipPropertyValues,
   suggestedValues,
   type JgfDocument,
@@ -150,7 +152,6 @@ describe('relationshipPropertyValues', () => {
       model({}, [
         edge('r1', {
           functions: 'Made-up',
-          informationFlow: true,
           architectureState: 'Target',
           description: 'd',
         }),
@@ -158,7 +159,7 @@ describe('relationshipPropertyValues', () => {
     );
     const values = relationshipPropertyValues(graph);
     expect(values.get('functions')).toEqual(['Made-up']);
-    for (const key of ['informationFlow', 'architectureState', 'description']) {
+    for (const key of ['architectureState', 'description']) {
       expect(values.has(key)).toBe(false);
     }
   });
@@ -189,5 +190,37 @@ describe('suggestedValues', () => {
     expect(suggestedValues(values, 'rest', true)).toEqual(['REST']);
     expect(suggestedValues(values, '', true)).toEqual(values);
     expect(suggestedValues(values, 'no match', true)).toEqual([]);
+  });
+});
+
+describe('metadata names', () => {
+  it('lists the custom names elements have, most used first, then by name', () => {
+    const graph = buildModelGraph(
+      model({
+        c: node({ zone: 'x', rack: '', owningTeam: 'Web', description: 'd' }),
+        d: node({ zone: ['list'], archimateType: 'ApplicationComponent', Rack: 1 }),
+        e: node({ zone: null, 'simplearchitecture:stored': 1, functions: ['f'] }),
+        f: node({ sourcing: 'Buy', supplierHqCountry: 'NL', architectureState: 'Current' }),
+      }),
+    );
+    expect(elementMetadataNames(graph)).toEqual(['zone', 'Rack', 'rack']);
+  });
+
+  it('lists the names relationships have apart from elements, never their own fields', () => {
+    const graph = buildModelGraph(
+      model({ c: node({ zone: 'element' }) }, [
+        edge('e1', { protocol: 'REST', architectureState: 'Target', description: 'd' }),
+        edge('e2', { protocol: 'SOAP', data: 'Orders', functions: ['f'] }),
+        edge('e3', { owningTeam: 'Web', type: 'odd' }),
+      ]),
+    );
+    expect(relationshipMetadataNames(graph)).toEqual(['protocol', 'functions', 'owningTeam']);
+    expect(elementMetadataNames(graph)).toEqual(['zone']);
+  });
+
+  it('works the names out once per graph', () => {
+    const graph = buildModelGraph(model({ c: node({ zone: 'x' }) }));
+    expect(elementMetadataNames(graph)).toBe(elementMetadataNames(graph));
+    expect(relationshipMetadataNames(graph)).toBe(relationshipMetadataNames(graph));
   });
 });

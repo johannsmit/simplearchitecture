@@ -514,7 +514,6 @@ describe('POST /api/models with older relationship types', () => {
         target: 'b',
         relation: 'Relation',
         directed: false,
-        metadata: { informationFlow: true },
       },
       { id: 'i', source: 'b', target: 'a', relation: 'Relation', label: 'API' },
     ]);

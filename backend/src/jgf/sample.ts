@@ -66,7 +66,7 @@ export const sampleModel: JgfDocument = {
         relation: 'Relation',
         directed: true,
         label: 'Orders',
-        metadata: { informationFlow: true },
+        metadata: { data: 'Orders', identity: 'Signed-in customer' },
       },
       {
         id: 'shop-to-payments',
@@ -84,7 +84,7 @@ export const sampleModel: JgfDocument = {
         relation: 'Relation',
         directed: true,
         label: 'Order details',
-        metadata: { architectureState: 'Target', informationFlow: true },
+        metadata: { architectureState: 'Target', data: 'Order details' },
       },
     ],
   },

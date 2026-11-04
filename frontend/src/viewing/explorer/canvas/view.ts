@@ -22,14 +22,12 @@ export interface CanvasLink {
   state: ArchitectureState;
   /** Two-way: an arrow at both ends. One-way and two-way relationships are never merged. */
   twoWay: boolean;
-  /** Information flow. Flows and other Relations are never merged either. */
-  informationFlow: boolean;
   /** The relationships this edge stands for, in model order. */
   members: ModelRelationship[];
 }
 
 /**
- * Merges parallel relationships (same source, target, type, direction and Information flow) into
+ * Merges parallel relationships (same source, target, type and direction) into
  * one edge. Ids are made up here because relationship ids from imports can hold any character: an
  * edge is `l` and the position of its first relationship, as in `layoutLinks`.
  */
@@ -37,13 +35,11 @@ export function mergeRelationships(relationships: readonly ModelRelationship[]):
   const byKey = new Map<string, CanvasLink>();
   relationships.forEach((relationship, index) => {
     const twoWay = relationship.twoWay === true;
-    const informationFlow = relationship.informationFlow === true;
     const key = JSON.stringify([
       relationship.source,
       relationship.target,
       relationship.type,
       twoWay,
-      informationFlow,
     ]);
     const existing = byKey.get(key);
     if (existing) {
@@ -64,7 +60,6 @@ export function mergeRelationships(relationships: readonly ModelRelationship[]):
       relationshipIds: [relationship.id],
       state: relationship.architectureState,
       twoWay,
-      informationFlow,
       members: [relationship],
     });
   });
@@ -75,7 +70,7 @@ const layoutLinkId = (index: number) => `l${index}`;
 
 /**
  * What the layout is given: one link per relationship, merged or not, so merging or splitting lines
- * (ticking Information flow) gives ELK the same input, and no card moves. A merged line uses
+ * (picking properties to show) gives ELK the same input, and no card moves. A merged line uses
  * the port and route of its first relationship; the others only keep room for it.
  */
 export function layoutLinks(

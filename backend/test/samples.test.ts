@@ -47,8 +47,11 @@ describe('samples/sample-insurance.jgf.json', () => {
       expect(edges.some((edge) => edge.metadata?.architectureState === state)).toBe(true);
     }
     const relations = edges.filter((edge) => edge.relation === 'Relation');
-    expect(relations.some((edge) => edge.metadata?.informationFlow === true)).toBe(true);
-    expect(relations.some((edge) => edge.metadata?.informationFlow === undefined)).toBe(true);
+    for (const key of ['identity', 'identityContext', 'data']) {
+      expect(relations.some((edge) => typeof edge.metadata?.[key] === 'string')).toBe(true);
+      expect(relations.some((edge) => edge.metadata?.[key] === undefined)).toBe(true);
+    }
+    expect(edges.some((edge) => edge.metadata?.informationFlow !== undefined)).toBe(false);
     expect(relations.some((edge) => edge.directed === false)).toBe(true);
   });
 });

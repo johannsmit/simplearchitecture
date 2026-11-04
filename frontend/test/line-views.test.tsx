@@ -59,8 +59,8 @@ const line = (name: string) =>
   [...canvas().querySelectorAll('.react-flow__edge')].find(
     (edge) => edge.getAttribute('aria-label') === name,
   ) as HTMLElement;
-const customerLine = () => line('Customer sends information to Web Shop');
-const tillLine = () => line('Till sends information to Web Shop');
+const customerLine = () => line('Customer relates to Web Shop');
+const tillLine = () => line('Till relates to Web Shop');
 const labels = () =>
   [...document.querySelectorAll('.edge-label')].map((label) => label.textContent).sort();
 const button = () => screen.getByRole('button', { name: /^Show Viewpoints/ });
@@ -120,7 +120,9 @@ describe('which properties a viewpoint can show', () => {
       'Architecture state',
       'auth',
       'count',
-      'Information flow',
+      'Data',
+      'Identity',
+      'Identity Context',
       'owner',
       'protocol',
     ]);
@@ -353,8 +355,10 @@ describe('the line rules', () => {
     expect(relationshipViewFields(graph).map((field) => field.key)).toEqual([
       'architectureState',
       'constructor',
+      'data',
       'flag',
-      'informationFlow',
+      'identity',
+      'identityContext',
       'zero',
     ]);
   });
@@ -398,67 +402,59 @@ describe('the line rules', () => {
   });
 });
 
-describe('Information flow in a viewpoint', () => {
-  it('shows its name for a yes, beside other values, and grays out the rest', async () => {
-    await open('&show=informationFlow&show=protocol');
+describe('Data in a viewpoint', () => {
+  it('shows its value beside other values, and grays out the rest', async () => {
+    await open('&show=data&show=protocol');
     await waitFor(() => {
-      expect(labels()).toContain('Information flow · REST');
+      expect(labels()).toContain('Places orders · REST');
     });
-    // A flow without the other property still shows the name.
-    expect(tillLine().classList.contains('is-grayed')).toBe(false);
-    // A plain Relation has neither: gray, and its label gives way.
-    const plain = line('Web Shop relates to Oven Planner');
-    expect(plain.classList.contains('is-grayed')).toBe(true);
-    expect(labels()).not.toContain('REST API');
+    // The till's line has neither: gray, and its label gives way.
+    expect(tillLine().classList.contains('is-grayed')).toBe(true);
   });
 
-  it('counts false and a bad value as not having it', () => {
+  it('counts blank text, lists and objects as not having it', () => {
     const relationship = (value: unknown) => ({
       id: 'r',
       source: 'a',
       target: 'b',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
-      metadata: { informationFlow: value },
-      ...(value === true ? { informationFlow: true } : {}),
+      metadata: { data: value },
     });
-    for (const [value, gray] of [
-      [true, false],
-      [false, true],
-      ['yes', true],
+    for (const [value, text] of [
+      ['Orders', 'Orders'],
+      ['  ', ''],
+      [['a'], ''],
+      [{ a: 1 }, ''],
     ] as const) {
       const [link] = mergeRelationships([relationship(value)]);
       if (!link) throw new Error('no link');
-      expect(isGrayed(link, ['informationFlow'])).toBe(gray);
-      expect(linkText(link, ['informationFlow'])).toBe(gray ? '' : 'Information flow');
+      expect(isGrayed(link, ['data'])).toBe(text === '');
+      expect(linkText(link, ['data'])).toBe(text);
     }
   });
 
-  it('merges Relations with the same value only, and keeps two-way lines apart', () => {
-    const relation = (id: string, informationFlow: boolean, twoWay = false) => ({
+  it('merges Relations whatever their Data, and keeps two-way lines apart', () => {
+    const relation = (id: string, data: string, twoWay = false) => ({
       id,
       source: 'a',
       target: 'b',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
-      metadata: {},
-      ...(informationFlow ? { informationFlow } : {}),
+      metadata: { data },
       ...(twoWay ? { twoWay } : {}),
     });
     const merged = mergeRelationships([
-      relation('f1', true),
-      relation('p1', false),
-      relation('f2', true),
-      relation('p2', false),
-      relation('p3', false),
-      relation('w', false, true),
+      relation('f1', 'Orders'),
+      relation('p1', ''),
+      relation('f2', 'Invoices'),
+      relation('w', 'Orders', true),
     ]);
-    expect(merged.map((link) => [link.informationFlow, link.twoWay, link.count])).toEqual([
-      [true, false, 2],
-      [false, false, 3],
-      [false, true, 1],
+    expect(merged.map((link) => [link.twoWay, link.count])).toEqual([
+      [false, 3],
+      [true, 1],
     ]);
-    expect(merged.map((link) => linkText(link))).toEqual(['×2', '×3', '']);
+    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', 'Orders']);
   });
 
   it('leaves Contains out of it', async () => {
@@ -466,9 +462,9 @@ describe('Information flow in a viewpoint', () => {
       ...(model.graph.edges ?? []),
       { id: 'c1', source: 'till', target: 'shop', relation: 'Contains', label: 'Made-up' },
     ];
-    await open('&show=informationFlow', { graph: { ...model.graph, edges } });
+    await open('&show=data', { graph: { ...model.graph, edges } });
     await waitFor(() => {
-      expect(labels()).toContain('Information flow');
+      expect(labels()).toContain('Places orders');
     });
     expect(canvas().querySelectorAll('.is-grayed').length).toBeGreaterThan(0);
     const contains = [...canvas().querySelectorAll('.react-flow__edge')].filter((edge) =>

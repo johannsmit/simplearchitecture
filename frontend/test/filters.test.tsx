@@ -323,8 +323,8 @@ describe('chips, clearing and the empty result', () => {
 describe('Architecture state on edges', () => {
   const withStates = structuredClone(bakeryModel);
   for (const edge of withStates.graph.edges ?? []) {
-    if (edge.id === 'e5') edge.metadata = { informationFlow: true, architectureState: 'Deprecate' };
-    if (edge.id === 'e6') edge.metadata = { informationFlow: true, architectureState: 'Target' };
+    if (edge.id === 'e5') edge.metadata = { architectureState: 'Deprecate' };
+    if (edge.id === 'e6') edge.metadata = { architectureState: 'Target' };
   }
   const canvas = () => screen.getByRole('region', { name: /^Diagram:/ });
 
@@ -337,9 +337,9 @@ describe('Architecture state on edges', () => {
       [...canvas().querySelectorAll(`.react-flow__edge.${name}`)].map((e) =>
         e.getAttribute('aria-label'),
       );
-    expect(classed('is-deprecate')).toEqual(['Till sends information to Web Shop']);
-    expect(classed('is-target')).toEqual(['Oven Planner sends information to Back Office Server']);
-    expect(canvas().querySelectorAll('.react-flow__edge')).toHaveLength(8);
+    expect(classed('is-deprecate')).toEqual(['Till relates to Web Shop']);
+    expect(classed('is-target')).toEqual(['Oven Planner relates to Back Office Server']);
+    expect(canvas().querySelectorAll('.react-flow__edge')).toHaveLength(6);
   });
 
   it('explains the marks in the legend, and shows the state badge in the details', async () => {

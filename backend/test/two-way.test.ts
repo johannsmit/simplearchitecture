@@ -78,16 +78,14 @@ describe('the metamodel and validation', () => {
     ]);
     const flow = graph.relationships[0];
     if (!flow) throw new Error('fixture');
-    expect(describeRelationship(graph, flow)).toBe(
-      '"Pond" exchanges information both ways with "Pump"',
-    );
+    expect(describeRelationship(graph, flow)).toBe('"Pond" relates both ways to "Pump"');
     // From either end, a two-way relationship is in one "both ways" group.
     for (const id of ['pond', 'pump']) {
       const group = relationshipGroups(graph, id).find(
-        (g) => g.informationFlow && g.direction === 'both',
+        (g) => g.type === 'Relation' && g.direction === 'both',
       );
       expect(group?.direction).toBe('both');
-      expect(group?.heading).toBe('Exchanges information both ways with');
+      expect(group?.heading).toBe('Relates both ways to');
     }
     expect(
       relationshipGroups(graph, 'shed').map((group) => [group.heading, group.rows.length]),
@@ -161,7 +159,7 @@ describe('RelationshipService: direction', () => {
       modeller,
     );
     expect(result.relationship.edge).toMatchObject({ relation: 'Contains', directed: true });
-    expect((await audit())[0]?.details.fields).toEqual(['type', 'informationFlow', 'directed']);
+    expect((await audit())[0]?.details.fields).toEqual(['type', 'directed']);
   });
 
   it('refuses both ways on Contains', async () => {

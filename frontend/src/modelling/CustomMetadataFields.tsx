@@ -15,6 +15,8 @@ interface CustomMetadataFieldsProps {
   invalid: (slot: string) => boolean;
   /** The values a key already has in the model, offered on its value field. */
   valuesOf: (key: string) => readonly string[];
+  /** The custom metadata names in the model, most used first, offered on the key field. */
+  names: readonly string[];
   /** A row was typed in or removed. `slot` is the row's, to clear its error. */
   onEdit: (slot: string, rows: CustomRow[]) => void;
   /** A row was added: focus goes to `focusId` after the render. */
@@ -28,6 +30,11 @@ const noValues: readonly string[] = [];
 /** The rows of custom metadata on an editing form: keys and values, for elements and relationships. */
 export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
   const { rows, saving, slotId, errorId } = props;
+  const keyCounts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.key.trim();
+    keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+  }
   const removeRow = (index: number) => {
     const next = rows[index + 1] ?? rows[index - 1];
     props.onEdit(
@@ -61,16 +68,21 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
         return (
           <div className="meta-row" key={row.id}>
             <div className="meta-key">
-              <input
+              <ValueField
                 id={slotId(slot)}
                 aria-label="Key"
                 spellCheck={false}
                 aria-invalid={invalid || undefined}
                 aria-describedby={invalid ? errorId(slot) : undefined}
                 value={row.key}
+                // A name another row already has would only be refused as used twice.
+                values={props.names.filter(
+                  (name) => name === key || (keyCounts.get(name) ?? 0) === 0,
+                )}
+                label="Key"
                 readOnly={saving}
-                onChange={(event) => {
-                  setRow({ key: event.target.value });
+                onValue={(text) => {
+                  setRow({ key: text });
                 }}
               />
               {row.wasProperty && <span className="tag">Was a property</span>}

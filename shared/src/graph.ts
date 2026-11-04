@@ -10,9 +10,7 @@ import {
   architectureStates,
   canBeTwoWay,
   defaultArchitectureState,
-  canHaveInformationFlow,
   edgeTypes,
-  informationFlowKey,
   hasStandardProperty,
   isEdgeType,
   isNodeType,
@@ -45,8 +43,6 @@ export interface ModelRelationship {
   label?: string;
   /** The edge's Architecture state; Current when it has none (or an unknown one). */
   architectureState: ArchitectureState;
-  /** An Information flow: only `true` on a type that can have it counts, else left out. */
-  informationFlow?: boolean;
   /** The edge's metadata as stored: the Architecture state, description and custom properties. */
   metadata: Readonly<Record<string, unknown>>;
   /**
@@ -126,9 +122,6 @@ export function relationshipOfEdge(edge: JgfEdge, index = 0): ModelRelationship 
     type: edge.relation,
     ...(label === '' ? {} : { label }),
     architectureState: edgeArchitectureState(edge.metadata),
-    ...(edge.metadata?.[informationFlowKey] === true && canHaveInformationFlow(edge.relation)
-      ? { informationFlow: true }
-      : {}),
     metadata: edge.metadata ?? {},
     ...(edge.directed === false && canBeTwoWay(edge.relation) ? { twoWay: true } : {}),
   };
@@ -632,6 +625,64 @@ export function withContainers<T extends Neighbourhood>(
   return { ...hood, hops, relationships: relationshipsAmong(graph, hops, options.types) };
 }
 
+/**
+ * The containers an element is drawn inside, nearest first, as far as they are shown. Stops at a
+ * container already passed, so a damaged chain can't loop.
+ */
+function shownContainers(
+  graph: ModelGraph,
+  id: string,
+  shown: ReadonlyMap<string, unknown>,
+): string[] {
+  const chain: string[] = [];
+  const seen = new Set([id]);
+  for (let up = containerOf(graph, id); up !== undefined && shown.has(up);) {
+    if (seen.has(up)) break;
+    seen.add(up);
+    chain.push(up);
+    up = containerOf(graph, up);
+  }
+  return chain;
+}
+
+/**
+ * Whether a card can be taken off the canvas: never the focused element, nor, when contained
+ * elements are drawn nested, a card the focused element is drawn inside.
+ */
+export function canRemoveFromCanvas(
+  graph: ModelGraph,
+  hood: Neighbourhood,
+  id: string,
+  options: { nest: boolean },
+): boolean {
+  if (id === hood.focusId || !hood.hops.has(id)) return false;
+  return !(options.nest && shownContainers(graph, hood.focusId, hood.hops).includes(id));
+}
+
+/**
+ * A neighbourhood without the cards taken off the canvas, their lines, and, when contained elements
+ * are drawn nested, the cards drawn inside them. Only what is shown changes, never the model. Ids
+ * that can't be removed (see `canRemoveFromCanvas`) or aren't shown are ignored.
+ */
+export function withoutElements<T extends Neighbourhood>(
+  graph: ModelGraph,
+  hood: T,
+  removedIds: readonly string[],
+  options: { nest: boolean; types?: ReadonlySet<EdgeType> },
+): T {
+  const removed = new Set(removedIds.filter((id) => canRemoveFromCanvas(graph, hood, id, options)));
+  if (removed.size === 0) return hood;
+  const hops = new Map<string, number>();
+  for (const [id, hop] of hood.hops) {
+    if (removed.has(id)) continue;
+    if (options.nest && shownContainers(graph, id, hood.hops).some((up) => removed.has(up))) {
+      continue;
+    }
+    hops.set(id, hop);
+  }
+  return { ...hood, hops, relationships: relationshipsAmong(graph, hops, options.types) };
+}
+
 /** Every relationship of the given types (default: all) between two of the elements. */
 function relationshipsAmong(
   graph: ModelGraph,
@@ -669,21 +720,8 @@ export const relationshipVerbs: Record<EdgeType, Record<RelationshipDirection, s
   Contains: { outgoing: 'contains', incoming: 'is contained in', both: 'contains' },
 };
 
-/** How a Relation with Information flow reads: it says more than "relates to". */
-export const informationFlowVerbs: Record<RelationshipDirection, string> = {
-  outgoing: 'sends information to',
-  incoming: 'receives information from',
-  both: 'exchanges information both ways with',
-};
-
-export function relationshipVerb(
-  type: EdgeType,
-  direction: RelationshipDirection,
-  informationFlow = false,
-): string {
-  return informationFlow && canHaveInformationFlow(type)
-    ? informationFlowVerbs[direction]
-    : relationshipVerbs[type][direction];
+export function relationshipVerb(type: EdgeType, direction: RelationshipDirection): string {
+  return relationshipVerbs[type][direction];
 }
 
 function sentenceCase(text: string): string {
@@ -699,34 +737,22 @@ export interface RelationshipRow {
 
 export interface RelationshipGroup {
   type: EdgeType;
-  /** A group of Information flows: worded apart from the other Relations. */
-  informationFlow: boolean;
   direction: RelationshipDirection;
-  /** E.g. "Sends information to". */
+  /** E.g. "Relates to". */
   heading: string;
   rows: RelationshipRow[];
 }
 
 /**
- * An element's relationships in words, grouped per wording in metamodel order (Information flows
- * first, outgoing first), each sorted by the other element's name. Only groups with rows are
- * returned.
+ * An element's relationships in words, grouped per wording in metamodel order (outgoing first),
+ * each sorted by the other element's name. Only groups with rows are returned.
  */
 export function relationshipGroups(graph: ModelGraph, elementId: string): RelationshipGroup[] {
-  const kinds = edgeTypes.flatMap((type) =>
-    canHaveInformationFlow(type)
-      ? [
-          { type, informationFlow: true },
-          { type, informationFlow: false },
-        ]
-      : [{ type, informationFlow: false }],
-  );
-  const groups: RelationshipGroup[] = kinds.flatMap(({ type, informationFlow }) =>
+  const groups: RelationshipGroup[] = edgeTypes.flatMap((type) =>
     (['outgoing', 'incoming', 'both'] as const).map((direction) => ({
       type,
-      informationFlow,
       direction,
-      heading: sentenceCase(relationshipVerb(type, direction, informationFlow)),
+      heading: sentenceCase(relationshipVerb(type, direction)),
       rows: [] as RelationshipRow[],
     })),
   );
@@ -737,11 +763,7 @@ export function relationshipGroups(graph: ModelGraph, elementId: string): Relati
     const otherId = outgoing ? relationship.target : relationship.source;
     const other = graph.elements.get(otherId);
     if (!other) continue;
-    const flow = relationship.informationFlow === true;
-    const group = groups.find(
-      (g) =>
-        g.type === relationship.type && g.informationFlow === flow && g.direction === direction,
-    );
+    const group = groups.find((g) => g.type === relationship.type && g.direction === direction);
     group?.rows.push({ relationship, other, self: otherId === elementId });
   }
   for (const group of groups) {
@@ -752,9 +774,8 @@ export function relationshipGroups(graph: ModelGraph, elementId: string): Relati
 
 export interface RelatedGroup {
   type: EdgeType;
-  informationFlow: boolean;
   direction: RelationshipDirection;
-  /** E.g. "Sends information to". */
+  /** E.g. "Relates to". */
   heading: string;
   /** Each related element once, sorted by name. */
   elements: ModelElement[];
@@ -782,7 +803,6 @@ export function relatedElements(
       }
       return {
         type: group.type,
-        informationFlow: group.informationFlow,
         direction: group.direction,
         heading: group.heading,
         elements,
@@ -831,11 +851,11 @@ export function missingRelatedCount(
   return missing.size;
 }
 
-/** A relationship as a sentence, e.g. `"Portal" sends information to "Order Hub"`. */
+/** A relationship as a sentence, e.g. `"Portal" relates to "Order Hub"`. */
 export function describeRelationship(graph: ModelGraph, relationship: ModelRelationship): string {
   const name = (id: string) => `"${graph.elements.get(id)?.name || id}"`;
   const direction = relationship.twoWay === true ? 'both' : 'outgoing';
-  const verb = relationshipVerb(relationship.type, direction, relationship.informationFlow);
+  const verb = relationshipVerb(relationship.type, direction);
   return `${name(relationship.source)} ${verb} ${name(relationship.target)}`;
 }
 

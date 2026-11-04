@@ -356,7 +356,6 @@ describe('custom metadata through the route', () => {
     const res = await call(target, 'PATCH', url(), { cookie, body });
     expect(res.statusCode).toBe(200);
     expect(res.json<RelationshipChangeResult>().relationship.edge.metadata).toEqual({
-      informationFlow: true,
       protocol: secret,
     });
     const rows = await auditRows();

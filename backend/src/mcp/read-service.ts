@@ -6,15 +6,19 @@ import {
   defaultNeighbourhoodCap,
   edgeTypes,
   findElements,
+  hasStandardEdgeProperty,
   neighbourhood,
   nodeTypes,
   relationshipsOf,
+  relationshipValue,
+  relationTextProperties,
   type EdgeType,
   type ElementFilters,
   type ModelElement,
   type ModelGraph,
   type ModelRelationship,
   type NodeType,
+  type RelationTextProperty,
 } from '@simplearchitecture/shared';
 import { isModelId, ModelUnreadableError, type ModelStore } from '../storage/model-store.js';
 
@@ -67,9 +71,22 @@ function relationshipFields(relationship: ModelRelationship) {
     type: relationship.type,
     ...(relationship.label === undefined ? {} : { label: relationship.label }),
     architectureState: relationship.architectureState,
-    ...(relationship.informationFlow === true ? { informationFlow: true } : {}),
     ...(relationship.twoWay === true ? { twoWay: true } : {}),
+    ...relationTexts(relationship),
   };
+}
+
+/** Identity, Identity Context and Data, on a Relation, when set (as the canvas reads them). */
+function relationTexts(
+  relationship: ModelRelationship,
+): Partial<Record<RelationTextProperty, string>> {
+  const texts: Partial<Record<RelationTextProperty, string>> = {};
+  for (const key of relationTextProperties) {
+    if (!hasStandardEdgeProperty(key, relationship.type)) continue;
+    const value = relationshipValue(relationship, key);
+    if (value !== undefined) texts[key] = value;
+  }
+  return texts;
 }
 
 function byName(a: ModelElement, b: ModelElement): number {
@@ -128,10 +145,8 @@ export class McpReadService {
       EdgeType,
       number
     >;
-    let informationFlows = 0;
     for (const relationship of graph.relationships) {
       relationshipsByType[relationship.type] += 1;
-      if (relationship.informationFlow === true) informationFlows += 1;
     }
     return {
       id: modelId,
@@ -140,7 +155,6 @@ export class McpReadService {
       elementsByType,
       relationships: graph.relationships.length,
       relationshipsByType,
-      informationFlows,
     };
   }
 

@@ -43,14 +43,18 @@ Several Relation edges may link the same two elements in the same direction.
 - Architecture state (Options: Deprecate, Current, Target)
 
 **Relation edges**
-- Information flow (yes or no; default no). It doesn't change how the edge is depicted. This is stored as `"informationFlow": true`.
+- Identity (free text): the active identity used for the exchange. Stored as `"identity"`.
+- Identity Context (free text): additional context, such as the original user's ID. Stored as `"identityContext"`.
+- Data (free text): the data exchanged, sent or retrieved over the relationship. Stored as `"data"`.
+
+Identity, Identity Context and Data are optional and apply to Relation edges only. On a Contains edge, such a key is a validation warning, and the value is kept as it is.
 
 Custom metadata is allowed to be added to any edge as needed
 
 ## Viewpoints
-A viewpoint is a selection of relationship properties, for example Information flow: Architecture state, Information flow or any custom metadata found on the model's edges.
+A viewpoint is a selection of relationship properties: Architecture state, Identity, Identity Context, Data or any custom metadata found on the model's edges.
 - With nothing selected, an edge shows its label, or nothing. An edge never shows its type name.
-- With properties selected, an edge that has at least one of them shows their values instead of its label. An edge with Information flow set to yes shows "Information flow"; a no counts as not having it. Any other edge is grayed out.
+- With properties selected, an edge that has at least one of them shows their values instead of its label. Any other edge is grayed out.
 - Contains edges are never grayed out and keep their label.
 - A viewpoint is part of the address, so it can be shared as a link. It changes how edges look, never where elements are.
 
@@ -60,4 +64,4 @@ This metamodel is always exchanged using the JSON Graph Format (JGF v2, https://
 - Nodes are an object keyed by node id. The node type and all properties go in the node's `metadata`.
 - The edge type goes in the standard JGF `relation` field (`Relation` or `Contains`).
 - The direction goes in the standard JGF `directed` field of the edge: `false` for a two-way Relation edge (see Direction above).
-- Older files with `Information flow` or `Integration` still import: `Information flow` becomes a Relation with Information flow set to yes, and `Integration` becomes a Relation.
+- Older files with `Information flow` or `Integration` still import: both become a Relation. An `Information flow` edge, or an edge with `"informationFlow": true`, that has a label also gets that label as its Data, unless it has Data already; the label stays. `"informationFlow"` itself is no longer stored.

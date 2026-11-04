@@ -1,16 +1,15 @@
 import {
   analyseContainment,
   canBeTwoWay,
-  canHaveInformationFlow,
   checkStandardProperty,
   containsType,
   defaultArchitectureState,
   edgeTypes,
   hasStandardEdgeProperty,
   hasStandardProperty,
-  informationFlowKey,
   isEdgeType,
   isNodeType,
+  isRelationTextProperty,
   isStandardPropertyKey,
   nodeTypeKey,
   nodeTypes,
@@ -201,6 +200,8 @@ function checkNodeMetadata(
       continue;
     }
     if (key === nodeTypeKey || !isStandardPropertyKey(key)) continue; // custom metadata: any value
+    // A key standard on edges only (such as data) is ordinary custom metadata on a node.
+    if (!nodeTypes.some((type) => hasStandardProperty(type, key))) continue;
     const field = `metadata.${key}`;
     if (nodeType && !hasStandardProperty(nodeType, key)) {
       issues.add(
@@ -228,7 +229,7 @@ function checkNodeMetadata(
  *
  * A bad value is a warning, never an error: edge properties became standard after models were
  * stored, and a stored model must stay readable. The graph reads a bad Architecture state as
- * Current and a bad Information flow as no. Information flow applies to a Relation only.
+ * Current. Identity, Identity Context and Data apply to a Relation only.
  */
 function checkEdgeMetadata(
   issues: IssueList,
@@ -241,26 +242,18 @@ function checkEdgeMetadata(
       issues.add('error', subject, `metadata.${key}`, 'reserved-key', 'is a reserved key');
       continue;
     }
-    if (key === informationFlowKey) {
-      const field = `metadata.${key}`;
-      if (edgeType !== undefined && !canHaveInformationFlow(edgeType)) {
+    if (edgeType !== undefined && isRelationTextProperty(key)) {
+      // Custom metadata before it became standard: kept and read as stored, never an error.
+      if (!hasStandardEdgeProperty(key, edgeType)) {
         issues.add(
           'warning',
           subject,
-          field,
-          'information-flow-not-for-type',
-          `doesn't apply to a ${edgeType} relationship; it is read as no`,
+          `metadata.${key}`,
+          'property-not-for-type',
+          `doesn't apply to a ${edgeType} relationship; it is kept as it is`,
         );
-      } else if (typeof value !== 'boolean') {
-        issues.add(
-          'warning',
-          subject,
-          field,
-          'invalid-property-value',
-          'must be true or false; it is read as no',
-        );
+        continue;
       }
-      continue;
     }
     if (!isStandardPropertyKey(key) || !hasStandardEdgeProperty(key, edgeType)) continue;
     const check = checkStandardProperty(key, value);

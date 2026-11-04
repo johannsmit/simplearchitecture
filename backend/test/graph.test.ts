@@ -245,10 +245,8 @@ describe('neighbourhood', () => {
 
 describe('relationships in words', () => {
   it('has a verb per type and direction', () => {
-    expect(relationshipVerb('Relation', 'outgoing', true)).toBe('sends information to');
-    expect(relationshipVerb('Relation', 'incoming', true)).toBe('receives information from');
-    expect(relationshipVerb('Relation', 'both', true)).toBe('exchanges information both ways with');
-    expect(relationshipVerb('Contains', 'outgoing', true)).toBe('contains');
+    expect(relationshipVerb('Relation', 'both')).toBe('relates both ways to');
+    expect(relationshipVerb('Contains', 'outgoing')).toBe('contains');
     expect(relationshipVerb('Relation', 'outgoing')).toBe('relates to');
     expect(relationshipVerb('Relation', 'incoming')).toBe('is related to');
   });
@@ -256,20 +254,17 @@ describe('relationships in words', () => {
   it('groups an element’s relationships per type and direction, sorted by name', () => {
     const groups = relationshipGroups(graph, 'shop');
     expect(groups.map((g) => [g.heading, g.rows.map((r) => r.other.name)])).toEqual([
-      ['Sends information to', ['Ordering']],
-      ['Receives information from', ['Customer', 'Till']],
-      ['Relates to', ['Oven Planner', 'Web Shop']],
+      ['Relates to', ['Ordering', 'Oven Planner', 'Web Shop']],
+      ['Is related to', ['Customer', 'Till']],
     ]);
-    const self = groups[2]?.rows.find((row) => row.self);
+    const self = groups[0]?.rows.find((row) => row.self);
     expect(self?.other.id).toBe('shop');
     expect(relationshipGroups(graph, 'lonely')).toEqual([]);
   });
 
   it('describes a relationship as a sentence', () => {
     const first = graph.relationships[0];
-    expect(first && describeRelationship(graph, first)).toBe(
-      '"Customer" sends information to "Web Shop"',
-    );
+    expect(first && describeRelationship(graph, first)).toBe('"Customer" relates to "Web Shop"');
   });
 });
 
@@ -323,10 +318,7 @@ describe('related elements and adding them', () => {
     });
     expect(
       relatedElements(doubled, 'a').map((g) => [g.heading, g.elements.map((e) => e.id)]),
-    ).toEqual([
-      ['Sends information to', ['b']],
-      ['Relates to', ['c']],
-    ]);
+    ).toEqual([['Relates to', ['b', 'c']]]);
     expect(relatedElements(doubled, 'a', new Set(['Contains']))).toEqual([]);
     expect(relatedElements(doubled, 'nope')).toEqual([]);
   });
@@ -375,8 +367,8 @@ describe('related elements and adding them', () => {
           g.elements.map((e) => e.id),
         ]);
       expect(list(new Set(['a', 'b']))).toEqual([
-        ['Receives information from', ['d']],
         ['Relates to', ['c']],
+        ['Is related to', ['d']],
       ]);
       expect(list(new Set(['a', 'c']), new Set(['Contains']))).toEqual([]);
       expect(list(new Set(['a', 'b', 'c', 'd']))).toEqual([]);

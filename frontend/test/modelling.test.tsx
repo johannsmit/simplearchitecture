@@ -547,7 +547,7 @@ describe('element of a node', () => {
 describe('custom metadata rows on the element form', () => {
   const add = (form: HTMLElement, key: string, value: string) => {
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const keys = within(form).getAllByRole('textbox', { name: 'Key' });
+    const keys = within(form).getAllByLabelText('Key');
     fireEvent.change(keys.at(-1) as HTMLElement, { target: { value: key } });
     const name = `Value of ${key.trim()}`;
     fireEvent.change(within(form).getByRole('textbox', { name }), { target: { value } });
@@ -572,9 +572,9 @@ describe('custom metadata rows on the element form', () => {
     const { form, fetchMock } = await opened('till');
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
     await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByRole('textbox', { name: 'Key' }));
+      expect(document.activeElement).toBe(within(form).getByLabelText('Key'));
     });
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Key' }), {
+    fireEvent.change(within(form).getByLabelText('Key'), {
       target: { value: ' protocol ' },
     });
     fireEvent.change(within(form).getByRole('textbox', { name: 'Value of protocol' }), {
@@ -606,11 +606,11 @@ describe('custom metadata rows on the element form', () => {
     add(form, 'type', 'x');
     save(form);
     const message = await within(form).findByText('“type” is reserved.');
-    const key = within(form).getByRole('textbox', { name: 'Key' });
+    const key = within(form).getByLabelText('Key');
     expect(key.getAttribute('aria-invalid')).toBe('true');
-    expect(document.getElementById(key.getAttribute('aria-describedby') ?? '')).toBe(
-      message.closest('.field-error'),
-    );
+    // The error first, then the suggestions hint when the model has names to offer.
+    const describedBy = (key.getAttribute('aria-describedby') ?? '').split(' ')[0] ?? '';
+    expect(document.getElementById(describedBy)).toBe(message.closest('.field-error'));
     expect(message.closest('.meta-row')).not.toBeNull();
     expect(patches(fetchMock)).toHaveLength(0);
   });

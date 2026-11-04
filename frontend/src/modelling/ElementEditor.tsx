@@ -1,4 +1,5 @@
 import {
+  elementMetadataNames,
   elementPropertyValues,
   isIsoCountryCode,
   isStandardPropertyOf,
@@ -699,6 +700,7 @@ export function ElementEditor(props: ElementEditorProps) {
           renderError={(slot) => <FieldError slot={slot} errors={errors} />}
           invalid={(slot) => errors.has(slot)}
           valuesOf={(key) => (isStandardPropertyOf(draft.type, key) ? [] : valuesOf(key))}
+          names={elementMetadataNames(graph)}
           onEdit={(slot, rows) => {
             edit(slot, { ...draft, custom: rows });
           }}

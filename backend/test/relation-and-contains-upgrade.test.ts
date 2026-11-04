@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { buildModelGraph, type JgfDocument, type ModelAuthor } from '@simplearchitecture/shared';
+import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
 import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -133,8 +133,11 @@ describe('migration 006, tried from the outside', () => {
     const read = await store.get(id);
     if (read === undefined) throw new Error('gone');
     expect(validateJgf(read).valid).toBe(true);
-    expect(read.graph.edges).toEqual(
-      (convertOlderTypes(document).document as JgfDocument).graph.edges,
+    // As the import converts it; an old flow without metadata got an object from 006, now empty.
+    const metadataOrNone = (edges: JgfDocument['graph']['edges']) =>
+      (edges ?? []).map((edge) => ({ ...edge, metadata: edge.metadata ?? {} }));
+    expect(metadataOrNone(read.graph.edges)).toEqual(
+      metadataOrNone((convertOlderTypes(document).document as JgfDocument).graph.edges),
     );
     await db.close();
   });
@@ -283,7 +286,7 @@ describe('migration 006, tried from the outside', () => {
     await db.close();
   });
 
-  it('turns an old row into a plain one when it is edited, keeping the flow', async () => {
+  it('turns an old row into a plain Relation when it is edited, without Information flow', async () => {
     const { db, id } = await olderDatabase(
       model([{ id: 'f', source: 'a', target: 'b', relation: 'Information flow' }]),
     );
@@ -297,19 +300,16 @@ describe('migration 006, tried from the outside', () => {
       { version: 1, label: 'Made-up' },
       author,
     );
-    expect(saved.relationship.edge).toMatchObject({
-      relation: 'Relation',
-      metadata: { informationFlow: true },
-    });
-    expect((await rowsOf(db, id))[0]).toMatchObject({
-      relation: 'Relation',
-      metadata: { informationFlow: true },
-    });
+    expect(saved.relationship.edge.relation).toBe('Relation');
+    expect(saved.relationship.edge.metadata ?? {}).toEqual({});
+    const [row] = await rowsOf(db, id);
+    expect(row?.relation).toBe('Relation');
+    expect(row?.metadata ?? {}).toEqual({});
     await db.close();
   });
 
-  // Any edit of a Contains dropped a custom value under this name, unasked.
-  it('leaves a custom informationFlow text on a Contains when its label changes', async () => {
+  // Information flow is no longer a property: every model reads without the key, as after 009.
+  it('drops a custom informationFlow text on a Contains, as every model is read now', async () => {
     const { db, id } = await olderDatabase(
       model([
         {
@@ -329,7 +329,7 @@ describe('migration 006, tried from the outside', () => {
       { version: 1, label: 'Made-up label' },
       author,
     );
-    expect(saved.relationship.edge.metadata).toEqual({ informationFlow: 'Made-up' });
+    expect(saved.relationship.edge.metadata).toEqual({});
     await db.close();
   });
 });
@@ -352,7 +352,7 @@ describe('the shipped OEF mapping', () => {
   </relationships>
 </model>`;
 
-  it('sets Information flow on Flow only, keeps a property of that name apart, and stays valid', () => {
+  it('maps Flow to a Relation, keeps a property named Information flow apart, and stays valid', () => {
     const { jgf } = convertOef(xml, mapping);
     expect(validateJgf(jgf).valid).toBe(true);
     const edges = jgf.graph.edges ?? [];
@@ -362,19 +362,12 @@ describe('the shipped OEF mapping', () => {
       'Relation',
       'Contains',
     ]);
-    expect(edges[0]?.metadata).toMatchObject({
-      informationFlow: true,
-      oefInformationFlow: 'Made-up',
-    });
+    expect(edges[0]?.metadata).toMatchObject({ oefInformationFlow: 'Made-up' });
     expect(edges[1]?.metadata).toMatchObject({ oefInformationFlow: 'Made-up' });
-    expect(edges[1]?.metadata).not.toHaveProperty('informationFlow');
+    for (const edge of edges) expect(edge.metadata).not.toHaveProperty('informationFlow');
+    // No names in the file, so no Data either.
+    for (const edge of edges) expect(edge.metadata).not.toHaveProperty('data');
     expect(edges[2]?.directed).toBe(false);
-    expect(buildModelGraph(jgf).relationships.map((r) => r.informationFlow === true)).toEqual([
-      true,
-      false,
-      false,
-      false,
-    ]);
   });
 
   it('has only the two types in the file itself', () => {
@@ -452,21 +445,21 @@ describe('through the routes', () => {
           target: 'b',
           relation: 'Relation',
           label: 'Orders',
-          metadata: { informationFlow: true, protocol: 'REST' },
+          metadata: { data: 'Orders', identity: 'made-up-client', protocol: 'REST' },
         },
         {
-          id: 'no',
+          id: 'context',
           source: 'a',
           target: 'b',
           relation: 'Relation',
-          metadata: { informationFlow: false },
+          metadata: { identityContext: 'The made-up caller' },
         },
         {
           id: 'bad',
           source: 'a',
           target: 'b',
           relation: 'Relation',
-          metadata: { informationFlow: 'Made-up' },
+          metadata: { data: 7 },
         },
         {
           id: 'two',
@@ -482,7 +475,7 @@ describe('through the routes', () => {
           source: 'a',
           target: 'd',
           relation: 'Contains',
-          metadata: { informationFlow: true },
+          metadata: { data: 'Kept on a Contains' },
         },
       ],
     },
@@ -555,13 +548,13 @@ describe('through the routes', () => {
       [body.model.id],
     );
     expect(rows).toEqual([
-      { relation: 'Relation', metadata: { informationFlow: true }, directed: false },
+      { relation: 'Relation', metadata: { data: 'L' }, directed: false },
       { relation: 'Relation', metadata: { protocol: 'REST' }, directed: null },
       { relation: 'Contains', metadata: null, directed: null },
     ]);
   });
 
-  it('informationFlow is Modeller-only, boolean-only, and audited by name', async () => {
+  it('Data is Modeller-only, text-only, and audited by name; Information flow is refused', async () => {
     const seeded = await PostgresModelStore.open(db, quiet);
     const { id } = await seeded.save(
       model([
@@ -572,53 +565,45 @@ describe('through the routes', () => {
     );
     const patch = `/api/models/${id}/relationships/r`;
     const post = `/api/models/${id}/relationships`;
-    const flow = { source: 'b', target: 'c', type: 'Relation', informationFlow: true };
+    const relation = { source: 'b', target: 'c', type: 'Relation' };
 
     app = await buildTestApp(
       {},
       idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) }),
     );
-    expect(
-      (await call(app, 'PATCH', patch, undefined, { version: 1, informationFlow: true }))
-        .statusCode,
-    ).toBe(401);
-    expect((await call(app, 'POST', post, undefined, flow)).statusCode).toBe(401);
+    expect((await call(app, 'PATCH', patch, undefined, { version: 1, data: 'x' })).statusCode).toBe(
+      401,
+    );
+    expect((await call(app, 'POST', post, undefined, relation)).statusCode).toBe(401);
     await app.close();
 
     const viewer = await signedIn(['Viewer']);
     expect(
-      (
-        await call(viewer.target, 'PATCH', patch, viewer.cookie, {
-          version: 1,
-          informationFlow: true,
-        })
-      ).statusCode,
+      (await call(viewer.target, 'PATCH', patch, viewer.cookie, { version: 1, data: 'x' }))
+        .statusCode,
     ).toBe(403);
-    expect((await call(viewer.target, 'POST', post, viewer.cookie, flow)).statusCode).toBe(403);
+    expect((await call(viewer.target, 'POST', post, viewer.cookie, relation)).statusCode).toBe(403);
     await viewer.target.close();
 
     const { target, cookie } = await signedIn(['Modeller']);
     const logs = captureLogs(target);
-    for (const value of ['true', 1, null, [], {}]) {
-      const refused = await call(target, 'PATCH', patch, cookie, {
-        version: 1,
-        informationFlow: value,
-      });
+    for (const value of [true, 1, [], {}]) {
+      const refused = await call(target, 'PATCH', patch, cookie, { version: 1, data: value });
       expect(refused.statusCode, JSON.stringify(value)).toBe(422);
-      expect(refused.json<{ fields: { field: string }[] }>().fields[0]?.field).toBe(
-        'informationFlow',
-      );
+      expect(refused.json<{ fields: { field: string }[] }>().fields[0]?.field).toBe('data');
     }
-    const onPost = await call(target, 'POST', post, cookie, { ...flow, informationFlow: 'yes' });
+    for (const body of [
+      { version: 1, informationFlow: true },
+      { version: 1, metadata: { informationFlow: true } },
+      { version: 1, metadata: { data: 'x' } },
+    ]) {
+      expect((await call(target, 'PATCH', patch, cookie, body)).statusCode).toBe(422);
+    }
+    const onPost = await call(target, 'POST', post, cookie, { ...relation, informationFlow: true });
     expect(onPost.statusCode).toBe(422);
-    const throughMetadata = await call(target, 'PATCH', patch, cookie, {
-      version: 1,
-      metadata: { informationFlow: true },
-    });
-    expect(throughMetadata.statusCode).toBe(422);
     const onContains = await call(target, 'PATCH', `/api/models/${id}/relationships/c`, cookie, {
       version: 1,
-      informationFlow: true,
+      data: 'x',
     });
     expect(onContains.statusCode).toBe(422);
 
@@ -641,15 +626,17 @@ describe('through the routes', () => {
 
     const saved = await call(target, 'PATCH', patch, cookie, {
       version: 1,
-      informationFlow: true,
+      data: 'made-up-data',
       metadata: { secretish: 'made-up-value' },
     });
     expect(saved.statusCode).toBe(200);
     const [audit] = await db.query<{ details: { fields: string[] } }>(
       `select details from audit where relationship_id = 'r' order by id desc limit 1`,
     );
-    expect(audit?.details.fields.sort()).toEqual(['informationFlow', 'metadata.secretish']);
+    expect(audit?.details.fields.sort()).toEqual(['data', 'metadata.secretish']);
     expect(JSON.stringify(audit)).not.toContain('made-up-value');
+    expect(JSON.stringify(audit)).not.toContain('made-up-data');
     expect(logs.join('\n')).not.toContain('made-up-value');
+    expect(logs.join('\n')).not.toContain('made-up-data');
   });
 });

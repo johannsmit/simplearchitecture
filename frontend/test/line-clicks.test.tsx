@@ -128,7 +128,7 @@ describe('a click on a line or its label', () => {
       expect(
         await within(details()).findByRole('heading', {
           level: 2,
-          name: 'Hub sends information to Gateway',
+          name: 'Hub relates to Gateway',
         }),
       ).toBeTruthy();
     },

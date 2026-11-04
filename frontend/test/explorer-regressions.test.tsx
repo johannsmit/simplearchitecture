@@ -338,10 +338,10 @@ describe('regressions', () => {
         '[role="treeitem"][aria-selected], button.rel, [role="menuitem"], #model-button',
       ),
     ];
-    // Tree rows, the customer's relationship, the shop's 6 related items (only those not on the
+    // Tree rows, the customer's relationship, the shop's 4 related items (only those not on the
     // canvas) and the model picker.
-    expect(controls.length).toBeGreaterThanOrEqual(8);
-    expect(controls.filter((el) => el.getAttribute('role') === 'menuitem')).toHaveLength(6);
+    expect(controls.length).toBeGreaterThanOrEqual(6);
+    expect(controls.filter((el) => el.getAttribute('role') === 'menuitem')).toHaveLength(4);
     const mismatches = controls
       .map((el) => [normalise(el.textContent), normalise(el.getAttribute('aria-label') ?? '')])
       .filter(([visible, name]) => visible !== '' && !name?.includes(visible ?? ''));
@@ -367,7 +367,7 @@ describe('regressions', () => {
     renderAt(elementUrl(bakeryId, 'shop'));
     const details = await screen.findByRole('complementary', { name: 'Details' });
     const till = within(details).getByRole('button', {
-      name: 'Receives information from Till, Application',
+      name: 'Is related to Till, Application',
     });
     act(() => {
       till.focus();

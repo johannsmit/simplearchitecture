@@ -4,7 +4,17 @@
  * and a future MCP server filter the same way.
  */
 import { compareNames, normaliseForSearch, type ModelElement, type ModelGraph } from './graph.js';
-import { isStandardPropertyKey, nodeTypeKey, standardProperties } from './metamodel.js';
+import {
+  isStandardPropertyOf,
+  nodeTypeKey,
+  nodeTypes,
+  standardProperties,
+  type StandardPropertyKey,
+} from './metamodel.js';
+
+/** A standard property of some element type; a key standard on edges only is custom here. */
+const isElementStandardKey = (key: string): key is StandardPropertyKey =>
+  nodeTypes.some((type) => isStandardPropertyOf(type, key));
 
 /** One value of a field, with the number of elements that have it. */
 export interface FilterValueCount {
@@ -93,7 +103,7 @@ export function filterFields(graph: ModelGraph): FilterField[] {
     for (const key of Object.keys(element.metadata)) {
       if (!isFilterableKey(key)) continue;
       const raw = element.metadata[key];
-      if (typeof raw === 'object' && raw !== null && !isStandardPropertyKey(key)) {
+      if (typeof raw === 'object' && raw !== null && !isElementStandardKey(key)) {
         structured.add(key);
         continue;
       }
@@ -111,7 +121,7 @@ export function filterFields(graph: ModelGraph): FilterField[] {
   const fields: FilterField[] = [];
   for (const [key, values] of counts) {
     if (structured.has(key)) continue;
-    const standard = isStandardPropertyKey(key);
+    const standard = isElementStandardKey(key);
     const rule = standard ? standardProperties[key].value : undefined;
     const options: readonly string[] = rule?.kind === 'choice' ? rule.options : [];
     const list = [...values].map(([value, count]) => ({ value, count }));

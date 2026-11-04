@@ -1,8 +1,8 @@
 import {
   canBeTwoWay,
-  canHaveInformationFlow,
-  informationFlowKey,
-  informationFlowLabel,
+  hasStandardEdgeProperty,
+  relationTextProperties,
+  standardProperties,
   type ModelGraph,
   type ModelRelationship,
 } from '@simplearchitecture/shared';
@@ -11,10 +11,10 @@ import { Link } from 'react-router';
 import { Icon } from '../../icons';
 import { EdgeSample, relationshipTypeLine, StateBadge, TypeMark } from '../../metamodel-ui';
 import { nameOf, relationshipSentence } from '../../modelling/relationships';
-import { Description, MetadataValue } from './DetailsPanel';
+import { Description, MetadataValue, PropertyValue } from './DetailsPanel';
 
 /** Metadata shown in its own row above, not under "Custom metadata". */
-const ownRows = new Set(['description', 'architectureState', informationFlowKey]);
+const ownRows = new Set(['description', 'architectureState']);
 
 interface RelationshipDetailsProps {
   graph: ModelGraph;
@@ -47,8 +47,12 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   const sentence = relationshipSentence(graph, relationship);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
+  // Identity, Identity Context and Data on a Relation; elsewhere such keys stay custom metadata.
+  const texts = relationTextProperties.filter((key) =>
+    hasStandardEdgeProperty(key, relationship.type),
+  );
   const other = Object.entries(metadata)
-    .filter(([key]) => !ownRows.has(key))
+    .filter(([key]) => !ownRows.has(key) && !(texts as readonly string[]).includes(key))
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   // A two-way relationship has no from and to: its ends are only in the order stored.
   const twoWay = relationship.twoWay === true;
@@ -133,12 +137,6 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
               <EdgeSample type={relationship.type} twoWay={twoWay} /> {relationship.type}
             </dd>
           </div>
-          {canHaveInformationFlow(relationship.type) && (
-            <div>
-              <dt>{informationFlowLabel}</dt>
-              <dd>{relationship.informationFlow === true ? 'Yes' : 'No'}</dd>
-            </div>
-          )}
           {canBeTwoWay(relationship.type) && (
             <div>
               <dt>Direction</dt>
@@ -151,6 +149,16 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
               <StateBadge state={state} />
             </dd>
           </div>
+          {texts.map((key) => (
+            <div key={key}>
+              <dt>{standardProperties[key].label}</dt>
+              <dd>
+                <PropertyValue
+                  row={{ key, label: standardProperties[key].label, value: metadata[key] }}
+                />
+              </dd>
+            </div>
+          ))}
         </dl>
       </section>
 

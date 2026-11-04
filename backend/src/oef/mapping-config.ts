@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  canHaveInformationFlow,
   checkStandardProperty,
   edgeTypes,
+  hasStandardEdgeProperty,
   isStandardPropertyKey,
   nodeTypeKey,
   nodeTypes,
@@ -80,15 +80,22 @@ const relationshipRule = z
       .min(1)
       .optional(),
     relation: edgeType,
-    /** Optional: sets Information flow on the imported Relation (Flow). */
+    /**
+     * Optional, Relation only: the imported relationship's name (its label) also becomes its Data,
+     * where Information flow once was set. It keeps its older name, so existing mapping files
+     * still load.
+     */
     informationFlow: flag.optional(),
     /** Optional: swap source and target on import (the rule still matches the OEF direction). */
     reverse: flag.optional(),
   })
-  .refine((rule) => rule.informationFlow !== true || canHaveInformationFlow(rule.relation), {
-    path: ['informationFlow'],
-    message: 'only applies to a type that can have it (Relation)',
-  });
+  .refine(
+    (rule) => rule.informationFlow !== true || hasStandardEdgeProperty('data', rule.relation),
+    {
+      path: ['informationFlow'],
+      message: 'only applies to a type that can have it (Relation)',
+    },
+  );
 
 const propertyMapping = z
   .strictObject({

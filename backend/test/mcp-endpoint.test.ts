@@ -56,7 +56,7 @@ const garden: JgfDocument = {
         target: 'spade',
         relation: 'Relation',
         label: 'digs with',
-        metadata: { informationFlow: true },
+        metadata: { data: 'Soil depth', identity: 'Made-up gardener' },
       },
       { id: 'r2', source: 'spade', target: 'bed-0', relation: 'Relation', directed: false },
     ],
@@ -287,7 +287,6 @@ describe('the read tools', () => {
       },
       relationships: 4,
       relationshipsByType: { Relation: 2, Contains: 2 },
-      informationFlows: 1,
     });
   });
 
@@ -369,7 +368,8 @@ describe('the read tools', () => {
           id: 'r1',
           type: 'Relation',
           label: 'digs with',
-          informationFlow: true,
+          identity: 'Made-up gardener',
+          data: 'Soil depth',
           direction: 'incoming',
           other: { id: 'gardener', name: 'Gardener', type: 'Stakeholder' },
         },

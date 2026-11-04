@@ -381,19 +381,13 @@ describe('details panel', () => {
     const headings = within(panel)
       .getAllByRole('heading', { level: 4 })
       .map((h) => h.textContent);
-    expect(headings).toEqual([
-      'Sends information to 4',
-      'Receives information from 2',
-      'Relates to 2',
-    ]);
+    expect(headings).toEqual(['Relates to 6', 'Is related to 2']);
     expect(
       within(panel).getByRole('button', {
-        name: 'Receives information from Customer, Stakeholder, "Places orders"',
+        name: 'Is related to Customer, Stakeholder, "Places orders"',
       }),
     ).toBeTruthy();
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Receives information from Till, Application' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Is related to Till, Application' }));
     expect(currentLocation()).toBe(elementUrl('till'));
     expect(await screen.findByRole('heading', { level: 2, name: 'Till' })).toBeTruthy();
   });
@@ -417,7 +411,7 @@ describe('navigation', () => {
     const back = screen.getByRole('button', { name: 'Back' });
     expect(back).toHaveProperty('disabled', true);
 
-    fireEvent.click(screen.getByRole('button', { name: /^Sends information to Web Shop/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Relates to Web Shop/ }));
     await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
     const trail = screen.getByRole('navigation', { name: 'Visited elements' });
     expect(within(trail).getByRole('link', { name: 'Customer' })).toBeTruthy();
@@ -595,9 +589,9 @@ describe('canvas', () => {
     const edges = [...canvas().querySelectorAll('.react-flow__edge')].map((edge) =>
       edge.getAttribute('aria-label'),
     );
-    // e3 and e8 are parallel and merged into one edge; a flow and a plain Relation stay apart.
-    expect(edges).toHaveLength(8);
-    expect(edges).toContain('Web Shop sends information to Oven Planner');
+    // e3, e4 and e8 are parallel and merged into one edge, as are e7 and e9.
+    expect(edges).toHaveLength(6);
+    expect(edges).toContain('Web Shop relates to Oven Planner');
     expect(edges).toContain('Web Shop relates to Oven Planner');
   });
 
@@ -704,7 +698,7 @@ describe('related elements popup', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true');
     const menu = screen.getByRole('menu', { name: 'Not on the canvas: related to Web Shop' });
     const groups = within(menu).getAllByRole('group');
-    // "Receives information from" (the customer) is left out: the customer is on the canvas.
+    // "Is related to" (the customer) is left out: the customer is on the canvas.
     expect(
       groups.map((group) => [
         group.getAttribute('aria-label'),
@@ -714,21 +708,14 @@ describe('related elements popup', () => {
       ]),
     ).toEqual([
       [
-        'Sends information to',
+        'Relates to',
         [
           'Back Office Server, Infrastructure, add to canvas',
           'Order to bake, Business, add to canvas',
           'Oven Planner, Application, add to canvas',
         ],
       ],
-      ['Receives information from', ['Till, Application, add to canvas']],
-      [
-        'Relates to',
-        [
-          'Back Office Server, Infrastructure, add to canvas',
-          'Oven Planner, Application, add to canvas',
-        ],
-      ],
+      ['Is related to', ['Till, Application, add to canvas']],
     ]);
     expect(within(menu).queryByText('on canvas')).toBeNull();
     // Focus starts on the first item; arrows and End move; Esc closes and returns focus.
@@ -770,7 +757,7 @@ describe('related elements popup', () => {
       const edges = [...canvas().querySelectorAll('.react-flow__edge')].map((e) =>
         e.getAttribute('aria-label'),
       );
-      expect(edges).toContain('Web Shop sends information to Oven Planner');
+      expect(edges).toContain('Web Shop relates to Oven Planner');
     });
     // One fewer missing on the shop; the planner misses the server. Focus goes back to the count
     // button it was added from.
@@ -1024,7 +1011,7 @@ describe('Contains: nesting on the canvas', () => {
     expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height - 16);
     expect(edgeLabels()).not.toContain('Back Office Server contains Till');
     // Other relationships still draw.
-    expect(edgeLabels()).toContain('Oven Planner sends information to Back Office Server');
+    expect(edgeLabels()).toContain('Oven Planner relates to Back Office Server');
     // Legend: the switch is on.
     expect((nestSwitch() as HTMLInputElement).checked).toBe(true);
     // Details panel groups.

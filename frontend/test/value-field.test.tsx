@@ -383,7 +383,7 @@ async function openShop() {
 
 const newRow = (form: HTMLElement, name: string) => {
   fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-  const key = within(form).getAllByRole('textbox', { name: 'Key' }).at(-1) as HTMLElement;
+  const key = within(form).getAllByLabelText('Key').at(-1) as HTMLElement;
   fireEvent.change(key, { target: { value: name } });
   return key;
 };
@@ -392,10 +392,12 @@ describe('custom rows', () => {
   it('follows the key as it is now, and never touches the value', async () => {
     const { form } = await openShop();
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const key = within(form).getAllByRole('textbox', { name: 'Key' }).at(-1) as HTMLElement;
+    const key = within(form).getAllByLabelText('Key').at(-1) as HTMLElement;
     // No key: a plain text field.
     expect(within(form).getByRole('textbox', { name: 'Value of the new field' })).toBeDefined();
     fireEvent.change(key, { target: { value: ' zone ' } });
+    // Leaving the key closes its own list of names.
+    fireEvent.blur(key);
     const value = within(form)
       .getAllByRole<HTMLInputElement>('combobox', { name: 'Value of zone' })
       .at(-1) as HTMLInputElement;
@@ -441,6 +443,51 @@ describe('custom rows', () => {
     const fields = within(relationship).getAllByRole('combobox', { name: 'Value of protocol' });
     fireEvent.click(fields.at(-1) as HTMLElement);
     expect(offered()).toEqual(['REST']);
+  });
+});
+
+describe('metadata names', () => {
+  it('offers the names elements have, not those the form already has, and narrows as you type', async () => {
+    const server = api(withData());
+    stubApi(modeller, server.handler);
+    renderAt(`/modelling/models/${bakeryId}/elements/till?depth=1`);
+    const form = await screen.findByRole('form', { name: /^Edit / });
+    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
+    const key = within(form).getAllByLabelText('Key').at(-1) as HTMLInputElement;
+    expect(key.getAttribute('role')).toBe('combobox');
+    fireEvent.click(key);
+    // zone and protocol are on Till already; standard keys and archimateType are never names.
+    expect(offered()).toEqual(['hostingModel', 'multi']);
+    fireEvent.change(key, { target: { value: 'MU' } });
+    expect(offered()).toEqual(['multi']);
+    fireEvent.keyDown(key, { key: 'ArrowDown' });
+    fireEvent.keyDown(key, { key: 'Enter' });
+    expect(key.value).toBe('multi');
+    expect(list()).toBeNull();
+  });
+
+  it('always takes a new name as typed', async () => {
+    const { form } = await openShop();
+    const key = newRow(form, 'brand new') as HTMLInputElement;
+    fireEvent.keyDown(key, { key: 'Enter' });
+    expect(key.value).toBe('brand new');
+    expect(within(form).getByRole('textbox', { name: 'Value of brand new' })).toBeDefined();
+  });
+
+  it('offers a relationship only the names relationships have', async () => {
+    await openShop();
+    fireEvent.click(
+      within(details()).getAllByRole('button', { name: /^Open relationship: / })[0] as HTMLElement,
+    );
+    const relationship = await screen.findByRole('form', { name: /^Relationship / });
+    fireEvent.click(within(relationship).getByRole('button', { name: 'Add field' }));
+    const key = within(relationship).getAllByLabelText('Key').at(-1) as HTMLElement;
+    fireEvent.click(key);
+    for (const name of offeredNow()) expect(['protocol']).toContain(name);
+    fireEvent.change(key, { target: { value: 'o' } });
+    for (const name of ['zone', 'hostingModel', 'informationFlow', 'architectureState']) {
+      expect(offeredNow()).not.toContain(name);
+    }
   });
 });
 

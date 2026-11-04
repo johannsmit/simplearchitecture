@@ -1,12 +1,10 @@
 import {
   architectureStates,
-  canHaveInformationFlow,
   compareNames,
   containersOf,
   containerOf,
   containsType,
   edgeTypes,
-  informationFlowLabel,
   relationshipProblems,
   relationshipsOf,
   relationshipVerb,
@@ -31,8 +29,8 @@ export const nameOf = (graph: ModelGraph, id: string): string =>
   graph.elements.get(id)?.name || '(unnamed)';
 
 /**
- * "Billing Engine sends information to Ledger" ("… to itself" for a self-relationship); two-way:
- * "Billing Engine exchanges information both ways with Ledger".
+ * "Billing Engine relates to Ledger" ("… to itself" for a self-relationship); two-way:
+ * "Billing Engine relates both ways to Ledger".
  */
 export function relationshipSentence(
   graph: ModelGraph,
@@ -41,12 +39,11 @@ export function relationshipSentence(
     target: string;
     type: EdgeType;
     twoWay?: boolean;
-    informationFlow?: boolean;
   },
 ): string {
   const target = ends.source === ends.target ? 'itself' : nameOf(graph, ends.target);
   const direction = ends.twoWay === true ? 'both' : 'outgoing';
-  const verb = relationshipVerb(ends.type, direction, ends.informationFlow);
+  const verb = relationshipVerb(ends.type, direction);
   return `${nameOf(graph, ends.source)} ${verb} ${target}`;
 }
 
@@ -272,27 +269,6 @@ export function TypeSegments(props: TypeRadiosProps) {
   );
 }
 
-/** The yes-or-no property of a Relation, right after the type. */
-export function InformationFlowBox(props: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="radio-row rel-flow">
-      <input
-        type="checkbox"
-        checked={props.checked}
-        disabled={props.disabled}
-        onChange={(event) => {
-          props.onChange(event.target.checked);
-        }}
-      />
-      {informationFlowLabel}
-    </label>
-  );
-}
-
 /** "Direction: One way / Both ways", in the state's segmented style. */
 export function DirectionSegments(props: {
   name: string;
@@ -360,8 +336,6 @@ export function StateSegments(props: {
 }
 
 interface NewRelationshipPopoverProps {
-  /** Information flow is selected in Show Viewpoints, so drawing flows stays one step. */
-  startsAsFlow: boolean;
   modelId: string;
   graph: ModelGraph;
   source: string;
@@ -380,7 +354,6 @@ export function NewRelationshipPopover(props: NewRelationshipPopoverProps) {
   const id = useId();
   const problems = problemsByType(graph, source, target);
   const [type, setType] = useState<EdgeType | undefined>(() => preselectedType(problems));
-  const [flow, setFlow] = useState(props.startsAsFlow);
   const [state, setState] = useState<ArchitectureState>('Current');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -415,7 +388,6 @@ export function NewRelationshipPopover(props: NewRelationshipPopoverProps) {
         target,
         type,
         architectureState: state,
-        ...(flow && canHaveInformationFlow(type) ? { informationFlow: true } : {}),
       });
       props.onAdded(result);
     } catch (failure) {
@@ -470,10 +442,7 @@ export function NewRelationshipPopover(props: NewRelationshipPopoverProps) {
         <TypeRadios
           name={`${id}-type`}
           value={type}
-          onChange={(next) => {
-            setType(next);
-            if (!canHaveInformationFlow(next)) setFlow(false);
-          }}
+          onChange={setType}
           problems={problems}
           onShow={props.onShow}
           disabled={adding}
@@ -482,9 +451,6 @@ export function NewRelationshipPopover(props: NewRelationshipPopoverProps) {
             <TypeNote note={note} />
           </div>
         </TypeRadios>
-        {type !== undefined && canHaveInformationFlow(type) && (
-          <InformationFlowBox checked={flow} onChange={setFlow} disabled={adding} />
-        )}
         <StateSegments name={`${id}-state`} value={state} onChange={setState} disabled={adding} />
         <div className="pop-buttons">
           <button type="button" className="btn" disabled={adding} onClick={props.onCancel}>
@@ -515,8 +481,6 @@ interface AddRelationshipBoxProps {
   /** The elements on the canvas: listed while the search is empty. */
   onCanvas: ElementIdSet & Iterable<string>;
   nest: boolean;
-  /** Information flow is selected in Show Viewpoints, so adding flows stays one step. */
-  startsAsFlow: boolean;
   onAdded: (result: RelationshipChangeResult) => void;
   onClose: () => void;
   onShow: (relationshipId: string) => void;
@@ -527,7 +491,6 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
   const { graph, element } = props;
   const id = useId();
   const [type, setType] = useState<EdgeType>(edgeTypes[0]);
-  const [flow, setFlow] = useState(props.startsAsFlow);
   const [direction, setDirection] = useState<'outgoing' | 'incoming'>('outgoing');
   const [state, setState] = useState<ArchitectureState>('Current');
   const [query, setQuery] = useState('');
@@ -561,7 +524,7 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
       : { source: other, target: element.id };
   const related = new Set(
     relationshipsOf(graph, element.id)
-      .filter((r) => r.type === type && (r.informationFlow === true) === flow)
+      .filter((r) => r.type === type)
       .map((r) =>
         direction === 'outgoing'
           ? r.source === element.id && r.target
@@ -603,7 +566,6 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
         ...ends(picked),
         type,
         architectureState: state,
-        ...(flow && canHaveInformationFlow(type) ? { informationFlow: true } : {}),
       });
       setAdding(false);
       setAddedAny(true);
@@ -620,7 +582,7 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
   const pickedElement = picked === null ? undefined : graph.elements.get(picked);
   const listId = `${id}-list`;
   const optionId = (index: number) => `${id}-opt-${index}`;
-  const verb = relationshipVerb(type, 'outgoing', flow);
+  const verb = relationshipVerb(type, 'outgoing');
   const thisName = element.name || '(unnamed)';
   return (
     <form
@@ -659,18 +621,7 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
           <span>{error}</span>
         </p>
       )}
-      <TypeRadios
-        name={`${id}-type`}
-        value={type}
-        onChange={(next) => {
-          setType(next);
-          if (!canHaveInformationFlow(next)) setFlow(false);
-        }}
-        disabled={adding}
-      />
-      {canHaveInformationFlow(type) && (
-        <InformationFlowBox checked={flow} onChange={setFlow} disabled={adding} />
-      )}
+      <TypeRadios name={`${id}-type`} value={type} onChange={setType} disabled={adding} />
       <fieldset className="type-radios">
         <legend>Direction</legend>
         {(['outgoing', 'incoming'] as const).map((value) => (

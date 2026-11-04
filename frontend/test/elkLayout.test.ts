@@ -167,7 +167,7 @@ describe('canvas helpers', () => {
         source: 'x',
         target: 'y',
         type: 'Relation',
-        informationFlow: true,
+        twoWay: true,
         label: 'Orders',
         architectureState: 'Current',
         metadata: {},
@@ -188,15 +188,15 @@ describe('canvas helpers', () => {
     ]);
   });
 
-  it('gives ELK the same input whether lines merge or not, so a tick moves no card', async () => {
-    const relation = (id: string, informationFlow: boolean) => ({
+  it('gives ELK the same input whether lines merge or not, so a change moves no card', async () => {
+    const relation = (id: string, twoWay: boolean) => ({
       id,
       source: 'x',
       target: 'y',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
       metadata: {},
-      ...(informationFlow ? { informationFlow } : {}),
+      ...(twoWay ? { twoWay } : {}),
     });
     const apart = [relation('a', true), relation('b', false)];
     const merged = [relation('a', false), relation('b', false)];

@@ -1,6 +1,5 @@
 import {
   edgeTypeDefinitions,
-  informationFlowLabel,
   nodeTypeDefinitions,
   type ArchitectureState,
   type EdgeType,
@@ -68,13 +67,9 @@ export function edgeEnds(type: EdgeType): { start: 'diamond' | 'none'; end: 'arr
     : { start: 'none', end: 'arrow' };
 }
 
-/** The line under a relationship panel's back link, e.g. "Relation · Information flow · Both ways". */
+/** The line under a relationship panel's back link, e.g. "Relation · Both ways". */
 export function relationshipTypeLine(relationship: ModelRelationship): string {
-  return [
-    relationship.type,
-    ...(relationship.informationFlow === true ? [informationFlowLabel] : []),
-    ...(relationship.twoWay === true ? ['Both ways'] : []),
-  ].join(' · ');
+  return [relationship.type, ...(relationship.twoWay === true ? ['Both ways'] : [])].join(' · ');
 }
 
 /** A 28px line sample with its end marks; two-way: an arrow at both ends. */

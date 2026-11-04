@@ -7,9 +7,11 @@ import {
   defaultArchitectureState,
   edgeTypes,
   canBeTwoWay,
-  canHaveInformationFlow,
-  informationFlowKey,
+  hasStandardEdgeProperty,
   isEdgeType,
+  isRelationTextProperty,
+  relationTextProperties,
+  standardProperties,
   relationshipConflictMessage,
   relationshipProblems,
   type DeletedRelationshipResult,
@@ -24,6 +26,7 @@ import {
   type ValidationIssue,
 } from '@simplearchitecture/shared';
 import { z } from 'zod';
+import { retiredInformationFlowKey } from '../jgf/older-types.js';
 import { validateJgf } from '../jgf/validate.js';
 import {
   maxElementIdLength,
@@ -53,7 +56,8 @@ import {
 } from './common.js';
 
 /**
- * Adding, changing (type, Architecture state, description, label, direction, Information flow) and deleting one
+ * Adding, changing (type, Architecture state, description, label, direction, Identity, Identity
+ * Context, Data) and deleting one
  * relationship of a stored model, beside ElementService and through the same store change: one
  * transaction under the model's row lock, the counts and list cache kept, one audit row.
  *
@@ -99,9 +103,14 @@ const metadataSchema = z
     }
     for (const key of keys) {
       const problem =
-        key === 'description' || key === 'architectureState' || key === informationFlowKey
-          ? 'Set this in its own field.'
-          : keyProblem(key);
+        key === retiredInformationFlowKey
+          ? 'This key is reserved.'
+          : key === 'description' ||
+              key === 'architectureState' ||
+              // Removing one kept as custom metadata (on a Contains) is fine.
+              (isRelationTextProperty(key) && record[key] !== null)
+            ? 'Set this in its own field.'
+            : keyProblem(key);
       if (problem !== undefined) ctx.addIssue({ code: 'custom', message: problem, path: [key] });
     }
   });
@@ -124,7 +133,6 @@ const newRelationshipSchema = z.strictObject({
     .string({ error: 'Must be text.' })
     .max(maxRelationshipDescriptionLength, { error: tooLong })
     .optional(),
-  informationFlow: z.boolean({ error: 'Must be true or false.' }).optional(),
 });
 
 // The description's and label's lengths are checked when they change: an imported one may be longer.
@@ -136,7 +144,9 @@ const updateRelationshipSchema = z.strictObject({
   label: z.string({ error: 'Must be text.' }).nullable().optional(),
   reverse: z.boolean({ error: 'Must be true or false.' }).optional(),
   twoWay: z.boolean({ error: 'Must be true or false.' }).optional(),
-  informationFlow: z.boolean({ error: 'Must be true or false.' }).optional(),
+  identity: z.string({ error: 'Must be text.' }).nullable().optional(),
+  identityContext: z.string({ error: 'Must be text.' }).nullable().optional(),
+  data: z.string({ error: 'Must be text.' }).nullable().optional(),
   metadata: metadataSchema.optional(),
 });
 
@@ -145,13 +155,12 @@ function requestField(field: string): string {
   if (field === 'relation') return 'type';
   if (field === 'metadata.architectureState') return 'architectureState';
   if (field === 'metadata.description') return 'description';
-  if (field === `metadata.${informationFlowKey}`) return informationFlowKey;
+  const key = field.slice('metadata.'.length);
+  if (field.startsWith('metadata.') && isRelationTextProperty(key)) return key;
   if (field === 'label') return 'label';
   if (field.startsWith('metadata.')) return field;
   return field === 'source' || field === 'target' ? field : '';
 }
-
-const noInformationFlow = (type: string): string => `A ${type} can't have Information flow.`;
 
 /** The edge, its position and version, or NotFoundError. Only edges with an id are editable. */
 function currentRelationship(
@@ -264,10 +273,6 @@ export class RelationshipService {
   ): Promise<RelationshipChangeResult> {
     const elements = this.#elements();
     const request = parse(newRelationshipSchema, input);
-    if (request.informationFlow === true && !canHaveInformationFlow(request.type)) {
-      const message = noInformationFlow(request.type);
-      throw new RejectedError([{ field: informationFlowKey, message }]);
-    }
     const id = randomUUID();
     const metadata: Entries = {
       architectureState: request.architectureState ?? defaultArchitectureState,
@@ -276,10 +281,6 @@ export class RelationshipService {
     if (request.description !== undefined) {
       metadata.description = request.description;
       fields.push('description');
-    }
-    if (request.informationFlow === true) {
-      metadata[informationFlowKey] = true;
-      fields.push(informationFlowKey);
     }
     const edge: IdEdge = {
       id,
@@ -359,18 +360,26 @@ export class RelationshipService {
           if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
           apply(metadata, key, value, `metadata.${key}`, changed);
         }
-        // A yes is stored as `true` and a no removes the key. A change to a type that can't have it
-        // removes it too, so the service never causes its own warning. Any other edit of such a
-        // type leaves what is stored alone: it reads as no, and may be someone's custom value.
-        const flowFits = !isEdgeType(relation) || canHaveInformationFlow(relation);
-        if (request.informationFlow === true) {
-          if (flowFits) apply(metadata, informationFlowKey, true, informationFlowKey, changed);
-          else {
-            const message = noInformationFlow(String(relation));
-            issues.push({ field: informationFlowKey, message });
+        // Identity, Identity Context and Data: trimmed text, and blank removes the key. A change to
+        // a type without them removes them.
+        const textFits = (key: (typeof relationTextProperties)[number]) =>
+          !isEdgeType(relation) || hasStandardEdgeProperty(key, relation);
+        for (const key of relationTextProperties) {
+          const sent = request[key];
+          if (sent === undefined) {
+            if (!textFits(key) && changed.includes('type')) {
+              apply(metadata, key, null, key, changed);
+            }
+            continue;
           }
-        } else if (request.informationFlow === false || (!flowFits && changed.includes('type'))) {
-          apply(metadata, informationFlowKey, null, informationFlowKey, changed);
+          const text = sent === null ? '' : sent.trim();
+          if (text !== '' && !textFits(key)) {
+            const label = standardProperties[key].label;
+            issues.push({ field: key, message: `A ${String(relation)} can't have ${label}.` });
+          } else if (text.length > maxPropertyValueLength && !sameValue(before?.[key], text)) {
+            issues.push({ field: key, message: valueTooLong });
+          }
+          apply(metadata, key, text === '' ? null : text, key, changed);
         }
         // Blank removes the label from the edge.
         const label = request.label === undefined ? undefined : (request.label ?? '').trim();

@@ -154,9 +154,10 @@ async function openShop(answer?: Parameters<typeof api>[0]) {
   return { sent, fetchMock };
 }
 
-async function openRelationship(name: RegExp) {
-  // Parallel relationships (e3 and e8) each have their own button: take the first.
-  fireEvent.click(within(details()).getAllByRole('button', { name })[0] as HTMLElement);
+async function openRelationship(name: RegExp, index = 0) {
+  // Parallel relationships each have their own button, in model order: e3, e4 and e8 to the
+  // planner, e7 and e9 to the server.
+  fireEvent.click(within(details()).getAllByRole('button', { name })[index] as HTMLElement);
   return screen.findByRole('form', { name: /^Relationship / });
 }
 
@@ -235,19 +236,16 @@ describe('Add relationship (details panel)', () => {
 describe('The relationship form', () => {
   it('opens from the row, refuses a duplicate type, and saves the state with the version', async () => {
     const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Oven Planner/);
+    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
     expect(
       within(details()).getByRole('heading', {
-        name: 'Web Shop sends information to Oven Planner',
+        name: 'Web Shop relates to Oven Planner',
       }),
     ).toBeDefined();
     // e4 is a plain Relation between the same ends: fine, as several may link them.
     expect(within(form).getByRole('radio', { name: 'Relation' })).toHaveProperty('disabled', false);
     expect(within(form).queryByRole('button', { name: 'Show it' })).toBeNull();
-    expect(within(form).getByRole('checkbox', { name: 'Information flow' })).toHaveProperty(
-      'checked',
-      true,
-    );
+    expect(within(form).getByLabelText<HTMLInputElement>('Data').value).toBe('Orders');
 
     // No footer until something changes.
     expect(within(form).queryByRole('button', { name: /^Save/ })).toBeNull();
@@ -333,9 +331,12 @@ describe('The relationship form', () => {
       });
     });
     await screen.findByRole('form', { name: /^Edit / });
+    // e9 still relates Web Shop to the server.
     expect(
-      within(details()).queryByRole('button', { name: /^Relates to Back Office Server/ }),
-    ).toBeNull();
+      within(details()).queryAllByRole('button', {
+        name: /^Open relationship: Relates to Back Office Server/,
+      }),
+    ).toHaveLength(1);
   });
 
   it('asks before leaving a relationship with changes, in its own words', async () => {
@@ -562,7 +563,7 @@ describe('New element: use an existing element instead', () => {
   });
 });
 
-describe('Information flow on the forms', () => {
+describe('Relation properties on the forms', () => {
   const addTo = async (name: string, query: string) => {
     fireEvent.click(within(details()).getByRole('button', { name: 'Add relationship' }));
     const box = await screen.findByRole('group', { name: 'Add relationship' });
@@ -572,18 +573,16 @@ describe('Information flow on the forms', () => {
     expect(within(box).getByText(name)).toBeDefined();
     return box;
   };
-  const flowBox = (where: HTMLElement) =>
-    within(where).getByRole<HTMLInputElement>('checkbox', { name: 'Information flow' });
   const noFlowBox = (where: HTMLElement) =>
     within(where).queryByRole('checkbox', { name: 'Information flow' });
 
-  it('offers only Relation and Contains, starting as a Relation, unticked', async () => {
+  it('offers only Relation and Contains, starting as a Relation, with no Information flow', async () => {
     const { sent } = await openShop();
     const box = await addTo('Recipe Archive', 'recipe');
     expect(within(box).getAllByRole('radio', { name: /^(Relation|Contains)$/ })).toHaveLength(2);
     expect(within(box).queryByRole('radio', { name: 'Integration' })).toBeNull();
     expect(within(box).getByRole('radio', { name: 'Relation' })).toHaveProperty('checked', true);
-    expect(flowBox(box).checked).toBe(false);
+    expect(noFlowBox(box)).toBeNull();
     fireEvent.click(within(box).getByRole('button', { name: 'Add' }));
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({
@@ -598,34 +597,13 @@ describe('Information flow on the forms', () => {
     ).toBeDefined();
   });
 
-  it('starts ticked when Information flow is selected in Show Viewpoints, and words it so', async () => {
-    const { handler, sent } = api();
-    stubApi(modeller, handler);
-    renderAt(`${at('shop')}?depth=1&show=informationFlow`);
-    await screen.findByRole('form', { name: /^Edit / });
-    const box = await addTo('Recipe Archive', 'recipe');
-    expect(flowBox(box).checked).toBe(true);
-    expect(box.textContent).toContain('Web Shop sends information to …');
-    fireEvent.click(within(box).getByRole('button', { name: 'Add' }));
-    await waitFor(() => {
-      expect(sent.at(-1)?.body).toMatchObject({ type: 'Relation', informationFlow: true });
-    });
-  });
-
-  it('hides and clears the box for Contains, also in Add relationship', async () => {
-    const { sent } = await openShop();
-    const box = await addTo('Recipe Archive', 'recipe');
-    fireEvent.click(flowBox(box));
-    fireEvent.click(within(box).getByRole('radio', { name: 'Contains' }));
-    expect(noFlowBox(box)).toBeNull();
-    fireEvent.click(within(box).getByRole('radio', { name: 'Relation' }));
-    expect(flowBox(box).checked).toBe(false);
-    fireEvent.click(within(box).getByRole('radio', { name: 'Contains' }));
-    fireEvent.click(within(box).getByRole('button', { name: 'Add' }));
-    await waitFor(() => {
-      expect(sent.at(-1)?.body).toMatchObject({ type: 'Contains' });
-    });
-    expect(sent.at(-1)?.body).not.toHaveProperty('informationFlow');
+  it('has no Information flow box on the form either, for any type', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
+    expect(noFlowBox(form)).toBeNull();
+    fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
+    expect(noFlowBox(form)).toBeNull();
+    expect(within(details()).queryByText(/Information flow/)).toBeNull();
   });
 
   it('allows a second Relation between the same two elements, with no refusal', async () => {
@@ -638,24 +616,7 @@ describe('Information flow on the forms', () => {
     expect(within(box).queryByRole('button', { name: 'Show it' })).toBeNull();
   });
 
-  it('unticks on the form with a PATCH of that alone, and shows the plain wording', async () => {
-    const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
-    expect(within(details()).getByText('Relation · Information flow')).toBeDefined();
-    fireEvent.click(flowBox(form));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    await waitFor(() => {
-      expect(sent.at(-1)?.body).toEqual({ version: 1, informationFlow: false });
-    });
-    await within(form).findByText('Saved');
-    expect(flowBox(form).checked).toBe(false);
-    expect(within(details()).getByRole('heading', { level: 2 }).textContent).toBe(
-      'Web Shop relates to Order to bake',
-    );
-    expect(details().querySelector('.d-type')?.textContent).toBe('Relation');
-  });
-
-  it('moves no card when unticking merges two lines', async () => {
+  it('moves no card when a line splits from its twin', async () => {
     const { sent } = await openShop();
     const positions = () =>
       [...document.querySelectorAll<HTMLElement>('.react-flow__node')].map(
@@ -667,16 +628,15 @@ describe('Information flow on the forms', () => {
     });
     const before = positions();
     const count = lines();
-    const form = await openRelationship(
-      /^Open relationship: Sends information to Back Office Server/,
-    );
-    fireEvent.click(flowBox(form));
+    // e7 and e9 run the same way between the same two cards: one line, until e9 is two-way.
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
+    fireEvent.click(within(form).getByRole('radio', { name: /Both ways/ }));
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent.at(-1)?.body).toEqual({ version: 1, informationFlow: false });
+      expect(sent.at(-1)?.body).toEqual({ version: 1, twoWay: true });
     });
     await waitFor(() => {
-      expect(lines()).toBe(count - 1);
+      expect(lines()).toBe(count + 1);
     });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -688,17 +648,18 @@ describe('Information flow on the forms', () => {
   // is what `fireEvent.keyDown` returns false for. jsdom doesn't submit by itself.
   it('never saves on Enter in a field of the form, with changes to save', async () => {
     const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
     fireEvent.change(within(form).getByRole('textbox', { name: 'Label' }), {
       target: { value: 'Made-up label' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
     const fields = [
       within(form).getByRole('textbox', { name: 'Label' }),
-      within(form).getByRole('textbox', { name: 'Key' }),
+      within(form).getByLabelText('Identity'),
+      within(form).getByLabelText('Data'),
+      within(form).getByLabelText('Key'),
       within(form).getByRole('textbox', { name: 'Value of the new field' }),
       within(form).getByRole('radio', { name: 'Relation' }),
-      flowBox(form),
     ];
     for (const field of fields) {
       expect(fireEvent.keyDown(field, { key: 'Enter' })).toBe(false);
@@ -726,34 +687,38 @@ describe('Information flow on the forms', () => {
     });
   });
 
-  it('warns before saving a flow as Contains, and Discard restores it', async () => {
+  it('warns before saving Data away as Contains, and Discard restores it', async () => {
     const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
+    const data = () => within(form).queryByLabelText<HTMLInputElement>('Data');
+    expect(data()?.value).toBe('Orders');
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
-    expect(noFlowBox(form)).toBeNull();
-    expect(within(form).getByText('Information flow is removed when you save.')).toBeDefined();
-    // Back to Relation: unticked, so it still counts as a change.
+    expect(data()).toBeNull();
+    expect(
+      within(form).getByText('Identity, Identity Context and Data are removed when you save.'),
+    ).toBeDefined();
+    // Back to Relation: Data is empty, so it still counts as a change.
     fireEvent.click(within(form).getByRole('radio', { name: 'Relation' }));
-    expect(flowBox(form).checked).toBe(false);
+    expect(data()?.value).toBe('');
     expect(within(form).getByRole('button', { name: 'Save' })).toBeDefined();
     fireEvent.click(within(form).getByRole('button', { name: 'Discard changes' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /^Discard/ }));
-    expect(flowBox(form).checked).toBe(true);
+    expect(data()?.value).toBe('Orders');
 
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', informationFlow: false });
+      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', data: null });
     });
   });
 
-  it('never lists the key as a custom row, and refuses it as a new one', async () => {
+  it('never lists the old key as a custom row, and refuses it as a new one', async () => {
     const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
     expect(within(form).queryByRole('textbox', { name: 'Value of informationFlow' })).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Key' }), {
+    fireEvent.change(within(form).getByLabelText('Key'), {
       target: { value: 'informationFlow' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
@@ -761,25 +726,26 @@ describe('Information flow on the forms', () => {
     expect(sent.filter((request) => request.method === 'PATCH')).toHaveLength(0);
   });
 
-  it('shows the server’s refusal of the property under the type', async () => {
+  it('shows the server’s refusal of Data under its field', async () => {
     await openShop((method) =>
       method === 'PATCH'
         ? apiError(422, 'Refused', {
-            fields: [
-              { field: 'informationFlow', message: "A Contains can't have Information flow." },
-            ],
+            fields: [{ field: 'data', message: 'Must be at most 2000 characters.' }],
           })
         : undefined,
     );
-    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
-    fireEvent.click(flowBox(form));
+    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/, 1);
+    fireEvent.change(within(form).getByLabelText('Data'), { target: { value: 'Made-up' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(await within(form).findByText("A Contains can't have Information flow.")).toBeDefined();
+    const message = await within(form).findByText('Must be at most 2000 characters.');
+    expect(within(form).getByLabelText('Data').getAttribute('aria-describedby')).toContain(
+      message.closest('.field-error')?.id ?? 'missing',
+    );
   });
 
   it('words a two-way Relation on the type line in Modelling too', async () => {
     const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
+    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/, 1);
     fireEvent.click(within(form).getByRole('radio', { name: /Both ways/ }));
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
@@ -790,8 +756,7 @@ describe('Information flow on the forms', () => {
 });
 
 describe('the relationship’s custom metadata', () => {
-  const open = () =>
-    openRelationship(/^Open relationship: Sends information to Back Office Server/);
+  const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const save = (form: HTMLElement) => {
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
   };
@@ -805,9 +770,9 @@ describe('the relationship’s custom metadata', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
     // Focus goes to the new row's key.
     await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByRole('textbox', { name: 'Key' }));
+      expect(document.activeElement).toBe(within(form).getByLabelText('Key'));
     });
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Key' }), {
+    fireEvent.change(within(form).getByLabelText('Key'), {
       target: { value: ' protocol ' },
     });
     fireEvent.change(within(form).getByRole('textbox', { name: 'Value of protocol' }), {
@@ -839,7 +804,7 @@ describe('the relationship’s custom metadata', () => {
     const form = await open();
     const add = (key: string) => {
       fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-      const keys = within(form).getAllByRole('textbox', { name: 'Key' });
+      const keys = within(form).getAllByLabelText('Key');
       fireEvent.change(keys[keys.length - 1] as HTMLElement, { target: { value: key } });
     };
     add('architectureState');
@@ -863,7 +828,7 @@ describe('the relationship’s custom metadata', () => {
     );
     const form = await open();
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Key' }), {
+    fireEvent.change(within(form).getByLabelText('Key'), {
       target: { value: 'protocol' },
     });
     save(form);
@@ -879,7 +844,7 @@ describe('the form and what is stored', () => {
     source: 'shop',
     target: 'server',
     relation: 'Relation',
-    metadata: { informationFlow: true, ...metadata },
+    metadata,
   });
   const relationshipReply = (metadata: Record<string, unknown>) =>
     Response.json({
@@ -900,8 +865,7 @@ describe('the form and what is stored', () => {
       if (method === 'GET' && url === `${relationshipsUrl}/e9`) return relationshipReply(onServer);
       return undefined;
     }) as Parameters<typeof api>[0];
-  const open = () =>
-    openRelationship(/^Open relationship: Sends information to Back Office Server/);
+  const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const save = (form: HTMLElement) => {
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
   };
@@ -948,7 +912,7 @@ describe('the form and what is stored', () => {
     await openShop();
     const form = await open();
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const key = within(form).getByRole('textbox', { name: 'Key' });
+    const key = within(form).getByLabelText('Key');
     fireEvent.change(key, { target: { value: 'description' } });
     fireEvent.change(within(form).getByRole('textbox', { name: 'Value of description' }), {
       target: { value: 'x' },
@@ -1115,7 +1079,7 @@ describe('the form and what is stored', () => {
     const { sent } = await openShop(stored({}));
     const form = await open();
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Key' }), {
+    fireEvent.change(within(form).getByLabelText('Key'), {
       target: { value: 'type' },
     });
     save(form);
@@ -1141,7 +1105,7 @@ describe('the form and what is stored', () => {
     );
     fireEvent.click(
       within(details()).getAllByRole('button', {
-        name: /^Open relationship: Sends information to Recipe Archive/,
+        name: /^Open relationship: Relates to Recipe Archive/,
       })[0] as HTMLElement,
     );
     await screen.findByText(/has no id/);
@@ -1172,8 +1136,7 @@ describe('the form and what is stored', () => {
 });
 
 describe('the relationship’s label', () => {
-  const open = () =>
-    openRelationship(/^Open relationship: Sends information to Back Office Server/);
+  const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const label = (form: HTMLElement) =>
     within(form).getByRole<HTMLInputElement>('textbox', { name: 'Label' });
 
@@ -1198,7 +1161,7 @@ describe('the relationship’s label', () => {
 
   it('removes the label when emptied', async () => {
     const { sent } = await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Oven Planner/);
+    const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
     expect(label(form).value).toBe('Orders');
     fireEvent.change(label(form), { target: { value: '   ' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
@@ -1264,7 +1227,7 @@ describe('The relationship form layout', () => {
 
   it('shows the type as a two-part radio group that still brings its notes', async () => {
     await openShop();
-    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
     const type = within(form).getByRole('group', { name: 'Type' });
     const radios = within(type).getAllByRole('radio');
     expect(radios.map((radio) => radio.getAttribute('name'))).toEqual(['rf-type', 'rf-type']);
@@ -1273,7 +1236,7 @@ describe('The relationship form layout', () => {
 
     fireEvent.click(within(type).getByRole('radio', { name: 'Contains' }));
     expect(within(type).getByRole('radio', { name: 'Contains' })).toHaveProperty('checked', true);
-    expect(within(form).getByText('Information flow is removed when you save.')).toBeDefined();
+    expect(within(type).getByRole('radio', { name: 'Relation' })).toHaveProperty('checked', false);
   });
 
   it('refuses a type under the two parts, with its reason and the link to the one that exists', async () => {
@@ -1290,7 +1253,7 @@ describe('The relationship form layout', () => {
     await openShop((_method, url) =>
       url === `/api/models/${bakeryId}` ? Response.json(contains) : undefined,
     );
-    const form = await openRelationship(/^Open relationship: Sends information to Order to bake/);
+    const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
     const refused = within(form).getByRole('radio', { name: 'Contains' });
     expect(refused).toHaveProperty('disabled', true);
     const reason = document.getElementById(refused.getAttribute('aria-describedby') ?? '');

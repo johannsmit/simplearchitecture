@@ -80,10 +80,11 @@ async function openForm(kind: 'element' | 'relationship') {
   const elementForm = await screen.findByRole('form', { name: /^Edit / });
   if (kind === 'element') return { form: elementForm, sent };
   const details = screen.getByRole('complementary', { name: 'Details' });
+  // e7 and then e9 relate the shop to the server: e9 is the one under test.
   fireEvent.click(
     within(details).getAllByRole('button', {
-      name: /^Open relationship: Sends information to Back Office Server/,
-    })[0] as HTMLElement,
+      name: /^Open relationship: Relates to Back Office Server/,
+    })[1] as HTMLElement,
   );
   return { form: await screen.findByRole('form', { name: /^Relationship / }), sent };
 }
@@ -100,7 +101,7 @@ function typeAndTake(form: HTMLElement, key: string, typed: string, row: string)
 
 function addRow(form: HTMLElement, key: string, value: string) {
   fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-  const keys = within(form).getAllByRole('textbox', { name: 'Key' });
+  const keys = within(form).getAllByLabelText('Key');
   fireEvent.change(keys.at(-1) as HTMLElement, { target: { value: key } });
   const name = `Value of ${key}`;
   const field =

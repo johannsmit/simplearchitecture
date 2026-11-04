@@ -50,6 +50,10 @@ export const standardProperties = {
   sourcing: { label: 'Sourcing', value: { kind: 'choice', options: sourcingOptions } },
   // ISO 3166-1 alpha-2, e.g. NL. Non-ISO values are warnings, not errors (imported as is for now).
   supplierHqCountry: { label: 'Supplier HQ country', value: { kind: 'country' } },
+  // A Relation's exchange: the active identity used, more context on it, and the data exchanged.
+  identity: { label: 'Identity', value: { kind: 'text' } },
+  identityContext: { label: 'Identity Context', value: { kind: 'text' } },
+  data: { label: 'Data', value: { kind: 'text' } },
 } as const satisfies Record<string, StandardPropertyDefinition>;
 export type StandardPropertyKey = keyof typeof standardProperties;
 
@@ -112,8 +116,6 @@ export interface EdgeTypeDefinition {
    * `"directed": false`, drawn with an arrow at both ends. Otherwise it is always one-way.
    */
   twoWay: boolean;
-  /** Whether a relationship of this type can be marked as an Information flow. */
-  informationFlow: boolean;
   /** Standard properties of this edge type, in display order. */
   properties: readonly StandardPropertyKey[];
 }
@@ -121,14 +123,24 @@ export interface EdgeTypeDefinition {
 /** Standard properties of every edge type. */
 const allEdges = ['architectureState'] as const;
 
+/**
+ * The free-text standard properties of a Relation, in display order: edited on the relationship
+ * form under the label, and never custom metadata there.
+ */
+export const relationTextProperties = ['identity', 'identityContext', 'data'] as const;
+export type RelationTextProperty = (typeof relationTextProperties)[number];
+
+export function isRelationTextProperty(key: string): key is RelationTextProperty {
+  return (relationTextProperties as readonly string[]).includes(key);
+}
+
 export const edgeTypeDefinitions: Record<EdgeType, EdgeTypeDefinition> = {
   Relation: {
     description:
       'Any relation between elements, such as integration, hosting or serving a business process.',
     line: 'solid',
     twoWay: true,
-    informationFlow: true,
-    properties: allEdges,
+    properties: [...allEdges, ...relationTextProperties],
   },
   Contains: {
     description:
@@ -136,21 +148,12 @@ export const edgeTypeDefinitions: Record<EdgeType, EdgeTypeDefinition> = {
     line: 'contains',
     // A container contains its element, not the other way round.
     twoWay: false,
-    informationFlow: false,
     properties: allEdges,
   },
 };
 
 /** The Architecture state of an edge (or element) without one. */
 export const defaultArchitectureState: ArchitectureState = 'Current';
-
-/**
- * The yes-or-no standard edge property, stored as `"informationFlow": true`; a no has
- * no key. It is kept apart from `standardProperties`, which are text: on an element, a key with
- * this name is ordinary custom metadata.
- */
-export const informationFlowKey = 'informationFlow';
-export const informationFlowLabel = 'Information flow';
 
 export function isNodeType(value: unknown): value is NodeType {
   return typeof value === 'string' && (nodeTypes as readonly string[]).includes(value);
@@ -167,11 +170,6 @@ export function isStandardPropertyKey(value: string): value is StandardPropertyK
 /** Whether a relationship of this type may be two-way (Relation). */
 export function canBeTwoWay(edgeType: EdgeType): boolean {
   return edgeTypeDefinitions[edgeType].twoWay;
-}
-
-/** Whether a relationship of this type can be marked as an Information flow (Relation). */
-export function canHaveInformationFlow(edgeType: EdgeType): boolean {
-  return edgeTypeDefinitions[edgeType].informationFlow;
 }
 
 /** Whether `key` is a standard property of `nodeType`. */

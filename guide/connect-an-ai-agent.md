@@ -61,8 +61,8 @@ The agent gets five read-only tools:
 - **List models**: the models you can see, with their size.
 - **Model summary**: how many elements of each type, and how many relationships.
 - **Search elements**: by name, type and properties, 50 at a time.
-- **Get element**: one element in full, with what it is inside, what it contains, and its relationships.
-- **Get neighbours**: the elements up to three relationship steps away, as on the canvas.
+- **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity, Identity Context and Data, when set.
+- **Get neighbours**: the elements up to three relationship steps away, as on the canvas, with the same details for each relationship.
 
 Model content (names, descriptions, properties) is passed to the agent as data, marked as untrusted, never as instructions. The app logs each call with your user id, the tool and the model, never the content.
 
