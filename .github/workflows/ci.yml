@@ -1,0 +1,291 @@
+# Checks every push to main and every pull request, and builds, checks and scans the image. In this
+# repository only (see the publish job's condition), a pushed version tag (v1.2.3) also publishes
+# the image to GitHub Container Registry: pushed by digest with no tag, then checked, tested,
+# scanned on both platforms, signed and attested, and only then tagged, so a failure in any of
+# those steps leaves no version tag. The SBOM and the scan results stay with a GitHub release.
+# Third-party actions and images are pinned by full commit SHA or digest (the comment names the
+# version). The only credential is the workflow's own GITHUB_TOKEN
+# (and its OIDC identity for the keyless signature); nothing secret is built into the image.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+# Read-only unless a job asks for more.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/simplearchitecture
+  TRIVY_IMAGE: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+  # Intel/AMD servers and ARM (Apple Silicon, Graviton, Ampere). arm64 is built under QEMU.
+  PLATFORMS: linux/amd64,linux/arm64
+  BINFMT_IMAGE: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+
+jobs:
+  check:
+    name: Lint, typecheck and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # High and critical advisories in what the image ships (production dependencies).
+      - run: npm audit --omit=dev --audit-level=high
+
+  image:
+    name: Build, check and scan the image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Both platforms, so an arm64 problem shows before a release; this fills the cache.
+      - name: Build for amd64 and arm64 (not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # The checks and the scan below run on the amd64 image, loaded from the cache. The publish
+      # job repeats them on the pushed image, and scans arm64 too.
+      - name: Load the amd64 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: simplearchitecture:ci
+          cache-from: type=gha
+      # The build already checks the app folder; this checks the finished image.
+      - name: Check the image holds only what runs, and its licence terms
+        run: bash deploy/check-finished-image.sh simplearchitecture:ci
+      # Non-root, read-only root file system, port 8080 only, path tricks, health and logs.
+      - name: Container test
+        run: bash deploy/test-container.sh simplearchitecture:ci
+      - name: Scan for high and critical vulnerabilities, with the web app's packages (Trivy)
+        run: bash deploy/scan-image.sh simplearchitecture:ci "$RUNNER_TEMP/scan" --fail
+
+  publish:
+    name: Publish by digest, test, scan, sign, attest, then tag
+    # Only from this repository, by its full name, private or public. A tag in a fork or a copy
+    # publishes nothing.
+    if: github.repository == 'johannsmit/simplearchitecture' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [check, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # push the image, its signature and attestations
+      id-token: write # the workflow's OIDC identity: keyless signature and attestations
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      # An image name must be lower case, and an owner's name may not be.
+      - name: Lower-case the image name
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ${{ env.IMAGE }}
+          # v1.2.3 → 1.2.3 and 1.2; a pre-release (v1.2.3-rc.1) gets only its own tag. No `latest`
+          # (the action adds it by default), so a pull without a version fails and a host has to
+          # choose one.
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.licenses=LicenseRef-SimpleArchitecture
+          annotations: |
+            org.opencontainers.image.licenses=LicenseRef-SimpleArchitecture
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The same Dockerfile and lockfile as the checked and scanned build, from its cache. No tag
+      # yet: only the digest exists until every step below has passed.
+      - name: Push the image by digest, with no tag
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # The provenance and the SBOM are attested below, for the whole image.
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+
+      - name: Pull the pushed image, for each platform
+        id: pull
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "amd64=$(bash deploy/pull-platform.sh "$IMAGE@$DIGEST" amd64)" >> "$GITHUB_OUTPUT"
+          echo "arm64=$(bash deploy/pull-platform.sh "$IMAGE@$DIGEST" arm64)" >> "$GITHUB_OUTPUT"
+      - name: Check the pushed image holds only what runs, and its licence terms
+        env:
+          PUSHED: ${{ steps.pull.outputs.amd64 }}
+        run: bash deploy/check-finished-image.sh "$PUSHED"
+      - name: Container test of the pushed image
+        env:
+          PUSHED: ${{ steps.pull.outputs.amd64 }}
+        run: bash deploy/test-container.sh "$PUSHED"
+      - name: Scan the pushed image, both platforms (Trivy)
+        env:
+          AMD64: ${{ steps.pull.outputs.amd64 }}
+          ARM64: ${{ steps.pull.outputs.arm64 }}
+        run: |
+          # Both run, so the log shows every finding, and either one stops the release.
+          status=0
+          bash deploy/scan-image.sh "$AMD64" "$RUNNER_TEMP/scan-amd64" --fail || status=1
+          bash deploy/scan-image.sh "$ARM64" "$RUNNER_TEMP/scan-arm64" --fail || status=1
+          exit "$status"
+
+      # Keyless: cosign signs with a short-lived certificate for this workflow's GitHub identity,
+      # recorded in the public Sigstore transparency log. No key to keep.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the image (cosign, keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes --recursive "$IMAGE@$DIGEST"
+
+      - name: SBOM (CycloneDX) of the pushed image and the web app's packages
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          AMD64: ${{ steps.pull.outputs.amd64 }}
+        run: |
+          release="$RUNNER_TEMP/release"
+          mkdir -p "$release"
+          # The amd64 image (the runner's platform); arm64 has the same package versions.
+          docker save "$AMD64" -o "$RUNNER_TEMP/image.tar"
+          docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" -v "$release:/out" "$TRIVY_IMAGE" \
+            image --input /image.tar --no-progress --format cyclonedx --output /out/image.cdx.json
+          bash deploy/merge-sbom.sh "$release/image.cdx.json" \
+            "$RUNNER_TEMP/scan-amd64/web-packages.cdx.json" "$release/sbom.cdx.json"
+          rm "$release/image.cdx.json"
+          cp "$RUNNER_TEMP/scan-amd64/all-severities.txt" "$release/vulnerabilities-amd64.txt"
+          cp "$RUNNER_TEMP/scan-arm64/all-severities.txt" "$release/vulnerabilities-arm64.txt"
+          echo "$IMAGE@$DIGEST" > "$release/image-digest.txt"
+      # Signed like the image and stored with it, so anyone can fetch and verify the SBOM with
+      # cosign alone, with no sign-in once the package is public.
+      - name: Attach the signed SBOM to the image (cosign, keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign attest --yes --type cyclonedx \
+            --predicate "$RUNNER_TEMP/release/sbom.cdx.json" "$IMAGE@$DIGEST"
+
+      # GitHub's own attestations (stored with the image and in the repository). For a private
+      # repository they need GitHub Enterprise Cloud, so the repository variable SKIP_ATTESTATIONS
+      # is set to true while it is private. The signature and the SBOM still ship.
+      - name: Attest build provenance
+        if: vars.SKIP_ATTESTATIONS != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest the SBOM
+        if: vars.SKIP_ATTESTATIONS != 'true'
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: ${{ runner.temp }}/release/sbom.cdx.json
+          push-to-registry: true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 90
+
+      # Last, so a failure in any step above leaves no version tag.
+      - name: Add the version tags
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: bash deploy/add-version-tags.sh "$IMAGE" "$DIGEST" "$TAGS"
+
+  release:
+    name: Keep the SBOM and scan results with a GitHub release
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release and attach its files
+    steps:
+      - name: Lower-case the image name
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+      # Only for the release notes (guide/releases/<tag>.md); nothing is built here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: release
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          files=(release/sbom.cdx.json release/vulnerabilities-amd64.txt release/vulnerabilities-arm64.txt release/image-digest.txt)
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            # The release notes from guide/releases/<tag>.md when there is one, then the image line.
+            {
+              if [ -f "guide/releases/$TAG.md" ]; then cat "guide/releases/$TAG.md"; echo; fi
+              echo "Image: \`$IMAGE@$DIGEST\`. See the README, \"Verify a release\", to check its signature and SBOM."
+            } > "$RUNNER_TEMP/notes.md"
+            # A pre-release (v1.2.3-rc.1) never becomes the latest release, which the weekly scan reads.
+            prerelease=()
+            if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
+            gh release create "$TAG" "${files[@]}" "${prerelease[@]}" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi

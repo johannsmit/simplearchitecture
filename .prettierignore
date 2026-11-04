@@ -1,0 +1,11 @@
+# The metamodel is kept exactly as defined.
+metamodel/
+
+# The sample models are generated, and kept as written.
+samples/
+
+# Generated
+package-lock.json
+dist/
+dev-dist/
+coverage/

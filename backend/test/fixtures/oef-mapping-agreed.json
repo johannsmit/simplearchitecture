@@ -1,0 +1,136 @@
+{
+  "$comment": [
+    "Test fixture: a pinned copy of the mapping defaults, so config/oef-mapping.json can change without breaking the tests.",
+    "Mappings also apply to relationships, and the architectureState default also targets relations and Contains.",
+    "Realization imports as Contains.",
+    "Flow imports as a Relation with Information flow."
+  ],
+  "version": 1,
+  "elements": {
+    "BusinessActor": "Stakeholder",
+    "BusinessRole": "Stakeholder",
+    "Stakeholder": "Stakeholder",
+    "Resource": "Business",
+    "Capability": "Business",
+    "ValueStream": "Business",
+    "CourseOfAction": "Business",
+    "BusinessCollaboration": "Business",
+    "BusinessInterface": "Business",
+    "BusinessProcess": "Business",
+    "BusinessFunction": "Business",
+    "BusinessInteraction": "Business",
+    "BusinessEvent": "Business",
+    "BusinessService": "Business",
+    "BusinessObject": "Business",
+    "Contract": "Business",
+    "Representation": "Business",
+    "Product": "Business",
+    "ApplicationComponent": "Application",
+    "ApplicationCollaboration": "Application",
+    "ApplicationInterface": "Application",
+    "ApplicationFunction": "Application",
+    "ApplicationInteraction": "Application",
+    "ApplicationProcess": "Application",
+    "ApplicationEvent": "Application",
+    "ApplicationService": "Application",
+    "DataObject": "Application",
+    "Node": "Infrastructure",
+    "Device": "Infrastructure",
+    "SystemSoftware": "Infrastructure",
+    "TechnologyCollaboration": "Infrastructure",
+    "TechnologyInterface": "Infrastructure",
+    "Path": "Infrastructure",
+    "CommunicationNetwork": "Infrastructure",
+    "TechnologyFunction": "Infrastructure",
+    "TechnologyProcess": "Infrastructure",
+    "TechnologyInteraction": "Infrastructure",
+    "TechnologyEvent": "Infrastructure",
+    "TechnologyService": "Infrastructure",
+    "Artifact": "Infrastructure",
+    "Equipment": "Infrastructure",
+    "Facility": "Infrastructure",
+    "DistributionNetwork": "Infrastructure",
+    "Material": "Infrastructure",
+    "Driver": "Other",
+    "Assessment": "Other",
+    "Goal": "Other",
+    "Outcome": "Other",
+    "Principle": "Other",
+    "Requirement": "Other",
+    "Constraint": "Other",
+    "Meaning": "Other",
+    "Value": "Other",
+    "WorkPackage": "Other",
+    "Deliverable": "Other",
+    "ImplementationEvent": "Other",
+    "Plateau": "Other",
+    "Gap": "Other",
+    "Location": "Other",
+    "Grouping": "Other",
+    "AndJunction": "skip",
+    "OrJunction": "skip"
+  },
+  "functionFolding": {
+    "rules": [
+      {
+        "$comment": "Component -> function (e.g. the component is assigned to the function).",
+        "relationshipTypes": ["Assignment", "Realization", "Composition"],
+        "sourceTypes": ["ApplicationComponent", "ApplicationCollaboration"],
+        "targetTypes": ["ApplicationFunction"],
+        "fold": "target"
+      },
+      {
+        "$comment": "Function -> component (the same links drawn the other way round).",
+        "relationshipTypes": ["Assignment", "Realization", "Composition"],
+        "sourceTypes": ["ApplicationFunction"],
+        "targetTypes": ["ApplicationComponent", "ApplicationCollaboration"],
+        "fold": "source"
+      }
+    ]
+  },
+  "relationships": {
+    "rules": [
+      {
+        "type": "Flow",
+        "relation": "Relation",
+        "informationFlow": true
+      },
+      {
+        "type": "Realization",
+        "relation": "Contains"
+      }
+    ]
+  },
+  "properties": {
+    "documentation": "description",
+    "archimateTypeKey": "archimateType",
+    "mappings": [
+      {
+        "name": "Architecture State",
+        "key": "architectureState",
+        "values": {
+          "Deprecate": "Deprecate",
+          "Target state": "Target"
+        }
+      },
+      {
+        "name": "Responsible Team",
+        "key": "owningTeam"
+      },
+      {
+        "$comment": "Imported as is for now; non-ISO values are validation warnings.",
+        "name": "Vendor HQ Country",
+        "key": "supplierHqCountry"
+      }
+    ],
+    "defaults": [
+      {
+        "$comment": "Empty or missing Architecture State means Current, on elements and relationships.",
+        "key": "architectureState",
+        "value": "Current",
+        "nodeTypes": ["Application", "Infrastructure"],
+        "relations": ["Relation", "Contains"]
+      }
+    ]
+  }
+}

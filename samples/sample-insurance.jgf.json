@@ -1,0 +1,2671 @@
+{
+  "graph": {
+    "id": "sample-insurance",
+    "label": "Quillfeather Mutual (sample)",
+    "directed": true,
+    "metadata": {
+      "description": "A made-up insurer for trying SimpleArchitecture. Quillfeather Mutual sells home, motor and travel cover directly and through brokers. It is replacing its in-house claims system, QuillClaims, with a bought Claims platform, and its service bus with an API gateway and event streaming. Any likeness to a real company, system or vendor is accidental."
+    },
+    "nodes": {
+      "stk-policyholder": {
+        "label": "Policyholder",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "A private or small-business customer with one or more home, motor or travel policies."
+        }
+      },
+      "stk-broker": {
+        "label": "Broker",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "An independent intermediary who sells Quillfeather policies to their own clients."
+        }
+      },
+      "stk-claims-handler": {
+        "label": "Claims handler",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "Handles claims from first notice to settlement."
+        }
+      },
+      "stk-underwriter": {
+        "label": "Underwriter",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "Assesses risks that fall outside the automatic acceptance rules."
+        }
+      },
+      "stk-finance-controller": {
+        "label": "Finance controller",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "Owns the month-end close and the regulatory returns."
+        }
+      },
+      "stk-regulator": {
+        "label": "Insurance regulator",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "The national supervisor that receives the solvency and conduct returns."
+        }
+      },
+      "stk-repair-partner": {
+        "label": "Repair partner",
+        "metadata": {
+          "type": "Stakeholder",
+          "description": "A garage or contractor in the approved repair network."
+        }
+      },
+      "cap-customer": {
+        "label": "Customer management",
+        "metadata": {
+          "type": "Business",
+          "description": "Knowing, serving and keeping our members.",
+          "owningTeam": "Customer operations"
+        }
+      },
+      "cap-onboarding": {
+        "label": "Customer onboarding",
+        "metadata": {
+          "type": "Business",
+          "description": "Identifying new customers and setting up their account.",
+          "owningTeam": "Customer operations"
+        }
+      },
+      "cap-service": {
+        "label": "Customer service",
+        "metadata": {
+          "type": "Business",
+          "description": "Answering questions and handling complaints across phone, chat and email.",
+          "owningTeam": "Customer operations"
+        }
+      },
+      "cap-distribution": {
+        "label": "Distribution",
+        "metadata": {
+          "type": "Business",
+          "description": "Selling policies directly and through brokers.",
+          "owningTeam": "Distribution"
+        }
+      },
+      "cap-broker-mgmt": {
+        "label": "Broker management",
+        "metadata": {
+          "type": "Business",
+          "description": "Onboarding brokers, agreeing commission and monitoring their portfolio.",
+          "owningTeam": "Distribution"
+        }
+      },
+      "cap-direct-sales": {
+        "label": "Direct sales",
+        "metadata": {
+          "type": "Business",
+          "description": "Selling policies online without an intermediary.",
+          "owningTeam": "Distribution"
+        }
+      },
+      "cap-underwriting": {
+        "label": "Underwriting",
+        "metadata": {
+          "type": "Business",
+          "description": "Deciding which risks we accept and on what terms.",
+          "owningTeam": "Underwriting"
+        }
+      },
+      "cap-risk": {
+        "label": "Risk assessment",
+        "metadata": {
+          "type": "Business",
+          "description": "Judging a risk from the questionnaire, claims history and external data.",
+          "owningTeam": "Underwriting"
+        }
+      },
+      "cap-pricing": {
+        "label": "Pricing",
+        "metadata": {
+          "type": "Business",
+          "description": "Setting premiums from rating factors and the actuarial models.",
+          "owningTeam": "Underwriting"
+        }
+      },
+      "cap-policy": {
+        "label": "Policy management",
+        "metadata": {
+          "type": "Business",
+          "description": "Everything that happens to a policy after the sale.",
+          "owningTeam": "Policy operations"
+        }
+      },
+      "cap-quote-bind": {
+        "label": "Quote and bind",
+        "metadata": {
+          "type": "Business",
+          "description": "Turning a quote into a policy in force.",
+          "owningTeam": "Policy operations"
+        }
+      },
+      "cap-servicing": {
+        "label": "Policy servicing",
+        "metadata": {
+          "type": "Business",
+          "description": "Mid-term changes such as a new address, vehicle or cover.",
+          "owningTeam": "Policy operations"
+        }
+      },
+      "cap-renewals": {
+        "label": "Renewals",
+        "metadata": {
+          "type": "Business",
+          "description": "Inviting and re-pricing policies before they expire.",
+          "owningTeam": "Policy operations"
+        }
+      },
+      "cap-claims": {
+        "label": "Claims management",
+        "metadata": {
+          "type": "Business",
+          "description": "Handling losses fairly and quickly.",
+          "owningTeam": "Claims operations"
+        }
+      },
+      "cap-fnol": {
+        "label": "First notice of loss",
+        "metadata": {
+          "type": "Business",
+          "description": "Taking the first report of a claim, online or by phone.",
+          "owningTeam": "Claims operations"
+        }
+      },
+      "cap-assessment": {
+        "label": "Claims assessment",
+        "metadata": {
+          "type": "Business",
+          "description": "Checking cover, liability and the size of the loss.",
+          "owningTeam": "Claims operations"
+        }
+      },
+      "cap-settlement": {
+        "label": "Claims settlement",
+        "metadata": {
+          "type": "Business",
+          "description": "Paying the policyholder or the repair partner.",
+          "owningTeam": "Claims operations"
+        }
+      },
+      "cap-fraud": {
+        "label": "Fraud detection",
+        "metadata": {
+          "type": "Business",
+          "description": "Spotting suspicious claims before they are paid.",
+          "owningTeam": "Claims operations"
+        }
+      },
+      "cap-finance": {
+        "label": "Finance",
+        "metadata": {
+          "type": "Business",
+          "description": "Money in, money out and reporting on both.",
+          "owningTeam": "Finance"
+        }
+      },
+      "cap-billing": {
+        "label": "Premium billing and collections",
+        "metadata": {
+          "type": "Business",
+          "description": "Collecting premiums by direct debit or card and chasing missed payments.",
+          "owningTeam": "Finance"
+        }
+      },
+      "cap-reporting": {
+        "label": "Financial and regulatory reporting",
+        "metadata": {
+          "type": "Business",
+          "description": "Statutory accounts and the solvency returns.",
+          "owningTeam": "Finance"
+        }
+      },
+      "proc-motor-claim": {
+        "label": "Handle a motor claim",
+        "metadata": {
+          "type": "Business",
+          "description": "From the policyholder's report to the repaired vehicle and the final payment.",
+          "owningTeam": "Claims operations"
+        }
+      },
+      "proc-month-end": {
+        "label": "Month-end close",
+        "metadata": {
+          "type": "Business",
+          "description": "Reconciling premiums, claims payments and reserves into the general ledger.",
+          "owningTeam": "Finance"
+        }
+      },
+      "app-policy-suite": {
+        "label": "Policy administration suite",
+        "metadata": {
+          "type": "Application",
+          "description": "The bought policy platform, configured for home, motor and travel.",
+          "architectureState": "Current",
+          "owningTeam": "Policy systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "DE",
+          "supplier": "Ledgerleaf Insurance Systems",
+          "hosting": "Cloud"
+        }
+      },
+      "app-policy-core": {
+        "label": "Policy core",
+        "metadata": {
+          "type": "Application",
+          "description": "The system of record for policies and cover.",
+          "architectureState": "Current",
+          "functions": [
+            "Policy issuance",
+            "Endorsements",
+            "Cancellations",
+            "Renewal runs"
+          ],
+          "owningTeam": "Policy systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "DE",
+          "supplier": "Ledgerleaf Insurance Systems",
+          "hosting": "Cloud"
+        }
+      },
+      "app-product-config": {
+        "label": "Product configurator",
+        "metadata": {
+          "type": "Application",
+          "description": "Where product managers define cover, limits and excesses.",
+          "architectureState": "Current",
+          "functions": [
+            "Product definitions",
+            "Coverage rules"
+          ],
+          "owningTeam": "Policy systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "DE",
+          "supplier": "Ledgerleaf Insurance Systems",
+          "hosting": "Cloud"
+        }
+      },
+      "app-rating-engine": {
+        "label": "Rating engine",
+        "metadata": {
+          "type": "Application",
+          "description": "Calculates premiums for quotes, changes and renewals.",
+          "architectureState": "Current",
+          "functions": [
+            "Premium calculation",
+            "Rating factor tables"
+          ],
+          "owningTeam": "Policy systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "DE",
+          "supplier": "Ledgerleaf Insurance Systems",
+          "hosting": "Cloud"
+        }
+      },
+      "app-claims-legacy": {
+        "label": "QuillClaims",
+        "metadata": {
+          "type": "Application",
+          "description": "The in-house claims system, built in 2004. It is replaced by the Claims platform and switched off after the last open claims are migrated.",
+          "architectureState": "Deprecate",
+          "functions": [
+            "Claim registration",
+            "Reserving",
+            "Claim payments",
+            "Nightly extracts"
+          ],
+          "owningTeam": "Claims IT",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "On premise"
+        }
+      },
+      "app-claims-platform": {
+        "label": "Claims platform",
+        "metadata": {
+          "type": "Application",
+          "description": "The bought claims platform that replaces QuillClaims.",
+          "architectureState": "Target",
+          "owningTeam": "Claims IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "IE",
+          "supplier": "Claimwright Software",
+          "hosting": "SaaS"
+        }
+      },
+      "app-claims-intake": {
+        "label": "Claims intake",
+        "metadata": {
+          "type": "Application",
+          "description": "Takes new claims from the portals, the app and repair partners.",
+          "architectureState": "Target",
+          "functions": [
+            "Online claim forms",
+            "Repair partner estimates"
+          ],
+          "owningTeam": "Claims IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "IE",
+          "supplier": "Claimwright Software",
+          "hosting": "SaaS"
+        }
+      },
+      "app-claims-workbench": {
+        "label": "Claims workbench",
+        "metadata": {
+          "type": "Application",
+          "description": "Where claims handlers work their cases.",
+          "architectureState": "Target",
+          "functions": [
+            "Case management",
+            "Task routing",
+            "Settlement decisions"
+          ],
+          "owningTeam": "Claims IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "IE",
+          "supplier": "Claimwright Software",
+          "hosting": "SaaS"
+        }
+      },
+      "app-claims-reserving": {
+        "label": "Claims reserving",
+        "metadata": {
+          "type": "Application",
+          "description": "Keeps the expected cost of every open claim.",
+          "architectureState": "Target",
+          "functions": [
+            "Reserve calculation",
+            "Reserve history"
+          ],
+          "owningTeam": "Claims IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "IE",
+          "supplier": "Claimwright Software",
+          "hosting": "SaaS"
+        }
+      },
+      "app-uw-workbench": {
+        "label": "Underwriting workbench",
+        "metadata": {
+          "type": "Application",
+          "description": "Underwriters review referred quotes here.",
+          "architectureState": "Current",
+          "functions": [
+            "Risk questionnaires",
+            "Referral handling"
+          ],
+          "owningTeam": "Policy systems",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Cloud"
+        }
+      },
+      "app-billing": {
+        "label": "Billing and collections",
+        "metadata": {
+          "type": "Application",
+          "description": "Bills premiums and collects them.",
+          "architectureState": "Current",
+          "functions": [
+            "Premium schedules",
+            "Direct debit runs",
+            "Dunning"
+          ],
+          "owningTeam": "Finance systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "SE",
+          "supplier": "Tallyfern Billing",
+          "hosting": "SaaS"
+        }
+      },
+      "app-customer-portal": {
+        "label": "Customer portal",
+        "metadata": {
+          "type": "Application",
+          "description": "The website where members get quotes, manage policies and follow their claims.",
+          "architectureState": "Current",
+          "functions": [
+            "Quotes",
+            "Policy documents",
+            "Claim status"
+          ],
+          "owningTeam": "Digital channels",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Cloud"
+        }
+      },
+      "app-mobile-app": {
+        "label": "Quillfeather mobile app",
+        "metadata": {
+          "type": "Application",
+          "description": "The new app, live for motor claims first.",
+          "architectureState": "Target",
+          "functions": [
+            "Photo claims",
+            "Digital policy card"
+          ],
+          "owningTeam": "Digital channels",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Cloud"
+        }
+      },
+      "app-broker-portal": {
+        "label": "Broker portal",
+        "metadata": {
+          "type": "Application",
+          "description": "Brokers quote and bind online.",
+          "architectureState": "Current",
+          "functions": [
+            "Broker quotes",
+            "Commission statements"
+          ],
+          "owningTeam": "Digital channels",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Cloud"
+        }
+      },
+      "app-broker-extranet": {
+        "label": "Broker extranet",
+        "metadata": {
+          "type": "Application",
+          "description": "The old extranet, kept for the last brokers who have not moved to the Broker portal.",
+          "architectureState": "Deprecate",
+          "functions": [
+            "Quote requests by form"
+          ],
+          "owningTeam": "Digital channels",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "On premise"
+        }
+      },
+      "app-crm": {
+        "label": "Customer relationship management",
+        "metadata": {
+          "type": "Application",
+          "description": "One view of each member and every contact with them.",
+          "architectureState": "Current",
+          "functions": [
+            "Customer 360",
+            "Contact history",
+            "Complaints"
+          ],
+          "owningTeam": "Customer operations IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "US",
+          "supplier": "Burrowdesk",
+          "hosting": "SaaS"
+        }
+      },
+      "app-data-platform": {
+        "label": "Data platform",
+        "metadata": {
+          "type": "Application",
+          "description": "Reporting, analytics and the actuarial models.",
+          "architectureState": "Current",
+          "owningTeam": "Data and analytics",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Hybrid"
+        }
+      },
+      "app-dwh": {
+        "label": "Data warehouse",
+        "metadata": {
+          "type": "Application",
+          "description": "The nightly-loaded warehouse. It stays until the lakehouse has the claims history.",
+          "architectureState": "Current",
+          "functions": [
+            "Nightly loads",
+            "Finance marts"
+          ],
+          "owningTeam": "Data and analytics",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "On premise"
+        }
+      },
+      "app-lakehouse": {
+        "label": "Analytics lakehouse",
+        "metadata": {
+          "type": "Application",
+          "description": "Fed by events in near real time.",
+          "architectureState": "Target",
+          "functions": [
+            "Event ingestion",
+            "Data products"
+          ],
+          "owningTeam": "Data and analytics",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Cloud"
+        }
+      },
+      "app-bi": {
+        "label": "Reporting and dashboards",
+        "metadata": {
+          "type": "Application",
+          "description": "Management dashboards and the report packs for the regulator.",
+          "architectureState": "Current",
+          "functions": [
+            "Dashboards",
+            "Regulatory report packs"
+          ],
+          "owningTeam": "Data and analytics",
+          "sourcing": "Buy",
+          "supplierHqCountry": "US",
+          "supplier": "Gleamquarry Analytics",
+          "hosting": "SaaS"
+        }
+      },
+      "app-actuarial": {
+        "label": "Actuarial models",
+        "metadata": {
+          "type": "Application",
+          "description": "Reserving and pricing models owned by the actuaries.",
+          "architectureState": "Current",
+          "functions": [
+            "Loss triangles",
+            "Pricing models"
+          ],
+          "owningTeam": "Data and analytics",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Cloud"
+        }
+      },
+      "app-dms": {
+        "label": "Document management",
+        "metadata": {
+          "type": "Application",
+          "description": "Policy documents, claim evidence and letters, kept for their retention period.",
+          "architectureState": "Current",
+          "functions": [
+            "Document archive",
+            "Retention rules"
+          ],
+          "owningTeam": "Workplace IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "FR",
+          "supplier": "Papyrion Documents",
+          "hosting": "On premise"
+        }
+      },
+      "app-output": {
+        "label": "Correspondence and output",
+        "metadata": {
+          "type": "Application",
+          "description": "Produces policy schedules, renewal invitations and claim letters.",
+          "architectureState": "Current",
+          "functions": [
+            "Letter templates",
+            "Print and email"
+          ],
+          "owningTeam": "Policy systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "BE",
+          "supplier": "Scrivelane",
+          "hosting": "SaaS"
+        }
+      },
+      "app-payments": {
+        "label": "Payment hub",
+        "metadata": {
+          "type": "Application",
+          "description": "All money in and out, by card, direct debit and bank transfer.",
+          "architectureState": "Current",
+          "functions": [
+            "Card payments",
+            "Payouts",
+            "Refunds"
+          ],
+          "owningTeam": "Finance systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "GB",
+          "supplier": "Quaypenny Payments",
+          "hosting": "SaaS"
+        }
+      },
+      "app-fraud": {
+        "label": "Fraud check",
+        "metadata": {
+          "type": "Application",
+          "description": "Scores claims for fraud risk.",
+          "architectureState": "Current",
+          "functions": [
+            "Fraud scoring",
+            "Network analysis"
+          ],
+          "owningTeam": "Claims IT",
+          "sourcing": "Buy",
+          "supplierHqCountry": "GB",
+          "supplier": "Owlseye Analytics",
+          "hosting": "SaaS"
+        }
+      },
+      "app-integration": {
+        "label": "Integration layer",
+        "metadata": {
+          "type": "Application",
+          "description": "How systems talk to each other: APIs, events and, for now, the service bus.",
+          "architectureState": "Current",
+          "owningTeam": "Integration team",
+          "sourcing": "Build",
+          "supplierHqCountry": "NL",
+          "hosting": "Hybrid"
+        }
+      },
+      "app-api-gateway": {
+        "label": "API gateway",
+        "metadata": {
+          "type": "Application",
+          "description": "The one front door for the portals and the app.",
+          "architectureState": "Current",
+          "functions": [
+            "Authentication",
+            "Rate limiting",
+            "API catalogue"
+          ],
+          "owningTeam": "Integration team",
+          "sourcing": "Buy",
+          "supplierHqCountry": "US",
+          "supplier": "Brookrelay",
+          "hosting": "Cloud"
+        }
+      },
+      "app-esb": {
+        "label": "Enterprise service bus",
+        "metadata": {
+          "type": "Application",
+          "description": "The old bus. Its flows move to the API gateway and event streaming.",
+          "architectureState": "Deprecate",
+          "functions": [
+            "Message routing",
+            "File transfers"
+          ],
+          "owningTeam": "Integration team",
+          "sourcing": "Buy",
+          "supplierHqCountry": "DE",
+          "supplier": "Ironsluice Middleware",
+          "hosting": "On premise"
+        }
+      },
+      "app-event-streaming": {
+        "label": "Event streaming",
+        "metadata": {
+          "type": "Application",
+          "description": "Publishes business events for any system that needs them.",
+          "architectureState": "Target",
+          "functions": [
+            "Policy events",
+            "Claim events"
+          ],
+          "owningTeam": "Integration team",
+          "sourcing": "Buy",
+          "supplierHqCountry": "US",
+          "supplier": "Brookrelay",
+          "hosting": "Cloud"
+        }
+      },
+      "app-customer-identity": {
+        "label": "Customer identity",
+        "metadata": {
+          "type": "Application",
+          "description": "Accounts and sign-in for members.",
+          "architectureState": "Current",
+          "functions": [
+            "Sign-in",
+            "Multi-factor authentication"
+          ],
+          "owningTeam": "Digital channels",
+          "sourcing": "Buy",
+          "supplierHqCountry": "CH",
+          "supplier": "Keyhaven Identity",
+          "hosting": "SaaS"
+        }
+      },
+      "app-general-ledger": {
+        "label": "General ledger",
+        "metadata": {
+          "type": "Application",
+          "description": "The books of account.",
+          "architectureState": "Current",
+          "functions": [
+            "Journals",
+            "Month-end close"
+          ],
+          "owningTeam": "Finance systems",
+          "sourcing": "Buy",
+          "supplierHqCountry": "DE",
+          "supplier": "Countwell ERP",
+          "hosting": "SaaS"
+        }
+      },
+      "inf-landing-zone": {
+        "label": "Cloud landing zone",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Our part of the public cloud, in an EU region.",
+          "architectureState": "Current",
+          "functions": [
+            "Network segmentation",
+            "Policy guardrails"
+          ],
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-k8s": {
+        "label": "Production Kubernetes cluster",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Runs the systems we build or host ourselves in the cloud.",
+          "architectureState": "Current",
+          "functions": [
+            "Container scheduling",
+            "Autoscaling"
+          ],
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-pool-web": {
+        "label": "Web node pool",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Nodes for the internet-facing front ends.",
+          "architectureState": "Current",
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-pool-services": {
+        "label": "Services node pool",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Nodes for internal services and the policy suite.",
+          "architectureState": "Current",
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-managed-db": {
+        "label": "Managed PostgreSQL",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "The cloud database service.",
+          "architectureState": "Current",
+          "functions": [
+            "Automatic failover",
+            "Point-in-time restore"
+          ],
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-object-storage": {
+        "label": "Object storage",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Storage for the lakehouse and, soon, the document archive.",
+          "architectureState": "Target",
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-cdn": {
+        "label": "CDN and web firewall",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "In front of everything on the internet.",
+          "architectureState": "Current",
+          "functions": [
+            "Caching",
+            "Bot protection"
+          ],
+          "owningTeam": "Cloud platform team",
+          "supplierHqCountry": "US",
+          "supplier": "Nimbusreach Cloud"
+        }
+      },
+      "inf-datacentre": {
+        "label": "Head office data centre",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "The server room at head office. It shrinks as systems move to the cloud.",
+          "architectureState": "Current",
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-virtualisation": {
+        "label": "Virtualisation cluster",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Hosts the on-premise servers.",
+          "architectureState": "Current",
+          "functions": [
+            "Virtual machines",
+            "Live migration"
+          ],
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "US",
+          "supplier": "Hollowpine Systems"
+        }
+      },
+      "inf-srv-quillclaims": {
+        "label": "QuillClaims application server",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Goes with QuillClaims.",
+          "architectureState": "Deprecate",
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-srv-integration": {
+        "label": "Integration server",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Runs the service bus.",
+          "architectureState": "Deprecate",
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-srv-extranet": {
+        "label": "Extranet web server",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Runs the Broker extranet.",
+          "architectureState": "Deprecate",
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-db-cluster": {
+        "label": "On-premise database cluster",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Databases for QuillClaims and the data warehouse.",
+          "architectureState": "Current",
+          "functions": [
+            "Clustering",
+            "Nightly backups"
+          ],
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "US",
+          "supplier": "Hollowpine Systems"
+        }
+      },
+      "inf-file-store": {
+        "label": "File storage",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Network file storage for the document archive.",
+          "architectureState": "Current",
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-wan": {
+        "label": "Site-to-site VPN",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Links the data centre and the cloud landing zone.",
+          "architectureState": "Current",
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-backup": {
+        "label": "Backup service",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Backs up the databases on premise and in the cloud.",
+          "architectureState": "Current",
+          "functions": [
+            "Daily backups",
+            "Off-site copies"
+          ],
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "NL"
+        }
+      },
+      "inf-monitoring": {
+        "label": "Monitoring and alerting",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Watches the clusters and pages the on-call engineer.",
+          "architectureState": "Current",
+          "functions": [
+            "Metrics",
+            "On-call alerts"
+          ],
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "SE",
+          "supplier": "Lanternwatch"
+        }
+      },
+      "inf-directory": {
+        "label": "Workforce directory",
+        "metadata": {
+          "type": "Infrastructure",
+          "description": "Staff accounts and single sign-on.",
+          "architectureState": "Current",
+          "functions": [
+            "Staff sign-in",
+            "Groups"
+          ],
+          "owningTeam": "Infrastructure operations",
+          "supplierHqCountry": "CH",
+          "supplier": "Keyhaven Identity"
+        }
+      },
+      "oth-goal-48h": {
+        "label": "Settle simple claims within 48 hours",
+        "metadata": {
+          "type": "Other",
+          "description": "The goal behind the claims replacement."
+        }
+      },
+      "oth-principle-cloud": {
+        "label": "Cloud first for new systems",
+        "metadata": {
+          "type": "Other",
+          "description": "New systems run in the landing zone or as SaaS, unless there is a reason not to."
+        }
+      },
+      "oth-req-solvency": {
+        "label": "Solvency reporting",
+        "metadata": {
+          "type": "Other",
+          "description": "Quarterly and annual solvency returns to the regulator."
+        }
+      },
+      "oth-constraint-eu": {
+        "label": "EU data residency",
+        "metadata": {
+          "type": "Other",
+          "description": "Customer data stays in the EU."
+        }
+      },
+      "oth-wp-claims": {
+        "label": "Claims replacement programme",
+        "metadata": {
+          "type": "Other",
+          "description": "Moves claims from QuillClaims to the Claims platform, line of business by line of business."
+        }
+      },
+      "oth-wp-integration": {
+        "label": "Integration modernisation",
+        "metadata": {
+          "type": "Other",
+          "description": "Moves the service bus flows to the API gateway and event streaming."
+        }
+      }
+    },
+    "edges": [
+      {
+        "id": "rel-001",
+        "source": "cap-customer",
+        "target": "cap-onboarding",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-002",
+        "source": "cap-customer",
+        "target": "cap-service",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-003",
+        "source": "cap-distribution",
+        "target": "cap-broker-mgmt",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-004",
+        "source": "cap-distribution",
+        "target": "cap-direct-sales",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-005",
+        "source": "cap-underwriting",
+        "target": "cap-risk",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-006",
+        "source": "cap-underwriting",
+        "target": "cap-pricing",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-007",
+        "source": "cap-policy",
+        "target": "cap-quote-bind",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-008",
+        "source": "cap-policy",
+        "target": "cap-servicing",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-009",
+        "source": "cap-policy",
+        "target": "cap-renewals",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-010",
+        "source": "cap-claims",
+        "target": "cap-fnol",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-011",
+        "source": "cap-claims",
+        "target": "cap-assessment",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-012",
+        "source": "cap-claims",
+        "target": "cap-settlement",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-013",
+        "source": "cap-claims",
+        "target": "cap-fraud",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-014",
+        "source": "cap-finance",
+        "target": "cap-billing",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-015",
+        "source": "cap-finance",
+        "target": "cap-reporting",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-016",
+        "source": "app-policy-suite",
+        "target": "app-policy-core",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-017",
+        "source": "app-policy-suite",
+        "target": "app-product-config",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-018",
+        "source": "app-policy-suite",
+        "target": "app-rating-engine",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-019",
+        "source": "app-claims-platform",
+        "target": "app-claims-intake",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-020",
+        "source": "app-claims-platform",
+        "target": "app-claims-workbench",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-021",
+        "source": "app-claims-platform",
+        "target": "app-claims-reserving",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-022",
+        "source": "app-data-platform",
+        "target": "app-dwh",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-023",
+        "source": "app-data-platform",
+        "target": "app-bi",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-024",
+        "source": "app-data-platform",
+        "target": "app-actuarial",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-025",
+        "source": "app-data-platform",
+        "target": "app-lakehouse",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-026",
+        "source": "app-integration",
+        "target": "app-api-gateway",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-027",
+        "source": "app-integration",
+        "target": "app-esb",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-028",
+        "source": "app-integration",
+        "target": "app-event-streaming",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-029",
+        "source": "inf-landing-zone",
+        "target": "inf-k8s",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-030",
+        "source": "inf-landing-zone",
+        "target": "inf-managed-db",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-031",
+        "source": "inf-landing-zone",
+        "target": "inf-cdn",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-032",
+        "source": "inf-landing-zone",
+        "target": "inf-object-storage",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-033",
+        "source": "inf-k8s",
+        "target": "inf-pool-web",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-034",
+        "source": "inf-k8s",
+        "target": "inf-pool-services",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-035",
+        "source": "inf-datacentre",
+        "target": "inf-virtualisation",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-036",
+        "source": "inf-datacentre",
+        "target": "inf-db-cluster",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-037",
+        "source": "inf-datacentre",
+        "target": "inf-file-store",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-038",
+        "source": "inf-virtualisation",
+        "target": "inf-srv-quillclaims",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-039",
+        "source": "inf-virtualisation",
+        "target": "inf-srv-integration",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-040",
+        "source": "inf-virtualisation",
+        "target": "inf-srv-extranet",
+        "relation": "Contains",
+        "directed": true,
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-041",
+        "source": "stk-policyholder",
+        "target": "app-customer-portal",
+        "relation": "Relation",
+        "directed": true,
+        "label": "uses",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-042",
+        "source": "stk-policyholder",
+        "target": "app-mobile-app",
+        "relation": "Relation",
+        "directed": true,
+        "label": "uses",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-043",
+        "source": "stk-policyholder",
+        "target": "cap-fnol",
+        "relation": "Relation",
+        "directed": true,
+        "label": "reports a claim",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-044",
+        "source": "stk-broker",
+        "target": "app-broker-portal",
+        "relation": "Relation",
+        "directed": true,
+        "label": "uses",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-045",
+        "source": "stk-broker",
+        "target": "app-broker-extranet",
+        "relation": "Relation",
+        "directed": true,
+        "label": "uses",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-046",
+        "source": "stk-claims-handler",
+        "target": "app-claims-workbench",
+        "relation": "Relation",
+        "directed": true,
+        "label": "works in",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-047",
+        "source": "stk-claims-handler",
+        "target": "app-claims-legacy",
+        "relation": "Relation",
+        "directed": true,
+        "label": "works in",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-048",
+        "source": "stk-claims-handler",
+        "target": "proc-motor-claim",
+        "relation": "Relation",
+        "directed": true,
+        "label": "performs",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-049",
+        "source": "stk-underwriter",
+        "target": "app-uw-workbench",
+        "relation": "Relation",
+        "directed": true,
+        "label": "works in",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-050",
+        "source": "stk-underwriter",
+        "target": "cap-risk",
+        "relation": "Relation",
+        "directed": true,
+        "label": "performs",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-051",
+        "source": "stk-finance-controller",
+        "target": "proc-month-end",
+        "relation": "Relation",
+        "directed": true,
+        "label": "performs",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-052",
+        "source": "stk-repair-partner",
+        "target": "app-claims-intake",
+        "relation": "Relation",
+        "directed": true,
+        "label": "repair estimates",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-053",
+        "source": "stk-repair-partner",
+        "target": "proc-motor-claim",
+        "relation": "Relation",
+        "directed": true,
+        "label": "repairs the vehicle",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-054",
+        "source": "cap-reporting",
+        "target": "stk-regulator",
+        "relation": "Relation",
+        "directed": true,
+        "label": "regulatory returns",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "Secure file upload"
+        }
+      },
+      {
+        "id": "rel-055",
+        "source": "app-crm",
+        "target": "cap-service",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-056",
+        "source": "app-customer-identity",
+        "target": "cap-onboarding",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-057",
+        "source": "app-customer-portal",
+        "target": "cap-direct-sales",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-058",
+        "source": "app-customer-portal",
+        "target": "cap-servicing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-059",
+        "source": "app-broker-portal",
+        "target": "cap-broker-mgmt",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-060",
+        "source": "app-broker-portal",
+        "target": "cap-quote-bind",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-061",
+        "source": "app-broker-extranet",
+        "target": "cap-quote-bind",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-062",
+        "source": "app-rating-engine",
+        "target": "cap-pricing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-063",
+        "source": "app-uw-workbench",
+        "target": "cap-risk",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-064",
+        "source": "app-policy-core",
+        "target": "cap-servicing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-065",
+        "source": "app-policy-core",
+        "target": "cap-renewals",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-066",
+        "source": "app-claims-legacy",
+        "target": "cap-fnol",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-067",
+        "source": "app-claims-legacy",
+        "target": "cap-assessment",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-068",
+        "source": "app-claims-legacy",
+        "target": "proc-motor-claim",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-069",
+        "source": "app-claims-intake",
+        "target": "cap-fnol",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-070",
+        "source": "app-claims-workbench",
+        "target": "cap-assessment",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-071",
+        "source": "app-claims-workbench",
+        "target": "proc-motor-claim",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-072",
+        "source": "app-fraud",
+        "target": "cap-fraud",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-073",
+        "source": "app-billing",
+        "target": "cap-billing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-074",
+        "source": "app-payments",
+        "target": "cap-settlement",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-075",
+        "source": "app-general-ledger",
+        "target": "proc-month-end",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-076",
+        "source": "app-bi",
+        "target": "cap-reporting",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-077",
+        "source": "app-actuarial",
+        "target": "cap-pricing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "supports",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-078",
+        "source": "app-customer-portal",
+        "target": "app-api-gateway",
+        "relation": "Relation",
+        "directed": true,
+        "label": "quotes and policy requests",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-079",
+        "source": "app-mobile-app",
+        "target": "app-api-gateway",
+        "relation": "Relation",
+        "directed": true,
+        "label": "photo claims",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-080",
+        "source": "app-broker-portal",
+        "target": "app-api-gateway",
+        "relation": "Relation",
+        "directed": true,
+        "label": "broker quotes",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-081",
+        "source": "app-api-gateway",
+        "target": "app-policy-core",
+        "relation": "Relation",
+        "directed": true,
+        "label": "policy requests",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-082",
+        "source": "app-api-gateway",
+        "target": "app-claims-intake",
+        "relation": "Relation",
+        "directed": true,
+        "label": "new claims",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-083",
+        "source": "app-api-gateway",
+        "target": "app-claims-legacy",
+        "relation": "Relation",
+        "directed": true,
+        "label": "new claims",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "SOAP"
+        }
+      },
+      {
+        "id": "rel-084",
+        "source": "app-broker-extranet",
+        "target": "app-esb",
+        "relation": "Relation",
+        "directed": true,
+        "label": "quote requests",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-085",
+        "source": "app-esb",
+        "target": "app-policy-core",
+        "relation": "Relation",
+        "directed": true,
+        "label": "quote requests",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "SOAP"
+        }
+      },
+      {
+        "id": "rel-086",
+        "source": "app-policy-core",
+        "target": "app-esb",
+        "relation": "Relation",
+        "directed": true,
+        "label": "policy changes",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "SOAP"
+        }
+      },
+      {
+        "id": "rel-087",
+        "source": "app-esb",
+        "target": "app-billing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "premium schedules",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-088",
+        "source": "app-policy-core",
+        "target": "app-event-streaming",
+        "relation": "Relation",
+        "directed": true,
+        "label": "policy events",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "Events"
+        }
+      },
+      {
+        "id": "rel-089",
+        "source": "app-event-streaming",
+        "target": "app-billing",
+        "relation": "Relation",
+        "directed": true,
+        "label": "premium schedules",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "Events"
+        }
+      },
+      {
+        "id": "rel-090",
+        "source": "app-claims-workbench",
+        "target": "app-event-streaming",
+        "relation": "Relation",
+        "directed": true,
+        "label": "claim events",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "Events"
+        }
+      },
+      {
+        "id": "rel-091",
+        "source": "app-event-streaming",
+        "target": "app-lakehouse",
+        "relation": "Relation",
+        "directed": true,
+        "label": "policy and claim events",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "Events"
+        }
+      },
+      {
+        "id": "rel-092",
+        "source": "app-claims-legacy",
+        "target": "app-dwh",
+        "relation": "Relation",
+        "directed": true,
+        "label": "nightly claims extract",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-093",
+        "source": "app-policy-core",
+        "target": "app-dwh",
+        "relation": "Relation",
+        "directed": true,
+        "label": "nightly policy extract",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-094",
+        "source": "app-dwh",
+        "target": "app-bi",
+        "relation": "Relation",
+        "directed": true,
+        "label": "finance marts",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "SQL"
+        }
+      },
+      {
+        "id": "rel-095",
+        "source": "app-lakehouse",
+        "target": "app-bi",
+        "relation": "Relation",
+        "directed": true,
+        "label": "data products",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "SQL"
+        }
+      },
+      {
+        "id": "rel-096",
+        "source": "app-dwh",
+        "target": "app-actuarial",
+        "relation": "Relation",
+        "directed": true,
+        "label": "loss history",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "SQL"
+        }
+      },
+      {
+        "id": "rel-097",
+        "source": "app-actuarial",
+        "target": "app-rating-engine",
+        "relation": "Relation",
+        "directed": true,
+        "label": "rating factors",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-098",
+        "source": "app-claims-legacy",
+        "target": "app-fraud",
+        "relation": "Relation",
+        "directed": true,
+        "label": "batch fraud check",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-099",
+        "source": "app-claims-workbench",
+        "target": "app-payments",
+        "relation": "Relation",
+        "directed": true,
+        "label": "payment instructions",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-100",
+        "source": "app-claims-legacy",
+        "target": "app-payments",
+        "relation": "Relation",
+        "directed": true,
+        "label": "payment files",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-101",
+        "source": "app-billing",
+        "target": "app-general-ledger",
+        "relation": "Relation",
+        "directed": true,
+        "label": "premium journals",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-102",
+        "source": "app-payments",
+        "target": "app-general-ledger",
+        "relation": "Relation",
+        "directed": true,
+        "label": "payment journals",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-103",
+        "source": "app-claims-reserving",
+        "target": "app-general-ledger",
+        "relation": "Relation",
+        "directed": true,
+        "label": "claim reserves",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-104",
+        "source": "app-uw-workbench",
+        "target": "app-rating-engine",
+        "relation": "Relation",
+        "directed": true,
+        "label": "price requests",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-105",
+        "source": "app-policy-core",
+        "target": "app-output",
+        "relation": "Relation",
+        "directed": true,
+        "label": "document requests",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-106",
+        "source": "app-output",
+        "target": "app-dms",
+        "relation": "Relation",
+        "directed": true,
+        "label": "sent letters",
+        "metadata": {
+          "architectureState": "Current",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-107",
+        "source": "app-claims-workbench",
+        "target": "app-dms",
+        "relation": "Relation",
+        "directed": true,
+        "label": "claim documents",
+        "metadata": {
+          "architectureState": "Target",
+          "informationFlow": true,
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-108",
+        "source": "app-claims-legacy",
+        "target": "app-dms",
+        "relation": "Relation",
+        "directed": true,
+        "label": "claim documents",
+        "metadata": {
+          "architectureState": "Deprecate",
+          "informationFlow": true,
+          "protocol": "File"
+        }
+      },
+      {
+        "id": "rel-109",
+        "source": "app-claims-workbench",
+        "target": "app-fraud",
+        "relation": "Relation",
+        "directed": false,
+        "label": "fraud scoring",
+        "metadata": {
+          "architectureState": "Target",
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-110",
+        "source": "app-billing",
+        "target": "app-payments",
+        "relation": "Relation",
+        "directed": false,
+        "label": "collections and refunds",
+        "metadata": {
+          "architectureState": "Current",
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-111",
+        "source": "app-crm",
+        "target": "app-policy-core",
+        "relation": "Relation",
+        "directed": false,
+        "label": "customer and policy sync",
+        "metadata": {
+          "architectureState": "Current",
+          "protocol": "REST"
+        }
+      },
+      {
+        "id": "rel-112",
+        "source": "app-customer-identity",
+        "target": "app-customer-portal",
+        "relation": "Relation",
+        "directed": true,
+        "label": "signs members in",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-113",
+        "source": "app-customer-identity",
+        "target": "app-mobile-app",
+        "relation": "Relation",
+        "directed": true,
+        "label": "signs members in",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-114",
+        "source": "inf-pool-web",
+        "target": "app-customer-portal",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-115",
+        "source": "inf-pool-web",
+        "target": "app-broker-portal",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-116",
+        "source": "inf-pool-web",
+        "target": "app-mobile-app",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-117",
+        "source": "inf-pool-services",
+        "target": "app-api-gateway",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-118",
+        "source": "inf-pool-services",
+        "target": "app-uw-workbench",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-119",
+        "source": "inf-pool-services",
+        "target": "app-policy-suite",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-120",
+        "source": "inf-pool-services",
+        "target": "app-event-streaming",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-121",
+        "source": "inf-pool-services",
+        "target": "app-actuarial",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-122",
+        "source": "inf-managed-db",
+        "target": "app-policy-suite",
+        "relation": "Relation",
+        "directed": true,
+        "label": "stores data for",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-123",
+        "source": "inf-object-storage",
+        "target": "app-lakehouse",
+        "relation": "Relation",
+        "directed": true,
+        "label": "stores data for",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-124",
+        "source": "inf-object-storage",
+        "target": "app-dms",
+        "relation": "Relation",
+        "directed": true,
+        "label": "stores documents for",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-125",
+        "source": "inf-file-store",
+        "target": "app-dms",
+        "relation": "Relation",
+        "directed": true,
+        "label": "stores documents for",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-126",
+        "source": "inf-srv-quillclaims",
+        "target": "app-claims-legacy",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-127",
+        "source": "inf-srv-integration",
+        "target": "app-esb",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-128",
+        "source": "inf-srv-extranet",
+        "target": "app-broker-extranet",
+        "relation": "Relation",
+        "directed": true,
+        "label": "hosts",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-129",
+        "source": "inf-db-cluster",
+        "target": "app-claims-legacy",
+        "relation": "Relation",
+        "directed": true,
+        "label": "stores data for",
+        "metadata": {
+          "architectureState": "Deprecate"
+        }
+      },
+      {
+        "id": "rel-130",
+        "source": "inf-db-cluster",
+        "target": "app-dwh",
+        "relation": "Relation",
+        "directed": true,
+        "label": "stores data for",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-131",
+        "source": "inf-cdn",
+        "target": "inf-pool-web",
+        "relation": "Relation",
+        "directed": true,
+        "label": "protects",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-132",
+        "source": "inf-wan",
+        "target": "inf-landing-zone",
+        "relation": "Relation",
+        "directed": false,
+        "label": "connects",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-133",
+        "source": "inf-wan",
+        "target": "inf-datacentre",
+        "relation": "Relation",
+        "directed": false,
+        "label": "connects",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-134",
+        "source": "inf-backup",
+        "target": "inf-db-cluster",
+        "relation": "Relation",
+        "directed": true,
+        "label": "backs up",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-135",
+        "source": "inf-backup",
+        "target": "inf-managed-db",
+        "relation": "Relation",
+        "directed": true,
+        "label": "backs up",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-136",
+        "source": "inf-monitoring",
+        "target": "inf-k8s",
+        "relation": "Relation",
+        "directed": true,
+        "label": "monitors",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-137",
+        "source": "inf-monitoring",
+        "target": "inf-virtualisation",
+        "relation": "Relation",
+        "directed": true,
+        "label": "monitors",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-138",
+        "source": "inf-directory",
+        "target": "app-uw-workbench",
+        "relation": "Relation",
+        "directed": true,
+        "label": "signs staff in",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-139",
+        "source": "inf-directory",
+        "target": "app-claims-workbench",
+        "relation": "Relation",
+        "directed": true,
+        "label": "signs staff in",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-140",
+        "source": "app-claims-platform",
+        "target": "oth-goal-48h",
+        "relation": "Relation",
+        "directed": true,
+        "label": "contributes to",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-141",
+        "source": "oth-wp-claims",
+        "target": "app-claims-platform",
+        "relation": "Relation",
+        "directed": true,
+        "label": "delivers",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-142",
+        "source": "oth-wp-claims",
+        "target": "app-claims-legacy",
+        "relation": "Relation",
+        "directed": true,
+        "label": "retires",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-143",
+        "source": "oth-wp-integration",
+        "target": "app-event-streaming",
+        "relation": "Relation",
+        "directed": true,
+        "label": "delivers",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-144",
+        "source": "oth-wp-integration",
+        "target": "app-esb",
+        "relation": "Relation",
+        "directed": true,
+        "label": "retires",
+        "metadata": {
+          "architectureState": "Target"
+        }
+      },
+      {
+        "id": "rel-145",
+        "source": "oth-principle-cloud",
+        "target": "inf-landing-zone",
+        "relation": "Relation",
+        "directed": true,
+        "label": "applies to",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-146",
+        "source": "oth-req-solvency",
+        "target": "cap-reporting",
+        "relation": "Relation",
+        "directed": true,
+        "label": "applies to",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      },
+      {
+        "id": "rel-147",
+        "source": "oth-constraint-eu",
+        "target": "inf-landing-zone",
+        "relation": "Relation",
+        "directed": true,
+        "label": "constrains",
+        "metadata": {
+          "architectureState": "Current"
+        }
+      }
+    ]
+  }
+}

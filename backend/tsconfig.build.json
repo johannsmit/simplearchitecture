@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    // No source maps: they would carry the TypeScript source into the image.
+    "sourceMap": false,
+    "paths": {}
+  },
+  "include": ["src"]
+}

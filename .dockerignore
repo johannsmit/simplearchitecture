@@ -1,0 +1,34 @@
+# The build context is an allow-list: only what the image build needs. Nothing secret or real
+# (.env, data/, graph-export.json) may ever reach it.
+*
+!LICENSE
+!package.json
+!package-lock.json
+!tsconfig.base.json
+!shared/
+!backend/
+!frontend/
+!config/oef-mapping.json
+!deploy/prune-app.sh
+!deploy/check-image-files.sh
+
+# Never, wherever they are (also inside the folders allowed above).
+**/.env*
+!.env.example
+**/data/
+**/docs/
+**/graph-export.json
+**/node_modules/
+**/dist/
+**/dev-dist/
+**/coverage/
+**/*.tsbuildinfo
+**/.vite/
+**/.git/
+**/.DS_Store
+**/*.log
+
+# Tests aren't built into the image.
+backend/test/
+frontend/test/
+shared/test/

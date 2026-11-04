@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A made-up model of a bakery, for tests. Not based on any real model. -->
+<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       identifier="model-bakery">
+  <name xml:lang="en">Bakery landscape</name>
+  <documentation xml:lang="en">A made-up bakery.</documentation>
+  <elements>
+    <element identifier="e-customer" xsi:type="BusinessActor">
+      <name xml:lang="en">Customer</name>
+    </element>
+    <element identifier="e-baker" xsi:type="BusinessRole">
+      <name xml:lang="en">Baker</name>
+    </element>
+    <element identifier="e-ordering" xsi:type="BusinessProcess">
+      <name xml:lang="en">Ordering</name>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Front desk</value></property>
+      </properties>
+    </element>
+    <element identifier="e-shop" xsi:type="ApplicationComponent">
+      <name xml:lang="nl">Winkel</name>
+      <name xml:lang="en">Web shop</name>
+      <documentation xml:lang="nl">De webwinkel</documentation>
+      <documentation xml:lang="en">Where customers order bread.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Web team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">Netherlands</value></property>
+        <property propertyDefinitionRef="pd-internal"><value xml:lang="en">External</value></property>
+        <property propertyDefinitionRef="pd-description"><value xml:lang="en">Shop notes</value></property>
+      </properties>
+    </element>
+    <element identifier="e-stock" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Stock keeper</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en"></value></property>
+      </properties>
+    </element>
+    <element identifier="e-legacy" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Old till</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </element>
+    <element identifier="e-suite" xsi:type="ApplicationCollaboration">
+      <name xml:lang="en">Shop suite</name>
+    </element>
+    <element identifier="e-fn-checkout" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Checkout</name>
+    </element>
+    <element identifier="e-fn-pay" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Card payment</name>
+      <documentation xml:lang="en">Takes card payments.</documentation>
+    </element>
+    <element identifier="e-fn-checkout-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Checkout</name>
+    </element>
+    <element identifier="e-fn-report" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Sales report</name>
+    </element>
+    <element identifier="e-server" xsi:type="Node">
+      <name xml:lang="en">Bakery server</name>
+    </element>
+    <element identifier="e-db" xsi:type="SystemSoftware">
+      <name xml:lang="en">Recipe database</name>
+    </element>
+    <element identifier="e-goal" xsi:type="Goal">
+      <name xml:lang="en">Fresh &amp; warm bread &#x1F35E;</name>
+      <properties>
+        <property propertyDefinitionRef="pd-missing"><value xml:lang="en">orphan value</value></property>
+      </properties>
+    </element>
+    <element identifier="e-location" xsi:type="Location">
+      <name xml:lang="en">High street</name>
+    </element>
+    <element identifier="e-junction" xsi:type="AndJunction" />
+    <element identifier="e-mystery" xsi:type="Banana">
+      <name xml:lang="en">Not an ArchiMate type</name>
+    </element>
+  </elements>
+  <relationships>
+    <relationship identifier="r-orders" source="e-customer" target="e-shop" xsi:type="Flow">
+      <name xml:lang="en">Orders</name>
+      <documentation xml:lang="en">Customers send orders.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-integration"><value xml:lang="en">API Gateway</value></property>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Current</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="r-recipes" source="e-shop" target="e-db" xsi:type="Flow" />
+    <relationship identifier="r-assign" source="e-shop" target="e-fn-checkout" xsi:type="Assignment" />
+    <relationship identifier="r-compose" source="e-suite" target="e-fn-checkout" xsi:type="Composition" />
+    <relationship identifier="r-realize" source="e-fn-pay" target="e-shop" xsi:type="Realization" />
+    <relationship identifier="r-compose-2" source="e-shop" target="e-fn-checkout-2" xsi:type="Composition" />
+    <relationship identifier="r-serves" source="e-shop" target="e-ordering" xsi:type="Serving" />
+    <relationship identifier="r-hosts" source="e-server" target="e-shop" xsi:type="Serving" />
+    <relationship identifier="r-from-function" source="e-fn-checkout" target="e-db" xsi:type="Flow" />
+    <relationship identifier="r-from-junction" source="e-junction" target="e-shop" xsi:type="Flow" />
+    <relationship identifier="r-to-relationship" source="e-shop" target="r-orders" xsi:type="Flow" />
+    <relationship identifier="r-triggers" source="e-ordering" target="e-ordering" xsi:type="Triggering" />
+    <relationship identifier="r-report" source="e-fn-report" target="e-shop" xsi:type="Flow" />
+  </relationships>
+  <organizations>
+    <item>
+      <label xml:lang="en">Business</label>
+      <item identifierRef="e-customer" />
+    </item>
+  </organizations>
+  <propertyDefinitions>
+    <propertyDefinition identifier="pd-state" type="string"><name xml:lang="en">Architecture State</name></propertyDefinition>
+    <propertyDefinition identifier="pd-team" type="string"><name xml:lang="en">Responsible Team</name></propertyDefinition>
+    <propertyDefinition identifier="pd-country" type="string"><name xml:lang="en">Vendor HQ Country</name></propertyDefinition>
+    <propertyDefinition identifier="pd-internal" type="string"><name xml:lang="en">Internal/External</name></propertyDefinition>
+    <propertyDefinition identifier="pd-integration" type="string"><name xml:lang="en">Integration Type</name></propertyDefinition>
+    <propertyDefinition identifier="pd-description" type="string"><name xml:lang="en">Description</name></propertyDefinition>
+  </propertyDefinitions>
+  <views>
+    <diagrams>
+      <view identifier="v-overview" xsi:type="Diagram">
+        <name xml:lang="en">Overview</name>
+        <node identifier="n-1" elementRef="e-shop" xsi:type="Element" x="10" y="10" w="120" h="55" />
+      </view>
+      <view identifier="v-tech" xsi:type="Diagram">
+        <name xml:lang="en">Technology</name>
+      </view>
+    </diagrams>
+  </views>
+</model>

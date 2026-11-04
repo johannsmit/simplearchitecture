@@ -1,0 +1,93 @@
+SimpleArchitecture Licence
+
+Copyright (c) 2026 J. Smit
+
+This licence covers SimpleArchitecture, including its source code, compiled code, container
+images and documentation ("the Software"). The Software is source-available: you can read it,
+run it and change it under the terms below. It is not open source, because selling it or
+selling hosting of it is not allowed.
+
+"You" means the person or organisation using the Software. If you are an organisation, this
+includes your employees and the contractors who work for you.
+
+
+1. What you may do
+
+You may, free of charge:
+
+(a) Run the Software for your own internal business purposes, for your personal use, or for any
+    non-commercial purpose, on your own systems or on servers or cloud infrastructure that you
+    rent from someone else.
+
+(b) Modify the Software for those same purposes.
+
+(c) Pass on copies of the Software, modified or not, as long as you do so free of charge and
+    follow section 2.
+
+(d) If you are a consultant or other service provider, use the Software in your work for a
+    client, and help a client install, run or modify it. You may charge for your own work, but
+    not for the Software itself or for access to it.
+
+What you create with the Software, such as your models and exports, is yours. This licence
+claims no rights over it.
+
+
+2. What you must do when you pass on a copy
+
+(a) Include this licence in full, along with every copyright notice and every other notice that
+    came with the Software.
+
+(b) Pass the copy on under this licence and no other, so that the people who receive it have
+    the same rights and limits.
+
+(c) If you changed the Software, mark it clearly as modified, in a way that anyone who receives
+    the copy can see, and say that it is not the original.
+
+
+3. What you may not do
+
+You may not:
+
+(a) Sell the Software, a copy of it, or a modified version of it, or charge for a licence to it.
+
+(b) Sell hosting of the Software, or offer the Software or a modified version of it to others as
+    a paid service, whether you charge for it directly or include it in something else you
+    charge for.
+
+(c) Remove, hide or change any licence, copyright or other notice in the Software.
+
+(d) Offer the Software or a modified version under other terms, or claim that it comes from, or
+    is approved by, the copyright holder when it does not.
+
+If you want to do something this licence does not allow, ask the copyright holder.
+
+
+4. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, WHETHER
+EXPRESS, IMPLIED OR STATUTORY, INCLUDING ANY WARRANTY OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, ACCURACY, SECURITY OR NON-INFRINGEMENT. You use it at your own risk, and you
+are responsible for how you run and secure it and for backing up your data.
+
+
+5. No liability
+
+TO THE FULLEST EXTENT THE LAW ALLOWS, THE COPYRIGHT HOLDER AND ANYONE WHO HAS CONTRIBUTED TO THE
+SOFTWARE ARE NOT LIABLE FOR ANY CLAIM, LOSS OR DAMAGE OF ANY KIND, DIRECT OR INDIRECT, INCLUDING
+LOSS OF DATA, PROFIT OR BUSINESS, ARISING FROM OR IN CONNECTION WITH THE SOFTWARE OR ITS USE,
+WHETHER IN CONTRACT, TORT OR OTHERWISE, EVEN IF TOLD THAT SUCH LOSS WAS POSSIBLE.
+
+
+6. Ending this licence
+
+If you break this licence, your rights under it end automatically. They come back if you put
+things right within 30 days of learning of the breach. If you break it again after that, your
+rights end for good. The rights of people who received a copy from you in line with this licence
+are not affected.
+
+
+7. Third-party components
+
+Third-party components in the Software stay under their own licences, listed in the web app's
+third-party-licenses.txt and in each package under node_modules. Nothing in this licence limits
+what those licences allow for those components.

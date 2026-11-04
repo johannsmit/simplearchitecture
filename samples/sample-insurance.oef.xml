@@ -1,0 +1,1641 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Quillfeather Mutual: a made-up insurer, a sample model for SimpleArchitecture. Any likeness to a real company, system or vendor is accidental. -->
+<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.opengroup.org/xsd/archimate/3.0/ http://www.opengroup.org/xsd/archimate/3.1/archimate3_Diagram.xsd"
+       identifier="sample-insurance">
+  <name xml:lang="en">Quillfeather Mutual (sample)</name>
+  <documentation xml:lang="en">A made-up insurer for trying SimpleArchitecture. Quillfeather Mutual sells home, motor and travel cover directly and through brokers. It is replacing its in-house claims system, QuillClaims, with a bought Claims platform, and its service bus with an API gateway and event streaming. Any likeness to a real company, system or vendor is accidental.</documentation>
+  <elements>
+    <element identifier="stk-policyholder" xsi:type="BusinessActor">
+      <name xml:lang="en">Policyholder</name>
+      <documentation xml:lang="en">A private or small-business customer with one or more home, motor or travel policies.</documentation>
+    </element>
+    <element identifier="stk-broker" xsi:type="BusinessActor">
+      <name xml:lang="en">Broker</name>
+      <documentation xml:lang="en">An independent intermediary who sells Quillfeather policies to their own clients.</documentation>
+    </element>
+    <element identifier="stk-claims-handler" xsi:type="BusinessRole">
+      <name xml:lang="en">Claims handler</name>
+      <documentation xml:lang="en">Handles claims from first notice to settlement.</documentation>
+    </element>
+    <element identifier="stk-underwriter" xsi:type="BusinessRole">
+      <name xml:lang="en">Underwriter</name>
+      <documentation xml:lang="en">Assesses risks that fall outside the automatic acceptance rules.</documentation>
+    </element>
+    <element identifier="stk-finance-controller" xsi:type="BusinessRole">
+      <name xml:lang="en">Finance controller</name>
+      <documentation xml:lang="en">Owns the month-end close and the regulatory returns.</documentation>
+    </element>
+    <element identifier="stk-regulator" xsi:type="BusinessActor">
+      <name xml:lang="en">Insurance regulator</name>
+      <documentation xml:lang="en">The national supervisor that receives the solvency and conduct returns.</documentation>
+    </element>
+    <element identifier="stk-repair-partner" xsi:type="BusinessActor">
+      <name xml:lang="en">Repair partner</name>
+      <documentation xml:lang="en">A garage or contractor in the approved repair network.</documentation>
+    </element>
+    <element identifier="cap-customer" xsi:type="Capability">
+      <name xml:lang="en">Customer management</name>
+      <documentation xml:lang="en">Knowing, serving and keeping our members.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Customer operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-onboarding" xsi:type="Capability">
+      <name xml:lang="en">Customer onboarding</name>
+      <documentation xml:lang="en">Identifying new customers and setting up their account.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Customer operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-service" xsi:type="Capability">
+      <name xml:lang="en">Customer service</name>
+      <documentation xml:lang="en">Answering questions and handling complaints across phone, chat and email.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Customer operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-distribution" xsi:type="Capability">
+      <name xml:lang="en">Distribution</name>
+      <documentation xml:lang="en">Selling policies directly and through brokers.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Distribution</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-broker-mgmt" xsi:type="Capability">
+      <name xml:lang="en">Broker management</name>
+      <documentation xml:lang="en">Onboarding brokers, agreeing commission and monitoring their portfolio.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Distribution</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-direct-sales" xsi:type="Capability">
+      <name xml:lang="en">Direct sales</name>
+      <documentation xml:lang="en">Selling policies online without an intermediary.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Distribution</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-underwriting" xsi:type="Capability">
+      <name xml:lang="en">Underwriting</name>
+      <documentation xml:lang="en">Deciding which risks we accept and on what terms.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Underwriting</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-risk" xsi:type="Capability">
+      <name xml:lang="en">Risk assessment</name>
+      <documentation xml:lang="en">Judging a risk from the questionnaire, claims history and external data.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Underwriting</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-pricing" xsi:type="Capability">
+      <name xml:lang="en">Pricing</name>
+      <documentation xml:lang="en">Setting premiums from rating factors and the actuarial models.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Underwriting</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-policy" xsi:type="Capability">
+      <name xml:lang="en">Policy management</name>
+      <documentation xml:lang="en">Everything that happens to a policy after the sale.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-quote-bind" xsi:type="Capability">
+      <name xml:lang="en">Quote and bind</name>
+      <documentation xml:lang="en">Turning a quote into a policy in force.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-servicing" xsi:type="Capability">
+      <name xml:lang="en">Policy servicing</name>
+      <documentation xml:lang="en">Mid-term changes such as a new address, vehicle or cover.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-renewals" xsi:type="Capability">
+      <name xml:lang="en">Renewals</name>
+      <documentation xml:lang="en">Inviting and re-pricing policies before they expire.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-claims" xsi:type="Capability">
+      <name xml:lang="en">Claims management</name>
+      <documentation xml:lang="en">Handling losses fairly and quickly.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-fnol" xsi:type="Capability">
+      <name xml:lang="en">First notice of loss</name>
+      <documentation xml:lang="en">Taking the first report of a claim, online or by phone.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-assessment" xsi:type="Capability">
+      <name xml:lang="en">Claims assessment</name>
+      <documentation xml:lang="en">Checking cover, liability and the size of the loss.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-settlement" xsi:type="Capability">
+      <name xml:lang="en">Claims settlement</name>
+      <documentation xml:lang="en">Paying the policyholder or the repair partner.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-fraud" xsi:type="Capability">
+      <name xml:lang="en">Fraud detection</name>
+      <documentation xml:lang="en">Spotting suspicious claims before they are paid.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims operations</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-finance" xsi:type="Capability">
+      <name xml:lang="en">Finance</name>
+      <documentation xml:lang="en">Money in, money out and reporting on both.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-billing" xsi:type="Capability">
+      <name xml:lang="en">Premium billing and collections</name>
+      <documentation xml:lang="en">Collecting premiums by direct debit or card and chasing missed payments.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance</value></property>
+      </properties>
+    </element>
+    <element identifier="cap-reporting" xsi:type="Capability">
+      <name xml:lang="en">Financial and regulatory reporting</name>
+      <documentation xml:lang="en">Statutory accounts and the solvency returns.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance</value></property>
+      </properties>
+    </element>
+    <element identifier="proc-motor-claim" xsi:type="BusinessProcess">
+      <name xml:lang="en">Handle a motor claim</name>
+      <documentation xml:lang="en">From the policyholder's report to the repaired vehicle and the final payment.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims operations</value></property>
+      </properties>
+    </element>
+    <element identifier="proc-month-end" xsi:type="BusinessProcess">
+      <name xml:lang="en">Month-end close</name>
+      <documentation xml:lang="en">Reconciling premiums, claims payments and reserves into the general ledger.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance</value></property>
+      </properties>
+    </element>
+    <element identifier="app-policy-suite" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Policy administration suite</name>
+      <documentation xml:lang="en">The bought policy platform, configured for home, motor and travel.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">DE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Ledgerleaf Insurance Systems</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-policy-core" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Policy core</name>
+      <documentation xml:lang="en">The system of record for policies and cover.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">DE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Ledgerleaf Insurance Systems</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-product-config" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Product configurator</name>
+      <documentation xml:lang="en">Where product managers define cover, limits and excesses.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">DE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Ledgerleaf Insurance Systems</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-rating-engine" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Rating engine</name>
+      <documentation xml:lang="en">Calculates premiums for quotes, changes and renewals.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">DE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Ledgerleaf Insurance Systems</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-claims-legacy" xsi:type="ApplicationComponent">
+      <name xml:lang="en">QuillClaims</name>
+      <documentation xml:lang="en">The in-house claims system, built in 2004. It is replaced by the Claims platform and switched off after the last open claims are migrated.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">On premise</value></property>
+      </properties>
+    </element>
+    <element identifier="app-claims-platform" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Claims platform</name>
+      <documentation xml:lang="en">The bought claims platform that replaces QuillClaims.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">IE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Claimwright Software</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-claims-intake" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Claims intake</name>
+      <documentation xml:lang="en">Takes new claims from the portals, the app and repair partners.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">IE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Claimwright Software</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-claims-workbench" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Claims workbench</name>
+      <documentation xml:lang="en">Where claims handlers work their cases.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">IE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Claimwright Software</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-claims-reserving" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Claims reserving</name>
+      <documentation xml:lang="en">Keeps the expected cost of every open claim.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">IE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Claimwright Software</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-uw-workbench" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Underwriting workbench</name>
+      <documentation xml:lang="en">Underwriters review referred quotes here.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-billing" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Billing and collections</name>
+      <documentation xml:lang="en">Bills premiums and collects them.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">SE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Tallyfern Billing</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-customer-portal" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Customer portal</name>
+      <documentation xml:lang="en">The website where members get quotes, manage policies and follow their claims.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Digital channels</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-mobile-app" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Quillfeather mobile app</name>
+      <documentation xml:lang="en">The new app, live for motor claims first.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Digital channels</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-broker-portal" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Broker portal</name>
+      <documentation xml:lang="en">Brokers quote and bind online.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Digital channels</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-broker-extranet" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Broker extranet</name>
+      <documentation xml:lang="en">The old extranet, kept for the last brokers who have not moved to the Broker portal.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Digital channels</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">On premise</value></property>
+      </properties>
+    </element>
+    <element identifier="app-crm" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Customer relationship management</name>
+      <documentation xml:lang="en">One view of each member and every contact with them.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Customer operations IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Burrowdesk</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-data-platform" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Data platform</name>
+      <documentation xml:lang="en">Reporting, analytics and the actuarial models.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Data and analytics</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Hybrid</value></property>
+      </properties>
+    </element>
+    <element identifier="app-dwh" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Data warehouse</name>
+      <documentation xml:lang="en">The nightly-loaded warehouse. It stays until the lakehouse has the claims history.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Data and analytics</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">On premise</value></property>
+      </properties>
+    </element>
+    <element identifier="app-lakehouse" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Analytics lakehouse</name>
+      <documentation xml:lang="en">Fed by events in near real time.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Data and analytics</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-bi" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Reporting and dashboards</name>
+      <documentation xml:lang="en">Management dashboards and the report packs for the regulator.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Data and analytics</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Gleamquarry Analytics</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-actuarial" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Actuarial models</name>
+      <documentation xml:lang="en">Reserving and pricing models owned by the actuaries.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Data and analytics</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-dms" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Document management</name>
+      <documentation xml:lang="en">Policy documents, claim evidence and letters, kept for their retention period.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Workplace IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">FR</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Papyrion Documents</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">On premise</value></property>
+      </properties>
+    </element>
+    <element identifier="app-output" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Correspondence and output</name>
+      <documentation xml:lang="en">Produces policy schedules, renewal invitations and claim letters.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Policy systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">BE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Scrivelane</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-payments" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Payment hub</name>
+      <documentation xml:lang="en">All money in and out, by card, direct debit and bank transfer.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">GB</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Quaypenny Payments</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-fraud" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Fraud check</name>
+      <documentation xml:lang="en">Scores claims for fraud risk.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Claims IT</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">GB</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Owlseye Analytics</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-integration" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Integration layer</name>
+      <documentation xml:lang="en">How systems talk to each other: APIs, events and, for now, the service bus.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Integration team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Build</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Hybrid</value></property>
+      </properties>
+    </element>
+    <element identifier="app-api-gateway" xsi:type="ApplicationComponent">
+      <name xml:lang="en">API gateway</name>
+      <documentation xml:lang="en">The one front door for the portals and the app.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Integration team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Brookrelay</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-esb" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Enterprise service bus</name>
+      <documentation xml:lang="en">The old bus. Its flows move to the API gateway and event streaming.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Integration team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">DE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Ironsluice Middleware</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">On premise</value></property>
+      </properties>
+    </element>
+    <element identifier="app-event-streaming" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Event streaming</name>
+      <documentation xml:lang="en">Publishes business events for any system that needs them.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Integration team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Brookrelay</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="app-customer-identity" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Customer identity</name>
+      <documentation xml:lang="en">Accounts and sign-in for members.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Digital channels</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">CH</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Keyhaven Identity</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="app-general-ledger" xsi:type="ApplicationComponent">
+      <name xml:lang="en">General ledger</name>
+      <documentation xml:lang="en">The books of account.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Finance systems</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">DE</value></property>
+        <property propertyDefinitionRef="pd-sourcing"><value xml:lang="en">Buy</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Countwell ERP</value></property>
+        <property propertyDefinitionRef="pd-hosting"><value xml:lang="en">SaaS</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-landing-zone" xsi:type="Node">
+      <name xml:lang="en">Cloud landing zone</name>
+      <documentation xml:lang="en">Our part of the public cloud, in an EU region.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-k8s" xsi:type="Node">
+      <name xml:lang="en">Production Kubernetes cluster</name>
+      <documentation xml:lang="en">Runs the systems we build or host ourselves in the cloud.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-pool-web" xsi:type="Node">
+      <name xml:lang="en">Web node pool</name>
+      <documentation xml:lang="en">Nodes for the internet-facing front ends.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-pool-services" xsi:type="Node">
+      <name xml:lang="en">Services node pool</name>
+      <documentation xml:lang="en">Nodes for internal services and the policy suite.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-managed-db" xsi:type="SystemSoftware">
+      <name xml:lang="en">Managed PostgreSQL</name>
+      <documentation xml:lang="en">The cloud database service.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-object-storage" xsi:type="Node">
+      <name xml:lang="en">Object storage</name>
+      <documentation xml:lang="en">Storage for the lakehouse and, soon, the document archive.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-cdn" xsi:type="TechnologyService">
+      <name xml:lang="en">CDN and web firewall</name>
+      <documentation xml:lang="en">In front of everything on the internet.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Cloud platform team</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Nimbusreach Cloud</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-datacentre" xsi:type="Facility">
+      <name xml:lang="en">Head office data centre</name>
+      <documentation xml:lang="en">The server room at head office. It shrinks as systems move to the cloud.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-virtualisation" xsi:type="Node">
+      <name xml:lang="en">Virtualisation cluster</name>
+      <documentation xml:lang="en">Hosts the on-premise servers.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Hollowpine Systems</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-srv-quillclaims" xsi:type="Node">
+      <name xml:lang="en">QuillClaims application server</name>
+      <documentation xml:lang="en">Goes with QuillClaims.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-srv-integration" xsi:type="Node">
+      <name xml:lang="en">Integration server</name>
+      <documentation xml:lang="en">Runs the service bus.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-srv-extranet" xsi:type="Node">
+      <name xml:lang="en">Extranet web server</name>
+      <documentation xml:lang="en">Runs the Broker extranet.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-db-cluster" xsi:type="SystemSoftware">
+      <name xml:lang="en">On-premise database cluster</name>
+      <documentation xml:lang="en">Databases for QuillClaims and the data warehouse.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">US</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Hollowpine Systems</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-file-store" xsi:type="Node">
+      <name xml:lang="en">File storage</name>
+      <documentation xml:lang="en">Network file storage for the document archive.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-wan" xsi:type="CommunicationNetwork">
+      <name xml:lang="en">Site-to-site VPN</name>
+      <documentation xml:lang="en">Links the data centre and the cloud landing zone.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-backup" xsi:type="TechnologyService">
+      <name xml:lang="en">Backup service</name>
+      <documentation xml:lang="en">Backs up the databases on premise and in the cloud.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">NL</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-monitoring" xsi:type="SystemSoftware">
+      <name xml:lang="en">Monitoring and alerting</name>
+      <documentation xml:lang="en">Watches the clusters and pages the on-call engineer.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">SE</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Lanternwatch</value></property>
+      </properties>
+    </element>
+    <element identifier="inf-directory" xsi:type="SystemSoftware">
+      <name xml:lang="en">Workforce directory</name>
+      <documentation xml:lang="en">Staff accounts and single sign-on.</documentation>
+      <properties>
+        <property propertyDefinitionRef="pd-team"><value xml:lang="en">Infrastructure operations</value></property>
+        <property propertyDefinitionRef="pd-country"><value xml:lang="en">CH</value></property>
+        <property propertyDefinitionRef="pd-supplier"><value xml:lang="en">Keyhaven Identity</value></property>
+      </properties>
+    </element>
+    <element identifier="oth-goal-48h" xsi:type="Goal">
+      <name xml:lang="en">Settle simple claims within 48 hours</name>
+      <documentation xml:lang="en">The goal behind the claims replacement.</documentation>
+    </element>
+    <element identifier="oth-principle-cloud" xsi:type="Principle">
+      <name xml:lang="en">Cloud first for new systems</name>
+      <documentation xml:lang="en">New systems run in the landing zone or as SaaS, unless there is a reason not to.</documentation>
+    </element>
+    <element identifier="oth-req-solvency" xsi:type="Requirement">
+      <name xml:lang="en">Solvency reporting</name>
+      <documentation xml:lang="en">Quarterly and annual solvency returns to the regulator.</documentation>
+    </element>
+    <element identifier="oth-constraint-eu" xsi:type="Constraint">
+      <name xml:lang="en">EU data residency</name>
+      <documentation xml:lang="en">Customer data stays in the EU.</documentation>
+    </element>
+    <element identifier="oth-wp-claims" xsi:type="WorkPackage">
+      <name xml:lang="en">Claims replacement programme</name>
+      <documentation xml:lang="en">Moves claims from QuillClaims to the Claims platform, line of business by line of business.</documentation>
+    </element>
+    <element identifier="oth-wp-integration" xsi:type="WorkPackage">
+      <name xml:lang="en">Integration modernisation</name>
+      <documentation xml:lang="en">Moves the service bus flows to the API gateway and event streaming.</documentation>
+    </element>
+    <element identifier="fn-policy-core-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Policy issuance</name>
+    </element>
+    <element identifier="fn-policy-core-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Endorsements</name>
+    </element>
+    <element identifier="fn-policy-core-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Cancellations</name>
+    </element>
+    <element identifier="fn-policy-core-4" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Renewal runs</name>
+    </element>
+    <element identifier="fn-product-config-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Product definitions</name>
+    </element>
+    <element identifier="fn-product-config-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Coverage rules</name>
+    </element>
+    <element identifier="fn-rating-engine-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Premium calculation</name>
+    </element>
+    <element identifier="fn-rating-engine-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Rating factor tables</name>
+    </element>
+    <element identifier="fn-claims-legacy-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Claim registration</name>
+    </element>
+    <element identifier="fn-claims-legacy-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Reserving</name>
+    </element>
+    <element identifier="fn-claims-legacy-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Claim payments</name>
+    </element>
+    <element identifier="fn-claims-legacy-4" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Nightly extracts</name>
+    </element>
+    <element identifier="fn-claims-intake-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Online claim forms</name>
+    </element>
+    <element identifier="fn-claims-intake-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Repair partner estimates</name>
+    </element>
+    <element identifier="fn-claims-workbench-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Case management</name>
+    </element>
+    <element identifier="fn-claims-workbench-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Task routing</name>
+    </element>
+    <element identifier="fn-claims-workbench-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Settlement decisions</name>
+    </element>
+    <element identifier="fn-claims-reserving-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Reserve calculation</name>
+    </element>
+    <element identifier="fn-claims-reserving-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Reserve history</name>
+    </element>
+    <element identifier="fn-uw-workbench-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Risk questionnaires</name>
+    </element>
+    <element identifier="fn-uw-workbench-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Referral handling</name>
+    </element>
+    <element identifier="fn-billing-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Premium schedules</name>
+    </element>
+    <element identifier="fn-billing-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Direct debit runs</name>
+    </element>
+    <element identifier="fn-billing-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Dunning</name>
+    </element>
+    <element identifier="fn-customer-portal-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Quotes</name>
+    </element>
+    <element identifier="fn-customer-portal-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Policy documents</name>
+    </element>
+    <element identifier="fn-customer-portal-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Claim status</name>
+    </element>
+    <element identifier="fn-mobile-app-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Photo claims</name>
+    </element>
+    <element identifier="fn-mobile-app-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Digital policy card</name>
+    </element>
+    <element identifier="fn-broker-portal-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Broker quotes</name>
+    </element>
+    <element identifier="fn-broker-portal-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Commission statements</name>
+    </element>
+    <element identifier="fn-broker-extranet-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Quote requests by form</name>
+    </element>
+    <element identifier="fn-crm-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Customer 360</name>
+    </element>
+    <element identifier="fn-crm-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Contact history</name>
+    </element>
+    <element identifier="fn-crm-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Complaints</name>
+    </element>
+    <element identifier="fn-dwh-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Nightly loads</name>
+    </element>
+    <element identifier="fn-dwh-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Finance marts</name>
+    </element>
+    <element identifier="fn-lakehouse-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Event ingestion</name>
+    </element>
+    <element identifier="fn-lakehouse-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Data products</name>
+    </element>
+    <element identifier="fn-bi-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Dashboards</name>
+    </element>
+    <element identifier="fn-bi-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Regulatory report packs</name>
+    </element>
+    <element identifier="fn-actuarial-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Loss triangles</name>
+    </element>
+    <element identifier="fn-actuarial-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Pricing models</name>
+    </element>
+    <element identifier="fn-dms-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Document archive</name>
+    </element>
+    <element identifier="fn-dms-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Retention rules</name>
+    </element>
+    <element identifier="fn-output-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Letter templates</name>
+    </element>
+    <element identifier="fn-output-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Print and email</name>
+    </element>
+    <element identifier="fn-payments-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Card payments</name>
+    </element>
+    <element identifier="fn-payments-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Payouts</name>
+    </element>
+    <element identifier="fn-payments-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Refunds</name>
+    </element>
+    <element identifier="fn-fraud-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Fraud scoring</name>
+    </element>
+    <element identifier="fn-fraud-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Network analysis</name>
+    </element>
+    <element identifier="fn-api-gateway-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Authentication</name>
+    </element>
+    <element identifier="fn-api-gateway-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Rate limiting</name>
+    </element>
+    <element identifier="fn-api-gateway-3" xsi:type="ApplicationFunction">
+      <name xml:lang="en">API catalogue</name>
+    </element>
+    <element identifier="fn-esb-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Message routing</name>
+    </element>
+    <element identifier="fn-esb-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">File transfers</name>
+    </element>
+    <element identifier="fn-event-streaming-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Policy events</name>
+    </element>
+    <element identifier="fn-event-streaming-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Claim events</name>
+    </element>
+    <element identifier="fn-customer-identity-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Sign-in</name>
+    </element>
+    <element identifier="fn-customer-identity-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Multi-factor authentication</name>
+    </element>
+    <element identifier="fn-general-ledger-1" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Journals</name>
+    </element>
+    <element identifier="fn-general-ledger-2" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Month-end close</name>
+    </element>
+  </elements>
+  <relationships>
+    <relationship identifier="rel-001" xsi:type="Realization" source="cap-customer" target="cap-onboarding">
+    </relationship>
+    <relationship identifier="rel-002" xsi:type="Realization" source="cap-customer" target="cap-service">
+    </relationship>
+    <relationship identifier="rel-003" xsi:type="Realization" source="cap-distribution" target="cap-broker-mgmt">
+    </relationship>
+    <relationship identifier="rel-004" xsi:type="Realization" source="cap-distribution" target="cap-direct-sales">
+    </relationship>
+    <relationship identifier="rel-005" xsi:type="Realization" source="cap-underwriting" target="cap-risk">
+    </relationship>
+    <relationship identifier="rel-006" xsi:type="Realization" source="cap-underwriting" target="cap-pricing">
+    </relationship>
+    <relationship identifier="rel-007" xsi:type="Realization" source="cap-policy" target="cap-quote-bind">
+    </relationship>
+    <relationship identifier="rel-008" xsi:type="Realization" source="cap-policy" target="cap-servicing">
+    </relationship>
+    <relationship identifier="rel-009" xsi:type="Realization" source="cap-policy" target="cap-renewals">
+    </relationship>
+    <relationship identifier="rel-010" xsi:type="Realization" source="cap-claims" target="cap-fnol">
+    </relationship>
+    <relationship identifier="rel-011" xsi:type="Realization" source="cap-claims" target="cap-assessment">
+    </relationship>
+    <relationship identifier="rel-012" xsi:type="Realization" source="cap-claims" target="cap-settlement">
+    </relationship>
+    <relationship identifier="rel-013" xsi:type="Realization" source="cap-claims" target="cap-fraud">
+    </relationship>
+    <relationship identifier="rel-014" xsi:type="Realization" source="cap-finance" target="cap-billing">
+    </relationship>
+    <relationship identifier="rel-015" xsi:type="Realization" source="cap-finance" target="cap-reporting">
+    </relationship>
+    <relationship identifier="rel-016" xsi:type="Realization" source="app-policy-suite" target="app-policy-core">
+    </relationship>
+    <relationship identifier="rel-017" xsi:type="Realization" source="app-policy-suite" target="app-product-config">
+    </relationship>
+    <relationship identifier="rel-018" xsi:type="Realization" source="app-policy-suite" target="app-rating-engine">
+    </relationship>
+    <relationship identifier="rel-019" xsi:type="Realization" source="app-claims-platform" target="app-claims-intake">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-020" xsi:type="Realization" source="app-claims-platform" target="app-claims-workbench">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-021" xsi:type="Realization" source="app-claims-platform" target="app-claims-reserving">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-022" xsi:type="Realization" source="app-data-platform" target="app-dwh">
+    </relationship>
+    <relationship identifier="rel-023" xsi:type="Realization" source="app-data-platform" target="app-bi">
+    </relationship>
+    <relationship identifier="rel-024" xsi:type="Realization" source="app-data-platform" target="app-actuarial">
+    </relationship>
+    <relationship identifier="rel-025" xsi:type="Realization" source="app-data-platform" target="app-lakehouse">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-026" xsi:type="Realization" source="app-integration" target="app-api-gateway">
+    </relationship>
+    <relationship identifier="rel-027" xsi:type="Realization" source="app-integration" target="app-esb">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-028" xsi:type="Realization" source="app-integration" target="app-event-streaming">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-029" xsi:type="Realization" source="inf-landing-zone" target="inf-k8s">
+    </relationship>
+    <relationship identifier="rel-030" xsi:type="Realization" source="inf-landing-zone" target="inf-managed-db">
+    </relationship>
+    <relationship identifier="rel-031" xsi:type="Realization" source="inf-landing-zone" target="inf-cdn">
+    </relationship>
+    <relationship identifier="rel-032" xsi:type="Realization" source="inf-landing-zone" target="inf-object-storage">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-033" xsi:type="Realization" source="inf-k8s" target="inf-pool-web">
+    </relationship>
+    <relationship identifier="rel-034" xsi:type="Realization" source="inf-k8s" target="inf-pool-services">
+    </relationship>
+    <relationship identifier="rel-035" xsi:type="Realization" source="inf-datacentre" target="inf-virtualisation">
+    </relationship>
+    <relationship identifier="rel-036" xsi:type="Realization" source="inf-datacentre" target="inf-db-cluster">
+    </relationship>
+    <relationship identifier="rel-037" xsi:type="Realization" source="inf-datacentre" target="inf-file-store">
+    </relationship>
+    <relationship identifier="rel-038" xsi:type="Realization" source="inf-virtualisation" target="inf-srv-quillclaims">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-039" xsi:type="Realization" source="inf-virtualisation" target="inf-srv-integration">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-040" xsi:type="Realization" source="inf-virtualisation" target="inf-srv-extranet">
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-041" xsi:type="Association" source="stk-policyholder" target="app-customer-portal" isDirected="true">
+      <name xml:lang="en">uses</name>
+    </relationship>
+    <relationship identifier="rel-042" xsi:type="Association" source="stk-policyholder" target="app-mobile-app" isDirected="true">
+      <name xml:lang="en">uses</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-043" xsi:type="Association" source="stk-policyholder" target="cap-fnol" isDirected="true">
+      <name xml:lang="en">reports a claim</name>
+    </relationship>
+    <relationship identifier="rel-044" xsi:type="Association" source="stk-broker" target="app-broker-portal" isDirected="true">
+      <name xml:lang="en">uses</name>
+    </relationship>
+    <relationship identifier="rel-045" xsi:type="Association" source="stk-broker" target="app-broker-extranet" isDirected="true">
+      <name xml:lang="en">uses</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-046" xsi:type="Association" source="stk-claims-handler" target="app-claims-workbench" isDirected="true">
+      <name xml:lang="en">works in</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-047" xsi:type="Association" source="stk-claims-handler" target="app-claims-legacy" isDirected="true">
+      <name xml:lang="en">works in</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-048" xsi:type="Assignment" source="stk-claims-handler" target="proc-motor-claim">
+      <name xml:lang="en">performs</name>
+    </relationship>
+    <relationship identifier="rel-049" xsi:type="Association" source="stk-underwriter" target="app-uw-workbench" isDirected="true">
+      <name xml:lang="en">works in</name>
+    </relationship>
+    <relationship identifier="rel-050" xsi:type="Association" source="stk-underwriter" target="cap-risk" isDirected="true">
+      <name xml:lang="en">performs</name>
+    </relationship>
+    <relationship identifier="rel-051" xsi:type="Assignment" source="stk-finance-controller" target="proc-month-end">
+      <name xml:lang="en">performs</name>
+    </relationship>
+    <relationship identifier="rel-052" xsi:type="Flow" source="stk-repair-partner" target="app-claims-intake">
+      <name xml:lang="en">repair estimates</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-053" xsi:type="Association" source="stk-repair-partner" target="proc-motor-claim" isDirected="true">
+      <name xml:lang="en">repairs the vehicle</name>
+    </relationship>
+    <relationship identifier="rel-054" xsi:type="Flow" source="cap-reporting" target="stk-regulator">
+      <name xml:lang="en">regulatory returns</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">Secure file upload</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-055" xsi:type="Serving" source="app-crm" target="cap-service">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-056" xsi:type="Serving" source="app-customer-identity" target="cap-onboarding">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-057" xsi:type="Serving" source="app-customer-portal" target="cap-direct-sales">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-058" xsi:type="Serving" source="app-customer-portal" target="cap-servicing">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-059" xsi:type="Serving" source="app-broker-portal" target="cap-broker-mgmt">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-060" xsi:type="Serving" source="app-broker-portal" target="cap-quote-bind">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-061" xsi:type="Serving" source="app-broker-extranet" target="cap-quote-bind">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-062" xsi:type="Serving" source="app-rating-engine" target="cap-pricing">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-063" xsi:type="Serving" source="app-uw-workbench" target="cap-risk">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-064" xsi:type="Serving" source="app-policy-core" target="cap-servicing">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-065" xsi:type="Serving" source="app-policy-core" target="cap-renewals">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-066" xsi:type="Serving" source="app-claims-legacy" target="cap-fnol">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-067" xsi:type="Serving" source="app-claims-legacy" target="cap-assessment">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-068" xsi:type="Serving" source="app-claims-legacy" target="proc-motor-claim">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-069" xsi:type="Serving" source="app-claims-intake" target="cap-fnol">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-070" xsi:type="Serving" source="app-claims-workbench" target="cap-assessment">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-071" xsi:type="Serving" source="app-claims-workbench" target="proc-motor-claim">
+      <name xml:lang="en">supports</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-072" xsi:type="Serving" source="app-fraud" target="cap-fraud">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-073" xsi:type="Serving" source="app-billing" target="cap-billing">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-074" xsi:type="Serving" source="app-payments" target="cap-settlement">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-075" xsi:type="Serving" source="app-general-ledger" target="proc-month-end">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-076" xsi:type="Serving" source="app-bi" target="cap-reporting">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-077" xsi:type="Serving" source="app-actuarial" target="cap-pricing">
+      <name xml:lang="en">supports</name>
+    </relationship>
+    <relationship identifier="rel-078" xsi:type="Flow" source="app-customer-portal" target="app-api-gateway">
+      <name xml:lang="en">quotes and policy requests</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-079" xsi:type="Flow" source="app-mobile-app" target="app-api-gateway">
+      <name xml:lang="en">photo claims</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-080" xsi:type="Flow" source="app-broker-portal" target="app-api-gateway">
+      <name xml:lang="en">broker quotes</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-081" xsi:type="Flow" source="app-api-gateway" target="app-policy-core">
+      <name xml:lang="en">policy requests</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-082" xsi:type="Flow" source="app-api-gateway" target="app-claims-intake">
+      <name xml:lang="en">new claims</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-083" xsi:type="Flow" source="app-api-gateway" target="app-claims-legacy">
+      <name xml:lang="en">new claims</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">SOAP</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-084" xsi:type="Flow" source="app-broker-extranet" target="app-esb">
+      <name xml:lang="en">quote requests</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-085" xsi:type="Flow" source="app-esb" target="app-policy-core">
+      <name xml:lang="en">quote requests</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">SOAP</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-086" xsi:type="Flow" source="app-policy-core" target="app-esb">
+      <name xml:lang="en">policy changes</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">SOAP</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-087" xsi:type="Flow" source="app-esb" target="app-billing">
+      <name xml:lang="en">premium schedules</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-088" xsi:type="Flow" source="app-policy-core" target="app-event-streaming">
+      <name xml:lang="en">policy events</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">Events</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-089" xsi:type="Flow" source="app-event-streaming" target="app-billing">
+      <name xml:lang="en">premium schedules</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">Events</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-090" xsi:type="Flow" source="app-claims-workbench" target="app-event-streaming">
+      <name xml:lang="en">claim events</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">Events</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-091" xsi:type="Flow" source="app-event-streaming" target="app-lakehouse">
+      <name xml:lang="en">policy and claim events</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">Events</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-092" xsi:type="Flow" source="app-claims-legacy" target="app-dwh">
+      <name xml:lang="en">nightly claims extract</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-093" xsi:type="Flow" source="app-policy-core" target="app-dwh">
+      <name xml:lang="en">nightly policy extract</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-094" xsi:type="Flow" source="app-dwh" target="app-bi">
+      <name xml:lang="en">finance marts</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">SQL</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-095" xsi:type="Flow" source="app-lakehouse" target="app-bi">
+      <name xml:lang="en">data products</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">SQL</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-096" xsi:type="Flow" source="app-dwh" target="app-actuarial">
+      <name xml:lang="en">loss history</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">SQL</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-097" xsi:type="Flow" source="app-actuarial" target="app-rating-engine">
+      <name xml:lang="en">rating factors</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-098" xsi:type="Flow" source="app-claims-legacy" target="app-fraud">
+      <name xml:lang="en">batch fraud check</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-099" xsi:type="Flow" source="app-claims-workbench" target="app-payments">
+      <name xml:lang="en">payment instructions</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-100" xsi:type="Flow" source="app-claims-legacy" target="app-payments">
+      <name xml:lang="en">payment files</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-101" xsi:type="Flow" source="app-billing" target="app-general-ledger">
+      <name xml:lang="en">premium journals</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-102" xsi:type="Flow" source="app-payments" target="app-general-ledger">
+      <name xml:lang="en">payment journals</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-103" xsi:type="Flow" source="app-claims-reserving" target="app-general-ledger">
+      <name xml:lang="en">claim reserves</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-104" xsi:type="Flow" source="app-uw-workbench" target="app-rating-engine">
+      <name xml:lang="en">price requests</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-105" xsi:type="Flow" source="app-policy-core" target="app-output">
+      <name xml:lang="en">document requests</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-106" xsi:type="Flow" source="app-output" target="app-dms">
+      <name xml:lang="en">sent letters</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-107" xsi:type="Flow" source="app-claims-workbench" target="app-dms">
+      <name xml:lang="en">claim documents</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-108" xsi:type="Flow" source="app-claims-legacy" target="app-dms">
+      <name xml:lang="en">claim documents</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">File</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-109" xsi:type="Association" source="app-claims-workbench" target="app-fraud">
+      <name xml:lang="en">fraud scoring</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-110" xsi:type="Association" source="app-billing" target="app-payments">
+      <name xml:lang="en">collections and refunds</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-111" xsi:type="Association" source="app-crm" target="app-policy-core">
+      <name xml:lang="en">customer and policy sync</name>
+      <properties>
+        <property propertyDefinitionRef="pd-protocol"><value xml:lang="en">REST</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-112" xsi:type="Serving" source="app-customer-identity" target="app-customer-portal">
+      <name xml:lang="en">signs members in</name>
+    </relationship>
+    <relationship identifier="rel-113" xsi:type="Serving" source="app-customer-identity" target="app-mobile-app">
+      <name xml:lang="en">signs members in</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-114" xsi:type="Serving" source="inf-pool-web" target="app-customer-portal">
+      <name xml:lang="en">hosts</name>
+    </relationship>
+    <relationship identifier="rel-115" xsi:type="Serving" source="inf-pool-web" target="app-broker-portal">
+      <name xml:lang="en">hosts</name>
+    </relationship>
+    <relationship identifier="rel-116" xsi:type="Serving" source="inf-pool-web" target="app-mobile-app">
+      <name xml:lang="en">hosts</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-117" xsi:type="Serving" source="inf-pool-services" target="app-api-gateway">
+      <name xml:lang="en">hosts</name>
+    </relationship>
+    <relationship identifier="rel-118" xsi:type="Serving" source="inf-pool-services" target="app-uw-workbench">
+      <name xml:lang="en">hosts</name>
+    </relationship>
+    <relationship identifier="rel-119" xsi:type="Serving" source="inf-pool-services" target="app-policy-suite">
+      <name xml:lang="en">hosts</name>
+    </relationship>
+    <relationship identifier="rel-120" xsi:type="Serving" source="inf-pool-services" target="app-event-streaming">
+      <name xml:lang="en">hosts</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-121" xsi:type="Serving" source="inf-pool-services" target="app-actuarial">
+      <name xml:lang="en">hosts</name>
+    </relationship>
+    <relationship identifier="rel-122" xsi:type="Serving" source="inf-managed-db" target="app-policy-suite">
+      <name xml:lang="en">stores data for</name>
+    </relationship>
+    <relationship identifier="rel-123" xsi:type="Serving" source="inf-object-storage" target="app-lakehouse">
+      <name xml:lang="en">stores data for</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-124" xsi:type="Serving" source="inf-object-storage" target="app-dms">
+      <name xml:lang="en">stores documents for</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-125" xsi:type="Serving" source="inf-file-store" target="app-dms">
+      <name xml:lang="en">stores documents for</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-126" xsi:type="Serving" source="inf-srv-quillclaims" target="app-claims-legacy">
+      <name xml:lang="en">hosts</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-127" xsi:type="Serving" source="inf-srv-integration" target="app-esb">
+      <name xml:lang="en">hosts</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-128" xsi:type="Serving" source="inf-srv-extranet" target="app-broker-extranet">
+      <name xml:lang="en">hosts</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-129" xsi:type="Serving" source="inf-db-cluster" target="app-claims-legacy">
+      <name xml:lang="en">stores data for</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Deprecate</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-130" xsi:type="Serving" source="inf-db-cluster" target="app-dwh">
+      <name xml:lang="en">stores data for</name>
+    </relationship>
+    <relationship identifier="rel-131" xsi:type="Serving" source="inf-cdn" target="inf-pool-web">
+      <name xml:lang="en">protects</name>
+    </relationship>
+    <relationship identifier="rel-132" xsi:type="Association" source="inf-wan" target="inf-landing-zone">
+      <name xml:lang="en">connects</name>
+    </relationship>
+    <relationship identifier="rel-133" xsi:type="Association" source="inf-wan" target="inf-datacentre">
+      <name xml:lang="en">connects</name>
+    </relationship>
+    <relationship identifier="rel-134" xsi:type="Serving" source="inf-backup" target="inf-db-cluster">
+      <name xml:lang="en">backs up</name>
+    </relationship>
+    <relationship identifier="rel-135" xsi:type="Serving" source="inf-backup" target="inf-managed-db">
+      <name xml:lang="en">backs up</name>
+    </relationship>
+    <relationship identifier="rel-136" xsi:type="Serving" source="inf-monitoring" target="inf-k8s">
+      <name xml:lang="en">monitors</name>
+    </relationship>
+    <relationship identifier="rel-137" xsi:type="Serving" source="inf-monitoring" target="inf-virtualisation">
+      <name xml:lang="en">monitors</name>
+    </relationship>
+    <relationship identifier="rel-138" xsi:type="Serving" source="inf-directory" target="app-uw-workbench">
+      <name xml:lang="en">signs staff in</name>
+    </relationship>
+    <relationship identifier="rel-139" xsi:type="Serving" source="inf-directory" target="app-claims-workbench">
+      <name xml:lang="en">signs staff in</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-140" xsi:type="Association" source="app-claims-platform" target="oth-goal-48h" isDirected="true">
+      <name xml:lang="en">contributes to</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-141" xsi:type="Association" source="oth-wp-claims" target="app-claims-platform" isDirected="true">
+      <name xml:lang="en">delivers</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-142" xsi:type="Association" source="oth-wp-claims" target="app-claims-legacy" isDirected="true">
+      <name xml:lang="en">retires</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-143" xsi:type="Association" source="oth-wp-integration" target="app-event-streaming" isDirected="true">
+      <name xml:lang="en">delivers</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-144" xsi:type="Association" source="oth-wp-integration" target="app-esb" isDirected="true">
+      <name xml:lang="en">retires</name>
+      <properties>
+        <property propertyDefinitionRef="pd-state"><value xml:lang="en">Target state</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="rel-145" xsi:type="Association" source="oth-principle-cloud" target="inf-landing-zone" isDirected="true">
+      <name xml:lang="en">applies to</name>
+    </relationship>
+    <relationship identifier="rel-146" xsi:type="Association" source="oth-req-solvency" target="cap-reporting" isDirected="true">
+      <name xml:lang="en">applies to</name>
+    </relationship>
+    <relationship identifier="rel-147" xsi:type="Association" source="oth-constraint-eu" target="inf-landing-zone" isDirected="true">
+      <name xml:lang="en">constrains</name>
+    </relationship>
+    <relationship identifier="rel-fn-001" xsi:type="Assignment" source="app-policy-core" target="fn-policy-core-1"/>
+    <relationship identifier="rel-fn-002" xsi:type="Assignment" source="app-policy-core" target="fn-policy-core-2"/>
+    <relationship identifier="rel-fn-003" xsi:type="Assignment" source="app-policy-core" target="fn-policy-core-3"/>
+    <relationship identifier="rel-fn-004" xsi:type="Assignment" source="app-policy-core" target="fn-policy-core-4"/>
+    <relationship identifier="rel-fn-005" xsi:type="Assignment" source="app-product-config" target="fn-product-config-1"/>
+    <relationship identifier="rel-fn-006" xsi:type="Assignment" source="app-product-config" target="fn-product-config-2"/>
+    <relationship identifier="rel-fn-007" xsi:type="Assignment" source="app-rating-engine" target="fn-rating-engine-1"/>
+    <relationship identifier="rel-fn-008" xsi:type="Assignment" source="app-rating-engine" target="fn-rating-engine-2"/>
+    <relationship identifier="rel-fn-009" xsi:type="Assignment" source="app-claims-legacy" target="fn-claims-legacy-1"/>
+    <relationship identifier="rel-fn-010" xsi:type="Assignment" source="app-claims-legacy" target="fn-claims-legacy-2"/>
+    <relationship identifier="rel-fn-011" xsi:type="Assignment" source="app-claims-legacy" target="fn-claims-legacy-3"/>
+    <relationship identifier="rel-fn-012" xsi:type="Assignment" source="app-claims-legacy" target="fn-claims-legacy-4"/>
+    <relationship identifier="rel-fn-013" xsi:type="Assignment" source="app-claims-intake" target="fn-claims-intake-1"/>
+    <relationship identifier="rel-fn-014" xsi:type="Assignment" source="app-claims-intake" target="fn-claims-intake-2"/>
+    <relationship identifier="rel-fn-015" xsi:type="Assignment" source="app-claims-workbench" target="fn-claims-workbench-1"/>
+    <relationship identifier="rel-fn-016" xsi:type="Assignment" source="app-claims-workbench" target="fn-claims-workbench-2"/>
+    <relationship identifier="rel-fn-017" xsi:type="Assignment" source="app-claims-workbench" target="fn-claims-workbench-3"/>
+    <relationship identifier="rel-fn-018" xsi:type="Assignment" source="app-claims-reserving" target="fn-claims-reserving-1"/>
+    <relationship identifier="rel-fn-019" xsi:type="Assignment" source="app-claims-reserving" target="fn-claims-reserving-2"/>
+    <relationship identifier="rel-fn-020" xsi:type="Assignment" source="app-uw-workbench" target="fn-uw-workbench-1"/>
+    <relationship identifier="rel-fn-021" xsi:type="Assignment" source="app-uw-workbench" target="fn-uw-workbench-2"/>
+    <relationship identifier="rel-fn-022" xsi:type="Assignment" source="app-billing" target="fn-billing-1"/>
+    <relationship identifier="rel-fn-023" xsi:type="Assignment" source="app-billing" target="fn-billing-2"/>
+    <relationship identifier="rel-fn-024" xsi:type="Assignment" source="app-billing" target="fn-billing-3"/>
+    <relationship identifier="rel-fn-025" xsi:type="Assignment" source="app-customer-portal" target="fn-customer-portal-1"/>
+    <relationship identifier="rel-fn-026" xsi:type="Assignment" source="app-customer-portal" target="fn-customer-portal-2"/>
+    <relationship identifier="rel-fn-027" xsi:type="Assignment" source="app-customer-portal" target="fn-customer-portal-3"/>
+    <relationship identifier="rel-fn-028" xsi:type="Assignment" source="app-mobile-app" target="fn-mobile-app-1"/>
+    <relationship identifier="rel-fn-029" xsi:type="Assignment" source="app-mobile-app" target="fn-mobile-app-2"/>
+    <relationship identifier="rel-fn-030" xsi:type="Assignment" source="app-broker-portal" target="fn-broker-portal-1"/>
+    <relationship identifier="rel-fn-031" xsi:type="Assignment" source="app-broker-portal" target="fn-broker-portal-2"/>
+    <relationship identifier="rel-fn-032" xsi:type="Assignment" source="app-broker-extranet" target="fn-broker-extranet-1"/>
+    <relationship identifier="rel-fn-033" xsi:type="Assignment" source="app-crm" target="fn-crm-1"/>
+    <relationship identifier="rel-fn-034" xsi:type="Assignment" source="app-crm" target="fn-crm-2"/>
+    <relationship identifier="rel-fn-035" xsi:type="Assignment" source="app-crm" target="fn-crm-3"/>
+    <relationship identifier="rel-fn-036" xsi:type="Assignment" source="app-dwh" target="fn-dwh-1"/>
+    <relationship identifier="rel-fn-037" xsi:type="Assignment" source="app-dwh" target="fn-dwh-2"/>
+    <relationship identifier="rel-fn-038" xsi:type="Assignment" source="app-lakehouse" target="fn-lakehouse-1"/>
+    <relationship identifier="rel-fn-039" xsi:type="Assignment" source="app-lakehouse" target="fn-lakehouse-2"/>
+    <relationship identifier="rel-fn-040" xsi:type="Assignment" source="app-bi" target="fn-bi-1"/>
+    <relationship identifier="rel-fn-041" xsi:type="Assignment" source="app-bi" target="fn-bi-2"/>
+    <relationship identifier="rel-fn-042" xsi:type="Assignment" source="app-actuarial" target="fn-actuarial-1"/>
+    <relationship identifier="rel-fn-043" xsi:type="Assignment" source="app-actuarial" target="fn-actuarial-2"/>
+    <relationship identifier="rel-fn-044" xsi:type="Assignment" source="app-dms" target="fn-dms-1"/>
+    <relationship identifier="rel-fn-045" xsi:type="Assignment" source="app-dms" target="fn-dms-2"/>
+    <relationship identifier="rel-fn-046" xsi:type="Assignment" source="app-output" target="fn-output-1"/>
+    <relationship identifier="rel-fn-047" xsi:type="Assignment" source="app-output" target="fn-output-2"/>
+    <relationship identifier="rel-fn-048" xsi:type="Assignment" source="app-payments" target="fn-payments-1"/>
+    <relationship identifier="rel-fn-049" xsi:type="Assignment" source="app-payments" target="fn-payments-2"/>
+    <relationship identifier="rel-fn-050" xsi:type="Assignment" source="app-payments" target="fn-payments-3"/>
+    <relationship identifier="rel-fn-051" xsi:type="Assignment" source="app-fraud" target="fn-fraud-1"/>
+    <relationship identifier="rel-fn-052" xsi:type="Assignment" source="app-fraud" target="fn-fraud-2"/>
+    <relationship identifier="rel-fn-053" xsi:type="Assignment" source="app-api-gateway" target="fn-api-gateway-1"/>
+    <relationship identifier="rel-fn-054" xsi:type="Assignment" source="app-api-gateway" target="fn-api-gateway-2"/>
+    <relationship identifier="rel-fn-055" xsi:type="Assignment" source="app-api-gateway" target="fn-api-gateway-3"/>
+    <relationship identifier="rel-fn-056" xsi:type="Assignment" source="app-esb" target="fn-esb-1"/>
+    <relationship identifier="rel-fn-057" xsi:type="Assignment" source="app-esb" target="fn-esb-2"/>
+    <relationship identifier="rel-fn-058" xsi:type="Assignment" source="app-event-streaming" target="fn-event-streaming-1"/>
+    <relationship identifier="rel-fn-059" xsi:type="Assignment" source="app-event-streaming" target="fn-event-streaming-2"/>
+    <relationship identifier="rel-fn-060" xsi:type="Assignment" source="app-customer-identity" target="fn-customer-identity-1"/>
+    <relationship identifier="rel-fn-061" xsi:type="Assignment" source="app-customer-identity" target="fn-customer-identity-2"/>
+    <relationship identifier="rel-fn-062" xsi:type="Assignment" source="app-general-ledger" target="fn-general-ledger-1"/>
+    <relationship identifier="rel-fn-063" xsi:type="Assignment" source="app-general-ledger" target="fn-general-ledger-2"/>
+  </relationships>
+  <propertyDefinitions>
+    <propertyDefinition identifier="pd-state" type="string">
+      <name xml:lang="en">Architecture State</name>
+    </propertyDefinition>
+    <propertyDefinition identifier="pd-team" type="string">
+      <name xml:lang="en">Responsible Team</name>
+    </propertyDefinition>
+    <propertyDefinition identifier="pd-country" type="string">
+      <name xml:lang="en">Vendor HQ Country</name>
+    </propertyDefinition>
+    <propertyDefinition identifier="pd-sourcing" type="string">
+      <name xml:lang="en">Sourcing</name>
+    </propertyDefinition>
+    <propertyDefinition identifier="pd-supplier" type="string">
+      <name xml:lang="en">Supplier</name>
+    </propertyDefinition>
+    <propertyDefinition identifier="pd-hosting" type="string">
+      <name xml:lang="en">Hosting</name>
+    </propertyDefinition>
+    <propertyDefinition identifier="pd-protocol" type="string">
+      <name xml:lang="en">Protocol</name>
+    </propertyDefinition>
+  </propertyDefinitions>
+</model>

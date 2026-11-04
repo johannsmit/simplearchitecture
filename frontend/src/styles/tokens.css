@@ -1,0 +1,112 @@
+/*
+ * Design tokens. Each colour holds both themes with
+ * light-dark(); color-scheme on :root picks one. Light is the default, whatever the OS prefers;
+ * data-theme="dark" on <html> selects Dark (set before first paint by public/theme-init.js).
+ * vite.config.ts keeps the build from rewriting light-dark() (build.cssTarget).
+ */
+:root {
+  color-scheme: light;
+  --font: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Surfaces and text */
+  --bg: light-dark(#f5f6f8, #0f1218);
+  --surface: light-dark(#ffffff, #161a22);
+  --surface-2: light-dark(#f0f2f5, #1d222c);
+  --surface-raised: light-dark(#ffffff, #20252f);
+  --border: light-dark(#dfe3ea, #2a313d);
+  --border-strong: light-dark(#c3c9d3, #3a4250);
+  /* Form field edges: 3:1 or more on every surface. */
+  --field-border: light-dark(#7b8494, #7f899c);
+  --text: light-dark(#161b26, #e7eaf0);
+  --text-muted: light-dark(#596274, #9aa3b4);
+  --accent: light-dark(#3657d6, #8fa6ff);
+  --accent-soft: light-dark(#e8edfd, #1e2747);
+  --on-accent: light-dark(#ffffff, #0f1218);
+  --on-critical: light-dark(#ffffff, #0f1218);
+  --focus: var(--accent);
+  /*
+   * Branding: the app sets --accent, --accent-soft, --select-soft and
+   * --brand-line on <html> from the organisation's colours (src/branding.tsx). Neutral: the
+   * selected row tint is the accent tint, and there is no header line.
+   */
+  --select-soft: var(--accent-soft);
+  --brand-line: transparent;
+
+  /* Status: text/dot colour and a soft background */
+  --positive: light-dark(#1f7a4d, #5fd39a);
+  --positive-soft: light-dark(#e3f4ea, #15301f);
+  --info: light-dark(#2563c9, #7fb0ff);
+  --info-soft: light-dark(#e4eefc, #172a47);
+  --warning: light-dark(#9a5b00, #f5b450);
+  --warning-soft: light-dark(#fdf0dc, #35270f);
+  --critical: light-dark(#b42318, #ff8a80);
+  --critical-soft: light-dark(#fde7e5, #3a1a19);
+
+  /* Canvas */
+  --canvas: light-dark(#f7f8fa, #0f1218);
+  --grid-dot: light-dark(#d5dae2, #232a35);
+  --edge: light-dark(#7b8494, #7f899c);
+  --edge-lit: var(--accent);
+  --card-type: light-dark(#454c5a, #c3c9d4);
+
+  /* Metamodel colours (fill = card background, line = card border and swatch border) */
+  --yellow-fill: light-dark(#fcefc4, #3a3116);
+  --yellow-line: light-dark(#a27a0c, #d3ad45);
+  --blue-fill: light-dark(#dce9fb, #162c48);
+  --blue-line: light-dark(#2f6fb8, #62a3e8);
+  --green-fill: light-dark(#dcf1dd, #173421);
+  --green-line: light-dark(#3b8743, #62b96d);
+  --gray-fill: light-dark(#eceef2, #272c36);
+  --gray-line: light-dark(#77808f, #8f98a9);
+
+  /* Shape, depth, motion */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+  --e1:
+    0 1px 2px light-dark(rgb(16 24 40 / 6%), transparent),
+    0 1px 3px light-dark(rgb(16 24 40 / 10%), rgb(0 0 0 / 35%));
+  --e2: 0 4px 12px light-dark(rgb(16 24 40 / 10%), rgb(0 0 0 / 45%));
+  --e3: 0 16px 40px light-dark(rgb(16 24 40 / 18%), rgb(0 0 0 / 55%));
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --t-fast: 120ms;
+  --t-med: 200ms;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-med: 0ms;
+  }
+}
+
+/*
+ * Metamodel colours. Components set colour-<name> from nodeTypeDefinitions[type].colour
+ * (shared/src/metamodel.ts) and only read --fill and --line, so no type name appears here.
+ */
+.colour-yellow {
+  --fill: var(--yellow-fill);
+  --line: var(--yellow-line);
+}
+
+.colour-blue {
+  --fill: var(--blue-fill);
+  --line: var(--blue-line);
+}
+
+.colour-green {
+  --fill: var(--green-fill);
+  --line: var(--green-line);
+}
+
+.colour-gray {
+  --fill: var(--gray-fill);
+  --line: var(--gray-line);
+}

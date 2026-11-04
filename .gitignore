@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dev-dist/
+coverage/
+# Vitest's report output (e.g. --reporter=json)
+.vitest/
+*.tsbuildinfo
+.vite/
+
+# Environment files: only the example is committed
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS and editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+
+# Model exports hold real company data: never commit them, wherever they end up
+graph-export.json
+
+# Stored models (DATA_DIR): real company data, never commit
+/data/

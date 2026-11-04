@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    // The backend's production build type-checks against these. They are left out of the image.
+    "declaration": true
+  }
+}

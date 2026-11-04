@@ -1,0 +1,40 @@
+# Weekly update pull requests, grouped so there are few of them. Switch on Dependabot alerts and
+# security updates in the repository settings (Security → Code security). CI checks every pull
+# request like any other change. Not covered: the Trivy image in the workflows and the PostgreSQL
+# test image in deploy/test-container.sh (pinned by digest; update them by hand).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  # Keeps the actions pinned by commit SHA, with the version in the comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  # The Node base image (tag and digest) in the Dockerfile.
+  - package-ecosystem: docker
+    directories: [/]
+    schedule:
+      interval: weekly
+    # A new Node major is a planned change, with CI on the same version.
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+    groups:
+      base-image:
+        patterns: ['*']

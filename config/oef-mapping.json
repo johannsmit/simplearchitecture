@@ -1,0 +1,140 @@
+{
+  "$comment": [
+    "How ArchiMate Open Exchange Format (OEF) files map to the SimpleArchitecture metamodel.",
+    "The API validates this file at startup and refuses to start if it is invalid.",
+    "OEF_MAPPING_PATH can point the API at another copy.",
+    "elements: ArchiMate element type (xsi:type) -> node type, or \"skip\". Unlisted types are skipped and reported.",
+    "functionFolding: a relationship of a listed type between sourceTypes and targetTypes folds the 'fold' end (the function) into the other end's functions list. A function with no such link stays a node.",
+    "relationships: the first matching rule wins. A rule matches on type and, optionally, sourceNodeTypes, targetNodeTypes (our node types) and properties (present, or with one of 'values'). Relationships that match no rule are skipped and reported. Optional 'reverse': true swaps source and target on import (matching still uses the direction in the OEF file); it is off when left out. Optional 'informationFlow': true sets Information flow on the imported Relation. Realization imports as Contains: the target is drawn nested inside the source. Function folding comes first: a Realization that folds a function is not imported as a relationship.",
+    "properties: 'mappings' map OEF property names on elements and relationships to metadata keys, with optional value translations (untranslated values are kept as they are). 'defaults' fill an empty or missing value on elements of the listed nodeTypes and on relationships of the listed relations (edge types); each default lists at least one of the two.",
+    "properties.archimateTypeKey: the metadata key that keeps each node's and edge's original ArchiMate type (xsi:type), e.g. archimateType. Leave it out to not store the type.",
+    "Any other property is kept as custom metadata under a camelCase key: words are split on anything that is not a letter or digit, the first word is lower-cased and each next word starts with a capital (e.g. 'Internal/External' -> internalExternal). A key that is already taken (e.g. by a standard property) gets an 'oef' prefix (oefDescription), then a number."
+  ],
+  "version": 1,
+  "elements": {
+    "BusinessActor": "Stakeholder",
+    "BusinessRole": "Stakeholder",
+    "Stakeholder": "Stakeholder",
+
+    "Resource": "Business",
+    "Capability": "Business",
+    "ValueStream": "Business",
+    "CourseOfAction": "Business",
+    "BusinessCollaboration": "Business",
+    "BusinessInterface": "Business",
+    "BusinessProcess": "Business",
+    "BusinessFunction": "Business",
+    "BusinessInteraction": "Business",
+    "BusinessEvent": "Business",
+    "BusinessService": "Business",
+    "BusinessObject": "Business",
+    "Contract": "Business",
+    "Representation": "Business",
+    "Product": "Business",
+
+    "ApplicationComponent": "Application",
+    "ApplicationCollaboration": "Application",
+    "ApplicationInterface": "Application",
+    "ApplicationFunction": "Application",
+    "ApplicationInteraction": "Application",
+    "ApplicationProcess": "Application",
+    "ApplicationEvent": "Application",
+    "ApplicationService": "Application",
+    "DataObject": "Application",
+
+    "Node": "Infrastructure",
+    "Device": "Infrastructure",
+    "SystemSoftware": "Infrastructure",
+    "TechnologyCollaboration": "Infrastructure",
+    "TechnologyInterface": "Infrastructure",
+    "Path": "Infrastructure",
+    "CommunicationNetwork": "Infrastructure",
+    "TechnologyFunction": "Infrastructure",
+    "TechnologyProcess": "Infrastructure",
+    "TechnologyInteraction": "Infrastructure",
+    "TechnologyEvent": "Infrastructure",
+    "TechnologyService": "Infrastructure",
+    "Artifact": "Infrastructure",
+    "Equipment": "Infrastructure",
+    "Facility": "Infrastructure",
+    "DistributionNetwork": "Infrastructure",
+    "Material": "Infrastructure",
+
+    "Driver": "Other",
+    "Assessment": "Other",
+    "Goal": "Other",
+    "Outcome": "Other",
+    "Principle": "Other",
+    "Requirement": "Other",
+    "Constraint": "Other",
+    "Meaning": "Other",
+    "Value": "Other",
+    "WorkPackage": "Other",
+    "Deliverable": "Other",
+    "ImplementationEvent": "Other",
+    "Plateau": "Other",
+    "Gap": "Other",
+    "Location": "Other",
+    "Grouping": "Other",
+
+    "AndJunction": "skip",
+    "OrJunction": "skip"
+  },
+  "functionFolding": {
+    "rules": [
+      {
+        "$comment": "Component -> function (e.g. the component is assigned to the function).",
+        "relationshipTypes": ["Assignment", "Realization", "Composition"],
+        "sourceTypes": ["ApplicationComponent", "ApplicationCollaboration"],
+        "targetTypes": ["ApplicationFunction"],
+        "fold": "target"
+      },
+      {
+        "$comment": "Function -> component (the same links drawn the other way round).",
+        "relationshipTypes": ["Assignment", "Realization", "Composition"],
+        "sourceTypes": ["ApplicationFunction"],
+        "targetTypes": ["ApplicationComponent", "ApplicationCollaboration"],
+        "fold": "source"
+      }
+    ]
+  },
+  "relationships": {
+    "rules": [
+      { "type": "Flow", "relation": "Relation", "informationFlow": true },
+      { "type": "Access", "relation": "Relation" },
+      { "type": "Aggregation", "relation": "Relation" },
+      { "type": "Assignment", "relation": "Relation" },
+      { "type": "Association", "relation": "Relation" },
+      { "type": "Composition", "relation": "Relation" },
+      { "type": "Realization", "relation": "Contains" },
+      { "type": "Serving", "relation": "Relation" },
+      { "type": "Triggering", "relation": "Relation" }
+    ]
+  },
+  "properties": {
+    "documentation": "description",
+    "archimateTypeKey": "archimateType",
+    "mappings": [
+      {
+        "name": "Architecture State",
+        "key": "architectureState",
+        "values": { "Deprecate": "Deprecate", "Target state": "Target" }
+      },
+      { "name": "Responsible Team", "key": "owningTeam" },
+      {
+        "$comment": "Imported as is for now; non-ISO values are validation warnings.",
+        "name": "Vendor HQ Country",
+        "key": "supplierHqCountry"
+      }
+    ],
+    "defaults": [
+      {
+        "$comment": "Empty or missing Architecture State means Current, on elements and relationships.",
+        "key": "architectureState",
+        "value": "Current",
+        "nodeTypes": ["Application", "Infrastructure"],
+        "relations": ["Relation", "Contains"]
+      }
+    ]
+  }
+}

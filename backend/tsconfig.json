@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true,
+    // Use the shared package's source directly (live types, no prebuild) for typecheck, tests and dev.
+    // The production build (tsconfig.build.json) resolves the built package instead.
+    "paths": {
+      "@simplearchitecture/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

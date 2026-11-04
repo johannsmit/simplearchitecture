@@ -1,0 +1,32 @@
+{
+  "name": "@simplearchitecture/backend",
+  "private": true,
+  "version": "0.10.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../.env src/server.ts",
+    "build": "node -e \"process.getBuiltinModule('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=../.env dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:migrate": "tsx --env-file-if-exists=../.env src/db/migrate-cli.ts",
+    "db:import-files": "tsx --env-file-if-exists=../.env src/db/import-files-cli.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/helmet": "^13.2.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "fast-xml-parser": "^5.11.2",
+    "fastify": "^5.12.7",
+    "helmet": "^8.3.0",
+    "openid-client": "^6.8.8",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.13",
+    "@types/pg": "^8.23.1",
+    "oauth2-mock-server": "^9.3.0",
+    "tsx": "^4.23.15"
+  }
+}

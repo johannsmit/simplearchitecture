@@ -1,0 +1,50 @@
+{
+    "graph": {
+        "id": "",
+        "label": "",
+        "directed": true,
+        "nodes": {
+            "node-id": {
+                "label": "",
+                "metadata": {
+                    "type": "Stakeholder | Business | Application | Infrastructure | Other",
+                    "description": "",
+                    "architectureState": "Deprecate | Current | Target",
+                    "functions": [""],
+                    "owningTeam": "",
+                    "sourcing": "Build | Buy",
+                    "supplierHqCountry": "ISO 3166-1 alpha-2, e.g. NL",
+                    "anyCustomKey": "custom metadata, added by the modeller"
+                }
+            }
+        },
+        "edges": [
+            {
+                "id": "edge-id",
+                "source": "source-node-id",
+                "target": "target-node-id",
+                "relation": "Relation | Contains",
+                "directed": true,
+                "label": "",
+                "metadata": {
+                    "architectureState": "Deprecate | Current | Target",
+                    "informationFlow": true,
+                    "anyCustomKey": "custom metadata, added by the modeller"
+                }
+            },
+            {
+                "id": "two-way-edge-id",
+                "source": "first-node-id",
+                "target": "second-node-id",
+                "relation": "Relation",
+                "directed": false,
+                "label": "",
+                "metadata": {
+                    "architectureState": "Deprecate | Current | Target",
+                    "informationFlow": true,
+                    "anyCustomKey": "custom metadata, added by the modeller"
+                }
+            }
+        ]
+    }
+}

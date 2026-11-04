@@ -1,0 +1,119 @@
+# Scans the latest released image once a week (and on demand), on both platforms, for high and
+# critical vulnerabilities that have a fix, in the image and in the web app's bundled packages. When
+# it finds any, it opens a GitHub issue in this repository (one per release until it is closed); the
+# maintainer decides on a patch release. Nothing is republished. Runs only in this repository.
+# Scheduled workflows run from the default branch only.
+name: Weekly image scan
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # 06:17 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-scan
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/simplearchitecture
+  TRIVY_IMAGE: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+
+jobs:
+  scan:
+    name: Scan the latest release
+    if: github.repository == 'johannsmit/simplearchitecture'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read # read the latest release
+      packages: read # pull the image
+      issues: write # report a finding
+    steps:
+      # An image name must be lower case, and an owner's name may not be.
+      - name: Lower-case the image name
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+      - name: Find the latest release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Only GitHub's own "not found" means no release. Anything else (network, token) must not
+          # pass as a scan with nothing to do.
+          if ! tag=$(gh release view --json tagName --jq .tagName 2> "$RUNNER_TEMP/release-error"); then
+            if grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
+              echo "No release yet: nothing to scan."
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/release-error" >&2
+            exit 1
+          fi
+          if [ -z "$tag" ]; then
+            echo "GitHub answered with no tag for the latest release." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE:${tag#v}" >> "$GITHUB_OUTPUT"
+      - if: steps.release.outputs.tag != ''
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The scripts come from the default branch; the image is the release's.
+      - if: steps.release.outputs.tag != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.release.outputs.tag != ''
+      - name: Scan both platforms (Trivy, high and critical with a fix)
+        id: scan
+        if: steps.release.outputs.tag != ''
+        env:
+          RELEASE_IMAGE: ${{ steps.release.outputs.image }}
+        run: |
+          count=0
+          for arch in amd64 arm64; do
+            image=$(bash deploy/pull-platform.sh "$RELEASE_IMAGE" "$arch")
+            bash deploy/scan-image.sh "$image" "$RUNNER_TEMP/scan/$arch"
+            count=$((count + $(cat "$RUNNER_TEMP/scan/$arch/count")))
+          done
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Fixable high or critical vulnerabilities, both platforms: $count"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.release.outputs.tag != ''
+        with:
+          name: weekly-scan
+          path: ${{ runner.temp }}/scan/
+          retention-days: 90
+      # One issue per release: an open one with this title is left as it is.
+      - name: Open an issue for a finding
+        if: steps.scan.outputs.count != '' && steps.scan.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+          COUNT: ${{ steps.scan.outputs.count }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Weekly image scan: $TAG has fixable high or critical vulnerabilities"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq length)
+          if [ "$open" != 0 ]; then
+            echo "An open issue already reports $TAG."
+            exit 0
+          fi
+          {
+            echo "The weekly scan found $COUNT fixable high or critical vulnerabilities in release $TAG (amd64 and arm64 added up)."
+            echo
+            echo "Decide whether to make a patch release (update the dependencies or the base image, then tag)."
+            echo "Full results: $RUN_URL (artifact \`weekly-scan\`)."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/scan/amd64/scan.txt" "$RUNNER_TEMP/scan/arm64/scan.txt" | head -c 50000
+            echo '```'
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"

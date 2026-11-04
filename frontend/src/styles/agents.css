@@ -1,0 +1,214 @@
+/* AI agents: the consent page (outside the shell) and the Connected apps pages. */
+
+.message-card.consent {
+  text-align: left;
+}
+
+.message-card.consent .signed-out-logo {
+  margin: 0 auto 8px;
+}
+
+.consent-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.consent-facts div {
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  gap: 8px;
+}
+
+.consent-facts dt {
+  color: var(--text-muted);
+}
+
+.consent-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The name the agent gives: quoted on screen only, never cut short. */
+.agent-name::before {
+  content: '\201C';
+}
+
+.agent-name::after {
+  content: '\201D';
+}
+
+.consent-lead {
+  margin-bottom: 4px;
+}
+
+.consent-can {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.consent-can li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message-card.consent .info-notice {
+  color: var(--text);
+}
+
+.consent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.message-card .consent-actions .btn {
+  margin-top: 0;
+}
+
+/* Allow while it ignores presses: looks disabled, stays in the tab order. */
+.btn[data-guarded] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (max-width: 480px) {
+  .consent-actions {
+    flex-direction: column-reverse;
+  }
+
+  .consent-actions .btn {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+.consent-status {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.consent-status p {
+  margin: 0;
+}
+
+/* Connected apps */
+.apps-page {
+  max-width: 720px;
+}
+
+.agent-address {
+  margin-bottom: 20px;
+}
+
+.agent-address h2 {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.address-row {
+  display: flex;
+  gap: 8px;
+}
+
+.address-field {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.apps-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.app-row:first-child {
+  border-top: 0;
+}
+
+.app-row .skeleton {
+  margin-bottom: 8px;
+}
+
+.app-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.app-text p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.app-text .host {
+  overflow-wrap: anywhere;
+}
+
+.app-text .alert {
+  margin-top: 8px;
+}
+
+.apps-user {
+  margin-bottom: 16px;
+}
+
+.apps-user-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.apps-user-head h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.apps-user-head small {
+  font-weight: 400;
+}
+
+@media (max-width: 480px) {
+  .app-row {
+    flex-wrap: wrap;
+  }
+}
