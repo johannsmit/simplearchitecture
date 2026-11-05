@@ -128,7 +128,7 @@ function renderWithHistory(path: string) {
 
 const grid = () => screen.getByRole('grid');
 const viewButton = (name: string) =>
-  within(screen.getByRole('group', { name: 'View' })).getByRole('button', { name });
+  within(screen.getByRole('group', { name: 'Show as' })).getByRole('button', { name });
 const tabs = () => screen.getByRole('tablist', { name: 'Element types' });
 const headers = () => within(grid()).getAllByRole('columnheader');
 const rowNames = () =>
@@ -169,7 +169,7 @@ async function openCatalog(path: string, me = viewer, answer?: Parameters<typeof
 describe('the Canvas | Catalog switch', () => {
   it('sits after the list toggle, and the catalog has no canvas-only controls', async () => {
     await openCatalog(`${viewing}?view=catalog&type=Application`);
-    const toolbar = screen.getByRole('group', { name: 'View' }).parentElement;
+    const toolbar = screen.getByRole('group', { name: 'Show as' }).parentElement;
     const buttons: HTMLElement[] = [...(toolbar?.querySelectorAll('button') ?? [])];
     const listToggle = screen.getByRole('button', { name: 'Hide the element list' });
     expect(buttons.indexOf(viewButton('Canvas'))).toBe(buttons.indexOf(listToggle) + 1);

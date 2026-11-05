@@ -1,5 +1,4 @@
 import {
-  containerOf,
   containsType,
   elementArchitectureState,
   defaultNeighbourhoodCap,
@@ -39,6 +38,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { Icon } from '../../../icons';
 import { cardShape, EdgeSample, TypeMark } from '../../../metamodel-ui';
@@ -46,6 +46,7 @@ import { counted, formatNumber } from '../../../words';
 import { NewElementForm } from '../../../modelling/NewElement';
 import { NewRelationshipPopover, relationshipSentence } from '../../../modelling/relationships';
 import { readLegendOpen, writeLegendOpen } from '../prefs';
+import { nestingParents } from '../views';
 import {
   cardSize,
   containerMinSize,
@@ -155,6 +156,9 @@ interface ExplorerCanvasProps {
   /** "Nest contained elements": draw contained elements inside their container. */
   nest: boolean;
   onToggleNest: () => void;
+  /** "Show lines": off hides every relationship line, with its marks. The cards stay put. */
+  lines: boolean;
+  onLines: (on: boolean) => void;
   /** Editable Modelling: drawing relationships and adding elements on the canvas. */
   editable?: boolean;
   modelId?: string;
@@ -179,6 +183,19 @@ interface ExplorerCanvasProps {
   onBringElement?: (id: string, position: Point | undefined) => void;
   /** Goes up by one (with an element on the canvas): select that card and pan to it. */
   reveal?: { id: string; n: number } | undefined;
+  /**
+   * An open view, by name: no card is focused, the depth keys do nothing, and the canvas says
+   * it is the view.
+   */
+  viewName?: string | undefined;
+  /** The related pill on cards (off in a view that can't change). Default: on. */
+  related?: boolean;
+  /** A notice at the canvas's top (a view's change that wasn't saved), with its actions. */
+  notice?: ReactNode;
+  /** In place of the full canvas notice (a view has its own words). */
+  fullText?: string | undefined;
+  /** Over an empty canvas (a view with no elements). */
+  emptyText?: ReactNode;
 }
 
 /** A popover on the canvas: New relationship, or New element (at a point on the canvas). */
@@ -237,6 +254,9 @@ interface Laid {
 /** Stacking (React Flow's manual z-index): containers by depth, then edges, then cards. */
 const zIndexes = { nestedEdge: 500, card: 1000, lifted: 3000 } as const;
 
+/** "Show lines" off: React Flow gets no edges at all, so no line, label or mark is drawn. */
+const noEdges: RelationshipFlowEdge[] = [];
+
 type Highlight = { ids: Set<string>; links: Set<string> } | null;
 interface RelatedState {
   cardId: string;
@@ -270,6 +290,10 @@ interface Moving {
  */
 export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const { graph, hood, focusId, depth } = props;
+  const inView = props.viewName !== undefined;
+  const showRelatedPill = props.related !== false;
+  // The card with the first Tab stop: the focused element's, or in a view the first card.
+  const homeId = hood.hops.has(focusId) ? focusId : (hood.hops.keys().next().value ?? focusId);
   const flow = useReactFlow<CardNode, RelationshipFlowEdge>();
   const updateNodeInternals = useUpdateNodeInternals();
   const section = useRef<HTMLElement>(null);
@@ -281,7 +305,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   // The card that takes keyboard focus (roving tabindex): the focused element's card until the
   // arrow keys move it.
   const [active, setActive] = useState({ focusId, id: focusId });
-  const activeId = active.focusId === focusId ? active.id : focusId;
+  const activeId = active.focusId === focusId && hood.hops.has(active.id) ? active.id : homeId;
   const setActiveId = (id: string) => {
     setActive({ focusId, id });
   };
@@ -364,14 +388,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   useEffect(() => {
     if (!fontsReady) return;
     let live = true;
-    // Nesting: each element inside its container, when that is shown.
-    const parents = new Map<string, string>();
-    if (nest) {
-      for (const id of hood.hops.keys()) {
-        const container = containerOf(graph, id);
-        if (container !== undefined && hood.hops.has(container)) parents.set(id, container);
-      }
-    }
+    // Nesting: each element inside its container, when that and their Contains are shown.
+    const parents = nest ? nestingParents(graph, hood) : new Map<string, string>();
     const containers = new Set(parents.values());
     const drawn = links.filter(
       (link) => !(link.type === containsType && parents.get(link.target) === link.source),
@@ -419,17 +437,25 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         // With moved cards on the canvas (elements were added, or a relationship type shown or
         // hidden), the new layout keeps the focused card where it was, so the cards around the
         // moved ones stay put. A focus or depth change has no moved cards: a fresh layout.
-        setLaid((previous) => ({
-          hood,
-          links,
-          drawn,
-          parents,
-          containers,
-          placed:
-            movedRef.current.size > 0 && previous?.hood.focusId === hood.focusId
-              ? alignLayout(previous.placed, placed, hood.focusId)
-              : placed,
-        }));
+        setLaid((previous) => {
+          // A view has no focused card: the first card on both layouts stays put instead.
+          const anchor = hood.hops.has(hood.focusId)
+            ? hood.focusId
+            : [...placed.keys()].find((id) => previous?.placed.has(id) === true);
+          return {
+            hood,
+            links,
+            drawn,
+            parents,
+            containers,
+            placed:
+              movedRef.current.size > 0 &&
+              previous?.hood.focusId === hood.focusId &&
+              anchor !== undefined
+                ? alignLayout(previous.placed, placed, anchor)
+                : placed,
+          };
+        });
       })
       .catch((error: unknown) => {
         if (live) setLayoutError(error instanceof Error ? error.message : 'Unknown error');
@@ -488,11 +514,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const missing = useMemo(() => {
     const counts = new Map<string, number>();
     if (!laid) return counts;
+    if (!showRelatedPill) return counts;
     for (const id of laid.placed.keys()) {
       counts.set(id, missingRelatedCount(graph, id, laid.placed));
     }
     return counts;
-  }, [laid, graph]);
+  }, [laid, graph, showRelatedPill]);
 
   // Card contents, apart from their position: unchanged while a card is dragged, so only the
   // dragged card re-renders.
@@ -740,7 +767,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (request && laid.placed.has(request.id)) {
       focusPart(request.id, request.part);
     } else if (hadFocus.current && lost) {
-      focusPart(laid.hood.focusId, 'main');
+      const home = laid.placed.has(laid.hood.focusId)
+        ? laid.hood.focusId
+        : laid.placed.keys().next().value;
+      if (home !== undefined) focusPart(home, 'main');
     } else if (
       activeCard !== undefined &&
       laid.placed.has(activeCard) &&
@@ -878,6 +908,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (target instanceof HTMLButtonElement && !cardId) return;
     if (event.key === '1' || event.key === '2' || event.key === '3') {
+      // A view has no depth.
+      if (inView) return;
       props.onDepth(Number(event.key));
     } else if (event.key === '+' || event.key === '=') {
       void flow.zoomIn({ duration: reducedMotion() ? 0 : 200 });
@@ -967,12 +999,13 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     ? `Showing ${formatNumber(hood.hops.size)} of ${formatNumber(hood.reachable)} elements.${depth > 1 ? ' Choose a smaller depth to see fewer.' : ''}`
     : null;
   const loneNotice =
-    hood.relationships.length > 0 ? null : 'No relationships. This element stands alone.';
+    inView || hood.relationships.length > 0 ? null : 'No relationships. This element stands alone.';
   const pending = laid?.hood !== hood && layoutError === null;
   const fullNotice =
-    props.refused > 0
+    props.fullText ??
+    (props.refused > 0
       ? `The canvas is full (${formatNumber(defaultNeighbourhoodCap)} elements): ${counted(props.refused, 'element')} not added. Choose a smaller depth to make room.`
-      : null;
+      : null);
   const relatedCard = related ? graph.elements.get(related.cardId) : undefined;
   const relatedGroups = useMemo(
     () => (related && laid ? missingRelatedElements(graph, related.cardId, laid.placed) : []),
@@ -982,7 +1015,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     note && note.laid === laid
       ? note.text
       : laid
-        ? `Focused ${graph.elements.get(laid.hood.focusId)?.name || '(unnamed)'}. ${counted(laid.placed.size, 'element')} shown.`
+        ? `${inView ? `View ${props.viewName || '(unnamed)'}` : `Focused ${graph.elements.get(laid.hood.focusId)?.name || '(unnamed)'}`}. ${counted(laid.placed.size, 'element')} shown.`
         : '';
 
   /** A popover's place in the canvas: 12px right of the point, kept 8px inside. */
@@ -1081,6 +1114,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const onConnectStart = (_event: MouseEvent | TouchEvent, params: { nodeId: string | null }) => {
     const source = elementIds.get(params.nodeId ?? '');
     if (!editable || source === undefined) return;
+    // The lines come back, so the new one shows once added.
+    if (!props.lines) props.onLines(true);
     drawing.current = { source, cancelled: false };
     setDrawingFrom(source);
     setRelated(null);
@@ -1211,7 +1246,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         if (!editable || !target.closest('.react-flow__pane') || target.closest('.card')) return;
         newElementAt(event.clientX, event.clientY);
       }}
-      aria-label={`Diagram: ${focusName || '(unnamed)'} and its neighbours, depth ${depth}`}
+      aria-label={
+        inView
+          ? `Diagram: view ${props.viewName || '(unnamed)'}, ${counted(hood.hops.size, 'element')}`
+          : `Diagram: ${focusName || '(unnamed)'} and its neighbours, depth ${depth}`
+      }
       onKeyDown={onKeyDown}
       onDragOver={(event) => {
         if (!props.onBringElement || !event.dataTransfer.types.includes(elementDragType)) return;
@@ -1242,7 +1281,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       <ReactFlow<CardNode, RelationshipFlowEdge>
         ref={wrapper}
         nodes={nodes}
-        edges={edges}
+        edges={props.lines ? edges : noEdges}
         nodeTypes={flowNodeTypes}
         edgeTypes={flowEdgeTypes}
         onMoveStart={(event) => {
@@ -1329,7 +1368,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           )}
         </div>
       )}
-      {moving ? (
+      {props.notice ? (
+        <div className="canvas-notice view-notice" role="alert">
+          {props.notice}
+        </div>
+      ) : moving ? (
         <p className="canvas-notice move-hint">
           Moving &ldquo;<span className="move-name">{nameOf(moving.id)}</span>&rdquo;. Arrow keys
           move it, Shift for bigger steps. Enter drops, Esc cancels.
@@ -1341,12 +1384,17 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           </p>
         )
       )}
-      {!moving && !fullNotice && !capNotice && loneNotice && (
+      {!props.notice && !moving && !fullNotice && !capNotice && loneNotice && (
         <p className="canvas-notice muted">{loneNotice}</p>
       )}
       <p className="vh" aria-live="polite">
         {announcement}
       </p>
+      {props.emptyText !== undefined && hood.hops.size === 0 && (
+        <div className="canvas-empty-over">
+          <div className="empty">{props.emptyText}</div>
+        </div>
+      )}
 
       {related && relatedCard && (
         <RelatedPopup
@@ -1479,7 +1527,17 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           onChange={props.onShownProperties}
         />
       </div>
-      <Legend types={typesOnCanvas} nest={props.nest} onToggleNest={props.onToggleNest} />
+      <Legend
+        types={typesOnCanvas}
+        nest={props.nest}
+        onToggleNest={props.onToggleNest}
+        lines={props.lines}
+        onToggleLines={() => {
+          // A line's chooser has nothing to point at once the lines go.
+          if (props.lines) setEdgeMenu(null);
+          props.onLines(!props.lines);
+        }}
+      />
       <ZoomControls />
     </section>
   );
@@ -1489,6 +1547,8 @@ function Legend(props: {
   types: readonly (typeof nodeTypes)[number][];
   nest: boolean;
   onToggleNest: () => void;
+  lines: boolean;
+  onToggleLines: () => void;
 }) {
   const [open, setOpen] = useState(readLegendOpen);
   return (
@@ -1534,6 +1594,16 @@ function Legend(props: {
             onChange={props.onToggleNest}
           />
           <span className="lname">Nest contained elements</span>
+        </label>
+        <label className="lines" title="Draw the relationship lines">
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={props.lines}
+            onChange={props.onToggleLines}
+          />
+          <span className="lname">Show lines</span>
         </label>
       </div>
     </details>

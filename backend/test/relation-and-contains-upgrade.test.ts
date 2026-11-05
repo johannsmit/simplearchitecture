@@ -496,7 +496,13 @@ describe('through the routes', () => {
     const exported = await call(target, 'GET', `/api/models/${id}`, cookie);
     expect(exported.statusCode).toBe(200);
     const once = exported.json<{ graph: Record<string, unknown> }>();
-    expect(graphPart(once)).toEqual(graphPart(everything));
+    // The edge without an id got one on import; it keeps it from then on.
+    const edges = once.graph.edges as { id?: string }[];
+    const given = edges[4]?.id;
+    expect(given).toMatch(/^[0-9a-f-]{36}$/);
+    const withId = structuredClone(everything);
+    Object.assign(withId.graph.edges[4] as object, { id: given });
+    expect(graphPart(once)).toEqual(graphPart(withId));
 
     const again = await call(target, 'POST', '/api/models', cookie, once);
     expect(again.statusCode, again.body).toBeLessThan(300);
@@ -505,7 +511,7 @@ describe('through the routes', () => {
     const twice = (await call(target, 'GET', `/api/models/${secondId}`, cookie)).json<{
       graph: Record<string, unknown>;
     }>();
-    expect(graphPart(twice)).toEqual(graphPart(everything));
+    expect(graphPart(twice)).toEqual(graphPart(withId));
   });
 
   it('an older file imports converted, with a note, on both import routes', async () => {

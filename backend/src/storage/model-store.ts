@@ -5,6 +5,7 @@ import type {
   JgfValidationResult,
   ModelAuthor,
   ModelSummary,
+  ViewSummary,
 } from '@simplearchitecture/shared';
 
 /**
@@ -42,6 +43,11 @@ export interface ModelStore {
    * and writes.
    */
   readonly elements?: ElementStore;
+  /**
+   * Views of a model. Absent when the store can't hold them (the file store): views need
+   * PostgreSQL. The view service holds the rules; the store only reads and writes.
+   */
+  readonly views?: ViewStore;
 }
 
 /** The model as stored now, read under the model's lock, and fully validated. */
@@ -106,6 +112,85 @@ export interface ElementStore {
     modelId: string,
     plan: (model: EditableModel) => PlannedElementChange,
   ): Promise<AppliedElementChange | undefined>;
+}
+
+/** A view as stored: its summary and contents, element and relationship ids in model order. */
+export interface ViewRecord {
+  summary: ViewSummary;
+  elementIds: string[];
+  relationshipIds: string[];
+}
+
+/** The two ends of a relationship as stored (null when the edge has none). */
+export interface RelationshipEnds {
+  source: string | null;
+  target: string | null;
+}
+
+/** What a view change's plan sees, read under the model's row lock. */
+export interface ViewChangeState {
+  /** The view the change is about, or undefined (a new view, or no such view in the model). */
+  view: ViewRecord | undefined;
+  /** Every view of the model, by id and name (for the count and the name rules). */
+  views: readonly { id: string; name: string }[];
+  /** Of the element ids asked about, those that are elements of the model. */
+  elements: ReadonlySet<string>;
+  /**
+   * Of the relationship ids asked about and those in the view, the model's relationships with
+   * their ends.
+   */
+  relationships: ReadonlyMap<string, RelationshipEnds>;
+}
+
+/** One view created, renamed, given new contents or deleted. Ids are already checked. */
+export type ViewWrite =
+  | {
+      kind: 'create';
+      viewId: string;
+      name: string;
+      elementIds: readonly string[];
+      relationshipIds: readonly string[];
+    }
+  | { kind: 'rename'; viewId: string; name: string }
+  | {
+      kind: 'replace';
+      viewId: string;
+      elementIds: readonly string[];
+      relationshipIds: readonly string[];
+    }
+  | { kind: 'delete'; viewId: string };
+
+export type ViewAuditAction = 'view-added' | 'view-renamed' | 'view-changed' | 'view-deleted';
+
+/** The change a view plan asks for, with its audit row (field names only, never values). */
+export interface PlannedViewChange {
+  write: ViewWrite;
+  audit: { action: ViewAuditAction; actor: ModelAuthor; fields: string[] };
+}
+
+/** The ids a view change needs to know about: the view, and the ids the request names. */
+export interface ViewLookup {
+  viewId?: string;
+  elementIds: readonly string[];
+  relationshipIds: readonly string[];
+}
+
+export interface ViewStore {
+  /** The model's views, in no particular order. Undefined when there is no such model. */
+  list(modelId: string): Promise<ViewSummary[] | undefined>;
+  /** One view with its contents, or which of the two is missing. */
+  get(modelId: string, viewId: string): Promise<ViewRecord | 'no-model' | 'no-view'>;
+  /**
+   * Runs `plan` on what `lookup` asks for, in one transaction that holds the model's row lock, and
+   * applies the change it returns together with one audit row. `plan` refuses a change by
+   * throwing: then nothing is stored. Undefined when there is no such model; otherwise the view as
+   * it now is (undefined after a delete).
+   */
+  change(
+    modelId: string,
+    lookup: ViewLookup,
+    plan: (state: ViewChangeState) => PlannedViewChange,
+  ): Promise<{ view: ViewRecord | undefined } | undefined>;
 }
 
 export interface DeletedModel {

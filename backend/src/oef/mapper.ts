@@ -16,6 +16,7 @@ import {
   type OefMappingReport,
 } from '@simplearchitecture/shared';
 import { retiredInformationFlowKey } from '../jgf/older-types.js';
+import { newRelationshipId } from '../jgf/relationship-ids.js';
 import { maxEchoLength, reservedKey } from '../jgf/validate.js';
 import { ImportTooLargeError, maxImportEdges, maxImportNodes } from '../limits.js';
 import type { OefMapping, RelationshipRule } from './mapping-config.js';
@@ -542,14 +543,13 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
 
   const edges: JgfEdge[] = [];
   const edgeIds = new Set<string>();
+  // A relationship without an identifier gets a new id, never one the file uses.
+  const takenIds = new Set(relationships.map((relationship) => relationship.id));
   for (const relationship of relationships) {
     const skip = (reason: string): void => {
       incrementByReason(report.relationships.skipped, reason, relationship.type);
     };
-    if (relationship.id === '') {
-      skip('missing-identifier');
-      continue;
-    }
+    if (relationship.id === '') relationship.id = newRelationshipId(takenIds);
     if (edgeIds.has(relationship.id)) {
       skip('duplicate-identifier');
       continue;

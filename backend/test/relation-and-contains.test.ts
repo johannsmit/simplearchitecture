@@ -485,7 +485,9 @@ describe('RelationshipService: Information flow is gone', () => {
   });
 
   const setup = async () => {
-    await db.exec('truncate models, elements, relationships, audit');
+    await db.exec(
+      'truncate models, elements, relationships, views, view_elements, view_relationships, audit',
+    );
     const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
     const { id } = await store.save(model, author);
     return { service: new RelationshipService(store), id };

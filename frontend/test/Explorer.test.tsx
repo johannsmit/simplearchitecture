@@ -55,14 +55,23 @@ describe('explorer path', () => {
       space: 'viewing',
       modelId: bakeryId,
       elementId: plannerId,
+      viewId: undefined,
     });
     expect(parseExplorerPath(base)).toEqual({
       space: 'viewing',
       modelId: bakeryId,
       elementId: undefined,
+      viewId: undefined,
     });
     expect(parseExplorerPath(`/modelling/models/${bakeryId}`)?.space).toBe('modelling');
     expect(parseExplorerPath(`${base}/other`)).toBeUndefined();
+    expect(parseExplorerPath(`/modelling/models/${bakeryId}/views/v%2F1`)).toEqual({
+      space: 'modelling',
+      modelId: bakeryId,
+      elementId: undefined,
+      viewId: 'v/1',
+    });
+    expect(parseExplorerPath(`${base}/views/a/b`)).toBeUndefined();
   });
 });
 

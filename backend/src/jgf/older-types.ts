@@ -1,4 +1,5 @@
 import type { JgfValidationResult, ValidationIssue } from '@simplearchitecture/shared';
+import { withRelationshipIds } from './relationship-ids.js';
 import { validateJgf } from './validate.js';
 
 /**
@@ -64,14 +65,15 @@ export function convertOlderTypes(input: unknown): { document: unknown; converte
 
 /**
  * What an import is checked as: converted first, with a note in the report's warnings when any edge
- * was. `document` is what to store.
+ * was. `document` is what to store: as checked, with an id on every relationship that had none.
  */
 export function validateImported(input: unknown): {
   document: unknown;
   validation: JgfValidationResult;
 } {
-  const { document, converted } = convertOlderTypes(input);
-  const validation = validateJgf(document);
+  const { document: checked, converted } = convertOlderTypes(input);
+  const validation = validateJgf(checked);
+  const { document } = withRelationshipIds(checked);
   if (converted === 0) return { document, validation };
   const note: ValidationIssue = {
     severity: 'warning',

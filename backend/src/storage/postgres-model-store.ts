@@ -21,7 +21,9 @@ import {
   ModelUnreadableError,
   type DeletedModel,
   type ModelStore,
+  type ViewStore,
 } from './model-store.js';
+import { PostgresViewStore } from './postgres-view-store.js';
 import {
   isPlainObject,
   mapLimited,
@@ -29,6 +31,7 @@ import {
   newSummary,
   recordedSummary,
   storedDocument,
+  unstorable,
   type StoreLogger,
 } from './stored-model.js';
 
@@ -170,7 +173,8 @@ const updateRelationship = `update relationships set source = $3, target = $4, r
   version = version + 1
   where model_id = $1::uuid and id = $2 returning version`;
 
-// A new relationship goes last, so the model's order is kept.
+// A new relationship goes last, so the model's order is kept. A relationship's ordinal never
+// changes while it exists: views refer to it by its ordinal (migration 010).
 const addRelationship = `insert into relationships (model_id, ordinal, id, source, target,
   relation, directed, label, metadata, extra)
   select $1::uuid, coalesce(max(ordinal), -1) + 1, $2, $3, $4, $5, $6, $7, $8::text::jsonb,
@@ -193,10 +197,6 @@ const insertAudit = `insert into audit (action, user_id, user_name, model_id, el
 
 const jsonOrNull = (value: Json | undefined): string | null =>
   value === undefined ? null : JSON.stringify(value);
-
-// PostgreSQL text can't hold NUL, and its JSON refuses half a surrogate pair.
-// eslint-disable-next-line no-control-regex -- NUL is what this finds
-const unstorable = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** False when any key or text in the document can't be stored. Walks without recursion. */
 function isStorable(document: unknown): boolean {
@@ -367,6 +367,7 @@ export class PostgresModelStore implements ModelStore {
     read: (modelId) => this.#readEditable(modelId),
     change: (modelId, plan) => this.#change(modelId, plan),
   };
+  readonly views: ViewStore;
 
   private constructor(db: Db, options: PostgresModelStoreOptions) {
     this.#db = db;
@@ -374,6 +375,7 @@ export class PostgresModelStore implements ModelStore {
     this.#now = options.now ?? Date.now;
     this.#maxModels = options.maxModels ?? maxStoredModels;
     this.#maxBytes = options.maxModelBytes ?? maxModelFileBytes;
+    this.views = new PostgresViewStore(db, this.#now);
   }
 
   /** Opens the store on a migrated database and checks every model once. */

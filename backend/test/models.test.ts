@@ -520,6 +520,52 @@ describe('POST /api/models with older relationship types', () => {
   });
 });
 
+describe('POST /api/models: relationships without an id', () => {
+  it('stores each with a new, unique id, and keeps the ids that are there', async () => {
+    const { target, cookie } = await signedInAs(['Admin']);
+    const file = {
+      graph: {
+        nodes: {
+          a: { label: 'Made-up A', metadata: { type: 'Application' } },
+          b: { label: 'Made-up B', metadata: { type: 'Application' } },
+        },
+        edges: [
+          { source: 'a', target: 'b', relation: 'Relation', label: 'First' },
+          { id: 'kept', source: 'b', target: 'a', relation: 'Relation' },
+          { source: 'b', target: 'a', relation: 'Relation' },
+        ],
+      },
+    };
+    const res = await send(target, 'POST', '/api/models', {
+      cookie,
+      payload: JSON.stringify(file),
+    });
+    expect(res.statusCode).toBe(201);
+    const { model, validation } = res.json<SaveModelResult>();
+    expect(validation).toMatchObject({ valid: true, warningCount: 0 });
+    const stored = (await get(target, `/api/models/${model.id}`, cookie)).json<JgfDocument>();
+    const edges = stored.graph.edges ?? [];
+    expect(edges[0]).toEqual({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/) as string,
+      source: 'a',
+      target: 'b',
+      relation: 'Relation',
+      label: 'First',
+    });
+    expect(edges[1]?.id).toBe('kept');
+    expect(new Set(edges.map((edge) => edge.id)).size).toBe(3);
+
+    // Imported again, the ids stay as they are.
+    const again = await send(target, 'POST', '/api/models', {
+      cookie,
+      payload: JSON.stringify(stored),
+    });
+    const second = again.json<SaveModelResult>().model;
+    const reread = (await get(target, `/api/models/${second.id}`, cookie)).json<JgfDocument>();
+    expect(reread.graph.edges).toEqual(edges);
+  });
+});
+
 describe('POST /api/models/import/oef', () => {
   it('converts and saves the file: 201 with the metadata, the mapping report and the validation', async () => {
     const { target, cookie } = await signedInAs(['Admin']);

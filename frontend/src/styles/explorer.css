@@ -1952,8 +1952,9 @@
   --label-bg: color-mix(in srgb, var(--container-fill) 10%, var(--canvas));
 }
 
-/* "Nest contained elements": a switch at the bottom of the legend. */
-.legend label.nest {
+/* "Nest contained elements" and "Show lines": switches at the bottom of the legend. */
+.legend label.nest,
+.legend label.lines {
   min-height: 24px;
 }
 
@@ -3670,4 +3671,242 @@ li.is-new {
 /* Two-way relationships: the "↔" before the other element's name. */
 .rboth {
   color: var(--text-muted);
+}
+
+/* Views: the button and its list, in the Show Viewpoints look. */
+.views-menu {
+  position: relative;
+  flex: none;
+}
+
+@media (min-width: 1280px) {
+  .views-btn .tidy-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+.views-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: min(280px, 100vw - 24px);
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  box-shadow: var(--e2);
+}
+
+.vp-title {
+  margin: 2px 6px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.vp-list {
+  max-height: min(320px, 50dvh);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.vp-list a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.vp-list a:hover {
+  background: var(--surface-2);
+}
+
+.vp-list a[aria-current='page'] {
+  background: var(--select-soft);
+  font-weight: 600;
+}
+
+.vp-list a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.vp-list .chk {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  color: var(--accent);
+}
+
+.vp-list .n {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vp-empty {
+  margin: 4px 8px 6px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.vp-empty .spinner {
+  width: 12px;
+  height: 12px;
+  vertical-align: -2px;
+}
+
+.vp-filter {
+  position: relative;
+  margin: 0 0 6px;
+}
+
+.vp-filter .ico {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  color: var(--text-muted);
+}
+
+.vp-filter input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 30px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.vp-foot {
+  margin: 8px -8px -8px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.vp-foot .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+@media (pointer: coarse) {
+  .vp-list a {
+    height: 40px;
+  }
+}
+
+/* An open view: the bar under the toolbar. */
+.view-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.view-bar h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.view-bar .mode-pill {
+  margin-left: 0;
+}
+
+.view-bar .vname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-bar .vstatus {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.view-bar .vstatus .ico {
+  margin-right: 4px;
+  color: var(--positive);
+  vertical-align: -3px;
+}
+
+.view-bar .vbtn {
+  flex: none;
+}
+
+/* Below 768px: icon-only buttons; "Saved" is still announced. */
+@media (max-width: 767px) {
+  .view-bar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .view-bar .vbtn {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .view-bar .vlabel,
+  .view-bar .vstatus-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* A view with no elements: the message over the canvas, which still takes drops. */
+.canvas-empty-over {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.view-notice .linkbtn {
+  margin-left: 4px;
+}
+
+/* The model's start page: up to 5 views under the suggestions. */
+.start-views {
+  margin-top: 14px;
+}
+
+.start-views p {
+  margin: 0;
+}
+
+.start-views .all-views {
+  align-self: center;
 }

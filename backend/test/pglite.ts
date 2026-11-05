@@ -65,7 +65,7 @@ export async function createTestDb(): Promise<TestDb> {
 /** Removes every row (the schema stays). */
 export async function resetTestDb(db: Db): Promise<void> {
   await db.exec(
-    'truncate models, elements, relationships, audit, sessions, branding, mcp_clients, mcp_connections, mcp_authorization_requests, mcp_codes, mcp_tokens',
+    'truncate models, elements, relationships, views, view_elements, view_relationships, audit, sessions, branding, mcp_clients, mcp_connections, mcp_authorization_requests, mcp_codes, mcp_tokens',
   );
 }
 

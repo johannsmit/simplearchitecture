@@ -82,7 +82,7 @@ export function refused(reply: FastifyReply, error: unknown): FastifyReply {
 export function auditLog(
   request: FastifyRequest,
   audit: string,
-  ids: { modelId: string; elementId?: string; relationshipId?: string },
+  ids: { modelId: string; elementId?: string; relationshipId?: string; viewId?: string },
   extra: object = {},
 ): void {
   request.log.info({ audit, userId: actor(request).id, ...ids, ...extra }, audit.replace('-', ' '));

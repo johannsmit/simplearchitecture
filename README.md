@@ -175,12 +175,28 @@ The OEF import maps relationship types with `config/oef-mapping.json`. Every imp
 | `DELETE /api/models/:id/relationships/:relationshipId?version=N` | Modelling | Deletes the relationship (200); its ends stay                             |
 
 - Bodies are JSON. A POST sends `source` and `target` (element ids), `type` (an edge type), and optionally `architectureState` (default Current) and `description`. A PATCH sends `metadata` (custom properties: text, with `null` removing a key) and any of `type`, `architectureState`, `description` (`null` removes it), `label` (trimmed, stored as JGF `label`; `null` or blank removes it), `reverse: true` (swaps source and target; same id and history), `twoWay` (`true`: both ways, stored as JGF `"directed": false`; `false`: one way) and `identity`, `identityContext` and `data` (text, trimmed; `null` or blank removes it). Only a Relation can be two-way or have Identity, Identity Context and Data: a type change to Contains makes it one way and removes those three, and `twoWay: true` or one of them on Contains is refused. They are never sent in `metadata`, and nor is the retired key `informationFlow`. New relationships are one way. The shapes are in `shared/src/relationships.ts`.
-- Only relationships with an id can be edited (JGF edge ids are optional; an imported one without an id stays read-only).
+- Only relationships with an id can be edited or be in a view. JGF edge ids are optional, so an import (JGF or OEF) gives every relationship without an id a new one, a UUID as new relationships get; ids in the file are kept. Relationships stored without an id by an earlier version stay read-only.
 - The same version, conflict (409), validation and size rules as for elements. 422 `fields` name `source`, `target`, `type`, `architectureState`, `description`, `label`, `version`, `reverse`, `twoWay`, `identity`, `identityContext`, `data`, `metadata.<key>` or `''`. 404 says which is `missing`: the `model`, the `relationship`, or the `source` or `target` element of a new one.
 - Rules for changes made here (stored models are never checked against them): an element can't be related to itself (any type), and a Contains change can't make a cycle. The same Contains twice is refused with `duplicateOf` (the existing relationship's id); several Relations may link the same two elements. A second container is allowed, with a `multiple-containers` warning; the element stays nested in the first Contains in the model's order, and new relationships are added at the end. The rules are checked again on a type change and on reverse.
 - Results list `nestingChanges`: each element now drawn inside another container (`containerId`) or not nested (`null`), so the canvas can update without a reload.
 - Caps per change: description 10,000 characters, label 200 characters, element ids 1,000, body 64 KB. An imported label or description that is longer stays until it is changed.
 - Every stored change writes one `audit` row in the same transaction, as for elements, with the relationship id and the action `relationship-added`, `relationship-updated`, `relationship-reversed` or `relationship-deleted`.
+
+### Views (PostgreSQL only)
+
+| Endpoint                                         | Space     | What it does                                                          |
+| ------------------------------------------------ | --------- | --------------------------------------------------------------------- |
+| `GET /api/models/:id/views`                      | Viewing   | The model's views (name, version, counts), by name                    |
+| `GET /api/models/:id/views/:viewId`              | Viewing   | One view with its element and relationship ids, in the model's order  |
+| `POST /api/models/:id/views`                     | Modelling | Saves a view from `name`, `elementIds` and `relationshipIds` (201)    |
+| `PATCH /api/models/:id/views/:viewId`            | Modelling | Renames it; the body carries the `version` read                       |
+| `PUT /api/models/:id/views/:viewId/contents`     | Modelling | Replaces its elements and relationships; the body carries the version |
+| `DELETE /api/models/:id/views/:viewId?version=N` | Modelling | Deletes the view; its elements and relationships stay in the model    |
+
+- A view refers to elements and relationships by id and never changes the model. Every id must be in the model, and a relationship may be in a view only with both of its elements. Without `relationshipIds`, new contents keep the view's relationships whose two elements are still in it.
+- Names are trimmed, 1 to 200 characters, and unique within the model, ignoring case (422 on `name`). At most 150 elements and 5,000 relationships per view, and 500 views per model.
+- The same version (409 with `currentVersion`), validation (422 with `fields`) and 404 (`missing`: `model` or `view`) rules as for elements. Every stored change writes one `audit` row (`view-added`, `view-renamed`, `view-changed`, `view-deleted`) with field names and counts, never the name.
+- Deleting an element or a relationship removes it from every view, and deleting a model deletes its views. Views aren't part of the JGF export or import.
 
 ### Branding (Admin, PostgreSQL only)
 
@@ -502,37 +518,37 @@ A click elsewhere saves the open cell. `/` always moves to the search; to start 
 
 **Canvas**
 
-| Key                              | What it does                                                |
-| -------------------------------- | ----------------------------------------------------------- |
-| `↑` `↓` `←` `→`                  | Moves the selection to the nearest card in that direction   |
-| `Shift` + arrows                 | Pans the canvas                                             |
-| `Enter`                          | Focuses the selected card's element (it becomes the centre) |
-| `Esc` (with a relationship open) | Closes the relationship; the panel goes back to the element |
-| `1` `2` `3`                      | Sets the depth                                              |
-| `+` `-`                          | Zooms in or out                                             |
-| `0`                              | Fits everything in view                                     |
-| `M`                              | Starts moving the selected card (see below)                 |
-| `Esc`                            | Leaves the cards and returns to the canvas                  |
+| Key                              | What it does                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `↑` `↓` `←` `→`                  | Moves the selection to the nearest card in that direction                                      |
+| `Shift` + arrows                 | Pans the canvas                                                                                |
+| `Enter`                          | Focuses the selected card's element (it becomes the centre); in a view, leaves the view for it |
+| `Esc` (with a relationship open) | Closes the relationship; the panel goes back to the element                                    |
+| `1` `2` `3`                      | Sets the depth (they do nothing in a view)                                                     |
+| `+` `-`                          | Zooms in or out                                                                                |
+| `0`                              | Fits everything in view                                                                        |
+| `M`                              | Starts moving the selected card (see below)                                                    |
+| `Esc`                            | Leaves the cards and returns to the canvas                                                     |
 
 These keys, `N` and `R` work in the Canvas view only.
 
 **Modelling (explorer with editing on)**
 
-| Key                                               | What it does                                                                                    |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `Ctrl` + `Enter` (`⌘` + `Enter` on Mac)           | Saves the element or relationship (anywhere in the form, also in a text box)                    |
-| `Esc` (in the form)                               | Asks "Discard changes?" when there are unsaved changes                                          |
-| `Enter` (in New element)                          | Creates the element                                                                             |
-| `Esc` (in New element)                            | Closes it without creating                                                                      |
-| `N`                                               | New element at the centre of the canvas, like + Element (not while typing in a field)           |
-| `R` (on a card)                                   | Adds a relationship from this element: selects it and opens Add relationship, focus in the type |
-| `Esc` (while drawing a line)                      | Cancels the line                                                                                |
-| `Enter` (in New relationship or Add relationship) | Adds the relationship (in the search list: picks the highlighted element)                       |
-| `Esc` (in New relationship or Add relationship)   | Closes it without adding (in the search with text: clears the text first)                       |
-| `↑` `↓` (in the Add relationship search)          | Moves through the matching elements                                                             |
-| `Esc` (on the canvas, with a relationship open)   | Closes the relationship; the panel goes back to the focused element                             |
+| Key                                               | What it does                                                                                                                    |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Ctrl` + `Enter` (`⌘` + `Enter` on Mac)           | Saves the element or relationship (anywhere in the form, also in a text box)                                                    |
+| `Esc` (in the form)                               | Asks "Discard changes?" when there are unsaved changes                                                                          |
+| `Enter` (in New element)                          | Creates the element                                                                                                             |
+| `Esc` (in New element)                            | Closes it without creating                                                                                                      |
+| `N`                                               | New element at the centre of the canvas, like + Element (not while typing in a field); in an open view, it is added to the view |
+| `R` (on a card)                                   | Adds a relationship from this element: selects it and opens Add relationship, focus in the type                                 |
+| `Esc` (while drawing a line)                      | Cancels the line                                                                                                                |
+| `Enter` (in New relationship or Add relationship) | Adds the relationship (in the search list: picks the highlighted element)                                                       |
+| `Esc` (in New relationship or Add relationship)   | Closes it without adding (in the search with text: clears the text first)                                                       |
+| `↑` `↓` (in the Add relationship search)          | Moves through the matching elements                                                                                             |
+| `Esc` (on the canvas, with a relationship open)   | Closes the relationship; the panel goes back to the focused element                                                             |
 
-The canvas shows every relationship around the focused element, down to the chosen depth. The details panel lists all of an element's relationships, grouped by wording. A line's label, or "×N" for a line holding several relationships, always shows on the line (long labels end in "…", with the full text in the tooltip); a line without a label shows nothing. Several Relations may link the same two elements, and they merge as "×N" when they run the same way. The legend explains the elements and states, and holds the "Nest contained elements" switch.
+The canvas shows every relationship around the focused element, down to the chosen depth. The details panel lists all of an element's relationships, grouped by wording. A line's label, or "×N" for a line holding several relationships, always shows on the line (long labels end in "…", with the full text in the tooltip); a line without a label shows nothing. Several Relations may link the same two elements, and they merge as "×N" when they run the same way. The legend explains the elements and states, and holds the "Nest contained elements" and "Show lines" switches. **Show lines** off hides every relationship line, with its label and marks; the cards stay where they are. The browser remembers the setting. In Modelling, drawing or adding a relationship turns the lines back on, so the new line shows.
 
 **Show Viewpoints**, at the canvas's top left, selects a viewpoint: which relationship properties the lines show. These are Architecture state, Identity, Identity Context and Data (offered whenever the model has a Relation) and any custom metadata the model's relationships have. Lines show those values in place of their label, and a line with none of them is grayed out, though it still lights up on hover and opens with a click. With nothing selected, a line shows its label, or nothing: no type name, on hover either. Selecting never moves a card. The selection is in the address (`?show=protocol&show=data`), so a viewpoint can be shared as a link, and it isn't remembered in the browser. Contains is never grayed out. Older links still work: `?viewpoint=information-flow` opens with Data selected, and `?viewpoint=integration` with nothing selected. In Modelling, a Relation's Identity, Identity Context and Data are fields on its form, under the label, and a relationship's custom metadata is edited on its form, as on an element.
 
@@ -541,6 +557,8 @@ The canvas shows every relationship around the focused element, down to the chos
 A card added by hand (from a card's related elements, the element list or Add to canvas) also brings what it contains, through Contains only, down to the current depth; changing the depth updates it. Added cards stay until the focus changes. Its containers come along too, and the card limit applies.
 
 **Removing a card.** Select a card and choose **Remove** (Remove from canvas) at the top of the canvas, in Viewing or Modelling. The card goes, with its lines and the cards drawn inside it; the element stays in the model and in the list. The focused element, and a card it is drawn inside, can't be removed. A removed card stays off through Tidy up and depth changes, until you focus another element or reload the page. To bring it back, use Add to canvas, a card's related elements, or drag it from the element list. Like card positions, this is never saved.
+
+**Views.** A view is a named canvas that is stored: a set of elements and relationships of one model. In Modelling, with an element focused, open **Views** (next to Canvas | Catalog) and choose **Save as view…**: it saves exactly the cards and relationships the canvas draws, including each relationship in a "×N" line, under a name that is unique in the model (ignoring case). The **Views** list, and the model's start page, open a view; everyone who can see the model can open every view, in Viewing too, and a view's address (`…/models/<model>/views/<view>`) can be shared. A view opens laid out automatically: card positions, depth, Show Viewpoints and the Nest and Show lines switches aren't saved in it, and it has no focused element, no depth and no breadcrumbs, and brings in no containers. In Modelling (Modeller or Admin), Add to canvas, dragging a row onto the canvas, a card's related elements and a new element made on the canvas add to the open view, with the element's relationships to elements already in it; **Remove** takes the selected card, or the open relationship's line, out of the view. Each change is saved at once ("Saving…", then "Saved"); if someone else changed the view meanwhile, it isn't saved and the canvas goes back until you choose **Reload view**. Rename and Delete are on the bar above the view. Double-click or `Enter` on a card leaves the view for that element, and Back returns to it. Deleting an element or a relationship from the model removes it from every view. Removing from a view, renaming or deleting a view never changes the model. Views need PostgreSQL, and they aren't part of the JGF export or import. More in [Views](guide/views.md).
 
 With the pointer, in Viewing and Modelling: a single click (or tap) on a card or list row selects it (the details panel shows it; the canvas, breadcrumbs and address stay), and a double click (or double tap) focuses it. Click a line to see its relationship. Drag a row from the element list onto the canvas to add that element there. In the catalog, a click selects a row; a double click focuses it on the canvas (Viewing) or edits the cell (Modelling).
 
@@ -557,6 +575,15 @@ With the pointer, in Modelling: double-click empty canvas for a new element ther
 | `↓` `↑`          | Open the suggestions and go through them; the text stays as typed                                                                                       |
 | `Enter` or `Tab` | Takes the highlighted suggestion; with none, keeps what is typed (`Enter` with the list open never saves; in a catalog cell, either key saves as usual) |
 | `Esc`            | Closes the list and keeps the text (in a catalog cell, cancels)                                                                                         |
+
+**Views list**
+
+| Key          | What it does                                                   |
+| ------------ | -------------------------------------------------------------- |
+| `↓` `↑`      | Next or previous view (from the filter, `↓` goes to the first) |
+| `Home` `End` | First or last view                                             |
+| `Enter`      | Opens the view                                                 |
+| `Esc`        | Closes the list; focus returns to the Views button             |
 
 **Moving a card (after `M`)**
 

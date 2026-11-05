@@ -127,6 +127,13 @@ const paths = {
     </>
   ),
   x: <path d="M18 6 6 18M6 6l12 12" />,
+  bookmark: <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />,
+  'bookmark-plus': (
+    <>
+      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+      <path d="M12 7v6M9 10h6" />
+    </>
+  ),
   'list-filter': <path d="M3 6h18M7 12h10M10 18h4" />,
   'wand-sparkles': (
     <>

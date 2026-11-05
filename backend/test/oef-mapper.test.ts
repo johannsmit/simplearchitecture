@@ -424,13 +424,12 @@ describe('convertOef: edge cases', () => {
     expect(report.properties.renamedKeys).toBe(2);
   });
 
-  it('skips elements and relationships without an identifier or with a duplicate one', () => {
+  it('skips elements without an identifier, and elements and relationships with a duplicate one', () => {
     const xml = oef({
       elements: `<element xsi:type="Goal"><name>No id</name></element>
         <element identifier="a" xsi:type="Goal"><name>A</name></element>
         <element identifier="a" xsi:type="Goal"><name>A again</name></element>`,
-      relationships: `<relationship source="a" target="a" xsi:type="Flow"/>
-        <relationship identifier="r" source="a" target="a" xsi:type="Flow"/>
+      relationships: `<relationship identifier="r" source="a" target="a" xsi:type="Flow"/>
         <relationship identifier="r" source="a" target="a" xsi:type="Flow"/>`,
     });
     const { jgf, report } = convertOef(xml, mapping);
@@ -440,10 +439,28 @@ describe('convertOef: edge cases', () => {
       'missing-identifier': { Goal: 1 },
       'duplicate-identifier': { Goal: 1 },
     });
-    expect(report.relationships.skipped).toEqual({
-      'missing-identifier': { Flow: 1 },
-      'duplicate-identifier': { Flow: 1 },
+    expect(report.relationships.skipped).toEqual({ 'duplicate-identifier': { Flow: 1 } });
+    expectNothingDroppedSilently(report);
+  });
+
+  it('gives a relationship without an identifier a new, unique id, and keeps the others', () => {
+    const xml = oef({
+      elements: `<element identifier="a" xsi:type="Goal"><name>A</name></element>
+        <element identifier="b" xsi:type="Goal"><name>B</name></element>`,
+      relationships: `<relationship source="a" target="b" xsi:type="Flow"/>
+        <relationship identifier="kept" source="b" target="a" xsi:type="Flow"/>
+        <relationship source="b" target="a" xsi:type="Flow"/>`,
     });
+    const { jgf, report } = convertOef(xml, mapping);
+    const ids = (jgf.graph.edges ?? []).map((edge) => edge.id);
+    expect(ids).toHaveLength(3);
+    expect(ids[1]).toBe('kept');
+    for (const id of [ids[0], ids[2]]) {
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    }
+    expect(new Set(ids).size).toBe(3);
+    expect(report.relationships.skipped).toEqual({});
+    expect(validateJgf(jgf).valid).toBe(true);
     expectNothingDroppedSilently(report);
   });
 

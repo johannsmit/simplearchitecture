@@ -32,6 +32,11 @@ import type {
   ModelSummary,
   NewModelRequest,
   NewModelResult,
+  NewViewRequest,
+  RenameViewRequest,
+  ReplaceViewContentsRequest,
+  StoredView,
+  ViewSummary,
 } from '@simplearchitecture/shared';
 
 /**
@@ -441,6 +446,103 @@ export async function deleteRelationship(
     throw new ApiRequestError(response.status, 'The server sent an unexpected answer.');
   }
   return result as DeletedRelationshipResult;
+}
+
+const viewUrl = (modelId: string, viewId?: string): string =>
+  `/api/models/${encodeURIComponent(modelId)}/views${
+    viewId === undefined ? '' : `/${encodeURIComponent(viewId)}`
+  }`;
+
+function isViewSummary(value: unknown): value is ViewSummary {
+  return (
+    isObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.version === 'number' &&
+    typeof value.elementCount === 'number' &&
+    typeof value.relationshipCount === 'number'
+  );
+}
+
+const isIdList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((id) => typeof id === 'string');
+
+function isStoredView(value: unknown): value is StoredView {
+  return (
+    isViewSummary(value) &&
+    isIdList((value as unknown as Record<string, unknown>).elementIds) &&
+    isIdList((value as unknown as Record<string, unknown>).relationshipIds)
+  );
+}
+
+async function viewResult(response: Response): Promise<StoredView> {
+  const body = await json(response);
+  const view = isObject(body) ? body.view : undefined;
+  if (!isStoredView(view)) {
+    throw new ApiRequestError(response.status, 'The server sent an unexpected view.');
+  }
+  return view;
+}
+
+/** GET /api/models/:id/views (Viewer): the model's views, by name. */
+export async function listViews(modelId: string, signal?: AbortSignal): Promise<ViewSummary[]> {
+  const body = await json(await request(viewUrl(modelId), signal ? { signal } : {}));
+  const views = isObject(body) ? body.views : undefined;
+  if (!Array.isArray(views) || !views.every(isViewSummary)) {
+    throw new ApiRequestError(200, 'The server sent an unexpected list of views.');
+  }
+  return views;
+}
+
+/** GET /api/models/:id/views/:viewId (Viewer): a view with its element and relationship ids. */
+export async function getView(
+  modelId: string,
+  viewId: string,
+  signal?: AbortSignal,
+): Promise<StoredView> {
+  return viewResult(await request(viewUrl(modelId, viewId), signal ? { signal } : {}));
+}
+
+/** POST /api/models/:id/views (Modeller). A 422 carries `ViewRejected` (`fields`). */
+export async function createView(modelId: string, view: NewViewRequest): Promise<StoredView> {
+  return viewResult(await request(viewUrl(modelId), { method: 'POST', ...jsonBody(view) }));
+}
+
+/** PATCH /api/models/:id/views/:viewId (Modeller): a new name. 409: changed meanwhile. */
+export async function renameView(
+  modelId: string,
+  viewId: string,
+  change: RenameViewRequest,
+): Promise<ViewSummary> {
+  const response = await request(viewUrl(modelId, viewId), {
+    method: 'PATCH',
+    ...jsonBody(change),
+  });
+  const body = await json(response);
+  const view = isObject(body) ? body.view : undefined;
+  if (!isViewSummary(view)) {
+    throw new ApiRequestError(response.status, 'The server sent an unexpected view.');
+  }
+  return view;
+}
+
+/** PUT /api/models/:id/views/:viewId/contents (Modeller): new contents. 409: changed meanwhile. */
+export async function replaceViewContents(
+  modelId: string,
+  viewId: string,
+  contents: ReplaceViewContentsRequest,
+): Promise<StoredView> {
+  return viewResult(
+    await request(`${viewUrl(modelId, viewId)}/contents`, {
+      method: 'PUT',
+      ...jsonBody(contents),
+    }),
+  );
+}
+
+/** DELETE /api/models/:id/views/:viewId?version=N (Modeller). */
+export async function deleteView(modelId: string, viewId: string, version: number): Promise<void> {
+  await request(`${viewUrl(modelId, viewId)}?version=${version}`, { method: 'DELETE' });
 }
 
 function isBranding(value: unknown): value is Branding {

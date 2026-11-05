@@ -28,6 +28,7 @@ import { brandingRoutes } from './routes/branding.js';
 import { databaseRoutes } from './routes/database.js';
 import { elementRoutes } from './routes/elements.js';
 import { relationshipRoutes } from './routes/relationships.js';
+import { viewRoutes } from './routes/views.js';
 import { modelRoutes } from './routes/models.js';
 import { spaceRoutes } from './routes/spaces.js';
 import { resolveDataDir } from './storage/data-dir.js';
@@ -35,6 +36,7 @@ import { webAppRoutes } from './web-app.js';
 import { BrandingService } from './branding/branding-service.js';
 import { ElementService } from './editing/element-service.js';
 import { RelationshipService } from './editing/relationship-service.js';
+import { ViewService } from './views/view-service.js';
 import { FileModelStore } from './storage/file-model-store.js';
 import type { ModelStore } from './storage/model-store.js';
 import { PostgresModelStore } from './storage/postgres-model-store.js';
@@ -328,6 +330,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   );
   await app.register(elementRoutes(new ElementService(modelStore)));
   await app.register(relationshipRoutes(new RelationshipService(modelStore)));
+  await app.register(viewRoutes(new ViewService(modelStore)));
   await app.register(databaseRoutes(database, now));
   await app.register(brandingRoutes(new BrandingService(db), uploads));
   if (oauth !== undefined) {

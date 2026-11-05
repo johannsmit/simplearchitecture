@@ -13,6 +13,11 @@ import { maxModelNameLength, maxSourceIdLength } from '../limits.js';
 /** The name of a model without a usable `graph.label`. */
 export const untitledModelName = 'Untitled model';
 
+/** Text PostgreSQL can't store: its text can't hold NUL, and its JSON refuses half a surrogate pair. */
+export const unstorable =
+  // eslint-disable-next-line no-control-regex -- NUL is what this finds
+  /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 /** Logs ids and reasons only, never model content. */
 export interface StoreLogger {
   warn(details: object, message: string): void;

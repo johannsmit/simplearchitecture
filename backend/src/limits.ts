@@ -68,3 +68,17 @@ export const maxElementIdLength = 1_000;
 
 /** Largest body of a relationship change (bytes), well above what the caps above allow. */
 export const relationshipBodyLimit = 64 * 1024;
+
+/** Caps on views: names, contents and how many a model may have (shared with the web app). */
+export {
+  maxViewElements,
+  maxViewNameLength,
+  maxViewRelationships,
+  maxViewsPerModel,
+} from '@simplearchitecture/shared';
+
+/**
+ * Largest body of a view request (bytes): room for a view at its caps with ids of about 200
+ * characters (UUIDs and imported ids are far shorter). Larger requests get 413.
+ */
+export const viewBodyLimit = 1024 * 1024;

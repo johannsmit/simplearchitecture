@@ -73,3 +73,12 @@ export function readNestContained(): boolean {
 export function writeNestContained(nest: boolean): void {
   writePref('nest-contained', String(nest));
 }
+
+/** "Show lines" in the legend: on unless switched off. Never part of a view. */
+export function readShowLines(): boolean {
+  return readBooleanPref('show-lines', true);
+}
+
+export function writeShowLines(lines: boolean): void {
+  writePref('show-lines', String(lines));
+}

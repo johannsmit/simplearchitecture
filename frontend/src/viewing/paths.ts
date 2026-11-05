@@ -38,6 +38,47 @@ export function elementPath(
 }
 
 /**
+ * A view's address: `…/models/<model>/views/<view>`, with the relationship properties shown
+ * (`?show=`). Depth and Canvas | Catalog don't apply to a view.
+ */
+export function viewPath(
+  modelId: string,
+  viewId: string,
+  space: ExplorerSpace = 'viewing',
+  shown: readonly string[] = [],
+): string {
+  const path = `${modelPath(modelId, space)}/views/${encodeURIComponent(viewId)}`;
+  const query = shown.map((key) => `show=${encodeURIComponent(key)}`).join('&');
+  return query === '' ? path : `${path}?${query}`;
+}
+
+/** The model's start page, keeping only the relationship properties shown (Close view). */
+export function modelStartPath(
+  modelId: string,
+  space: ExplorerSpace,
+  shown: readonly string[] = [],
+): string {
+  const query = shown.map((key) => `show=${encodeURIComponent(key)}`).join('&');
+  const path = modelPath(modelId, space);
+  return query === '' ? path : `${path}?${query}`;
+}
+
+/** The parameters a view's address doesn't use: depth, and Canvas | Catalog with its tab. */
+const notForViews = ['depth', 'view', 'type', 'tab'] as const;
+
+/**
+ * A view's address search without what doesn't apply to a view, or undefined when it has none of
+ * it. "?" unless empty.
+ */
+export function viewSearchCleaned(params: URLSearchParams): string | undefined {
+  if (!notForViews.some((key) => params.has(key))) return undefined;
+  const next = new URLSearchParams(params);
+  for (const key of notForViews) next.delete(key);
+  const text = next.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+/**
  * An address from an older version named a fixed viewpoint. `viewpoint=information-flow` reads as
  * Data selected (where Information flow went), and any other value as nothing more selected. The
  * search to rewrite the address with (without it), or undefined when it has none. "?" unless empty.
