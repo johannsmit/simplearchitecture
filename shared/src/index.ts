@@ -172,6 +172,16 @@ export {
   relationshipViewValues,
   type RelationshipViewField,
 } from './relationship-views.js';
+export {
+  displayLabel,
+  fillLabel,
+  insertLabelName,
+  isLabelExpression,
+  labelNameAt,
+  labelPropertyNames,
+  type FilledLabel,
+  type LabelSubject,
+} from './label-expressions.js';
 export type { DatabaseStatus, DatabaseTestResult } from './database.js';
 export {
   editingUnavailableMessage,

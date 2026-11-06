@@ -1,5 +1,6 @@
 import {
   containsType,
+  displayLabel,
   elementArchitectureState,
   defaultNeighbourhoodCap,
   missingRelatedCount,
@@ -878,7 +879,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const isFresh = fresh !== undefined && link.relationshipIds.includes(fresh);
       const lit = (highlight?.links.has(link.id) ?? false) || isSelected || isFresh;
       const nested = laid.parents.has(link.source) || laid.parents.has(link.target);
-      const text = linkText(link, shownProperties);
+      const text = linkText(link, shownProperties, (member) => displayLabel(member, graph));
       const resting = text !== '';
       const grayed = isGrayed(link, shownProperties);
       const bends = routes.get(link.id);
@@ -1722,6 +1723,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           {edgeMenu.ids.map((id) => {
             const relationship = relationshipById.get(id);
             if (!relationship) return null;
+            const label = displayLabel(relationship, graph);
             return (
               <button
                 key={id}
@@ -1734,7 +1736,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
                 }}
               >
                 <EdgeSample type={relationship.type} twoWay={relationship.twoWay === true} />
-                <span>{relationshipSentence(graph, relationship)}</span>
+                <span>
+                  {relationshipSentence(graph, relationship)}
+                  {label !== undefined && <span className="rp-label"> &ldquo;{label}&rdquo;</span>}
+                </span>
                 {relationship.architectureState !== 'Current' && (
                   <span className="tag">{relationship.architectureState}</span>
                 )}

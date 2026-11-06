@@ -368,6 +368,7 @@ describe('the read tools', () => {
           id: 'r1',
           type: 'Relation',
           label: 'digs with',
+          displayLabel: 'digs with',
           identity: 'Made-up gardener',
           data: 'Soil depth',
           direction: 'incoming',
@@ -377,6 +378,59 @@ describe('the read tools', () => {
       ],
     });
     expect(maxElementRelationships).toBeGreaterThan(3);
+  });
+
+  it('returns the label as stored and as the canvas shows it, filled in', async () => {
+    const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
+    const labelled: JgfDocument = {
+      graph: {
+        label: 'Made-up labels',
+        nodes: {
+          rake: { label: 'Rake', metadata: { type: 'Application' } },
+          bed: { label: 'Flower bed', metadata: { type: 'Business' } },
+          shed: { label: 'Garden shed', metadata: { type: 'Infrastructure' } },
+        },
+        edges: [
+          {
+            id: 'r3',
+            source: 'rake',
+            target: 'bed',
+            relation: 'Relation',
+            label: '{Data} as {Identity} {{note}}',
+            metadata: { data: '<b>Leaves</b>' },
+          },
+          { id: 'r4', source: 'rake', target: 'bed', relation: 'Relation', label: '{Identity}' },
+          { id: 'c2', source: 'shed', target: 'rake', relation: 'Contains' },
+        ],
+      },
+    };
+    const labelsId = (await store.save(labelled, { id: 'oid-seed', name: 'Made-up Seeder' })).id;
+    const { target, tokens } = await connected();
+    const rake = await callTool(target, tokens.access_token, 'get_element', {
+      model_id: labelsId,
+      element_id: 'rake',
+    });
+    const relationships = (rake.value as { relationships: Record<string, unknown>[] })
+      .relationships;
+    expect(relationships.find((r) => r.id === 'r3')).toMatchObject({
+      label: '{Data} as {Identity} {{note}}',
+      displayLabel: '<b>Leaves</b> as {note}',
+      data: '<b>Leaves</b>',
+    });
+    expect(relationships.find((r) => r.id === 'r4')).toMatchObject({
+      label: '{Identity}',
+      displayLabel: '',
+    });
+    expect(relationships.find((r) => r.id === 'c2')).not.toHaveProperty('displayLabel');
+    const around = await callTool(target, tokens.access_token, 'get_neighbours', {
+      model_id: labelsId,
+      element_id: 'rake',
+    });
+    expect(
+      (around.value as { relationships: Record<string, unknown>[] }).relationships.find(
+        (r) => r.id === 'r3',
+      ),
+    ).toMatchObject({ displayLabel: '<b>Leaves</b> as {note}' });
   });
 
   it('get_neighbours: 1 to 3 steps, like the canvas', async () => {

@@ -692,12 +692,12 @@ describe('Relation properties on the forms', () => {
   it('never saves on Enter in a field of the form, with changes to save', async () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Label' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
       target: { value: 'Made-up label' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
     const fields = [
-      within(form).getByRole('textbox', { name: 'Label' }),
+      within(form).getByRole('combobox', { name: 'Label' }),
       within(form).getByLabelText('Identity'),
       within(form).getByLabelText('Data'),
       within(form).getByLabelText('Key'),
@@ -721,7 +721,7 @@ describe('Relation properties on the forms', () => {
       expect(sent.at(-1)?.body).toEqual({ version: 1, label: 'Made-up label' });
     });
     await within(form).findByText('Saved');
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Label' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
       target: { value: 'Second label' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
@@ -998,7 +998,7 @@ describe('the form and what is stored', () => {
     });
     const form = await open();
     await waitFor(() => {
-      expect(within(form).getByRole<HTMLInputElement>('textbox', { name: 'Label' }).value).toBe(
+      expect(within(form).getByRole<HTMLInputElement>('combobox', { name: 'Label' }).value).toBe(
         'Made-up label',
       );
     });
@@ -1025,7 +1025,7 @@ describe('the form and what is stored', () => {
       return reply?.(method, url, body);
     });
     const form = await open();
-    const label = within(form).getByRole<HTMLInputElement>('textbox', { name: 'Label' });
+    const label = within(form).getByRole<HTMLInputElement>('combobox', { name: 'Label' });
     fireEvent.change(label, { target: { value: 'Typed first' } });
     await act(async () => {
       arrive();
@@ -1052,7 +1052,7 @@ describe('the form and what is stored', () => {
       return reply?.(method, url, body);
     });
     const form = await open();
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Label' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
       target: { value: 'Typed first' },
     });
     await act(async () => {
@@ -1079,7 +1079,7 @@ describe('the form and what is stored', () => {
       return reply?.(method, url, body);
     });
     const form = await open();
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Label' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
       target: { value: 'Typed' },
     });
     await act(async () => {
@@ -1096,7 +1096,7 @@ describe('the form and what is stored', () => {
   it('saves a label on a relationship that holds a stored `type` key', async () => {
     const { sent } = await openShop(stored({ type: 'Made-up' }));
     const form = await open();
-    fireEvent.change(within(form).getByRole('textbox', { name: /Label/ }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: /Label/ }), {
       target: { value: 'Made-up label' },
     });
     save(form);
@@ -1109,7 +1109,7 @@ describe('the form and what is stored', () => {
   it('does the same for a stored key with spaces around a reserved name', async () => {
     const { sent } = await openShop(stored({ ' description ': 'Made-up' }));
     const form = await open();
-    fireEvent.change(within(form).getByRole('textbox', { name: /Label/ }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: /Label/ }), {
       target: { value: 'Made-up label' },
     });
     save(form);
@@ -1181,7 +1181,7 @@ describe('the form and what is stored', () => {
 describe('the relationship’s label', () => {
   const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const label = (form: HTMLElement) =>
-    within(form).getByRole<HTMLInputElement>('textbox', { name: 'Label' });
+    within(form).getByRole<HTMLInputElement>('combobox', { name: 'Label' });
 
   it('saves a trimmed label, with Save only for a change', async () => {
     const { sent } = await openShop();
@@ -1259,7 +1259,7 @@ describe('The relationship form layout', () => {
   it('starts with Label, in the same field style as Name on the element form', async () => {
     await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
-    const label = within(form).getByRole('textbox', { name: 'Label' });
+    const label = within(form).getByRole('combobox', { name: 'Label' });
     // The first field, so the first stop in the tab order too.
     expect(form.querySelector('input, select, textarea')).toBe(label);
     const firstField = form.querySelector('.form-block > .field');

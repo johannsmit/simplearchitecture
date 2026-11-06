@@ -4,6 +4,7 @@ import {
   compareNames,
   containerOf,
   defaultNeighbourhoodCap,
+  displayLabel,
   edgeTypes,
   findElements,
   hasStandardEdgeProperty,
@@ -65,11 +66,20 @@ function listed(element: ModelElement) {
   return { ...brief(element), properties: propertiesOf(element, true) };
 }
 
-function relationshipFields(relationship: ModelRelationship) {
+/**
+ * A relationship as the tools return it. Next to a stored `label`, `displayLabel` is what the
+ * canvas shows: the label with its `{Property}` names filled in (empty when nothing is left).
+ */
+function relationshipFields(graph: ModelGraph, relationship: ModelRelationship) {
   return {
     id: relationship.id,
     type: relationship.type,
-    ...(relationship.label === undefined ? {} : { label: relationship.label }),
+    ...(relationship.label === undefined
+      ? {}
+      : {
+          label: relationship.label,
+          displayLabel: displayLabel(relationship, graph) ?? '',
+        }),
     architectureState: relationship.architectureState,
     ...(relationship.twoWay === true ? { twoWay: true } : {}),
     ...relationTexts(relationship),
@@ -193,7 +203,7 @@ export class McpReadService {
       const otherId = outgoing ? relationship.target : relationship.source;
       const other = graph.elements.get(otherId);
       return {
-        ...relationshipFields(relationship),
+        ...relationshipFields(graph, relationship),
         direction: relationship.twoWay === true ? 'two-way' : outgoing ? 'outgoing' : 'incoming',
         other: other === undefined ? { id: otherId } : brief(other),
         properties: Object.fromEntries(
@@ -232,7 +242,7 @@ export class McpReadService {
       depth,
       elements,
       relationships: found.relationships.map((relationship) => ({
-        ...relationshipFields(relationship),
+        ...relationshipFields(graph, relationship),
         source: relationship.source,
         target: relationship.target,
       })),

@@ -203,6 +203,34 @@ export function useValueSuggestions(options: SuggestionOptions) {
   };
 }
 
+/** The keys of a field with suggestions: arrows go through the list, Enter and Tab take a row. */
+export function suggestionKeys(
+  field: ReturnType<typeof useValueSuggestions>,
+  event: KeyboardEvent<HTMLInputElement>,
+): void {
+  if (event.nativeEvent.isComposing) return;
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    // Saves what the field shows, in the form's own handler.
+    field.close();
+    return;
+  }
+  if (field.onArrow(event) || !field.showing) return;
+  if (event.key === 'Enter') {
+    // With the list open, Enter never saves.
+    event.preventDefault();
+    if (field.highlighted !== undefined) field.take(field.highlighted);
+    else field.close();
+  } else if (event.key === 'Tab') {
+    if (field.highlighted !== undefined) field.take(field.highlighted);
+    else field.close();
+  } else if (event.key === 'Escape') {
+    // Closes the list and goes no further: no dialog, and the relationship stays open.
+    event.preventDefault();
+    event.stopPropagation();
+    field.close();
+  }
+}
+
 interface ValueFieldProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
   'value' | 'onChange' | 'list'
@@ -253,27 +281,7 @@ export function ValueField({
         }}
         onKeyDown={(event) => {
           onKeyDown?.(event);
-          if (event.nativeEvent.isComposing) return;
-          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-            // Saves what the field shows, in the form's own handler.
-            field.close();
-            return;
-          }
-          if (field.onArrow(event) || !field.showing) return;
-          if (event.key === 'Enter') {
-            // With the list open, Enter never saves.
-            event.preventDefault();
-            if (field.highlighted !== undefined) field.take(field.highlighted);
-            else field.close();
-          } else if (event.key === 'Tab') {
-            if (field.highlighted !== undefined) field.take(field.highlighted);
-            else field.close();
-          } else if (event.key === 'Escape') {
-            // Closes the list and goes no further: no dialog, and the relationship stays open.
-            event.preventDefault();
-            event.stopPropagation();
-            field.close();
-          }
+          suggestionKeys(field, event);
         }}
       />
       {field.list}

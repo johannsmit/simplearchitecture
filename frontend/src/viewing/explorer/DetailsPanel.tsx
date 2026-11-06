@@ -1,5 +1,6 @@
 import {
   customMetadata,
+  displayLabel,
   elementArchitectureState,
   elementDescription,
   elementFunctions,
@@ -344,6 +345,7 @@ export function DetailsPanel({
                 const name = self ? '(this element)' : other.name || '(unnamed)';
                 const state = relationship.architectureState;
                 const stateText = state === 'Current' ? '' : `, ${state}`;
+                const label = displayLabel(relationship, graph);
                 return (
                   <li
                     key={`${relationship.id}-${index}`}
@@ -356,7 +358,7 @@ export function DetailsPanel({
                     <button
                       type="button"
                       className="rel"
-                      aria-label={`${group.heading} ${name}${stateText}, ${other.type}${relationship.label ? `, "${relationship.label}"` : ''}`}
+                      aria-label={`${group.heading} ${name}${stateText}, ${other.type}${label ? `, "${label}"` : ''}`}
                       disabled={self}
                       onClick={() => {
                         onFocusElement(other.id);
@@ -378,10 +380,10 @@ export function DetailsPanel({
                         )}
                       </span>{' '}
                       <span className="rtype">{other.type}</span>
-                      {relationship.label && (
+                      {label && (
                         <>
                           {' '}
-                          <span className="rlabel">&ldquo;{relationship.label}&rdquo;</span>
+                          <span className="rlabel">&ldquo;{label}&rdquo;</span>
                         </>
                       )}
                     </button>

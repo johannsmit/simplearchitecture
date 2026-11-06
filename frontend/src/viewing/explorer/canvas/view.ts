@@ -1,5 +1,6 @@
 import {
   containsType,
+  displayLabel,
   relationshipViewValues,
   type ArchitectureState,
   type EdgeType,
@@ -101,14 +102,23 @@ export function layoutLinkRelationships(
 }
 
 /**
- * What a line shows. With no property selected: its label, or nothing. With properties
- * selected: their values in place of its label. Merged lines always say how many they are. Contains
- * isn't part of a viewpoint, so it only ever shows its label or count. There is no type name, on hover
- * either: the details panel and screen readers have it.
+ * What a line shows. With no property selected: its label filled in (`labelOf`), or nothing. With
+ * properties selected: their values in place of its label. Merged lines always say how many they
+ * are. Contains isn't part of a viewpoint, so it only ever shows its label or count. There is no
+ * type name, on hover either: the details panel and screen readers have it.
  */
-export function linkText(link: CanvasLink, shown: readonly string[] = []): string {
+export function linkText(
+  link: CanvasLink,
+  shown: readonly string[] = [],
+  labelOf: (relationship: ModelRelationship) => string | undefined = displayLabel,
+): string {
   if (link.count > 1) return `×${link.count}`;
-  if (shown.length === 0 || link.type === containsType) return link.label ?? '';
+  if (shown.length === 0 || link.type === containsType) {
+    // A line with a label stands for one relationship: its properties fill the label in.
+    const [only] = link.members;
+    if (link.label === undefined || only === undefined) return link.label ?? '';
+    return labelOf({ ...only, label: link.label }) ?? '';
+  }
   return link.members.flatMap((member) => relationshipViewValues(member, shown)).join(' · ');
 }
 

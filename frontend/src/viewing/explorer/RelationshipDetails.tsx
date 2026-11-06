@@ -1,5 +1,6 @@
 import {
   canBeTwoWay,
+  displayLabel,
   hasStandardEdgeProperty,
   relationTextProperties,
   standardProperties,
@@ -45,6 +46,7 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   }, [focusHeading, onHeadingFocused]);
 
   const sentence = relationshipSentence(graph, relationship);
+  const label = displayLabel(relationship, graph);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
   // Identity, Identity Context and Data on a Relation; elsewhere such keys stay custom metadata.
@@ -120,9 +122,9 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
             ) : null,
           )}
         </ul>
-        {relationship.label && (
+        {label !== undefined && (
           <p className="rel-label">
-            <span className="muted">Label</span> “{relationship.label}”
+            <span className="muted">Label</span> “{label}”
             <span className="muted"> · from the import</span>
           </p>
         )}

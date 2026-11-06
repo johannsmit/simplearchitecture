@@ -2430,6 +2430,16 @@
   line-height: 16px;
 }
 
+/* The relationship form's Label: what a label with {Name} shows. */
+.label-shows {
+  flex-wrap: wrap;
+}
+
+.label-shows-text {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
 .type-note {
   display: flex;
   gap: 8px;
@@ -3228,6 +3238,11 @@ li.is-new {
   position: absolute;
   z-index: 20;
   width: 320px;
+}
+
+.edge-menu .rp-label {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
 }
 
 /* The relationship in the details panel. */

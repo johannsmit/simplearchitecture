@@ -2,6 +2,7 @@ import {
   canBeTwoWay,
   containerOf,
   containsType,
+  displayLabel,
   edgeTypes,
   hasStandardEdgeProperty,
   isRelationTextProperty,
@@ -14,6 +15,7 @@ import {
   type DeletedRelationshipResult,
   type EdgeType,
   type JgfEdge,
+  type LabelSubject,
   type ModelGraph,
   type ModelRelationship,
   type RelationshipChangeResult,
@@ -32,6 +34,7 @@ import { Modal, UnsavedDialog } from './dialogs';
 import { customRow, customRowErrors, customValues, metadataChanges, type CustomRow } from './draft';
 import type { EditorHandle, EditorState } from './ElementEditor';
 import { savedNoteMillis } from './ElementEditor';
+import { LabelField } from './LabelField';
 import { relationshipVersionToSave } from './save';
 import { ValueField } from './ValueField';
 import {
@@ -161,6 +164,21 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const source = draft.reversed ? relationship.target : relationship.source;
   const target = draft.reversed ? relationship.source : relationship.target;
   const savedSentence = relationshipSentence(graph, relationship);
+  const savedLabel = displayLabel(relationship, graph);
+  // The relationship as the form holds it: what the Label's `{Name}` is filled in from.
+  const labelSubject: LabelSubject = {
+    type: draft.type,
+    architectureState: draft.state,
+    metadata: {
+      ...Object.fromEntries(customValues(draft.custom)),
+      description: draft.description,
+      ...Object.fromEntries(
+        relationTextProperties
+          .filter((key) => textsFit(draft.type, key))
+          .map((key) => [key, draft.texts[key]]),
+      ),
+    },
+  };
   const customChange = metadataChanges(customValues(base.custom), customValues(draft.custom));
   const dirty =
     draft.type !== base.type ||
@@ -543,9 +561,9 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           </p>
         )}
         {fieldError('reverse')}
-        {relationship.label && (
+        {savedLabel !== undefined && (
           <p className="rel-label">
-            <span className="muted">Label</span> “{relationship.label}”
+            <span className="muted">Label</span> “{savedLabel}”
             <span className="muted"> · from the import</span>
           </p>
         )}
@@ -637,13 +655,16 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           <section className="form-block">
             <div className="field">
               <label htmlFor="rf-label">Label</label>
-              <input
+              <LabelField
                 id="rf-label"
                 value={draft.label}
+                subject={labelSubject}
+                names={relationshipMetadataNames(graph)}
                 readOnly={saving}
-                aria-invalid={errors.has('label') || undefined}
-                onChange={(event) => {
-                  setDraft({ ...draft, label: event.target.value });
+                invalid={errors.has('label')}
+                errorId={errors.has('label') ? 'rf-label-error' : undefined}
+                onValue={(text) => {
+                  setDraft({ ...draft, label: text });
                 }}
               />
               {fieldError('label')}
