@@ -1,4 +1,7 @@
 import { createSign, generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type MeResponse } from '@simplearchitecture/shared';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
@@ -134,6 +137,73 @@ describe('the client secret method', () => {
   });
 });
 
+describe('the federated credential', () => {
+  // What Entra ID advertises.
+  const entraMethods = ['client_secret_post', 'private_key_jwt', 'client_secret_basic'];
+  let tokenDir: string | undefined;
+
+  afterEach(() => {
+    if (tokenDir !== undefined) rmSync(tokenDir, { recursive: true, force: true });
+    tokenDir = undefined;
+  });
+
+  /** A made-up platform token in a file, as Azure Workload Identity mounts it. */
+  function tokenFile(content: string): string {
+    tokenDir = mkdtempSync(join(tmpdir(), 'sa-federated-'));
+    const file = join(tokenDir, 'azure-identity-token');
+    writeFileSync(file, content);
+    return file;
+  }
+
+  const federated = (file: string): Partial<Config> => ({
+    OIDC_CLIENT_AUTH: 'federated',
+    AZURE_FEDERATED_TOKEN_FILE: file,
+    OIDC_CLIENT_SECRET: undefined,
+  });
+
+  it('sends the platform token as the client assertion, read again for every sign-in', async () => {
+    const file = tokenFile('made-up-workload-token-1\n');
+    const started = await start(
+      { token_endpoint_auth_methods_supported: entraMethods },
+      federated(file),
+    );
+    const seen: TokenRequest[] = [];
+    started.idp.service.on('beforeTokenSigning', (_token: unknown, request: TokenRequest) => {
+      seen.push(request);
+    });
+
+    expect((await signIn(started.app)).sessionCookie).not.toBe('');
+    // The platform replaces the token before it expires.
+    writeFileSync(file, 'made-up-workload-token-2');
+    expect((await signIn(started.app)).sessionCookie).not.toBe('');
+
+    expect([...new Set(seen.map((request) => request.body.client_assertion))]).toEqual([
+      'made-up-workload-token-1',
+      'made-up-workload-token-2',
+    ]);
+    for (const request of seen) {
+      expect(request.headers.authorization).toBeUndefined();
+      expect(request.body.client_secret).toBeUndefined();
+      expect(request.body.client_id).toBe(clientId);
+      expect(request.body.client_assertion_type).toBe(
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+      );
+    }
+  });
+
+  it('refuses a provider that does not offer private_key_jwt, with a clear log line', async () => {
+    const started = await start({}, federated(tokenFile('made-up-workload-token')));
+    const logs = captureLogs(started.app);
+
+    const res = await started.app.inject({ method: 'GET', url: '/auth/login' });
+
+    expect(res.statusCode).toBe(502);
+    expect(logs.join('\n')).toContain('OIDC provider refused');
+    expect(logs.join('\n')).toContain('does not offer private_key_jwt');
+    expect(logs.join('\n')).not.toContain('made-up-workload-token');
+  });
+});
+
 describe('the issuer', () => {
   /** A made-up provider at any address: the discovery document, without a network. */
   function fakeDiscovery(issuer: string): string[] {
@@ -156,7 +226,7 @@ describe('the issuer', () => {
     new OidcClient({
       issuer,
       clientId,
-      clientSecret: 'made-up-secret',
+      clientAuth: { method: 'secret', secret: 'made-up-secret' },
       redirectUri: 'https://app.example.test/auth/callback',
     });
 

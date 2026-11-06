@@ -1,5 +1,5 @@
 import type { DatabaseStatus, DatabaseTestResult } from '@simplearchitecture/shared';
-import type { DatabaseConfig } from '../config.js';
+import { databaseWorkloadIdentity, type DatabaseConfig } from '../config.js';
 import { parseDatabaseUrl, type DatabaseConnection } from './connection.js';
 import {
   classifyDatabaseError,
@@ -9,6 +9,7 @@ import {
   type DatabaseFailure,
   type Db,
 } from './db.js';
+import { entraTokenPassword, entraUnreachable } from './entra-token.js';
 import {
   appliedCount,
   loadMigrations,
@@ -28,6 +29,8 @@ export const failureMessages: Record<DatabaseFailure, string> = {
   unreachable: "Can't reach the database server. Check the host, the port and the firewall.",
   tls: 'The secure (TLS) connection failed. Check the server certificate.',
   auth: 'The database refused the sign-in. Check the user and password in DATABASE_URL.',
+  identity:
+    "Entra ID gave no token for the database. Check AZURE_CLIENT_ID, AZURE_TENANT_ID and the identity's federated credential.",
   'missing-database': "The database doesn't exist on the server. Check the name in DATABASE_URL.",
   timeout: "The database didn't answer in time. Try again later.",
   other: 'The connection test failed. See the API log.',
@@ -45,7 +48,13 @@ const maxRetryDelayMs = 10_000;
 /** Failures that waiting can fix. 57P03: the server is starting up or shutting down. */
 function worthRetrying(error: unknown): boolean {
   const { failure, code } = toDatabaseError(error);
-  return failure === 'unreachable' || failure === 'timeout' || code === '57P03';
+  return (
+    failure === 'unreachable' ||
+    failure === 'timeout' ||
+    code === '57P03' ||
+    // Entra not reachable or briefly failing; a refused identity is not worth waiting for.
+    (failure === 'identity' && (code === entraUnreachable || /^HTTP_5\d\d$/.test(code ?? '')))
+  );
 }
 
 /**
@@ -142,8 +151,10 @@ export class DatabaseService {
     if (!parsed?.ok) throw new DatabaseStartError('DATABASE_URL is not set or not valid.');
     const { host, port, database, user, tls } = parsed.connection;
     const connection: ConnectionInfo = { host, port, database, user, tls };
+    const identity = databaseWorkloadIdentity(config);
     const db = createPgDb({
       connection: parsed.connection,
+      ...(identity === undefined ? {} : { password: entraTokenPassword(identity) }),
       onIdleError: (error) => {
         log.warn({ failure: error.failure, code: error.code }, 'database connection lost');
       },
@@ -156,6 +167,13 @@ export class DatabaseService {
       await db.close().catch(() => undefined);
       if (error instanceof MigrationError) throw error;
       const failure = classifyDatabaseError(error);
+      // Entra's error number (e.g. AADSTS700213) is what tells a wrong identity from a missing one.
+      if (failure === 'identity') {
+        log.error(
+          { failure, code: toDatabaseError(error).code },
+          'no database token from Entra ID',
+        );
+      }
       const waited = worthRetrying(error)
         ? ` Gave up after waiting ${Math.round(wait.totalMs / 1_000)} seconds.`
         : '';

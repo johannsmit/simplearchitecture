@@ -17,7 +17,7 @@ import {
   type SessionStore,
   type SessionTimeouts,
 } from './auth/sessions.js';
-import type { Config } from './config.js';
+import { oidcClientAuth, type Config } from './config.js';
 import { DatabaseService } from './db/service.js';
 import { errorBody } from './errors.js';
 import { loadOefMapping, type OefMapping } from './oef/mapping-config.js';
@@ -114,13 +114,28 @@ function securityHeaders(config: Config) {
 }
 
 /**
+ * The protocol the client used, as the outermost trusted proxy saw it. Each proxy adds one
+ * X-Forwarded-Proto value, the nearest last, so with N trusted proxies it is the Nth from the end
+ * (the last one with one proxy, as Fastify's request.protocol). Behind Azure Front Door and an
+ * ingress, the ingress reached over http says http and Front Door's https comes before it.
+ */
+export function clientProtocol(header: string | string[], trustedProxies: number): string {
+  const values = (Array.isArray(header) ? header.join(',') : header)
+    .split(',')
+    .map((value) => value.trim().toLowerCase());
+  return values[Math.max(values.length - Math.max(trustedProxies, 1), 0)] ?? '';
+}
+
+/**
  * Behind the host's TLS proxy in production: a request that reached the proxy over plain http is
  * sent to the https web origin (GET, HEAD) or refused. Requests straight to the container (the
  * health probe) carry no X-Forwarded-Proto and pass.
  */
 function requireHttps(config: Config) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.headers['x-forwarded-proto'] === undefined || request.protocol === 'https') return;
+    const forwarded = request.headers['x-forwarded-proto'];
+    if (forwarded === undefined || clientProtocol(forwarded, config.TRUST_PROXY) === 'https')
+      return;
     // Only an origin-form target (a path) can follow WEB_ORIGIN; absolute-form or `*` can't.
     if (!request.url.startsWith('/')) return reply.code(400).send(errorBody(400, 'Bad Request'));
     if (request.method === 'GET' || request.method === 'HEAD') {
@@ -290,7 +305,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   const oidc = new OidcClient({
     issuer: options.oidcIssuer ?? config.OIDC_ISSUER,
     clientId: config.OIDC_CLIENT_ID,
-    clientSecret: config.OIDC_CLIENT_SECRET,
+    clientAuth: oidcClientAuth(config),
     redirectUri: config.AUTH_REDIRECT_URI,
     allowInsecureRequests: options.allowInsecureOidcRequests ?? false,
   });

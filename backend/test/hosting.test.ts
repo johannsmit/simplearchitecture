@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { clientProtocol } from '../src/app.js';
 import { DatabaseError } from '../src/db/db.js';
 import { MigrationError } from '../src/db/migrate.js';
 import { waitForDatabase, type DatabaseLogger } from '../src/db/service.js';
@@ -321,6 +322,39 @@ describe('behind the host TLS proxy (TRUST_PROXY)', () => {
     }
   });
 
+  it('behind two proxies (a front door, then an ingress over http), reads the client two hops back', async () => {
+    app = await production(2);
+    const through = await app.inject({
+      method: 'GET',
+      url: '/api/test/echo',
+      headers: {
+        'x-forwarded-for': '203.0.113.9, 198.51.100.7',
+        'x-forwarded-proto': 'https, http',
+      },
+    });
+    expect(through.statusCode).toBe(200);
+    expect(through.json()).toMatchObject({ ip: '203.0.113.9' });
+
+    for (const proto of ['http, http', 'http']) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/viewing/models',
+        headers: { 'x-forwarded-proto': proto },
+      });
+      expect(res.statusCode, proto).toBe(301);
+    }
+  });
+
+  it("with one proxy, only that proxy's own (last) value counts", async () => {
+    app = await production(1);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/viewing/models',
+      headers: { 'x-forwarded-proto': 'https, http' },
+    });
+    expect(res.statusCode).toBe(301);
+  });
+
   it('lets the health probe (straight to the container, no forwarded headers) through', async () => {
     app = await production(1);
     const res = await app.inject({ method: 'GET', url: '/api/health' });
@@ -398,6 +432,27 @@ describe('waiting for the database at startup', () => {
     expect(clock.slept).toEqual([]);
   });
 
+  it('waits for Entra ID when it is out of reach, but not when it refuses the identity', async () => {
+    const clock = fakeClock();
+    let calls = 0;
+    const result = await waitForDatabase(
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new DatabaseError('identity', 'ENTRA_UNREACHABLE');
+        if (calls === 2) throw new DatabaseError('identity', 'HTTP_503');
+        return 'migrated';
+      },
+      log,
+      clock.wait(60_000),
+    );
+    expect(result).toBe('migrated');
+    const refused = new DatabaseError('identity', 'AADSTS700213');
+    await expect(
+      waitForDatabase(() => Promise.reject(refused), log, clock.wait(60_000)),
+    ).rejects.toBe(refused);
+    expect(clock.slept).toEqual([1_000, 2_000]);
+  });
+
   it('retries a server that is still starting up (57P03)', async () => {
     const clock = fakeClock();
     let calls = 0;
@@ -410,5 +465,19 @@ describe('waiting for the database at startup', () => {
       clock.wait(60_000),
     );
     expect(calls).toBe(2);
+  });
+});
+
+describe('clientProtocol', () => {
+  it.each([
+    ['https', 1, 'https'],
+    ['https, http', 1, 'http'],
+    ['https, http', 2, 'https'],
+    ['HTTPS ,http', 2, 'https'],
+    ['http', 2, 'http'],
+    [['https', 'http'], 2, 'https'],
+    ['https, http', 0, 'http'],
+  ] as const)('%j with %d trusted proxies is %s', (header, proxies, expected) => {
+    expect(clientProtocol(header as string | string[], proxies)).toBe(expected);
   });
 });

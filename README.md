@@ -82,7 +82,7 @@ The service worker is only active in the production build, not in `npm run dev`.
 
 ## Configuration
 
-In development the API and the web dev server read exactly twelve settings from `.env` in the repository root, all required: the image's ten (`APP_DOMAIN`, `DATABASE_URL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_SECRET`, `OIDC_ROLES_CLAIM`, `OIDC_ROLE_ADMIN`, `OIDC_ROLE_MODELLER`, `OIDC_ROLE_VIEWER`) plus `FRONTEND_PORT` and `BACKEND_PORT` (see `.env.example`). They refuse to start if one is missing or invalid; the API lists the twelve. Everything else is fixed: plain http, the web app at `http://<APP_DOMAIN>:<FRONTEND_PORT>`, the API and the sign-in callback at `http://<APP_DOMAIN>:<BACKEND_PORT>/auth/callback` (register exactly that redirect address at the provider), logs at `info`. Use `APP_DOMAIN=localhost`: providers allow plain http for localhost only. Any other setting in `.env` is ignored, with a warning naming it. An old `ENTRA_…` setting is ignored too, and the warning names its replacement.
+In development the API and the web dev server read exactly twelve settings from `.env` in the repository root, all required: the image's ten (`APP_DOMAIN`, `DATABASE_URL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_SECRET`, `OIDC_ROLES_CLAIM`, `OIDC_ROLE_ADMIN`, `OIDC_ROLE_MODELLER`, `OIDC_ROLE_VIEWER`) plus `FRONTEND_PORT` and `BACKEND_PORT` (see `.env.example`). They refuse to start if one is missing or invalid; the API lists the twelve. Everything else is fixed: plain http, the web app at `http://<APP_DOMAIN>:<FRONTEND_PORT>`, the API and the sign-in callback at `http://<APP_DOMAIN>:<BACKEND_PORT>/auth/callback` (register exactly that redirect address at the provider), logs at `info`. Use `APP_DOMAIN=localhost`: providers allow plain http for localhost only. Any other setting in `.env` is ignored, with a warning naming it. An old `ENTRA_…` setting is ignored too, and the warning names its replacement. The optional sign-in settings for Azure Kubernetes Service (`OIDC_CLIENT_AUTH`, `DATABASE_AUTH` and the `AZURE_…` settings, see Hosting the image) are read when set; a standard setup sets none of them.
 
 The hosted image reads the same ten, without the ports (see Hosting the image).
 
@@ -298,7 +298,7 @@ docker pull ghcr.io/johannsmit/simplearchitecture:1.2.3
 
 ### Settings
 
-The image reads **exactly these ten settings, all required**, and nothing else. Set them as environment variables on the host. Secrets go in the host's secret store (for example Container Apps secrets referenced by environment variables), never in the image or a file.
+The image reads **these ten settings, all required**. A standard host sets nothing else: the few optional settings below are for hosts that need them (more proxies in front, or Azure Kubernetes Service without secrets). Set them as environment variables on the host. Secrets go in the host's secret store (for example Container Apps secrets referenced by environment variables), never in the image or a file.
 
 | Variable             | Secret | Value                                                                                                                                                    |
 | -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -306,7 +306,7 @@ The image reads **exactly these ten settings, all required**, and nothing else. 
 | `DATABASE_URL`       | Yes    | `postgres://simplearchitecture:<password>@<server>:5432/simplearchitecture?sslmode=verify-full` (see Database)                                           |
 | `OIDC_ISSUER`        |        | The provider's issuer, https, exactly as it names itself. Entra ID: `https://login.microsoftonline.com/<tenant id>/v2.0`, with the Directory (tenant) ID |
 | `OIDC_CLIENT_ID`     |        | The client id. Entra ID: the Application (client) ID                                                                                                     |
-| `OIDC_CLIENT_SECRET` | Yes    | The client secret. Entra ID: a client secret of the app registration                                                                                     |
+| `OIDC_CLIENT_SECRET` | Yes    | The client secret. Entra ID: a client secret of the app registration. Not needed with a federated credential (below)                                     |
 | `SESSION_SECRET`     | Yes    | At least 32 random characters (`openssl rand -base64 48`), with at least 10 different ones, and not the client secret. A new value signs nobody out      |
 | `OIDC_ROLES_CLAIM`   |        | The ID token claim that holds the roles. Entra ID: `roles`                                                                                               |
 | `OIDC_ROLE_ADMIN`    |        | The value in that claim that gives Admin (see Sign-in and access). Entra ID: the value of the app role                                                   |
@@ -316,11 +316,39 @@ The image reads **exactly these ten settings, all required**, and nothing else. 
 Everything else is fixed in the image:
 
 - the address is `https://<APP_DOMAIN>`, and the sign-in callback is `https://<APP_DOMAIN>/auth/callback`;
-- the app listens on port **8080**, behind exactly one https proxy (the host's: App Service, Container Apps, or your own);
+- the app listens on port **8080**, behind one https proxy (the host's: App Service, Container Apps, or your own), unless `TRUST_PROXY` says more (see Behind the host's https proxy);
 - cookies are always `Secure`; logs are at `info`; startup waits up to 60 seconds for the database;
 - after sign-out, the provider shows its own "signed out" page.
 
-If one of the ten is missing or invalid, the container refuses to start. Its log says which settings are wrong (never their values) and lists the ten. A pasted `https://` or trailing `/` in `APP_DOMAIN` is removed. Settings that earlier versions read, such as `WEB_ORIGIN`, `AUTH_REDIRECT_URI`, `TRUST_PROXY`, `PORT` or `LOG_LEVEL`, are ignored, with a warning in the log naming them. Remove them from the host. The old `ENTRA_…` settings are not read either: the log names the replacement for each.
+If one of the ten is missing or invalid, the container refuses to start. Its log says which settings are wrong (never their values) and lists the ten. A pasted `https://` or trailing `/` in `APP_DOMAIN` is removed. Settings that earlier versions read, such as `WEB_ORIGIN`, `AUTH_REDIRECT_URI`, `PORT` or `LOG_LEVEL`, are ignored, with a warning in the log naming them. Remove them from the host. The old `ENTRA_…` settings are not read either: the log names the replacement for each.
+
+### Federated credential instead of a client secret
+
+On Kubernetes with [Azure Workload Identity](https://azure.github.io/azure-workload-identity/) (AKS), the app can sign in to Entra ID with the pod's own token instead of a client secret, so there is no secret to store or rotate. Set two more settings:
+
+| Variable                     | Value                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `OIDC_CLIENT_AUTH`           | `federated` (unset or `secret`: the client secret, as above)                             |
+| `AZURE_FEDERATED_TOKEN_FILE` | The token's path. Azure Workload Identity sets it on the pod, so normally nothing to add |
+
+`OIDC_CLIENT_SECRET` is then not read (a value left on the host is ignored, with a warning). For it to work:
+
+1. The pod has the label `azure.workload.identity/use: "true"` and runs as a service account annotated with `azure.workload.identity/client-id: <OIDC_CLIENT_ID>`.
+2. The app registration has a federated credential (**Certificates & secrets → Federated credentials → Kubernetes accessing Azure resources**): the cluster's OIDC issuer URL, the namespace and the service account name. The audience stays `api://AzureADTokenExchange`.
+
+The app sends the token as a client assertion (`private_key_jwt`) and reads the file again for every sign-in, because the platform replaces it before it expires. A provider that doesn't offer `private_key_jwt` is refused, with a line in the log.
+
+### Database sign-in with Microsoft Entra instead of a password
+
+Azure Database for PostgreSQL can run with password sign-in turned off. The app then signs in with the workload identity's access token, so there is no database password to store. Set:
+
+| Variable          | Value                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| `DATABASE_AUTH`   | `entra` (unset or `password`: the password in `DATABASE_URL`, as above)                                |
+| `DATABASE_URL`    | No password: `postgres://<Entra role>@<server>.postgres.database.azure.com:5432/<database>`            |
+| `AZURE_CLIENT_ID` | The identity that is the Entra role on the server. Azure Workload Identity sets it from the annotation |
+
+Azure Workload Identity also sets `AZURE_TENANT_ID`, `AZURE_AUTHORITY_HOST` and `AZURE_FEDERATED_TOKEN_FILE`. The role on the server is created for that identity (for example `pgaadauth_create_principal`) and owns the database, so the migrations can run. The app asks Entra ID for a token for `https://ossrdbms-aad.database.windows.net/.default`, uses it as the password for each new connection, and renews it 5 minutes before it expires. When Entra ID gives no token, the API doesn't start and the log has Entra's error number (for example `AADSTS700213`: no federated credential matches the pod's service account), never its message. If Entra ID can't be reached or has a passing fault, startup waits for it as it waits for the database. The `db:*` commands and Admin → Database → Test connection sign in the same way.
 
 ### Azure App Service, step by step
 
@@ -345,6 +373,7 @@ Optionally, under **Monitoring → Health check**, set the path to `/api/health`
 ### Behind the host's https proxy
 
 - The API trusts one proxy hop of `X-Forwarded-For` and `X-Forwarded-Proto`, so logs show the client's address and the API knows the request came over https. So never expose port 8080 to the internet directly: without the proxy in front, a client could fake its address.
+- Behind two proxies, set the optional `TRUST_PROXY` to their number (1 to 5, default 1). For example on Kubernetes behind Azure Front Door, which reaches the ingress over http: `TRUST_PROXY=2`, and the ingress forwards Front Door's `X-Forwarded-Proto: https` ahead of its own `http`. The client's address and protocol are then read that many hops back, which also keeps the sign-in rate limits per client rather than per Front Door server. Set it no higher than the proxies really there: a higher number lets a client fake its address.
 - A request that reached the proxy over plain http is redirected to `https://<APP_DOMAIN>` (GET and HEAD) or refused (anything else). Also turn on the host's own https-only setting (Container Apps: ingress "Allow insecure connections" off; App Service: "HTTPS Only").
 - The cookies are `Secure`, `httpOnly`, `SameSite=Lax` and use the `__Host-` prefix. Every response has `Strict-Transport-Security` (two years) and a strict content security policy: scripts only from the app's own files, no inline script.
 

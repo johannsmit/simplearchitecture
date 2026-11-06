@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseDatabaseUrl } from './db/connection.js';
+import type { WorkloadIdentity } from './db/entra-token.js';
 
 // Says "is required" for a missing variable; other problems keep their specific message.
 const required = {
@@ -54,6 +55,143 @@ const rolesClaim = z.string(required).trim().min(1, rolesClaimMessage).max(250, 
 // Any provider's own form: not only Entra's GUIDs.
 const clientIdSetting = z.string(required).trim().min(1, 'must not be empty');
 
+// How the app proves itself at the provider's token endpoint. Unset or `secret`: OIDC_CLIENT_SECRET.
+// `federated`: a token the platform issues to the workload, sent as a client assertion (an Entra ID
+// federated credential), so there is no secret to store or rotate. Azure Workload Identity mounts
+// that token and sets AZURE_FEDERATED_TOKEN_FILE to its path.
+const clientAuthSetting = z
+  .enum(['secret', 'federated'], { error: 'must be secret or federated' })
+  .optional();
+const clientSecretSetting = z.string().min(1).optional();
+// Development and the image: a required setting of its own, in its place in the list of problems,
+// unless the federated credential replaces it.
+function clientSecretFor(federated: boolean) {
+  return federated ? clientSecretSetting : z.string(required).min(1);
+}
+const federatedTokenFileSetting = z.string().trim().min(1, 'must not be empty').optional();
+
+interface ClientAuthSettings {
+  OIDC_CLIENT_AUTH?: 'secret' | 'federated' | undefined;
+  OIDC_CLIENT_SECRET?: string | undefined;
+  AZURE_FEDERATED_TOKEN_FILE?: string | undefined;
+}
+
+// The federated credential needs the token. Runs with the other problems, so it is listed with them.
+function checkFederatedTokenFile(config: ClientAuthSettings, context: z.RefinementCtx): void {
+  if (config.OIDC_CLIENT_AUTH === 'federated' && config.AZURE_FEDERATED_TOKEN_FILE === undefined) {
+    context.addIssue({
+      code: 'custom',
+      message:
+        'is required when OIDC_CLIENT_AUTH is federated (Azure Workload Identity sets it on the pod)',
+      path: ['AZURE_FEDERATED_TOKEN_FILE'],
+    });
+  }
+}
+
+// Tests: the client secret is required unless the federated credential is chosen.
+function checkClientAuth(config: ClientAuthSettings, context: z.RefinementCtx): void {
+  checkFederatedTokenFile(config, context);
+  if (config.OIDC_CLIENT_AUTH !== 'federated' && config.OIDC_CLIENT_SECRET === undefined) {
+    context.addIssue({ code: 'custom', message: 'is required', path: ['OIDC_CLIENT_SECRET'] });
+  }
+}
+const alongsideOtherProblems = { when: () => true };
+
+// How the app signs in to PostgreSQL. Unset or `password`: the password in DATABASE_URL. `entra`:
+// Microsoft Entra sign-in (Azure Database for PostgreSQL) with an access token got through the
+// workload identity, so DATABASE_URL names the Entra role and holds no password. Azure Workload
+// Identity sets AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_AUTHORITY_HOST and AZURE_FEDERATED_TOKEN_FILE.
+const databaseAuthSetting = z
+  .enum(['password', 'entra'], { error: 'must be password or entra' })
+  .optional();
+const azureIdSetting = z.string().trim().min(1, 'must not be empty').optional();
+const authorityHostSetting = z.url({ protocol: /^https$/ }).optional();
+const defaultAuthorityHost = 'https://login.microsoftonline.com/';
+const databaseIdentitySettings = [
+  'AZURE_CLIENT_ID',
+  'AZURE_TENANT_ID',
+  'AZURE_FEDERATED_TOKEN_FILE',
+] as const;
+
+interface DatabaseAuthSettings {
+  DATABASE_URL?: string | undefined;
+  DATABASE_AUTH?: 'password' | 'entra' | undefined;
+  AZURE_CLIENT_ID?: string | undefined;
+  AZURE_TENANT_ID?: string | undefined;
+  AZURE_AUTHORITY_HOST?: string | undefined;
+  AZURE_FEDERATED_TOKEN_FILE?: string | undefined;
+}
+
+function checkDatabaseAuth(config: DatabaseAuthSettings, context: z.RefinementCtx): void {
+  if (config.DATABASE_AUTH !== 'entra') return;
+  for (const name of databaseIdentitySettings) {
+    if (config[name] === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'is required when DATABASE_AUTH is entra (Azure Workload Identity sets it on the pod)',
+        path: [name],
+      });
+    }
+  }
+  const parsed =
+    config.DATABASE_URL === undefined ? undefined : parseDatabaseUrl(config.DATABASE_URL);
+  if (parsed?.ok && parsed.connection.password !== '') {
+    context.addIssue({
+      code: 'custom',
+      message:
+        'must not hold a password when DATABASE_AUTH is entra: the user is the Entra role, its token is the password',
+      path: ['DATABASE_URL'],
+    });
+  }
+}
+
+/** With DATABASE_AUTH=entra, the identity whose token signs in to the database; else undefined. */
+export function databaseWorkloadIdentity(
+  config: DatabaseAuthSettings,
+): WorkloadIdentity | undefined {
+  if (config.DATABASE_AUTH !== 'entra') return undefined;
+  const { AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE } = config;
+  if (
+    AZURE_CLIENT_ID === undefined ||
+    AZURE_TENANT_ID === undefined ||
+    AZURE_FEDERATED_TOKEN_FILE === undefined
+  ) {
+    throw new ConfigError(`DATABASE_AUTH=entra needs ${databaseIdentitySettings.join(', ')}`);
+  }
+  return {
+    authorityHost: config.AZURE_AUTHORITY_HOST ?? defaultAuthorityHost,
+    tenantId: AZURE_TENANT_ID,
+    clientId: AZURE_CLIENT_ID,
+    tokenFile: AZURE_FEDERATED_TOKEN_FILE,
+  };
+}
+
+const databaseAuthSettings = {
+  DATABASE_AUTH: databaseAuthSetting,
+  AZURE_CLIENT_ID: azureIdSetting,
+  AZURE_TENANT_ID: azureIdSetting,
+  AZURE_AUTHORITY_HOST: authorityHostSetting,
+};
+
+/** How the OIDC client authenticates, from validated configuration. */
+export type OidcClientAuth =
+  { method: 'secret'; secret: string } | { method: 'federated'; tokenFile: string };
+
+export function oidcClientAuth(config: ClientAuthSettings): OidcClientAuth {
+  if (config.OIDC_CLIENT_AUTH === 'federated') {
+    if (config.AZURE_FEDERATED_TOKEN_FILE === undefined) {
+      throw new ConfigError(
+        'AZURE_FEDERATED_TOKEN_FILE is required when OIDC_CLIENT_AUTH is federated',
+      );
+    }
+    return { method: 'federated', tokenFile: config.AZURE_FEDERATED_TOKEN_FILE };
+  }
+  if (config.OIDC_CLIENT_SECRET === undefined)
+    throw new ConfigError('OIDC_CLIENT_SECRET is required');
+  return { method: 'secret', secret: config.OIDC_CLIENT_SECRET };
+}
+
 /**
  * Tests only (NODE_ENV=test): everything can be set, so the suite can run the real server on a
  * free port, with file storage and without a database. Development and the image read a fixed set.
@@ -75,6 +213,7 @@ const testSchema = z
       .default(0),
     // Without it, models are files in DATA_DIR and sessions are in memory.
     DATABASE_URL: databaseUrl.optional(),
+    ...databaseAuthSettings,
     // How long startup waits for an unreachable database (e.g. one still starting) before giving up.
     DATABASE_WAIT_SECONDS: z.coerce.number().int().min(0).max(600).default(60),
     // Where models are stored, one JSON file each. Relative to the repo root.
@@ -86,7 +225,9 @@ const testSchema = z
     // The OIDC provider.
     OIDC_ISSUER: issuerSetting(/^https?$/),
     OIDC_CLIENT_ID: clientIdSetting,
-    OIDC_CLIENT_SECRET: z.string(required).min(1),
+    OIDC_CLIENT_AUTH: clientAuthSetting,
+    OIDC_CLIENT_SECRET: clientSecretSetting,
+    AZURE_FEDERATED_TOKEN_FILE: federatedTokenFileSetting,
     // Derives the key that encrypts the short-lived login-state cookie.
     SESSION_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
     // The ID token claim holding the roles, and the values in it that give each role. Organisations
@@ -114,6 +255,8 @@ const testSchema = z
     // config/oef-mapping.json at the repo root.
     OEF_MAPPING_PATH: z.string().optional(),
   })
+  .superRefine(checkClientAuth, alongsideOtherProblems)
+  .superRefine(checkDatabaseAuth, alongsideOtherProblems)
   .transform(({ WEB_ORIGIN, AUTH_REDIRECT_URI, ...rest }) => ({
     ...rest,
     WEB_ORIGIN: new URL(WEB_ORIGIN).origin,
@@ -187,32 +330,43 @@ const roleSetting = z.string(required).trim().min(1, roleMessage).max(250, roleM
 const domainLabel = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
 const domainPattern = new RegExp(`^${domainLabel}(?:\\.${domainLabel})*$`);
 
-// The settings development and the image both read, all required.
-const sharedSettings = {
-  // The domain only, e.g. architecture.example.com. A pasted https:// or trailing / is removed.
-  APP_DOMAIN: z
-    .string(required)
-    .transform((value) =>
-      value
-        .trim()
-        .replace(/^https:\/\//i, '')
-        .replace(/\/$/, '')
-        .toLowerCase(),
-    )
-    .refine(
-      (value) => value.length <= 253 && domainPattern.test(value),
-      'must be the domain only, like architecture.example.com (no http://, path or port)',
-    ),
-  DATABASE_URL: z.string(required).superRefine(checkDatabaseUrl),
-  OIDC_ISSUER: issuerSetting(/^https$/),
-  OIDC_CLIENT_ID: clientIdSetting,
-  OIDC_CLIENT_SECRET: z.string(required).min(1),
-  SESSION_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
-  OIDC_ROLES_CLAIM: rolesClaim,
-  OIDC_ROLE_ADMIN: roleSetting,
-  OIDC_ROLE_MODELLER: roleSetting,
-  OIDC_ROLE_VIEWER: roleSetting,
-};
+const databaseUrlSetting = z.string(required).superRefine(checkDatabaseUrl);
+
+// The settings development and the image both read: the ten, all required (the client secret
+// unless the federated credential replaces it), then the optional ones.
+function sharedSettingsFor(federated: boolean) {
+  return {
+    // The domain only, e.g. architecture.example.com. A pasted https:// or trailing / is removed.
+    APP_DOMAIN: z
+      .string(required)
+      .transform((value) =>
+        value
+          .trim()
+          .replace(/^https:\/\//i, '')
+          .replace(/\/$/, '')
+          .toLowerCase(),
+      )
+      .refine(
+        (value) => value.length <= 253 && domainPattern.test(value),
+        'must be the domain only, like architecture.example.com (no http://, path or port)',
+      ),
+    DATABASE_URL: databaseUrlSetting,
+    OIDC_ISSUER: issuerSetting(/^https$/),
+    OIDC_CLIENT_ID: clientIdSetting,
+    OIDC_CLIENT_SECRET: clientSecretFor(federated),
+    SESSION_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
+    OIDC_ROLES_CLAIM: rolesClaim,
+    OIDC_ROLE_ADMIN: roleSetting,
+    OIDC_ROLE_MODELLER: roleSetting,
+    OIDC_ROLE_VIEWER: roleSetting,
+    // Optional (see clientAuthSetting): OIDC_CLIENT_AUTH=federated reads AZURE_FEDERATED_TOKEN_FILE
+    // instead of OIDC_CLIENT_SECRET.
+    OIDC_CLIENT_AUTH: clientAuthSetting,
+    AZURE_FEDERATED_TOKEN_FILE: federatedTokenFileSetting,
+    // Optional (see databaseAuthSetting): DATABASE_AUTH=entra signs in with the workload identity.
+    ...databaseAuthSettings,
+  };
+}
 
 // Fixed in development and in the image.
 const fixed = { LOG_LEVEL: 'info', DATABASE_WAIT_SECONDS: 60, DATA_DIR: 'data' } as const;
@@ -223,57 +377,94 @@ const portSetting = z
   .transform(Number)
   .refine((port) => port >= 1 && port <= 65535, 'must be a port number from 1 to 65535');
 
-const developmentSchema = z
-  .object({ FRONTEND_PORT: portSetting, BACKEND_PORT: portSetting, ...sharedSettings })
-  .refine(rolesDiffer, rolesDifferIssue)
-  .refine((settings) => settings.FRONTEND_PORT !== settings.BACKEND_PORT, {
-    message: 'must differ from FRONTEND_PORT',
-    path: ['BACKEND_PORT'],
-  })
-  .transform(({ APP_DOMAIN, FRONTEND_PORT, BACKEND_PORT, ...settings }): Config => ({
-    ...settings,
-    ...fixed,
-    NODE_ENV: 'development',
-    // The web app on Vite; the sign-in callback on the API, which sets the session cookie for
-    // APP_DOMAIN (cookies ignore the port). Plain http: providers allow it for localhost only.
-    // Normalised as browsers send them: port 80 is left out of the Origin header.
-    WEB_ORIGIN: new URL(`http://${APP_DOMAIN}:${FRONTEND_PORT}`).origin,
-    AUTH_REDIRECT_URI: new URL(`http://${APP_DOMAIN}:${BACKEND_PORT}/auth/callback`).href,
-    PORT: BACKEND_PORT,
-    HOST: 'localhost',
-    TRUST_PROXY: 0,
-    // Plain http: every browser accepts these only without Secure.
-    COOKIE_SECURE: false,
-  }));
-
-const productionSchema = z
-  .object(sharedSettings)
-  .refine(rolesDiffer, rolesDifferIssue)
-  // Not obviously guessable. A random secret (`openssl rand -base64 48`, or even hex) has far
-  // more different characters than this.
-  .refine((config) => new Set(config.SESSION_SECRET).size >= minSessionSecretCharacters, {
-    message: `is too weak: use a random value (at least ${minSessionSecretCharacters} different characters)`,
-    path: ['SESSION_SECRET'],
-  })
-  .refine((config) => config.SESSION_SECRET !== config.OIDC_CLIENT_SECRET, {
-    message: 'must not be the same as OIDC_CLIENT_SECRET',
-    path: ['SESSION_SECRET'],
-  })
-  .transform(({ APP_DOMAIN, ...settings }): Config => {
-    const origin = `https://${APP_DOMAIN}`;
-    return {
+function developmentSchemaFor(federated: boolean) {
+  return z
+    .object({
+      FRONTEND_PORT: portSetting,
+      BACKEND_PORT: portSetting,
+      ...sharedSettingsFor(federated),
+    })
+    .superRefine(checkFederatedTokenFile, alongsideOtherProblems)
+    .superRefine(checkDatabaseAuth, alongsideOtherProblems)
+    .refine(rolesDiffer, rolesDifferIssue)
+    .refine((settings) => settings.FRONTEND_PORT !== settings.BACKEND_PORT, {
+      message: 'must differ from FRONTEND_PORT',
+      path: ['BACKEND_PORT'],
+    })
+    .transform(({ APP_DOMAIN, FRONTEND_PORT, BACKEND_PORT, ...settings }): Config => ({
       ...settings,
       ...fixed,
-      NODE_ENV: 'production',
-      WEB_ORIGIN: origin,
-      AUTH_REDIRECT_URI: `${origin}/auth/callback`,
-      // The image's port, behind one https proxy (App Service, Container Apps, Caddy, ...).
-      PORT: 8080,
-      HOST: '0.0.0.0',
-      TRUST_PROXY: 1,
-      COOKIE_SECURE: true,
-    };
-  });
+      NODE_ENV: 'development',
+      // The web app on Vite; the sign-in callback on the API, which sets the session cookie for
+      // APP_DOMAIN (cookies ignore the port). Plain http: providers allow it for localhost only.
+      // Normalised as browsers send them: port 80 is left out of the Origin header.
+      WEB_ORIGIN: new URL(`http://${APP_DOMAIN}:${FRONTEND_PORT}`).origin,
+      AUTH_REDIRECT_URI: new URL(`http://${APP_DOMAIN}:${BACKEND_PORT}/auth/callback`).href,
+      PORT: BACKEND_PORT,
+      HOST: 'localhost',
+      TRUST_PROXY: 0,
+      // Plain http: every browser accepts these only without Secure.
+      COOKIE_SECURE: false,
+    }));
+}
+
+// Optional in the image: how many proxies sit in front of it, each adding its X-Forwarded-* values.
+// 1 (the default) for one https proxy (App Service, Container Apps, Caddy, ...); 2 behind a CDN or
+// front door that reaches an ingress over http, as on AKS behind Azure Front Door.
+const productionTrustProxySetting = z.coerce
+  .number({ error: 'must be the number of proxies in front of the API, 1 to 5' })
+  .int()
+  .min(1, 'must be the number of proxies in front of the API, 1 to 5')
+  .max(5, 'must be the number of proxies in front of the API, 1 to 5')
+  .optional();
+/** Settings the image reads when they are set. */
+export const optionalProductionSettings = ['TRUST_PROXY'] as const;
+
+function productionSchemaFor(federated: boolean) {
+  return (
+    z
+      .object({ ...sharedSettingsFor(federated), TRUST_PROXY: productionTrustProxySetting })
+      .superRefine(checkFederatedTokenFile, alongsideOtherProblems)
+      .superRefine(checkDatabaseAuth, alongsideOtherProblems)
+      .refine(rolesDiffer, rolesDifferIssue)
+      // Not obviously guessable. A random secret (`openssl rand -base64 48`, or even hex) has far
+      // more different characters than this.
+      .refine((config) => new Set(config.SESSION_SECRET).size >= minSessionSecretCharacters, {
+        message: `is too weak: use a random value (at least ${minSessionSecretCharacters} different characters)`,
+        path: ['SESSION_SECRET'],
+      })
+      .refine((config) => config.SESSION_SECRET !== config.OIDC_CLIENT_SECRET, {
+        message: 'must not be the same as OIDC_CLIENT_SECRET',
+        path: ['SESSION_SECRET'],
+      })
+      .transform(({ APP_DOMAIN, TRUST_PROXY, ...settings }): Config => {
+        const origin = `https://${APP_DOMAIN}`;
+        return {
+          ...settings,
+          ...fixed,
+          NODE_ENV: 'production',
+          WEB_ORIGIN: origin,
+          AUTH_REDIRECT_URI: `${origin}/auth/callback`,
+          // The image's port, behind https proxies (one unless TRUST_PROXY says otherwise).
+          PORT: 8080,
+          HOST: '0.0.0.0',
+          TRUST_PROXY: TRUST_PROXY ?? 1,
+          COOKIE_SECURE: true,
+        };
+      })
+  );
+}
+
+// Without OIDC_CLIENT_AUTH=federated, exactly the schemas of the ten required settings.
+const schemas = {
+  development: { standard: developmentSchemaFor(false), federated: developmentSchemaFor(true) },
+  production: { standard: productionSchemaFor(false), federated: productionSchemaFor(true) },
+};
+
+/** OIDC_CLIENT_AUTH=federated: the client secret is not read. */
+function isFederated(env: NodeJS.ProcessEnv): boolean {
+  return withoutEmpty(env).OIDC_CLIENT_AUTH === 'federated';
+}
 
 export class ConfigError extends Error {
   override name = 'ConfigError';
@@ -331,15 +522,25 @@ function renameHint(env: NodeJS.ProcessEnv): string {
     .join('');
 }
 
+// Only for a host that chose one of them: a standard configuration's messages stay as they were.
+function alternativeSignInHint(env: NodeJS.ProcessEnv): string {
+  const set = withoutEmpty(env);
+  if (set.OIDC_CLIENT_AUTH === undefined && set.DATABASE_AUTH === undefined) return '';
+  return (
+    '\nWith OIDC_CLIENT_AUTH=federated, AZURE_FEDERATED_TOKEN_FILE replaces OIDC_CLIENT_SECRET.' +
+    '\nWith DATABASE_AUTH=entra, DATABASE_URL holds no password: AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_FEDERATED_TOKEN_FILE sign in.'
+  );
+}
+
 /** Validates configuration from environment variables. Throws a ConfigError listing every problem. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const mode = modeOf(env);
   if (mode === 'test') return parseEnv(testSchema, env);
   if (mode === 'development') {
     return parseEnv(
-      developmentSchema,
+      schemas.development[isFederated(env) ? 'federated' : 'standard'],
       env,
-      `${renameHint(env)}\nDevelopment reads exactly these settings from .env, all required: ${developmentSettings.join(', ')}.`,
+      `${renameHint(env)}\nDevelopment reads exactly these settings from .env, all required: ${developmentSettings.join(', ')}.${alternativeSignInHint(env)}`,
     );
   }
   const moved =
@@ -347,9 +548,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       ? '\nWEB_ORIGIN is no longer read: set APP_DOMAIN to the domain only, like architecture.example.com.'
       : '';
   return parseEnv(
-    productionSchema,
+    schemas.production[isFederated(env) ? 'federated' : 'standard'],
     env,
-    `${moved}${renameHint(env)}\nThe image reads exactly these settings, all required: ${productionSettings.join(', ')}.`,
+    `${moved}${renameHint(env)}\nThe image reads exactly these settings, all required: ${productionSettings.join(', ')}.${alternativeSignInHint(env)}`,
   );
 }
 
@@ -357,22 +558,43 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 export function ignoredSettings(env: NodeJS.ProcessEnv = process.env): string[] {
   const mode = modeOf(env);
   if (mode === 'test') return [];
-  const read: readonly string[] = mode === 'production' ? productionSettings : developmentSettings;
+  const read: readonly string[] =
+    mode === 'production'
+      ? [...productionSettings, ...optionalProductionSettings]
+      : developmentSettings;
   const set = withoutEmpty(env);
+  // The federated credential replaces the secret, so a secret left on the host is not used.
+  const unused = isFederated(env) ? ['OIDC_CLIENT_SECRET'] : [];
   return [...developmentSettings, ...retiredSettings].filter(
-    (name) => name in set && !read.includes(name),
+    (name) => name in set && (!read.includes(name) || unused.includes(name)),
   );
 }
 
-export type DatabaseConfig = Pick<Config, 'DATABASE_URL' | 'DATABASE_WAIT_SECONDS'>;
+export type DatabaseConfig = Pick<
+  Config,
+  | 'DATABASE_URL'
+  | 'DATABASE_WAIT_SECONDS'
+  | 'DATABASE_AUTH'
+  | 'AZURE_CLIENT_ID'
+  | 'AZURE_TENANT_ID'
+  | 'AZURE_AUTHORITY_HOST'
+  | 'AZURE_FEDERATED_TOKEN_FILE'
+>;
 
-/** The database setting only, for the `db:*` commands. Throws a ConfigError. */
+/** The database settings only, for the `db:*` commands. Throws a ConfigError. */
 export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env): DatabaseConfig {
   return parseEnv(
-    z.object({ DATABASE_URL: sharedSettings.DATABASE_URL }).transform((settings) => ({
-      ...settings,
-      DATABASE_WAIT_SECONDS: fixed.DATABASE_WAIT_SECONDS,
-    })),
+    z
+      .object({
+        DATABASE_URL: databaseUrlSetting,
+        ...databaseAuthSettings,
+        AZURE_FEDERATED_TOKEN_FILE: federatedTokenFileSetting,
+      })
+      .superRefine(checkDatabaseAuth, alongsideOtherProblems)
+      .transform((settings) => ({
+        ...settings,
+        DATABASE_WAIT_SECONDS: fixed.DATABASE_WAIT_SECONDS,
+      })),
     env,
   );
 }

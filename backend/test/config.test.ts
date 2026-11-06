@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   ConfigError,
+  databaseWorkloadIdentity,
   developmentSettings,
   ignoredSettings,
   loadConfig,
+  loadDatabaseConfig,
+  oidcClientAuth,
   productionSettings,
   replacedSettings,
 } from '../src/config.js';
@@ -320,6 +323,12 @@ describe('loadConfig', () => {
       expect(ignoredSettings(development)).toEqual([]);
     });
 
+    it('ignores TRUST_PROXY: development has no proxy in front', () => {
+      const env = { ...development, TRUST_PROXY: '2' };
+      expect(loadConfig(env).TRUST_PROXY).toBe(0);
+      expect(ignoredSettings(env)).toEqual(['TRUST_PROXY']);
+    });
+
     it.each(developmentSettings)('refuses to start without %s, listing the full set', (name) => {
       const env: Record<string, string> = { ...development };
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -413,13 +422,61 @@ describe('loadConfig', () => {
       });
     });
 
+    it('reads TRUST_PROXY, the number of proxies in front, one by default', () => {
+      expect(loadConfig(production).TRUST_PROXY).toBe(1);
+      expect(loadConfig({ ...production, TRUST_PROXY: '2' }).TRUST_PROXY).toBe(2);
+      expect(ignoredSettings({ ...production, TRUST_PROXY: '2' })).toEqual([]);
+      for (const value of ['0', '6', 'x']) {
+        expect(() => loadConfig({ ...production, TRUST_PROXY: value }), value).toThrow(
+          /number of proxies in front of the API, 1 to 5[\s\S]*TRUST_PROXY/,
+        );
+      }
+    });
+
+    it('without the optional settings, lists a missing client secret in its place and says nothing of them', () => {
+      const problems = (env: Record<string, string>) => {
+        let message = '';
+        try {
+          loadConfig(env);
+        } catch (error) {
+          message = (error as Error).message;
+        }
+        expect(message).not.toMatch(/OIDC_CLIENT_AUTH|DATABASE_AUTH|AZURE_/);
+        expect(message).toMatch(/The image reads exactly these settings, all required: [^\n]*\.$/);
+        return message.split('\n').filter((line) => line.startsWith('  → at '));
+      };
+      const without = (env: Record<string, string>, ...names: string[]) =>
+        Object.fromEntries(Object.entries(env).filter(([name]) => !names.includes(name)));
+      const withoutSecret = without(production, 'OIDC_CLIENT_SECRET');
+      const withoutSecretOrClaim = without(withoutSecret, 'OIDC_ROLES_CLAIM');
+      // In the order of the ten, as before the optional settings.
+      expect(problems(withoutSecretOrClaim)).toEqual([
+        '  → at OIDC_CLIENT_SECRET',
+        '  → at OIDC_ROLES_CLAIM',
+      ]);
+      // A missing setting comes first: the checks across settings wait until all are there.
+      expect(
+        problems({
+          ...withoutSecret,
+          SESSION_SECRET: 'ab'.repeat(20),
+          OIDC_ROLE_VIEWER: production.OIDC_ROLE_ADMIN,
+        }),
+      ).toEqual(['  → at OIDC_CLIENT_SECRET']);
+    });
+
+    it('mentions the federated credential and Entra sign-in only to a host that uses one', () => {
+      const env: Record<string, string> = { ...production, DATABASE_AUTH: 'entra' };
+      expect(() => loadConfig(env)).toThrow(
+        /With OIDC_CLIENT_AUTH=federated[\s\S]*With DATABASE_AUTH=entra/,
+      );
+    });
+
     it('ignores the settings of earlier versions, and names them for a warning', () => {
       const env = {
         ...production,
         WEB_ORIGIN: 'https://evil.example',
         AUTH_REDIRECT_URI: 'https://evil.example/auth/callback',
         AUTH_POST_LOGOUT_REDIRECT_URI: 'https://evil.example/',
-        TRUST_PROXY: '3',
         COOKIE_SECURE: 'false',
         LOG_LEVEL: 'silent',
         DATABASE_CA_FILE: 'ca.pem',
@@ -430,7 +487,6 @@ describe('loadConfig', () => {
         'WEB_ORIGIN',
         'AUTH_REDIRECT_URI',
         'AUTH_POST_LOGOUT_REDIRECT_URI',
-        'TRUST_PROXY',
         'COOKIE_SECURE',
         'LOG_LEVEL',
         'DATABASE_CA_FILE',
@@ -563,5 +619,160 @@ describe('loadConfig', () => {
   it('makes cookies Secure unless configured', () => {
     expect(loadConfig(required).COOKIE_SECURE).toBe(true);
     expect(loadConfig({ ...required, COOKIE_SECURE: 'false' }).COOKIE_SECURE).toBe(false);
+  });
+});
+
+describe('the client credential: secret or federated', () => {
+  const tokenFile = '/var/run/secrets/azure/tokens/azure-identity-token';
+  const withoutSecret: Record<string, string> = { ...required };
+  delete withoutSecret.OIDC_CLIENT_SECRET;
+  const hosted = {
+    NODE_ENV: 'production',
+    APP_DOMAIN: 'app.example.com',
+    DATABASE_URL: madeUpDatabaseUrl,
+    OIDC_ISSUER: 'https://idp.example.test/tenant-a',
+    OIDC_CLIENT_ID: 'made-up-client',
+    SESSION_SECRET: required.SESSION_SECRET,
+    OIDC_ROLES_CLAIM: 'roles',
+    OIDC_ROLE_ADMIN: 'Admin',
+    OIDC_ROLE_MODELLER: 'Modeller',
+    OIDC_ROLE_VIEWER: 'Viewer',
+    OIDC_CLIENT_AUTH: 'federated',
+    AZURE_FEDERATED_TOKEN_FILE: tokenFile,
+  };
+
+  it('uses the client secret when OIDC_CLIENT_AUTH is unset or secret', () => {
+    const secret = { method: 'secret', secret: required.OIDC_CLIENT_SECRET };
+    expect(oidcClientAuth(loadConfig(required))).toEqual(secret);
+    expect(oidcClientAuth(loadConfig({ ...required, OIDC_CLIENT_AUTH: 'secret' }))).toEqual(secret);
+  });
+
+  it('reads the token file instead of the client secret when federated', () => {
+    const config = loadConfig({
+      ...withoutSecret,
+      OIDC_CLIENT_AUTH: 'federated',
+      AZURE_FEDERATED_TOKEN_FILE: tokenFile,
+    });
+    expect(oidcClientAuth(config)).toEqual({ method: 'federated', tokenFile });
+    expect(oidcClientAuth(loadConfig(hosted))).toEqual({ method: 'federated', tokenFile });
+  });
+
+  it('needs the token file when federated, listed with the other problems', () => {
+    expect(() =>
+      loadConfig({ ...required, OIDC_CLIENT_AUTH: 'federated', OIDC_ISSUER: 'not-an-address' }),
+    ).toThrow(
+      /OIDC_ISSUER[\s\S]*is required when OIDC_CLIENT_AUTH is federated[\s\S]*AZURE_FEDERATED_TOKEN_FILE/,
+    );
+    expect(() => loadConfig({ ...withoutSecret, OIDC_ISSUER: 'not-an-address' })).toThrow(
+      /OIDC_ISSUER[\s\S]*is required[\s\S]*OIDC_CLIENT_SECRET/,
+    );
+  });
+
+  it('refuses any other method', () => {
+    expect(() => loadConfig({ ...required, OIDC_CLIENT_AUTH: 'certificate' })).toThrow(
+      /must be secret or federated[\s\S]*OIDC_CLIENT_AUTH/,
+    );
+  });
+
+  it('in the image, says a client secret left on the host is ignored', () => {
+    expect(ignoredSettings(hosted)).toEqual([]);
+    const withSecret = { ...hosted, OIDC_CLIENT_SECRET: 'made-up-client-secret' };
+    expect(oidcClientAuth(loadConfig(withSecret))).toEqual({ method: 'federated', tokenFile });
+    expect(ignoredSettings(withSecret)).toEqual(['OIDC_CLIENT_SECRET']);
+  });
+});
+
+describe('the database sign-in: password or Entra', () => {
+  const entraUrl =
+    'postgres://made-up-entra-role@made-up-server.postgres.database.azure.com:5432/simplearchitecture';
+  const workload = {
+    AZURE_CLIENT_ID: 'made-up-identity',
+    AZURE_TENANT_ID: 'made-up-tenant',
+    AZURE_FEDERATED_TOKEN_FILE: '/var/run/secrets/azure/tokens/azure-identity-token',
+  };
+  const hosted = {
+    NODE_ENV: 'production',
+    APP_DOMAIN: 'app.example.com',
+    DATABASE_URL: entraUrl,
+    OIDC_ISSUER: 'https://idp.example.test/tenant-a',
+    OIDC_CLIENT_ID: 'made-up-client',
+    OIDC_CLIENT_SECRET: 'made-up-client-secret',
+    SESSION_SECRET: required.SESSION_SECRET,
+    OIDC_ROLES_CLAIM: 'roles',
+    OIDC_ROLE_ADMIN: 'Admin',
+    OIDC_ROLE_MODELLER: 'Modeller',
+    OIDC_ROLE_VIEWER: 'Viewer',
+    DATABASE_AUTH: 'entra',
+    ...workload,
+  };
+
+  it('uses the password in DATABASE_URL when DATABASE_AUTH is unset or password', () => {
+    expect(databaseWorkloadIdentity(loadConfig(required))).toBeUndefined();
+    const withPassword = {
+      ...required,
+      DATABASE_URL: madeUpDatabaseUrl,
+      DATABASE_AUTH: 'password',
+    };
+    expect(databaseWorkloadIdentity(loadConfig(withPassword))).toBeUndefined();
+  });
+
+  it('signs in with the workload identity when entra, through the public cloud by default', () => {
+    expect(databaseWorkloadIdentity(loadConfig(hosted))).toEqual({
+      authorityHost: 'https://login.microsoftonline.com/',
+      tenantId: 'made-up-tenant',
+      clientId: 'made-up-identity',
+      tokenFile: workload.AZURE_FEDERATED_TOKEN_FILE,
+    });
+    const sovereign = { ...hosted, AZURE_AUTHORITY_HOST: 'https://login.example.test/' };
+    expect(databaseWorkloadIdentity(loadConfig(sovereign))?.authorityHost).toBe(
+      'https://login.example.test/',
+    );
+  });
+
+  it.each(['AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_FEDERATED_TOKEN_FILE'])(
+    'needs %s when entra',
+    (name) => {
+      const env: Record<string, string> = { ...hosted };
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete env[name];
+      expect(() => loadConfig(env)).toThrow(
+        new RegExp(`is required when DATABASE_AUTH is entra[\\s\\S]*${name}`),
+      );
+    },
+  );
+
+  it('refuses a password in DATABASE_URL when entra, without echoing it', () => {
+    let message = '';
+    try {
+      loadConfig({ ...hosted, DATABASE_URL: madeUpDatabaseUrl });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(
+      /must not hold a password when DATABASE_AUTH is entra[\s\S]*DATABASE_URL/,
+    );
+    expect(message).not.toContain('made-up-db-password');
+  });
+
+  it('refuses any other method or an authority that is not https', () => {
+    expect(() => loadConfig({ ...hosted, DATABASE_AUTH: 'certificate' })).toThrow(
+      /must be password or entra[\s\S]*DATABASE_AUTH/,
+    );
+    expect(() =>
+      loadConfig({ ...hosted, AZURE_AUTHORITY_HOST: 'http://login.example.test/' }),
+    ).toThrow(/AZURE_AUTHORITY_HOST/);
+  });
+
+  it('applies to the db:* commands too', () => {
+    const database = { DATABASE_URL: entraUrl, DATABASE_AUTH: 'entra', ...workload };
+    expect(databaseWorkloadIdentity(loadDatabaseConfig(database))?.clientId).toBe(
+      'made-up-identity',
+    );
+    expect(() => loadDatabaseConfig({ DATABASE_URL: entraUrl, DATABASE_AUTH: 'entra' })).toThrow(
+      /AZURE_CLIENT_ID/,
+    );
+    expect(databaseWorkloadIdentity(loadDatabaseConfig({ DATABASE_URL: madeUpDatabaseUrl }))).toBe(
+      undefined,
+    );
   });
 });

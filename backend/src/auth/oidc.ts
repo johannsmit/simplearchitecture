@@ -1,10 +1,13 @@
+import { readFile } from 'node:fs/promises';
 import * as client from 'openid-client';
+import type { OidcClientAuth } from '../config.js';
 
 export interface OidcOptions {
   /** The issuer exactly as configured. Metadata is discovered from it, and must name it back. */
   issuer: string;
   clientId: string;
-  clientSecret: string;
+  /** The client secret, or the file holding the platform's token for a federated credential. */
+  clientAuth: OidcClientAuth;
   redirectUri: string;
   /** Tests only: lets the client talk to a local mock provider over plain HTTP. */
   allowInsecureRequests?: boolean;
@@ -49,6 +52,39 @@ function secretMethod(metadata: client.ServerMetadata): SecretMethod | undefined
   return offered.includes('client_secret_basic') ? 'client_secret_basic' : undefined;
 }
 
+function offersPrivateKeyJwt(metadata: client.ServerMetadata): boolean {
+  const offered: unknown = metadata.token_endpoint_auth_methods_supported;
+  return Array.isArray(offered) && offered.includes('private_key_jwt');
+}
+
+/** Sends the client secret the way the provider advertises (see secretMethod). */
+function secretAuth(clientSecret: string): client.ClientAuth {
+  const post = client.ClientSecretPost(clientSecret);
+  const basic = client.ClientSecretBasic(clientSecret);
+  return (as, c, body, headers) => {
+    (secretMethod(as) === 'client_secret_post' ? post : basic)(as, c, body, headers);
+  };
+}
+
+const jwtBearer = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+
+/**
+ * A federated credential: the token the platform issues to the workload (Azure Workload Identity:
+ * the pod's service account token) is the client assertion. The app registration trusts it through
+ * a federated identity credential, so no secret exists. The file is read for every request: the
+ * platform replaces the token before it expires.
+ */
+function federatedAuth(tokenFile: string): client.ClientAuth {
+  // openid-client awaits the method (its own PrivateKeyJwt is async too); its type only says void.
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
+  return async (_as, c, body) => {
+    const assertion = (await readFile(tokenFile, 'utf8')).trim();
+    body.set('client_id', c.client_id);
+    body.set('client_assertion_type', jwtBearer);
+    body.set('client_assertion', assertion);
+  };
+}
+
 /** OIDC relying party: authorization code flow with PKCE, state and nonce. */
 export class OidcClient {
   #configuration: Promise<client.Configuration> | undefined;
@@ -65,15 +101,12 @@ export class OidcClient {
   }
 
   async #discover(): Promise<client.Configuration> {
-    const post = client.ClientSecretPost(this.options.clientSecret);
-    const basic = client.ClientSecretBasic(this.options.clientSecret);
+    const auth = this.options.clientAuth;
     const config = await client.discovery(
       new URL(this.options.issuer),
       this.options.clientId,
       undefined,
-      (as, c, body, headers) => {
-        (secretMethod(as) === 'client_secret_post' ? post : basic)(as, c, body, headers);
-      },
+      auth.method === 'federated' ? federatedAuth(auth.tokenFile) : secretAuth(auth.secret),
       {
         execute: [
           // Validate the ID token's signature against the provider's JWKS, not just TLS.
@@ -93,7 +126,13 @@ export class OidcClient {
         `the provider names its issuer as ${metadata.issuer}, which is not exactly OIDC_ISSUER`,
       );
     }
-    if (secretMethod(metadata) === undefined) {
+    if (auth.method === 'federated') {
+      if (!offersPrivateKeyJwt(metadata)) {
+        throw new OidcProviderRefused(
+          'the provider does not offer private_key_jwt, which a federated credential needs',
+        );
+      }
+    } else if (secretMethod(metadata) === undefined) {
       throw new OidcProviderRefused(
         'the provider offers neither client_secret_post nor client_secret_basic',
       );

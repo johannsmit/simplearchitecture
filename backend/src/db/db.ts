@@ -20,7 +20,14 @@ export interface Db extends Queryable {
 }
 
 export type DatabaseFailure =
-  'unreachable' | 'tls' | 'auth' | 'missing-database' | 'timeout' | 'other';
+  | 'unreachable'
+  | 'tls'
+  | 'auth'
+  // Entra ID gave no token for the server (DATABASE_AUTH=entra).
+  | 'identity'
+  | 'missing-database'
+  | 'timeout'
+  | 'other';
 
 /**
  * A database call failed. Driver messages can name the host, the user or values from a query,
@@ -46,7 +53,7 @@ const unreachableCodes = new Set([
   'EPIPE',
 ]);
 
-function codeOf(error: unknown): string | undefined {
+export function codeOf(error: unknown): string | undefined {
   const code = (error as { code?: unknown } | null)?.code;
   // Only well-formed codes: never anything that could carry text from the server.
   return typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? code : undefined;
@@ -85,6 +92,8 @@ const connectTimeoutMs = 5_000;
 
 export interface PgDbOptions {
   connection: DatabaseConnection;
+  /** Instead of the connection's password: called for each new connection (an Entra token). */
+  password?: () => Promise<string>;
   /** Told about errors on idle connections (which would otherwise crash the process). */
   onIdleError: (error: DatabaseError) => void;
 }
@@ -96,7 +105,7 @@ function clientConfig(options: PgDbOptions): pg.ClientConfig {
     port: connection.port,
     database: connection.database,
     user: connection.user,
-    password: connection.password,
+    password: options.password ?? connection.password,
     // Never `rejectUnauthorized: false`. node-postgres also checks the host name (SNI).
     ssl: connection.tls ? { rejectUnauthorized: true } : false,
     application_name: 'simplearchitecture',
