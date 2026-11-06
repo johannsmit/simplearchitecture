@@ -298,14 +298,121 @@ describe('keepCards', () => {
     expect(positionsOf(kept.placed, ['a', 'b', 'c'])).toEqual(positionsOf(before, ['a', 'b', 'c']));
   });
 
-  it('lets a card grow when its name grows, in place', () => {
-    const kept = keepCards(
+  describe('a card whose name grew', () => {
+    const renamed = (heightAt: (width: number) => number) => ({
+      sizeOf: (id: string) => (id === 'a' ? { width: 220, height: 44 } : small),
+      heightAt: (id: string, width: number) => (id === 'a' ? heightAt(width) : small.height),
+    });
+    const wraps = (width: number) => (width >= 220 ? 44 : 76);
+
+    it('grows wider into free room beside it', () => {
+      const kept = keepCards(input(before, [{ id: 'a' }, { id: 'c' }], renamed(wraps)));
+      expect(kept.placed.get('a')).toMatchObject({ x: 0, y: 0, width: 220, height: 44 });
+      expect(positionsOf(kept.placed, ['c'])).toEqual(positionsOf(before, ['c']));
+    });
+
+    it('next to a neighbour, keeps its width and wraps its name onto more lines', () => {
+      const kept = keepCards(
+        input(before, [{ id: 'a' }, { id: 'b' }, { id: 'c' }], renamed(wraps)),
+      );
+      expect(kept.placed.get('a')).toMatchObject({ x: 0, y: 0, width: 160, height: 76 });
+      expect(positionsOf(kept.placed, ['b', 'c'])).toEqual(positionsOf(before, ['b', 'c']));
+      expectNoOverlap(kept.placed);
+    });
+
+    it('grows down only as far as the card below allows, keeping the spacing', () => {
+      const kept = keepCards(
+        input(
+          before,
+          [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+          renamed(() => 300),
+        ),
+      );
+      // c is at 140: the layout's 28px stay between them.
+      expect(kept.placed.get('a')).toMatchObject({ width: 160, height: 140 - spacing.cards });
+      expect(positionsOf(kept.placed, ['b', 'c'])).toEqual(positionsOf(before, ['b', 'c']));
+      expectNoOverlap(kept.placed);
+    });
+
+    it('stays within its container', () => {
+      const boxed = canvas(
+        card('box', 0, 0, { width: 200, height: 116 }),
+        card('a', 16, 56, { parent: 'box' }),
+      );
+      const kept = keepCards(
+        input(boxed, [{ id: 'box' }, { id: 'a', parent: 'box' }], {
+          ...renamed(() => 300),
+          previousContainers: new Set(['box']),
+        }),
+      );
+      expect(kept.placed.get('a')).toMatchObject({
+        width: 200 - 16 - containerBox.padding.right,
+        height: 116 - 56 - containerBox.padding.bottom,
+      });
+      expect(kept.placed.get('box')).toMatchObject({ width: 200, height: 116 });
+    });
+  });
+});
+
+describe('a width set by hand', () => {
+  const before = canvas(card('a', 0, 0), card('b', 400, 0), card('c', 0, 200));
+  const wrap = (width: number) => Math.ceil((160 * 44) / width / 4) * 4;
+  const set = (widths: [string, number][], more: Partial<KeepInput> = {}) =>
+    keepCards(
       input(before, [{ id: 'a' }, { id: 'b' }, { id: 'c' }], {
-        sizeOf: (id) => (id === 'a' ? { width: 220, height: 44 } : small),
+        heightAt: (_id, width) => Math.max(44, wrap(width)),
+        widths: new Map(widths),
+        ...more,
       }),
     );
-    expect(kept.placed.get('a')).toMatchObject({ x: 0, y: 0, width: 220 });
+
+  it('widens a card into the free room, and its height follows the name', () => {
+    const kept = set([['a', 300]]);
+    expect(kept.placed.get('a')).toMatchObject({ x: 0, y: 0, width: 300, height: 44 });
     expect(positionsOf(kept.placed, ['b', 'c'])).toEqual(positionsOf(before, ['b', 'c']));
+  });
+
+  it('stops at the next card less the spacing, and never covers it', () => {
+    const kept = set([['a', 900]]);
+    expect(kept.placed.get('a')?.width).toBe(400 - spacing.cards);
+    expectNoOverlap(kept.placed);
+  });
+
+  it('keeps the smallest card width, and lets the name take more lines when narrower', () => {
+    const narrow = keepCards(
+      input(canvas(card('a', 0, 0, { width: 240 })), [{ id: 'a' }], {
+        heightAt: (_id, width) => (width < 200 ? 76 : 44),
+        widths: new Map([['a', 20]]),
+      }),
+    );
+    expect(narrow.placed.get('a')).toMatchObject({ width: 168, height: 76 });
+  });
+
+  it('grows taller only into the room below', () => {
+    const kept = set([['a', 168]], { heightAt: () => 400 });
+    expect(kept.placed.get('a')?.height).toBe(200 - spacing.cards);
+    expectNoOverlap(kept.placed);
+  });
+
+  it('is never wider than 480px, even with room to spare', () => {
+    const roomy = keepCards(
+      input(canvas(card('a', 0, 0)), [{ id: 'a' }], {
+        heightAt: () => 44,
+        widths: new Map([['a', 7000]]),
+      }),
+    );
+    expect(roomy.placed.get('a')?.width).toBe(480);
+  });
+
+  it('leaves containers alone', () => {
+    const boxed = canvas(card('box', 0, 0, { width: 300, height: 200 }));
+    const kept = keepCards(
+      input(boxed, [{ id: 'box' }], {
+        previousContainers: new Set(['box']),
+        widths: new Map([['box', 500]]),
+      }),
+    );
+    expect(kept.placed.get('box')?.width).toBe(300);
   });
 });
 

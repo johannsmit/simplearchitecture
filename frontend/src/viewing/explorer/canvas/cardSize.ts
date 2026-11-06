@@ -18,6 +18,8 @@ export type CardShape = 'card' | 'circle';
 
 export const minCardWidth = 168;
 export const maxCardWidth = 280;
+/** The widest a card's width can be set by hand: about three times the smallest. */
+export const maxSetCardWidth = 480;
 const widthStep = 8;
 export const minCardHeight = 44;
 /** A circle's label wraps to at most this many lines, then ends in an ellipsis. */
@@ -114,6 +116,30 @@ export function cardSize({ name, focused, shape }: CardSizeInput): {
   width = Math.min(width, maxCardWidth);
   const height = inset + lines(text, room(width), font) * font.lineHeight;
   return { width, height: Math.max(minCardHeight, Math.ceil(height)) };
+}
+
+/** A rectangle card's height at a given width: its name wrapped to fit. */
+export function cardHeightAt(
+  { name, focused }: Omit<CardSizeInput, 'shape'>,
+  width: number,
+): number {
+  const font = focused ? focusedNameFont : nameFont;
+  const need = lines(name || '(unnamed)', width - inset - slack, font);
+  return Math.max(minCardHeight, Math.ceil(inset + need * font.lineHeight));
+}
+
+/**
+ * The lines of a rectangle card's name that fit in its box, when fewer than the name needs (a card
+ * that couldn't grow enough after a rename): its name is cut there. Undefined when it all fits.
+ */
+export function cardNameCut(
+  { name, focused }: Omit<CardSizeInput, 'shape'>,
+  size: { width: number; height: number },
+): number | undefined {
+  const font = focused ? focusedNameFont : nameFont;
+  const need = lines(name || '(unnamed)', size.width - inset - slack, font);
+  const fit = Math.max(1, Math.floor((size.height - inset) / font.lineHeight));
+  return need > fit ? fit : undefined;
 }
 
 /** A circle's name needs more lines than its label shows, so the label ends in an ellipsis. */

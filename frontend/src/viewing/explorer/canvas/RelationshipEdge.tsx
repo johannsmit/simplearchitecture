@@ -2,7 +2,7 @@ import type { ArchitectureState, EdgeType } from '@simplearchitecture/shared';
 import { BaseEdge, EdgeLabelRenderer, type Edge, type EdgeProps } from '@xyflow/react';
 import { memo, useMemo, useRef } from 'react';
 import { edgeEnds } from '../../../metamodel-ui';
-import { edgeLine, linePath } from './edgeLine';
+import { directLine, edgeLine, linePath, type LineEnd } from './edgeLine';
 import { placeRestingLabel, placeStateMark } from './labels';
 import { dragThreshold } from './positions';
 import type { Box, Point } from './positions';
@@ -24,6 +24,11 @@ export interface RelationshipData extends Record<string, unknown> {
   twoWay?: boolean;
   /** ELK's bends on the canvas, while the route still holds (edgeLine.ts). */
   bends?: readonly Point[];
+  /**
+   * Without a route: where the line leaves and enters, on the sides where its cards face each
+   * other now (`floatingEnds`), in place of its handles.
+   */
+  ends?: { start: LineEnd; end: LineEnd; points?: readonly Point[] };
   /**
    * While lit, with a resting label, or with a state mark: every card on the canvas, so the label
    * and the mark are placed where they cover none.
@@ -55,14 +60,17 @@ export const RelationshipEdge = memo(function RelationshipEdge(
 ) {
   const { data, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition } = props;
   const bends = data?.bends;
+  const floatingEnds = data?.ends;
   const line = useMemo(
     () =>
-      edgeLine(
-        { x: sourceX, y: sourceY, side: sourcePosition },
-        { x: targetX, y: targetY, side: targetPosition },
-        bends,
-      ),
-    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, bends],
+      floatingEnds && !bends
+        ? (floatingEnds.points ?? directLine(floatingEnds.start, floatingEnds.end))
+        : edgeLine(
+            { x: sourceX, y: sourceY, side: sourcePosition },
+            { x: targetX, y: targetY, side: targetPosition },
+            bends,
+          ),
+    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, bends, floatingEnds],
   );
   const path = useMemo(() => linePath(line), [line]);
   const lit = data?.lit === true;

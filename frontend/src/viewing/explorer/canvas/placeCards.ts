@@ -7,6 +7,7 @@ import {
   type PlacedHandle,
   type Side,
 } from './elkLayout';
+import { maxSetCardWidth, minCardHeight, minCardWidth } from './cardSize';
 import type { Box, Point } from './positions';
 
 /**
@@ -35,6 +36,10 @@ export interface KeepInput {
   related: readonly { source: string; target: string }[];
   /** A card's smallest size, as a card or as a container. */
   sizeOf: (id: string, container: boolean) => Size;
+  /** A card's height at a width (its name wrapped to fit); default: its smallest height. */
+  heightAt?: (id: string, width: number) => number;
+  /** Widths set by hand on cards (rectangles only): each is kept, within the free room. */
+  widths?: ReadonlyMap<string, number>;
   hints: ReadonlyMap<string, PlaceHint>;
   /** Where a card with no hint and no related card goes: the middle of the view. */
   centre: Point;
@@ -155,6 +160,69 @@ function grow(work: Map<string, PlacedCard>, id: string, min: Size): boolean {
   return true;
 }
 
+/** How far a card can grow to the right and down, keeping the spacing and inside its container. */
+function roomOf(work: ReadonlyMap<string, PlacedCard>, card: PlacedCard) {
+  const others = membersOf(work, card.parent)
+    .filter((other) => other.id !== card.id)
+    .map(boxOf);
+  const parent = card.parent === undefined ? undefined : work.get(card.parent);
+  const { padding } = containerBox;
+  let right = parent ? parent.width - padding.right : Infinity;
+  for (const other of others) {
+    const level = other.y < card.y + card.height + gap && other.y + other.height > card.y - gap;
+    if (level && other.x >= card.x + card.width) right = Math.min(right, other.x - gap);
+  }
+  const bottom = (width: number) => {
+    let limit = parent ? parent.height - padding.bottom : Infinity;
+    for (const other of others) {
+      const under = other.x < card.x + width + gap && other.x + other.width > card.x - gap;
+      if (under && other.y >= card.y + card.height) limit = Math.min(limit, other.y - gap);
+    }
+    return limit;
+  };
+  return { right, bottom };
+}
+
+/**
+ * A card at a width set by hand: from the smallest card width up to the free room on its right,
+ * and never wider than `maxSetCardWidth`;
+ * its height follows its name wrapped at that width, up to the free room below (a name that still
+ * doesn't fit is cut). No other card moves.
+ */
+function resizeInPlace(
+  work: Map<string, PlacedCard>,
+  id: string,
+  wanted: number,
+  heightAt: (width: number) => number,
+) {
+  const card = work.get(id);
+  if (!card) return;
+  const room = roomOf(work, card);
+  const widest = Math.max(minCardWidth, room.right - card.x);
+  const width = Math.min(Math.max(wanted, minCardWidth), widest, maxSetCardWidth);
+  const height = Math.max(minCardHeight, Math.min(heightAt(width), room.bottom(width) - card.y));
+  if (width !== card.width || height !== card.height) work.set(id, { ...card, width, height });
+}
+
+/**
+ * Grows a card towards `want` without covering another card or leaving its container: wider into
+ * the free room on its right (keeping the layout's spacing), then taller, for its name wrapped at
+ * that width, into the free room below. It never shrinks; a name that still doesn't fit is cut.
+ */
+function growInPlace(
+  work: Map<string, PlacedCard>,
+  id: string,
+  want: Size,
+  heightAt: (width: number) => number,
+) {
+  const card = work.get(id);
+  if (!card || (want.width <= card.width && want.height <= card.height)) return;
+  const room = roomOf(work, card);
+  const width = Math.max(card.width, Math.min(want.width, room.right - card.x));
+  const height = Math.max(card.height, Math.min(heightAt(width), room.bottom(width) - card.y));
+  if (width !== card.width || height !== card.height) work.set(id, { ...card, width, height });
+}
+
 /**
  * Puts a card (with what it holds) inside a container: at a free spot there, nearest to
  * `preferred` (relative to the container), growing the container when there is no room. False
@@ -225,22 +293,31 @@ export function keepCards(input: KeepInput): Kept {
   const before = absoluteBoxes(previous);
   const work = new Map<string, PlacedCard>();
 
-  // Cards already drawn: where they are, a little larger if their name grew.
+  // Cards already drawn: where they are.
   for (const card of previous.values()) {
     if (!present.has(card.id)) continue;
     const stays =
       card.parent !== undefined && wanted.get(card.id) === card.parent && work.has(card.parent);
     const at = stays ? card : (before.get(card.id) ?? card);
-    const least = sizeOf(card.id, input.previousContainers.has(card.id));
     work.set(card.id, {
       id: card.id,
       x: at.x,
       y: at.y,
       ...(stays ? { parent: card.parent } : {}),
-      width: Math.max(card.width, least.width),
-      height: Math.max(card.height, least.height),
+      width: card.width,
+      height: card.height,
       handles: card.handles,
     });
+  }
+  // A card whose name grew takes only the free room beside and below it.
+  // A card whose width was set by hand takes that width, as far as the room allows.
+  for (const id of [...work.keys()]) {
+    const container = input.previousContainers.has(id);
+    const heightAt = (width: number) =>
+      container || !input.heightAt ? sizeOf(id, container).height : input.heightAt(id, width);
+    const set = container ? undefined : input.widths?.get(id);
+    if (set === undefined) growInPlace(work, id, sizeOf(id, container), heightAt);
+    else resizeInPlace(work, id, set, heightAt);
   }
   const containers = new Set([...input.previousContainers].filter((id) => work.has(id)));
 

@@ -115,6 +115,7 @@ import {
 
 /** A stable empty list, so memos don't see a new one on every render. */
 const noIds: readonly string[] = [];
+const noWidths: ReadonlyMap<string, number> = new Map();
 const noIdSet: ReadonlySet<string> = new Set();
 
 /** The most elements the breadcrumb trail keeps; the oldest drops off. */
@@ -696,7 +697,27 @@ function Explorer({
   );
   const [tidyCount, setTidyCount] = useState(0);
   // The canvas is laid out only when it is a new one; changes in between keep every card in place.
-  const layoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}|${tidyCount}`;
+  const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}`;
+  const layoutKey = `${canvasLayoutKey}|${tidyCount}`;
+  // Card widths set by hand on the canvas: visual only, like moved cards, and kept through Tidy up
+  // until the canvas is a new one.
+  const [widths, setWidths] = useState<{ key: string; widths: ReadonlyMap<string, number> }>({
+    key: canvasLayoutKey,
+    widths: noWidths,
+  });
+  if (widths.key !== canvasLayoutKey) setWidths({ key: canvasLayoutKey, widths: noWidths });
+  const cardWidths = widths.key === canvasLayoutKey ? widths.widths : noWidths;
+  const resizeCard = useCallback(
+    (id: string, width: number | undefined) => {
+      setWidths((current) => {
+        const next = new Map(current.key === canvasLayoutKey ? current.widths : noWidths);
+        if (width === undefined) next.delete(id);
+        else next.set(id, width);
+        return { key: canvasLayoutKey, widths: next };
+      });
+    },
+    [canvasLayoutKey],
+  );
   /** The canvas changed without a new layout (its key then): Tidy up has something to do. */
   const [keptFor, setKeptFor] = useState<string | null>(null);
 
@@ -1772,6 +1793,8 @@ function Explorer({
                 fitKey={fitKey}
                 moved={movedPositions}
                 onMove={moveCard}
+                widths={cardWidths}
+                onResize={resizeCard}
                 tidyCount={tidyCount}
                 layoutKey={layoutKey}
                 onKept={setKeptFor}
@@ -1948,6 +1971,8 @@ function Explorer({
                 fitKey={fitKey}
                 moved={movedPositions}
                 onMove={moveCard}
+                widths={cardWidths}
+                onResize={resizeCard}
                 tidyCount={tidyCount}
                 layoutKey={layoutKey}
                 onKept={setKeptFor}

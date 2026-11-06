@@ -47,14 +47,18 @@ import { NewElementForm } from '../../../modelling/NewElement';
 import { NewRelationshipPopover, relationshipSentence } from '../../../modelling/relationships';
 import { nestingParents } from '../views';
 import {
+  cardHeightAt,
+  cardNameCut,
   cardSize,
   containerMinSize,
+  maxSetCardWidth,
+  minCardWidth,
   isCircleNameCut,
   isContainerNameCut,
   whenFontsReady,
 } from './cardSize';
 import { ElementCard, relatedButtonId, type CardNode } from './ElementCard';
-import { currentBends } from './edgeLine';
+import { currentBends, floatingEnds, type EndBox, type FloatingLine } from './edgeLine';
 import { getElk } from './elkEngine';
 import {
   absoluteBoxes,
@@ -63,6 +67,7 @@ import {
   portId,
   type LayoutCard,
   type PlacedCard,
+  type Side,
 } from './elkLayout';
 import {
   arrangeCards,
@@ -108,6 +113,11 @@ const fitOptions = {
   maxZoom: 1.25,
 } as const;
 
+/** A width set by hand, within the smallest and the widest a card's width can be set to. */
+function setWidth(width: number): number {
+  return Math.min(maxSetCardWidth, Math.max(minCardWidth, Math.round(width)));
+}
+
 function reducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
@@ -150,6 +160,10 @@ interface ExplorerCanvasProps {
    * layout (a cancelled keyboard move of a card that hadn't moved before).
    */
   onMove: (id: string, position: Point | undefined) => void;
+  /** Card widths set by hand (rectangle cards only), visual only: cleared by a new canvas. */
+  widths: ReadonlyMap<string, number>;
+  /** A card's width was set (its grip, or `Alt` + arrows in move mode); undefined drops it. */
+  onResize: (id: string, width: number | undefined) => void;
   /** Goes up by one on each "Tidy up": the view is fitted again and the change announced. */
   tidyCount: number;
   /**
@@ -271,6 +285,8 @@ interface Laid {
   parents: ReadonlyMap<string, string>;
   /** Elements drawn as containers (with elements inside). */
   containers: ReadonlySet<string>;
+  /** Each card's size when ELK laid it out: a line keeps ELK's route only while both stay so. */
+  layoutSizes: ReadonlyMap<string, { width: number; height: number }>;
 }
 
 /** Stacking (React Flow's manual z-index): containers by depth, then edges, then cards. */
@@ -303,6 +319,10 @@ interface Moving {
   id: string;
   /** Its moved position before this move, or undefined when it was where the layout put it. */
   before: Point | undefined;
+  /** Its width set by hand before this move, if any (`Alt` + arrows change it). */
+  widthBefore: number | undefined;
+  /** Its width on the canvas when the move started: Esc puts it back. */
+  widthAt: number | undefined;
 }
 
 /**
@@ -405,15 +425,20 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
 
   // The latest canvas and page callbacks, read by the layout effect without re-running it.
   const laidRef = useRef(laid);
-  const latest = useRef({ onMove: props.onMove, onKept: props.onKept, flow });
+  const latest = useRef({
+    onMove: props.onMove,
+    onKept: props.onKept,
+    onResize: props.onResize,
+    flow,
+  });
   useEffect(() => {
     laidRef.current = laid;
-    latest.current = { onMove: props.onMove, onKept: props.onKept, flow };
+    latest.current = { onMove: props.onMove, onKept: props.onKept, onResize: props.onResize, flow };
   });
   /** Where new cards should go (a drop point, or next to a card), until they are placed. */
   const hints = useRef(new Map<string, PlaceHint>());
 
-  const { layoutKey, tidyCount } = props;
+  const { layoutKey, tidyCount, widths } = props;
   // A new canvas is measured (after the fonts load) and laid out in ELK's worker. Any other change
   // (cards or lines added or taken off, an element edited) keeps every card where it is.
   useEffect(() => {
@@ -433,6 +458,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           })
         : cardSize({ name: element.name, focused, shape: cardShape(element.type) });
     };
+    const heightAt = (id: string, width: number) => {
+      const element = graph.elements.get(id);
+      if (!element || cardShape(element.type) !== 'card') return sizeOf(id, false).height;
+      return cardHeightAt({ name: element.name, focused: id === hood.focusId }, width);
+    };
     const ids = [...hood.hops.keys()].filter((id) => graph.elements.has(id));
     // A Contains drawn as nesting: no line.
     const nested =
@@ -444,10 +474,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       parents: ReadonlyMap<string, string>,
       containers: ReadonlySet<string>,
       fresh: boolean,
+      layoutSizes: Laid['layoutSizes'],
     ): Laid => ({
       key: layoutKey,
       tidyCount,
       fresh,
+      layoutSizes,
       hood,
       links,
       drawn: links.filter((link) => !nested(parents)(link)),
@@ -467,6 +499,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         cards: ids.map((id) => ({ id, parent: wanted.get(id) })),
         related: hood.relationships,
         sizeOf,
+        heightAt,
+        widths,
         hints: hints.current,
         centre: box
           ? latest.current.flow.screenToFlowPosition({
@@ -485,7 +519,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
       );
       setLayoutError(null);
-      setLaid(made(placed, parents, kept.containers, false));
+      setLaid(made(placed, parents, kept.containers, false, previous.layoutSizes));
       for (const id of placed.keys()) hints.current.delete(id);
       // A moved card taken out of its container keeps its place on the canvas.
       for (const [id, point] of movedRef.current) {
@@ -505,9 +539,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const parent = wanted.get(id);
       const container = containers.has(id);
       const shape = container ? ('container' as const) : element ? cardShape(element.type) : 'card';
+      // A width set by hand is kept by a new layout (Tidy up), with the name wrapped to it.
+      const set = container || shape !== 'card' ? undefined : widths.get(id);
+      const width = set === undefined ? undefined : setWidth(set);
       return {
         id,
-        ...sizeOf(id, container),
+        ...(width === undefined ? sizeOf(id, container) : { width, height: heightAt(id, width) }),
         partition: element ? nodeTypes.indexOf(element.type) : 0,
         shape,
         ...(parent === undefined ? {} : { parent }),
@@ -521,7 +558,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       .then((placed) => {
         if (!live) return;
         setLayoutError(null);
-        const next = made(placed, wanted, containers, true);
+        const sizes = new Map(
+          [...placed.values()].map((card) => [card.id, { width: card.width, height: card.height }]),
+        );
+        const next = made(placed, wanted, containers, true, sizes);
         setLaid(next);
         if (previous && previous.tidyCount !== tidyCount) {
           setNote({ laid: next, text: 'Layout tidied up.' });
@@ -533,7 +573,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return () => {
       live = false;
     };
-  }, [fontsReady, hood, links, graph, nest, layoutKey, tidyCount]);
+  }, [fontsReady, hood, links, graph, nest, layoutKey, tidyCount, widths]);
 
   // Model ids can hold any character, but React Flow builds CSS selectors from node ids.
   // So React Flow and the DOM get made-up ids (`n0`, `card-0`), mapped back on events.
@@ -556,6 +596,30 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     () => (laid ? arrangeCards(laid.placed, moved) : new Map<string, PlacedCard>()),
     [laid, moved],
   );
+  const shownRef = useRef(shown);
+  useEffect(() => {
+    shownRef.current = shown;
+  });
+  /** A rectangle card (not a circle or a container): its width can be set by hand. */
+  const isResizable = (id: string) => {
+    const element = graph.elements.get(id);
+    return element !== undefined && cardShape(element.type) === 'card' && !laid?.containers.has(id);
+  };
+  /** The width grip: the card's width when the press started, plus how far the pointer went. */
+  const resizing = useRef<{ id: string; width: number } | null>(null);
+  const resizeFromGrip = useCallback((id: string, phase: 'start' | 'move' | 'end', dx: number) => {
+    if (phase === 'start') {
+      const card = shownRef.current.get(id);
+      resizing.current = card ? { id, width: card.width } : null;
+      setRelated(null);
+      return;
+    }
+    const from = resizing.current;
+    if (from?.id !== id) return;
+    const zoom = latest.current.flow.getZoom() || 1;
+    latest.current.onResize(id, setWidth(from.width + dx / zoom));
+    if (phase === 'end') resizing.current = null;
+  }, []);
   // Positions on the canvas (cards inside containers are placed relative to them).
   const absolute = useMemo(() => absoluteBoxes(shown), [shown]);
   // Move mode ends by itself when the focus changes or the card leaves the canvas.
@@ -602,6 +666,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const container = laid.containers.has(card.id);
       const shape = container ? 'container' : cardShape(element.type);
       const parentElement = card.parent === undefined ? undefined : graph.elements.get(card.parent);
+      const cut = shape === 'card' ? cardNameCut({ name: element.name, focused }, card) : undefined;
       const data: CardNode['data'] = {
         element,
         shape,
@@ -614,7 +679,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
               focused,
               userIcon: nodeTypeDefinitions[element.type].icon === 'user',
             })
-          : shape === 'circle' && isCircleNameCut(element.name, focused),
+          : shape === 'circle'
+            ? isCircleNameCut(element.name, focused)
+            : cut !== undefined,
+        ...(cut === undefined ? {} : { nameLines: cut }),
         missing: missing.get(card.id) ?? 0,
         state: elementArchitectureState(element),
         focused,
@@ -626,6 +694,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         moving: card.id === movingId,
         onShowRelated: showRelated,
         connectable: editable,
+        ...(shape === 'card' ? { onResize: resizeFromGrip } : {}),
         ...(props.onRemoveCard && props.removable?.has(card.id) === true
           ? {
               onRemove: props.onRemoveCard,
@@ -652,6 +721,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     dropAt,
     props.selectedId,
     props.removable,
+    resizeFromGrip,
     props.onRemoveCard,
     inView,
   ]);
@@ -742,7 +812,15 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   // and doesn't place the labels again.
   const routes = useMemo(() => {
     const result = new Map<string, Point[]>();
+    // A card whose size changed (a rename, a width set by hand) has lines that follow it, as after a
+    // move: ELK's ports on it no longer hold.
+    const sameSize = (id: string) => {
+      const before = laid?.layoutSizes.get(id);
+      const now = shown.get(id);
+      return before !== undefined && now?.width === before.width && now.height === before.height;
+    };
     for (const link of laid?.drawn ?? []) {
+      if (!sameSize(link.source) || !sameSize(link.target)) continue;
       const handle = shown
         .get(link.source)
         ?.handles.find((candidate) => candidate.id === portId(link.id, 'source'));
@@ -755,6 +833,41 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     }
     return result;
   }, [laid, shown, absolute]);
+
+  // Lines without a route: their ends on the sides where their cards face each other now, so
+  // they follow a moved card (live, while it is dragged) and take the shortest way.
+  const floating = useMemo(() => {
+    if (!laid) return new Map<string, FloatingLine>();
+    const boxes = new Map<string, EndBox>();
+    for (const [id, box] of absolute) {
+      const element = graph.elements.get(id);
+      const circle =
+        !laid.containers.has(id) && element !== undefined && cardShape(element.type) === 'circle';
+      const parent = shown.get(id)?.parent;
+      boxes.set(id, {
+        ...box,
+        ...(circle ? { circle } : {}),
+        ...(parent === undefined ? {} : { parent }),
+      });
+    }
+    // The ends of routed lines keep their places: the others keep clear of them.
+    const taken = new Map<string, { side: Side; offset: number }[]>();
+    for (const link of laid.drawn) {
+      if (!routes.has(link.id)) continue;
+      for (const [card, end] of [
+        [link.source, 'source'],
+        [link.target, 'target'],
+      ] as const) {
+        const handle = shown.get(card)?.handles.find((h) => h.id === portId(link.id, end));
+        if (handle) taken.set(card, [...(taken.get(card) ?? []), handle]);
+      }
+    }
+    return floatingEnds(
+      laid.drawn.filter((link) => !routes.has(link.id)),
+      boxes,
+      taken,
+    );
+  }, [laid, absolute, shown, routes, graph]);
 
   const { selectedRelationshipId: chosen, litRelationshipId: fresh, shownProperties } = props;
   const edges = useMemo<RelationshipFlowEdge[]>(() => {
@@ -769,6 +882,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const resting = text !== '';
       const grayed = isGrayed(link, shownProperties);
       const bends = routes.get(link.id);
+      const ends = floating.get(link.id);
       return {
         id: link.id,
         type: 'relationship' as const,
@@ -800,6 +914,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           state: link.state,
           ...(link.twoWay ? { twoWay: true } : {}),
           ...(bends ? { bends } : {}),
+          ...(ends ? { ends } : {}),
           ...(highlight && !lit ? { dim: true } : {}),
           ...(grayed && !lit ? { grayed: true } : {}),
           ...(resting ? { resting: true } : {}),
@@ -816,7 +931,19 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         },
       };
     });
-  }, [laid, graph, highlight, flowId, cardBoxes, dragging, chosen, fresh, routes, shownProperties]);
+  }, [
+    laid,
+    graph,
+    highlight,
+    flowId,
+    cardBoxes,
+    dragging,
+    chosen,
+    fresh,
+    routes,
+    floating,
+    shownProperties,
+  ]);
 
   // After a change: re-read the handles (they may have moved), and fit the view to a new layout
   // (only: when cards come and go, the view stays where it is).
@@ -1002,7 +1129,13 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   /** Keyboard move mode (the keyboard way to drag, WCAG 2.5.7): M on a card starts it. */
   const startMove = (id: string) => {
     setRelated(null);
-    setMoving({ focusId, id, before: moved.get(id) });
+    setMoving({
+      focusId,
+      id,
+      before: moved.get(id),
+      widthBefore: props.widths.get(id),
+      widthAt: shown.get(id)?.width,
+    });
     setNote({
       laid,
       text: `Moving ${nameOf(id)}. Use the arrow keys, then Enter to drop or Escape to cancel.`,
@@ -1011,7 +1144,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
 
   const endMove = (how: 'drop' | 'cancel') => {
     if (!moving) return;
-    if (how === 'cancel') props.onMove(moving.id, moving.before);
+    if (how === 'cancel') {
+      props.onMove(moving.id, moving.before);
+      if (props.widths.get(moving.id) !== moving.widthBefore) {
+        props.onResize(moving.id, moving.widthBefore ?? moving.widthAt);
+      }
+    }
     setMoving(null);
     setNote({ laid, text: how === 'drop' ? `${nameOf(moving.id)} moved.` : 'Move cancelled.' });
   };
@@ -1020,6 +1158,21 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const onMoveModeKey = (event: KeyboardEvent<HTMLElement>, direction: Direction | undefined) => {
     if (!moving) return;
     const card = shown.get(moving.id);
+    // Alt + left or right: narrower or wider (the keyboard way to use the width grip).
+    if (
+      (direction === 'left' || direction === 'right') &&
+      card &&
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      isResizable(card.id)
+    ) {
+      const step = moveStep(event) * (direction === 'left' ? -1 : 1);
+      props.onResize(card.id, setWidth(card.width + step));
+      setNote({ laid, text: direction === 'left' ? 'Narrower.' : 'Wider.' });
+      event.preventDefault();
+      return;
+    }
     if (direction && card && !event.altKey && !event.ctrlKey && !event.metaKey) {
       const parent = card.parent === undefined ? undefined : shown.get(card.parent);
       const step = movedBy(card, direction, moveStep(event));
@@ -1444,7 +1597,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       ) : moving ? (
         <p className="canvas-notice move-hint">
           Moving &ldquo;<span className="move-name">{nameOf(moving.id)}</span>&rdquo;. Arrow keys
-          move it, Shift for bigger steps. Enter drops, Esc cancels.
+          move it, Shift for bigger steps
+          {isResizable(moving.id) ? <>, Alt + &larr; &rarr; change its width</> : null}. Enter
+          drops, Esc cancels.
         </p>
       ) : (
         (fullNotice ?? capNotice) && (

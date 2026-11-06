@@ -2,10 +2,15 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import { describe, expect, it } from 'vitest';
 import {
   currentBends,
+  crossesAny,
+  directLine,
   edgeLine,
+  facingSides,
+  floatingEnds,
   linePath,
   routedLine,
   steppedLine,
+  type EndBox,
 } from '../src/viewing/explorer/canvas/edgeLine';
 import {
   absoluteBoxes,
@@ -483,5 +488,186 @@ describe('the line between two handles', () => {
       ]),
     ).toBe('M0 0L97 0Q100 0 100 3L100 6');
     expect(linePath([])).toBe('');
+  });
+});
+
+describe('a line without a route follows its cards', () => {
+  const at = (x: number, y: number, more: Partial<EndBox> = {}): EndBox => ({
+    x,
+    y,
+    width: 160,
+    height: 44,
+    ...more,
+  });
+  const length = (line: readonly Point[]) =>
+    line.slice(1).reduce((sum, point, index) => {
+      const before = line[index] as Point;
+      return sum + Math.abs(point.x - before.x) + Math.abs(point.y - before.y);
+    }, 0);
+  const ends = (boxes: Record<string, EndBox>, links: [string, string][]) =>
+    floatingEnds(
+      links.map(([source, target], index) => ({ id: `l${index}`, source, target })),
+      new Map(Object.entries(boxes)),
+    );
+
+  it('goes straight across to a card moved up and to the right, not around it', () => {
+    // The target was moved above and to the right of the source.
+    const source = at(0, 300);
+    const target = at(400, 150);
+    expect(facingSides(source, target)).toEqual({ start: 'right', end: 'left' });
+    const end = ends({ a: source, b: target }, [['a', 'b']]).get('l0');
+    expect(end?.start).toEqual({ x: 160, y: 322, side: 'right' });
+    expect(end?.end).toEqual({ x: 400, y: 172, side: 'left' });
+    const line = directLine(end?.start as never, end?.end as never);
+    // Two bends, and no longer than the distance along the axes.
+    expect(line).toHaveLength(4);
+    expect(length(line)).toBe(240 + 150);
+    // It never goes back into either card.
+    expect(Math.min(...line.map((p) => p.x))).toBe(160);
+    expect(Math.max(...line.map((p) => p.x))).toBe(400);
+  });
+
+  it('leaves the bottom for a card well below, and the top for one above', () => {
+    expect(facingSides(at(0, 0), at(40, 300))).toEqual({ start: 'bottom', end: 'top' });
+    expect(facingSides(at(0, 300), at(40, 0))).toEqual({ start: 'top', end: 'bottom' });
+    expect(facingSides(at(300, 0), at(0, 20))).toEqual({ start: 'left', end: 'right' });
+  });
+
+  it('runs straight between cards level with each other', () => {
+    const end = ends({ a: at(0, 0), b: at(400, 20) }, [['a', 'b']]).get('l0');
+    const line = directLine(end?.start as never, end?.end as never);
+    expect(line).toHaveLength(2);
+    expect(line[0]?.y).toBe(line[1]?.y);
+  });
+
+  it('spreads several lines on one side, in the order of their other cards', () => {
+    const all = ends(
+      { a: at(0, 100, { height: 100 }), b: at(400, 0), c: at(400, 300), d: at(400, 150) },
+      [
+        ['a', 'b'],
+        ['a', 'c'],
+        ['a', 'd'],
+      ],
+    );
+    const ys = ['l0', 'l2', 'l1'].map((id) => all.get(id)?.start.y ?? 0);
+    expect(all.get('l0')?.start.side).toBe('right');
+    expect(ys).toEqual([...ys].sort((p, q) => p - q));
+    expect(new Set(ys).size).toBe(3);
+    expect(ys).toEqual([125, 150, 175]);
+  });
+
+  it('keeps clear of a routed line on the same side', () => {
+    const all = floatingEnds(
+      [{ id: 'l0', source: 'a', target: 'b' }],
+      new Map([
+        ['a', at(0, 0)],
+        ['b', at(0, 300)],
+      ]),
+      new Map([['a', [{ side: 'bottom' as const, offset: 80 }]]]),
+    );
+    expect(Math.abs((all.get('l0')?.start.x ?? 0) - 80)).toBeGreaterThanOrEqual(12);
+  });
+
+  it('starts on the circle of a Stakeholder, sideways, even for a card below it', () => {
+    const all = ends({ s: at(0, 0, { width: 120, height: 70, circle: true }), b: at(20, 300) }, [
+      ['s', 'b'],
+    ]);
+    const start = all.get('l0')?.start;
+    expect(start?.side).toBe('right');
+    // On the circle's edge: 24px right of its centre (60, 24).
+    expect(start).toMatchObject({ x: 84, y: 24 });
+  });
+
+  it('works on the canvas positions of nested cards and containers alike', () => {
+    // A card inside a container (its canvas box) and a container itself, side by side.
+    const all = ends({ inner: at(116, 106), box: at(600, 0, { width: 300, height: 300 }) }, [
+      ['inner', 'box'],
+    ]);
+    expect(all.get('l0')?.start).toMatchObject({ x: 276, side: 'right' });
+    expect(all.get('l0')?.end).toMatchObject({ x: 600, side: 'left' });
+  });
+
+  it('takes one bend from a side to a top or bottom', () => {
+    expect(directLine({ x: 0, y: 0, side: 'right' }, { x: 100, y: 200, side: 'top' })).toEqual([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 200 },
+    ]);
+  });
+});
+
+describe('a line without a route goes round the cards in its way', () => {
+  const at = (x: number, y: number, more: Partial<EndBox> = {}): EndBox => ({
+    x,
+    y,
+    width: 160,
+    height: 44,
+    ...more,
+  });
+  const lineOf = (boxes: Record<string, EndBox>, source: string, target: string) =>
+    floatingEnds([{ id: 'l0', source, target }], new Map(Object.entries(boxes))).get('l0');
+  const length = (line: readonly Point[]) =>
+    line.slice(1).reduce((sum, point, index) => {
+      const before = line[index] as Point;
+      return sum + Math.abs(point.x - before.x) + Math.abs(point.y - before.y);
+    }, 0);
+
+  it('leaves a card in a container round its neighbour there, not behind it', () => {
+    // The hub's line to the bin on the left ran behind Pot API, next to it in the same container.
+    const boxes = {
+      container: at(0, 0, { width: 380, height: 116 }),
+      pot: at(16, 56, { parent: 'container' }),
+      hub: at(204, 56, { parent: 'container' }),
+      bin: at(-400, 60),
+    };
+    const line = lineOf(boxes, 'hub', 'bin');
+    expect(line).toBeDefined();
+    expect(crossesAny(line?.points ?? [], [boxes.pot])).toBe(false);
+    expect(['top', 'bottom']).toContain(line?.start.side);
+  });
+
+  it('goes over or under a card between two cards in a row', () => {
+    const boxes = { one: at(0, 0), two: at(188, 0), three: at(376, 0) };
+    const line = lineOf(boxes, 'one', 'three');
+    expect(crossesAny(line?.points ?? [], [boxes.two])).toBe(false);
+    expect(line?.points.length).toBe(4);
+  });
+
+  it('moves the bend beside a card in the way, keeping the shortest length', () => {
+    const boxes = { a: at(0, 0), c: at(600, 300), between: at(300, 100) };
+    const line = lineOf(boxes, 'a', 'c');
+    expect(line?.start.side).toBe('right');
+    expect(crossesAny(line?.points ?? [], [boxes.between])).toBe(false);
+    expect(length(line?.points ?? [])).toBe(440 + 300);
+  });
+
+  it('keeps the shortest line when every way runs through a card', () => {
+    const boxes = {
+      a: at(0, 0),
+      b: at(400, 0),
+      wall: at(-1000, -1000, { width: 3000, height: 3000 }),
+    };
+    expect(lineOf(boxes, 'a', 'b')?.points).toEqual([
+      { x: 160, y: 22 },
+      { x: 400, y: 22 },
+    ]);
+  });
+
+  it('crosses its own cards’ containers freely', () => {
+    const boxes = {
+      box: at(0, 0, { width: 400, height: 200 }),
+      inner: at(16, 56, { parent: 'box' }),
+      outside: at(600, 56),
+    };
+    const line = lineOf(boxes, 'inner', 'outside');
+    expect(line?.start.side).toBe('right');
+    expect(line?.points).toHaveLength(2);
+  });
+
+  it('runs straight past cards far from it, on a large canvas', () => {
+    // 400 cards far away: none is in the line's way.
+    const boxes: Record<string, EndBox> = { a: at(0, 0), b: at(400, 0) };
+    for (let index = 0; index < 400; index++) boxes[`far${index}`] = at(5000 + index * 200, 5000);
+    expect(lineOf(boxes, 'a', 'b')?.points).toHaveLength(2);
   });
 });

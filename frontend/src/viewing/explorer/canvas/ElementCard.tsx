@@ -1,6 +1,6 @@
 import type { ArchitectureState, ModelElement } from '@simplearchitecture/shared';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { memo, type CSSProperties } from 'react';
+import { memo, useRef, type CSSProperties, type PointerEvent } from 'react';
 import { Icon } from '../../../icons';
 import { colourClass, isQuietState, StateBadge, TypeMark } from '../../../metamodel-ui';
 import { counted } from '../../../words';
@@ -25,6 +25,8 @@ export interface CardData extends Record<string, unknown> {
    * the name ends in an ellipsis.
    */
   nameCut: boolean;
+  /** A card too small for its name (it couldn't grow after a rename): the lines shown. */
+  nameLines?: number;
   /**
    * Different elements related to this one (through the relationship types shown) that aren't on
    * the canvas. 0: no relationship pill.
@@ -54,6 +56,11 @@ export interface CardData extends Record<string, unknown> {
    */
   onRemove?: (elementId: string) => void;
   removeIn?: 'canvas' | 'view';
+  /**
+   * A rectangle card's width can be set by hand: the grip on its right edge. `dx` is how far the
+   * pointer has moved since the press, in screen pixels.
+   */
+  onResize?: (elementId: string, phase: 'start' | 'move' | 'end', dx: number) => void;
 }
 
 export type CardNode = Node<CardData, 'element'>;
@@ -155,10 +162,12 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
   const style =
     circle && data.containerColour !== undefined
       ? ({ '--container-fill': `var(--${data.containerColour}-fill)` } as CSSProperties)
-      : undefined;
+      : data.nameLines !== undefined
+        ? ({ '--name-lines': data.nameLines } as CSSProperties)
+        : undefined;
   return (
     <div
-      className={`card ${circle ? 'is-circle ' : ''}${container ? 'is-container ' : ''}${style ? 'is-nested ' : ''}${colourClass(element.type)}${data.focused ? ' is-focus' : ''}${data.selected ? ' is-selected' : ''}${data.moving ? ' is-moving' : ''}${data.drop ? ` is-drop-${data.drop}` : ''}`}
+      className={`card ${circle ? 'is-circle ' : ''}${container ? 'is-container ' : ''}${circle && style ? 'is-nested ' : ''}${data.nameLines === undefined ? '' : 'is-cut '}${colourClass(element.type)}${data.focused ? ' is-focus' : ''}${data.selected ? ' is-selected' : ''}${data.moving ? ' is-moving' : ''}${data.drop ? ` is-drop-${data.drop}` : ''}`}
       style={style}
       data-element-id={element.id}
     >
@@ -171,7 +180,7 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
         aria-label={cardLabel(data)}
         aria-current={data.focused ? 'true' : undefined}
         aria-keyshortcuts={data.connectable ? 'M R' : 'M'}
-        title={(circle || container) && data.nameCut ? element.name : undefined}
+        title={data.nameCut ? element.name : undefined}
       >
         {circle && (
           <span className="ccircle">
@@ -206,6 +215,7 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
           onRemove={() => data.onRemove?.(element.id)}
         />
       )}
+      {data.onResize && <ResizeGrip id={element.id} onResize={data.onResize} />}
       {badge !== undefined && <StateBadge state={badge} className="cbadge" />}
       {data.missing > 0 && (
         <button
@@ -230,6 +240,49 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
     </div>
   );
 });
+
+/**
+ * The grip on a card's right edge that sets its width (visual only). Mouse and pen only: with the
+ * keyboard, `Alt` + `←` `→` in move mode do the same. A press on it doesn't select, drag or pan.
+ */
+function ResizeGrip(props: {
+  id: string;
+  onResize: (elementId: string, phase: 'start' | 'move' | 'end', dx: number) => void;
+}) {
+  const from = useRef<number | null>(null);
+  const end = (event: PointerEvent<HTMLSpanElement>) => {
+    if (from.current === null) return;
+    props.onResize(props.id, 'end', event.clientX - from.current);
+    from.current = null;
+  };
+  return (
+    <span
+      className="cresize nodrag nopan"
+      aria-hidden="true"
+      title="Drag to change the width"
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        from.current = event.clientX;
+        if (typeof event.currentTarget.setPointerCapture === 'function') {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        props.onResize(props.id, 'start', 0);
+      }}
+      onPointerMove={(event) => {
+        if (from.current !== null) props.onResize(props.id, 'move', event.clientX - from.current);
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+      }}
+    />
+  );
+}
 
 /**
  * The small round remove button (×) on a card. Neutral, never the trash icon: it takes the card

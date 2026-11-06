@@ -1219,6 +1219,15 @@
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--line) 28%, transparent);
 }
 
+.card.is-cut .cname {
+  /* A renamed card that had no room to grow: the name ends in an ellipsis. */
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--name-lines);
+  line-clamp: var(--name-lines);
+}
+
 .card.is-focus .cname {
   font-size: 13.5px;
   font-weight: 600;
@@ -4043,6 +4052,59 @@ li.is-new {
 
 @media (prefers-reduced-motion: reduce) {
   .cremove {
+    transition: none;
+  }
+}
+
+/* The width grip on a card's bottom right corner, styled like the × and shown when it is. Its hit
+ * area reaches right, left and down only, so it never covers the connect handle in the middle of
+ * the right edge, at any zoom (both scale with the card). */
+.cresize {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: var(--surface-raised);
+  box-shadow: var(--e1);
+  cursor: ew-resize;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition:
+    opacity var(--t-fast),
+    border-color var(--t-fast);
+}
+
+.cresize::before {
+  content: '';
+  position: absolute;
+  inset: 0 -4px -4px;
+}
+
+.cresize:hover {
+  border-color: var(--text-muted);
+}
+
+.card:hover > .cresize,
+.card.is-selected > .cresize {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.canvas.is-dragging .card > .cresize,
+.canvas.is-drawing .card > .cresize,
+.card.is-moving > .cresize,
+.card:has(> .connect-handle:hover) > .cresize {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cresize {
     transition: none;
   }
 }
