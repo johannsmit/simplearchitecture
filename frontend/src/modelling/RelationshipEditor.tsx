@@ -416,7 +416,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       : draft.type !== containsType && base.type === containsType && nestedNow
         ? {
             kind: 'info' as const,
-            text: `After saving, ${nameOf(graph, relationship.target)} is no longer nested in ${nameOf(graph, relationship.source)} and the canvas tidies up.`,
+            text: `After saving, ${nameOf(graph, relationship.target)} is no longer nested in ${nameOf(graph, relationship.source)}; Tidy up redraws the canvas.`,
           }
         : undefined;
   const sourceElement = graph.elements.get(relationship.source);
@@ -859,7 +859,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           sentence={savedSentence}
           nestNote={
             nestedNow
-              ? `${nameOf(graph, relationship.target)} is no longer nested in ${nameOf(graph, relationship.source)}. It stays in the model and on the canvas, and the canvas tidies up.`
+              ? `${nameOf(graph, relationship.target)} is no longer nested in ${nameOf(graph, relationship.source)}. It stays in the model and on the canvas; Tidy up redraws the canvas.`
               : undefined
           }
           dirty={dirty}

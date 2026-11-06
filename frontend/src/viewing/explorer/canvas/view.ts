@@ -76,11 +76,27 @@ const layoutLinkId = (index: number) => `l${index}`;
 export function layoutLinks(
   relationships: readonly ModelRelationship[],
   isDrawn: (relationship: ModelRelationship) => boolean,
-): { id: string; source: string; target: string }[] {
+): { id: string; relationshipId: string; source: string; target: string }[] {
   return relationships.flatMap((relationship, index) =>
     isDrawn(relationship)
-      ? [{ id: layoutLinkId(index), source: relationship.source, target: relationship.target }]
+      ? [
+          {
+            id: layoutLinkId(index),
+            relationshipId: relationship.id,
+            source: relationship.source,
+            target: relationship.target,
+          },
+        ]
       : [],
+  );
+}
+
+/** Layout link id → the relationship it stands for (ids move as relationships come and go). */
+export function layoutLinkRelationships(
+  relationships: readonly ModelRelationship[],
+): Map<string, string> {
+  return new Map(
+    relationships.map((relationship, index) => [layoutLinkId(index), relationship.id]),
   );
 }
 

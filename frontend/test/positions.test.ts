@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spacing, type PlacedCard } from '../src/viewing/explorer/canvas/elkLayout';
 import {
-  alignLayout,
   arrangeCards,
   draggedPositions,
   hasMovedCards,
@@ -121,23 +120,6 @@ describe('arrangeCards', () => {
         expect(overlap, `${a.id} and ${b.id}`).toBe(false);
       }
     }
-  });
-});
-
-describe('alignLayout', () => {
-  it('shifts a new layout so the anchor card stays where it was', () => {
-    const previous = layout(card('focus', 100, 200), card('x', 0, 0));
-    const next = layout(card('focus', 300, 50), card('x', 200, 0), card('new', 0, 0));
-    const aligned = alignLayout(previous, next, 'focus');
-    expect(at(aligned, 'focus')).toEqual({ x: 100, y: 200 });
-    expect(at(aligned, 'x')).toEqual({ x: 0, y: 150 });
-    expect(at(aligned, 'new')).toEqual({ x: -200, y: 150 });
-  });
-
-  it('leaves the layout as it is without the anchor, or when it didn’t move', () => {
-    const next = layout(card('focus', 300, 50));
-    expect(alignLayout(layout(), next, 'focus')).toBe(next);
-    expect(alignLayout(layout(card('focus', 300, 50)), next, 'focus')).toBe(next);
   });
 });
 

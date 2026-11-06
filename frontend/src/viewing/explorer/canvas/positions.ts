@@ -1,5 +1,5 @@
 import type { NodeChange } from '@xyflow/react';
-import { absoluteBoxes, containerBox, spacing, type PlacedCard } from './elkLayout';
+import { containerBox, spacing, type PlacedCard } from './elkLayout';
 import type { Direction } from './view';
 
 /**
@@ -185,35 +185,6 @@ export function arrangeCards(
   }
   // Keep the layout's order, so React Flow's node order doesn't change.
   return new Map([...placed.keys()].map((id) => [id, result.get(id) as PlacedCard]));
-}
-
-/**
- * A new layout shifted so that the anchor card (the focused element) stays where it was in the
- * previous one. Used when elements are added while cards are moved: the moved cards keep their
- * place, and the rest of the layout stays around them instead of jumping. Unchanged when the
- * anchor isn't in both layouts.
- */
-export function alignLayout(
-  previous: ReadonlyMap<string, PlacedCard>,
-  next: Map<string, PlacedCard>,
-  anchorId: string,
-): Map<string, PlacedCard> {
-  const before = previous.has(anchorId) ? absoluteBoxes(previous).get(anchorId) : undefined;
-  const after = next.has(anchorId) ? absoluteBoxes(next).get(anchorId) : undefined;
-  if (!before || !after) return next;
-  const dx = before.x - after.x;
-  const dy = before.y - after.y;
-  if (dx === 0 && dy === 0) return next;
-  // Cards in a container move with it.
-  return new Map(
-    [...next].map(
-      ([id, card]) =>
-        [
-          id,
-          card.parent === undefined ? { ...card, x: card.x + dx, y: card.y + dy } : card,
-        ] as const,
-    ),
-  );
 }
 
 /**

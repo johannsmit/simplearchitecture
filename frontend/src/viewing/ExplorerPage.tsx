@@ -87,7 +87,6 @@ import { ViewBar } from './explorer/ViewBar';
 import { DeleteViewDialog, RenameViewDialog, SaveViewDialog } from './explorer/ViewDialogs';
 import {
   canvasContents,
-  nestingParents,
   noFocus,
   viewCap,
   viewHood,
@@ -696,6 +695,10 @@ function Explorer({
     [movedKey],
   );
   const [tidyCount, setTidyCount] = useState(0);
+  // The canvas is laid out only when it is a new one; changes in between keep every card in place.
+  const layoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}|${tidyCount}`;
+  /** The canvas changed without a new layout (its key then): Tidy up has something to do. */
+  const [keptFor, setKeptFor] = useState<string | null>(null);
 
   const viewContents = openView.contents;
   const viewReady = openView.load.status === 'ready';
@@ -993,14 +996,9 @@ function Explorer({
     setSelection({ key: selectionKey, id: opened.relationship });
     setRelHeadingFocus(true);
   }
-  /** A Contains change moved a nesting: the canvas tidies up. */
-  const tidyAfter = (changes: readonly NestingChange[]): boolean => {
-    if (changes.length === 0 || !nest) return false;
-    setMoved({ key: movedKey, positions: noMovedPositions });
-    setTidyCount((n) => n + 1);
-    return true;
-  };
-  const tidied = (yes: boolean) => (yes ? ' The canvas was tidied up.' : '');
+  /** A Contains change moved a nesting: the cards stay put, and Tidy up shows it. */
+  const nestingNote = (changes: readonly NestingChange[]) =>
+    changes.length > 0 && nest ? ' Tidy up to update the nesting.' : '';
   const sentenceOf = (result: RelationshipChangeResult) => {
     const relationship = relationshipOfEdge(result.relationship.edge);
     return graph && relationship ? relationshipSentence(graph, relationship) : '';
@@ -1022,14 +1020,14 @@ function Explorer({
         }),
       );
     setAnnouncement(
-      `Added: ${sentenceOf(result)}.${tidied(tidyAfter(result.nestingChanges))}${notInView ? " It isn't in this view." : ''}`,
+      `Added: ${sentenceOf(result)}.${nestingNote(result.nestingChanges)}${notInView ? " It isn't in this view." : ''}`,
     );
     reloadModels();
   };
   const onRelationshipStored = (result: RelationshipChangeResult, saved: boolean) => {
     updateDocument((current) => withEdge(current, result.relationship.edge));
     if (!saved) return;
-    setAnnouncement(`Saved.${tidied(tidyAfter(result.nestingChanges))}`);
+    setAnnouncement(`Saved.${nestingNote(result.nestingChanges)}`);
     reloadModels();
   };
   const onRelationshipRemoved = (
@@ -1040,19 +1038,19 @@ function Explorer({
     setPanelState(null);
     if (inView) openView.prune((current) => withoutDeleted(current, { relationshipIds: [id] }));
     updateDocument((current) => withoutEdge(current, id));
-    const tidy = tidyAfter(result?.nestingChanges ?? []);
+    const note = nestingNote(result?.nestingChanges ?? []);
     setSelection(null);
     if (elementId !== undefined) setHeadingFocusFor(elementId);
-    if (words !== '') setAnnouncement(`${words}${tidied(tidy)}`);
+    if (words !== '') setAnnouncement(`${words}${note}`);
     reloadModels();
   };
   // New element's "Add to canvas": nothing is created; the focus stays the same.
   const [reveal, setReveal] = useState<{ id: string; n: number } | undefined>(undefined);
   // Also a row dropped on the canvas, or Shift+Enter on it.
-  const bringElement = (id: string, position: Point | undefined) => {
+  const bringElement = (id: string) => {
     const name = graph?.elements.get(id)?.name || '(unnamed)';
     if (inView) {
-      addToView(id, position);
+      addToView(id);
       return;
     }
     if (element === undefined) {
@@ -1065,35 +1063,16 @@ function Explorer({
       setAnnouncement(`${name} is on the canvas.`);
       return;
     }
+    // The canvas places the card (with its container chain) where it was dropped or asked for.
     addElement(id);
-    if (position) {
-      // Its container chain comes along: the outermost new container takes the point,
-      // so the element lands there. Inside a container already on the canvas, the layout places it.
-      let top = id;
-      let inside = false;
-      if (nest && graph) {
-        const seen = new Set([id]);
-        for (let up = containerOf(graph, top); up !== undefined; up = containerOf(graph, up)) {
-          if (onCanvas.has(up)) {
-            inside = true;
-            break;
-          }
-          if (seen.has(up)) break;
-          seen.add(up);
-          top = up;
-        }
-      }
-      if (!inside) moveCard(top, position);
-    }
     setAnnouncement(`Added “${name}” to the canvas.`);
   };
 
-  const onCanvasElementCreated = (result: ElementChangeResult, position: Point) => {
+  const onCanvasElementCreated = (result: ElementChangeResult) => {
     onStored(result);
     reloadModels();
     if (inView) addNewToView(result.element.id);
     else addElement(result.element.id);
-    moveCard(result.element.id, position);
     setAnnouncement(`Created “${result.element.node.label ?? ''}”.`);
   };
 
@@ -1101,7 +1080,7 @@ function Explorer({
   const [viewFull, setViewFull] = useState<string | null>(null);
   const viewFullText = `The view is full (${formatNumber(viewCap)} elements). Remove a card to make room.`;
   /** Add to canvas in a view: the element, with its relationships to elements in the view. */
-  function addToView(id: string, position: Point | undefined) {
+  function addToView(id: string) {
     if (!graph) return;
     const name = graph.elements.get(id)?.name || '(unnamed)';
     if (!viewEditable) {
@@ -1130,9 +1109,6 @@ function Explorer({
     });
     if (!changed || added === undefined) return;
     setViewFull(null);
-    // A card drawn inside a container on the view is placed by the layout.
-    const inside = nest && nestingParents(graph, viewHood(graph, added.contents)).has(id);
-    if (position && !inside) moveCard(id, position);
     const count = added.relationships;
     setAnnouncement(
       `Added “${name}” to the view${count > 0 ? `, with ${counted(count, 'relationship')}` : ''}.`,
@@ -1277,7 +1253,8 @@ function Explorer({
       />
     );
   }
-  const canTidy = hood !== undefined && hasMovedCards(movedPositions, hood.hops);
+  const canTidy =
+    hood !== undefined && (keptFor === layoutKey || hasMovedCards(movedPositions, hood.hops));
   // The legend: only while a canvas is drawn (a focused element or an open view).
   const legendShown = view === 'canvas' && hood !== undefined;
   // Save as view: on a focus canvas in Modelling with editing on.
@@ -1441,7 +1418,7 @@ function Explorer({
       onCreated={onCreated}
       onExisting={(existing) => {
         if (view === 'catalog') selectElement(existing.id);
-        else bringElement(existing.id, undefined);
+        else bringElement(existing.id);
       }}
       isOnCanvas={(id) => onCanvas.has(id)}
       {...(view === 'catalog' ? { existingLabel: 'Show in catalog' } : {})}
@@ -1476,7 +1453,7 @@ function Explorer({
                 onFocusElement={focusElement}
                 onSelectElement={selectElement}
                 onAddToCanvas={(id) => {
-                  bringElement(id, undefined);
+                  bringElement(id);
                 }}
                 search={search}
                 searchElsewhere={view === 'catalog'}
@@ -1762,7 +1739,7 @@ function Explorer({
                 hood={hood}
                 refused={0}
                 onAddElement={(id) => {
-                  addToView(id, undefined);
+                  addToView(id);
                 }}
                 focusId={noFocus}
                 depth={depth}
@@ -1796,6 +1773,8 @@ function Explorer({
                 moved={movedPositions}
                 onMove={moveCard}
                 tidyCount={tidyCount}
+                layoutKey={layoutKey}
+                onKept={setKeptFor}
                 nest={nest}
                 onToggleNest={toggleNest}
                 lines={lines}
@@ -1970,6 +1949,8 @@ function Explorer({
                 moved={movedPositions}
                 onMove={moveCard}
                 tidyCount={tidyCount}
+                layoutKey={layoutKey}
+                onKept={setKeptFor}
                 nest={nest}
                 onToggleNest={toggleNest}
                 lines={lines}

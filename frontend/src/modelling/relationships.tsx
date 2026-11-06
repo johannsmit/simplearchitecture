@@ -89,7 +89,7 @@ export function containsNote(
   if (!nest || containerOf(graph, target) === source) return undefined;
   return {
     kind: 'info',
-    text: `The canvas tidies up to nest ${nameOf(graph, target)} in ${nameOf(graph, source)}.`,
+    text: `Tidy up then nests ${nameOf(graph, target)} in ${nameOf(graph, source)}.`,
   };
 }
 

@@ -10,11 +10,7 @@ import {
   type LayoutCard,
   type PlacedCard,
 } from '../src/viewing/explorer/canvas/elkLayout';
-import {
-  alignLayout,
-  arrangeCards,
-  clampToContainer,
-} from '../src/viewing/explorer/canvas/positions';
+import { arrangeCards, clampToContainer } from '../src/viewing/explorer/canvas/positions';
 
 import { cpuMs } from './helpers';
 
@@ -322,20 +318,6 @@ describe('moving cards inside a container', () => {
     const moved = arrangeCards(placed, new Map([['box', { x: 300, y: 300 }]]));
     expect(moved.get('a')).toBe(child);
     expect(absoluteBoxes(moved).get('a')).toMatchObject({ x: 316, y: 356 });
-  });
-
-  it('aligns a new layout on a nested focused card, shifting only the top level', () => {
-    const before = new Map([
-      ['box', parent],
-      ['a', child],
-    ]);
-    const after = new Map([
-      ['box', { ...parent, x: 0, y: 0 }],
-      ['a', child],
-    ]);
-    const aligned = alignLayout(before, after, 'a');
-    expect(aligned.get('box')).toMatchObject({ x: 100, y: 100 });
-    expect(aligned.get('a')).toMatchObject({ x: 16, y: 56 });
   });
 });
 

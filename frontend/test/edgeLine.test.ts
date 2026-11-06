@@ -15,7 +15,7 @@ import {
   type LayoutCard,
   type PlacedCard,
 } from '../src/viewing/explorer/canvas/elkLayout';
-import { alignLayout, arrangeCards, type Point } from '../src/viewing/explorer/canvas/positions';
+import { arrangeCards, type Point } from '../src/viewing/explorer/canvas/positions';
 
 // Lines along ELK's routes, with right angles. Made-up data only.
 
@@ -268,9 +268,8 @@ describe('routes from the layout', () => {
     const shifted = new Map(
       [...placed].map(([id, at]) => [id, { ...at, x: at.x + 40, y: at.y - 30 }] as const),
     );
-    const aligned = alignLayout(shifted, placed, 'a');
-    const boxes = absoluteBoxes(aligned);
-    const route = sourceRoute(aligned, 'ac', 'a');
+    const boxes = absoluteBoxes(shifted);
+    const route = sourceRoute(shifted, 'ac', 'a');
     const bends = currentBends(route, boxes.get('a'), boxes.get('c'));
     expect(bends).toEqual(
       route?.bends.map((bend) => ({
