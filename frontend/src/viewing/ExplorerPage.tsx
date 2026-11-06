@@ -8,6 +8,7 @@ import {
   maxDepth,
   mostConnected,
   neighbourhood,
+  nodeTypes,
   withAddedElements,
   withContainers,
   withoutElements,
@@ -58,6 +59,7 @@ import {
 } from './explorer/canvas/positions';
 import { DetailsPanel, type RelationshipTools } from './explorer/DetailsPanel';
 import { ElementTree } from './explorer/ElementTree';
+import { Legend } from './explorer/Legend';
 import { RelationshipDetails } from './explorer/RelationshipDetails';
 import {
   dropOldViewpoint,
@@ -68,11 +70,13 @@ import {
   readPanelWidth,
   readNestContained,
   readShowLines,
+  readViewsOpen,
   writeDepth,
   writePanelOpen,
   writePanelWidth,
   writeNestContained,
   writeShowLines,
+  writeViewsOpen,
   type PanelName,
 } from './explorer/prefs';
 import { Catalog, catalogTabOnEntry } from './explorer/catalog/Catalog';
@@ -90,11 +94,10 @@ import {
   withElementInView,
   withoutDeleted,
   withoutElementInView,
-  withoutRelationshipInView,
   withRelationshipInView,
   type ViewContents,
 } from './explorer/views';
-import { useViewList, ViewsMenu } from './explorer/ViewsMenu';
+import { useViewList, ViewsSection } from './explorer/ViewsSection';
 import {
   elementPath,
   explorerSearch,
@@ -113,6 +116,7 @@ import {
 
 /** A stable empty list, so memos don't see a new one on every render. */
 const noIds: readonly string[] = [];
+const noIdSet: ReadonlySet<string> = new Set();
 
 /** The most elements the breadcrumb trail keeps; the oldest drops off. */
 export const trailLength = 5;
@@ -710,6 +714,23 @@ function Explorer({
     });
   }, [graph, element, depth, addedIds, removedIds, nest, inView, viewReady, viewContents]);
 
+  // The cards with a remove button: on a focus canvas, all but the focused element and the cards
+  // it is drawn inside; in a view that can change, every card.
+  const removableIds = useMemo(() => {
+    if (!graph || !hood) return noIdSet;
+    if (inView) return viewEditable && !viewBlocked ? new Set(hood.hops.keys()) : noIdSet;
+    return new Set(
+      [...hood.hops.keys()].filter((id) => canRemoveFromCanvas(graph, hood, id, { nest })),
+    );
+  }, [graph, hood, inView, viewEditable, viewBlocked, nest]);
+  // The element types on the canvas, for the legend.
+  const typesOnCanvas = useMemo(() => {
+    const present = new Set(
+      [...(hood?.hops.keys() ?? [])].map((id) => graph?.elements.get(id)?.type),
+    );
+    return nodeTypes.filter((type) => present.has(type));
+  }, [graph, hood]);
+
   // "Nest contained elements" lays the canvas out again, like Tidy up.
   const toggleNest = useCallback(() => {
     setNest((current) => {
@@ -719,7 +740,7 @@ function Explorer({
     setMoved({ key: movedKey, positions: noMovedPositions });
   }, [movedKey]);
 
-  // "Show lines" only hides or shows the lines: unlike nesting, the cards stay where they are.
+  // "Show relationships" only hides or shows the lines: unlike nesting, the cards stay where they are.
   const showLines = useCallback((on: boolean) => {
     setLines(on);
     writeShowLines(on);
@@ -870,7 +891,7 @@ function Explorer({
   };
 
   // The relationship open in the details panel (dropped when the focus changes), the
-  // one just added (lit for 3s), the Add relationship box, and "+ Element" requests.
+  // one just added (lit for 3s), the Add relationship box, and `N` requests.
   const [selection, setSelection] = useState<{ key: string; id: string } | null>(null);
   const selectedRelationshipId =
     selection !== null && selection.key === selectionKey ? selection.id : undefined;
@@ -1140,8 +1161,8 @@ function Explorer({
     });
   };
 
-  // `N`: a new element at the centre of the view, like "+ Element" (Modelling with editing on,
-  // not while typing, and not over an open dialog or popover).
+  // `N`: a new element at the centre of the view (Modelling with editing on, not while typing,
+  // and not over an open dialog or popover).
   const canPlaceElement =
     editable && view === 'canvas' && (inView ? viewReady && !viewBlocked : element !== undefined);
   useEffect(() => {
@@ -1178,16 +1199,53 @@ function Explorer({
     };
   }, [element, graph, summaryName, openViewName]);
 
-  // The Views list and the view bar.
-  const viewsButton = useRef<HTMLButtonElement>(null);
+  // Views in the left panel, and the view bar.
+  const viewsHeader = useRef<HTMLButtonElement>(null);
+  const saveViewButton = useRef<HTMLButtonElement>(null);
   const renameButton = useRef<HTMLButtonElement>(null);
-  const [viewsOpenRequest, setViewsOpenRequest] = useState(0);
+  const [viewsOpen, setViewsOpen] = useState(readViewsOpen);
+  const [viewsRefresh, setViewsRefresh] = useState(0);
   const [viewHeadingFocus, setViewHeadingFocus] = useState(false);
   const [viewDialog, setViewDialog] = useState<'save' | 'rename' | 'delete' | null>(null);
-  const focusViewsButton = () => {
+  const toggleViews = () => {
+    setViewsOpen(!viewsOpen);
+    writeViewsOpen(!viewsOpen);
+  };
+  /** After the page has drawn: focus on `target`, or on the canvas area when it isn't there. */
+  const focusInPanel = (target: RefObject<HTMLButtonElement | null>) => {
     requestAnimationFrame(() => {
-      viewsButton.current?.focus();
+      if (target.current?.isConnected === true) target.current.focus();
+      else document.getElementById('canvas')?.focus();
     });
+  };
+  const focusViewsHeader = () => {
+    focusInPanel(viewsHeader);
+  };
+  // Leaving a view for the start page (Close view, Delete view): focus goes to the Views header,
+  // or to the start page's canvas area with the panel hidden. Only once that page is drawn: the
+  // address changes in a transition, so a frame can come before it and find the view's canvas.
+  const focusOnArrival = useRef<string | null>(null);
+  const leaveViewFor = (path: string, replace = false) => {
+    focusOnArrival.current = path;
+    void navigate(path, replace ? { replace: true } : undefined);
+  };
+  useEffect(() => {
+    const path = focusOnArrival.current;
+    if (path === null) return;
+    // Any move clears it; only arriving at the start page asked for takes the focus.
+    focusOnArrival.current = null;
+    if (url !== path) return;
+    if (viewsHeader.current?.isConnected === true) viewsHeader.current.focus();
+    else document.getElementById('canvas')?.focus();
+  }, [url]);
+  /** "All views" on the start page: the panel shows, with Views open and focus on its header. */
+  const showAllViews = () => {
+    if (!tree.open) tree.toggle();
+    if (!viewsOpen) {
+      setViewsOpen(true);
+      writeViewsOpen(true);
+    }
+    focusViewsHeader();
   };
   // The start page offers up to 5 views.
   const startPage = !inView && elementId === undefined && view === 'canvas' && graph !== undefined;
@@ -1220,22 +1278,8 @@ function Explorer({
     );
   }
   const canTidy = hood !== undefined && hasMovedCards(movedPositions, hood.hops);
-  // In a view, Remove takes the open line, or else the selected card, out of the view.
-  const lineInView =
-    inView &&
-    selectedRelationship !== undefined &&
-    hood?.relationships.some((r) => r.id === selectedRelationship.id) === true;
-  const removable = inView
-    ? viewEditable &&
-      !viewBlocked &&
-      (lineInView ||
-        (selectedRelationship === undefined &&
-          selectedId !== undefined &&
-          hood?.hops.has(selectedId) === true))
-    : graph !== undefined &&
-      hood !== undefined &&
-      selectedId !== undefined &&
-      canRemoveFromCanvas(graph, hood, selectedId, { nest });
+  // The legend: only while a canvas is drawn (a focused element or an open view).
+  const legendShown = view === 'canvas' && hood !== undefined;
   // Save as view: on a focus canvas in Modelling with editing on.
   const canSaveAsView = editable && view === 'canvas' && !inView && element !== undefined && !!hood;
   const viewsEmptyText = !editable
@@ -1244,8 +1288,7 @@ function Explorer({
       ? 'No views yet.'
       : 'No views yet. Focus an element, then use Save as view here.';
   const closeView = () => {
-    void navigate(modelStartPath(modelId, space, shownAsked));
-    focusViewsButton();
+    leaveViewFor(modelStartPath(modelId, space, shownAsked));
   };
   const viewNotice =
     !inView || openView.problem === undefined ? undefined : (
@@ -1281,44 +1324,42 @@ function Explorer({
         )}
       </>
     );
-  const removeFromView = () => {
-    if (!removable || !graph) return;
-    ask(() => {
-      if (lineInView) {
-        const id = selectedRelationship.id;
-        openView.change((current) => withoutRelationshipInView(current, id));
-        setSelection(null);
-        setAnnouncement('Removed the relationship from the view. It stays in the model.');
-      } else if (selectedId !== undefined) {
-        const id = selectedId;
-        const name = graph.elements.get(id)?.name || '(unnamed)';
+  /**
+   * The remove button on a card: takes it off the canvas (visual only), or out of the open view
+   * (saved at once), with the cards drawn inside it. The element stays in the model. The
+   * selection only goes when it was on a card that leaves, and only then are unsaved changes asked
+   * about.
+   */
+  const removeCard = (id: string) => {
+    if (!graph || !hood || !removableIds.has(id)) return;
+    const name = graph.elements.get(id)?.name || '(unnamed)';
+    const after = inView
+      ? viewHood(graph, withoutElementInView(graph, viewContents, id, nest))
+      : withoutElements(graph, hood, [id], { nest });
+    const takesSelection = selectedId !== undefined && !after.hops.has(selectedId);
+    const apply = () => {
+      if (inView) {
         openView.change((current) => withoutElementInView(graph, current, id, nest));
+        setViewFull(null);
+      } else {
+        setRemoved((current) => ({
+          key: addedKey,
+          ids: [...(current.key === addedKey ? current.ids : []), id],
+        }));
+      }
+      if (takesSelection) {
         setPicked(null);
         setSelection(null);
         setAddBoxFor(null);
-        setAnnouncement(`Removed “${name}” from the view. It stays in the model.`);
       }
-      setViewFull(null);
+      setAnnouncement(
+        `Removed “${name}” from the ${inView ? 'view' : 'canvas'}. It stays in the model.`,
+      );
+      // The button goes with its card: keep keyboard focus on the canvas, never on <body>.
       document.getElementById('canvas')?.focus();
-    });
-  };
-  // Takes the selected card off the canvas; the element stays in the model and the list.
-  const removeFromCanvas = () => {
-    if (!removable || !graph || selectedId === undefined) return;
-    const id = selectedId;
-    const name = graph.elements.get(id)?.name || '(unnamed)';
-    ask(() => {
-      setRemoved((current) => ({
-        key: addedKey,
-        ids: [...(current.key === addedKey ? current.ids : []), id],
-      }));
-      setPicked(null);
-      setSelection(null);
-      setAddBoxFor(null);
-      setAnnouncement(`Removed “${name}” from the canvas. It stays in the model.`);
-      // The button is disabled now: keep keyboard focus on the canvas, never on <body>.
-      document.getElementById('canvas')?.focus();
-    });
+    };
+    if (takesSelection) ask(apply);
+    else apply();
   };
   const tidyUp = () => {
     setMoved({ key: movedKey, positions: noMovedPositions });
@@ -1425,7 +1466,7 @@ function Explorer({
       </p>
       {tree.open && (
         <>
-          <aside className="tree-panel" aria-label="Elements">
+          <aside className="tree-panel" aria-label="Elements and views">
             {graph ? (
               <ElementTree
                 key={modelId}
@@ -1468,6 +1509,39 @@ function Explorer({
                   ))}
                 </ul>
               </>
+            )}
+            <ViewsSection
+              modelId={modelId}
+              space={space}
+              shown={shownAsked}
+              currentViewId={viewId}
+              emptyText={viewsEmptyText}
+              onSaveAsView={
+                canSaveAsView
+                  ? () => {
+                      setViewDialog('save');
+                    }
+                  : undefined
+              }
+              open={viewsOpen}
+              onToggle={toggleViews}
+              refresh={viewsRefresh}
+              headerRef={viewsHeader}
+              saveRef={saveViewButton}
+              onOpenView={() => {
+                setViewHeadingFocus(true);
+              }}
+            />
+            {legendShown && (
+              <Legend
+                types={typesOnCanvas}
+                nest={nest}
+                onToggleNest={toggleNest}
+                lines={lines}
+                onToggleLines={() => {
+                  showLines(!lines);
+                }}
+              />
             )}
           </aside>
         </>
@@ -1524,25 +1598,6 @@ function Explorer({
               </button>
             ))}
           </div>
-          <ViewsMenu
-            modelId={modelId}
-            space={space}
-            shown={shownAsked}
-            currentViewId={viewId}
-            emptyText={viewsEmptyText}
-            onSaveAsView={
-              canSaveAsView
-                ? () => {
-                    setViewDialog('save');
-                  }
-                : undefined
-            }
-            openRequest={viewsOpenRequest}
-            buttonRef={viewsButton}
-            onOpenView={() => {
-              setViewHeadingFocus(true);
-            }}
-          />
           {view === 'catalog' || inView ? (
             <span className="toolbar-gap" />
           ) : (
@@ -1576,59 +1631,6 @@ function Explorer({
                 </ol>
               </nav>
             </>
-          )}
-          {view === 'canvas' && editable && (element !== undefined || inView) && (
-            <button
-              id="canvas-new-element"
-              type="button"
-              className="btn tidy"
-              aria-label="New element on the canvas"
-              aria-keyshortcuts="N"
-              title={
-                inView && viewBlocked
-                  ? 'Reload the view first'
-                  : 'Add an element on the canvas (N, or double-click the canvas)'
-              }
-              disabled={!canPlaceElement}
-              onClick={() => {
-                setNewElementRequest((n) => n + 1);
-              }}
-            >
-              <Icon name="plus" />
-              <span className="tidy-label">Element</span>
-            </button>
-          )}
-          {view === 'canvas' && element !== undefined && !inView && (
-            <button
-              type="button"
-              className="btn tidy"
-              aria-label="Remove from canvas"
-              title="Take the selected card off the canvas. The element stays in the model."
-              disabled={!removable}
-              onClick={removeFromCanvas}
-            >
-              <Icon name="minus" />
-              <span className="tidy-label">Remove</span>
-            </button>
-          )}
-          {viewEditable && (
-            <button
-              type="button"
-              className="btn tidy"
-              aria-label="Remove from view"
-              title={
-                viewBlocked
-                  ? 'Reload the view first'
-                  : lineInView
-                    ? 'Take this relationship off this view. It stays in the model.'
-                    : 'Take the selected card off this view. The element stays in the model.'
-              }
-              disabled={!removable}
-              onClick={removeFromView}
-            >
-              <Icon name="minus" />
-              <span className="tidy-label">Remove</span>
-            </button>
           )}
           {view === 'canvas' && (
             <button
@@ -1810,6 +1812,8 @@ function Explorer({
                 newElementRequest={newElementRequest}
                 {...(viewEditable ? { onBringElement: bringElement } : {})}
                 reveal={reveal}
+                removable={removableIds}
+                onRemoveCard={removeCard}
               />
             </ReactFlowProvider>
           </ErrorBoundary>
@@ -1830,6 +1834,9 @@ function Explorer({
                 ? 'Double-click a cell or press Enter to edit it.'
                 : 'Double-click a row to show it on the canvas.'
             }
+            {...(space === 'modelling'
+              ? { download: { modelName: graph.name || summaryName || '' } }
+              : {})}
             emptyText={
               !editable
                 ? 'Elements added in Modelling show here.'
@@ -1912,13 +1919,7 @@ function Explorer({
                     ))}
                     {startViews.views.length > suggestions && (
                       <li className="all-views">
-                        <button
-                          type="button"
-                          className="linkbtn"
-                          onClick={() => {
-                            setViewsOpenRequest((n) => n + 1);
-                          }}
-                        >
+                        <button type="button" className="linkbtn" onClick={showAllViews}>
                           All views ({formatNumber(startViews.views.length)})
                         </button>
                       </li>
@@ -1985,6 +1986,8 @@ function Explorer({
                 newElementRequest={newElementRequest}
                 onBringElement={bringElement}
                 reveal={reveal}
+                removable={removableIds}
+                onRemoveCard={removeCard}
               />
             </ReactFlowProvider>
           </ErrorBoundary>
@@ -2094,10 +2097,11 @@ function Explorer({
           contents={canvasContents(hood, hasOwnId)}
           onCancel={() => {
             setViewDialog(null);
-            focusViewsButton();
+            focusInPanel(saveViewButton);
           }}
           onSaved={(saved: StoredView) => {
             setViewDialog(null);
+            setViewsRefresh((n) => n + 1);
             setViewHeadingFocus(true);
             setAnnouncement(
               `Saved the view “${saved.name}”: ${counted(saved.elementIds.length, 'element')}, ${counted(saved.relationshipIds.length, 'relationship')}.`,
@@ -2117,6 +2121,7 @@ function Explorer({
           onRenamed={(renamed) => {
             openView.renamed(renamed);
             setViewDialog(null);
+            setViewsRefresh((n) => n + 1);
             setAnnouncement(`Renamed to “${renamed.name}”.`);
             requestAnimationFrame(() => renameButton.current?.focus());
           }}
@@ -2132,12 +2137,12 @@ function Explorer({
           onDeleted={(already) => {
             const name = openView.view?.name ?? '';
             setViewDialog(null);
+            setViewsRefresh((n) => n + 1);
             setAnnouncement(
               already ? 'The view was already deleted.' : `Deleted the view “${name}”.`,
             );
             // In place of the view's entry, so Back doesn't open a deleted view.
-            void navigate(modelStartPath(modelId, space, shownAsked), { replace: true });
-            focusViewsButton();
+            leaveViewFor(modelStartPath(modelId, space, shownAsked), true);
           }}
           onReload={() => {
             setViewDialog(null);

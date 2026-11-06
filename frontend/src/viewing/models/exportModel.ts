@@ -3,18 +3,23 @@ import type { JgfDocument } from '@simplearchitecture/shared';
 const maxFileNameLength = 100;
 
 /**
- * A safe file name for a model. The name is free text, so anything a file system or a browser could
- * read as a path or a control character goes.
+ * A safe file name without its extension. The name is free text, so anything a file system or a
+ * browser could read as a path or a control character goes; `fallback` when nothing is left.
  */
-export function exportFileName(modelName: string): string {
-  const base = modelName
+export function safeFileBase(name: string, fallback: string): string {
+  const base = name
     .replace(/[\p{C}<>:"/\\|?*]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^[.\s]+/, '')
     .slice(0, maxFileNameLength)
     .trim();
-  return `${base === '' ? 'model' : base}.json`;
+  return base === '' ? fallback : base;
+}
+
+/** A safe file name for a model's JGF export. */
+export function exportFileName(modelName: string): string {
+  return `${safeFileBase(modelName, 'model')}.json`;
 }
 
 /** Hands the browser the model as a JGF file to save. */

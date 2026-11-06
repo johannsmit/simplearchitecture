@@ -41,11 +41,10 @@ import {
   type ReactNode,
 } from 'react';
 import { Icon } from '../../../icons';
-import { cardShape, EdgeSample, TypeMark } from '../../../metamodel-ui';
+import { cardShape, EdgeSample } from '../../../metamodel-ui';
 import { counted, formatNumber } from '../../../words';
 import { NewElementForm } from '../../../modelling/NewElement';
 import { NewRelationshipPopover, relationshipSentence } from '../../../modelling/relationships';
-import { readLegendOpen, writeLegendOpen } from '../prefs';
 import { nestingParents } from '../views';
 import {
   cardSize,
@@ -84,7 +83,6 @@ import {
   EdgeMarkers,
   litArrowMarkerId,
   RelationshipEdge,
-  statePath,
   type RelationshipFlowEdge,
 } from './RelationshipEdge';
 import {
@@ -156,7 +154,7 @@ interface ExplorerCanvasProps {
   /** "Nest contained elements": draw contained elements inside their container. */
   nest: boolean;
   onToggleNest: () => void;
-  /** "Show lines": off hides every relationship line, with its marks. The cards stay put. */
+  /** "Show relationships": off hides every relationship line, with its marks. The cards stay put. */
   lines: boolean;
   onLines: (on: boolean) => void;
   /** Editable Modelling: drawing relationships and adding elements on the canvas. */
@@ -174,7 +172,7 @@ interface ExplorerCanvasProps {
   onElementCreated?: (result: ElementChangeResult, position: Point) => void;
   /** `R` on a card: open Add relationship for it. */
   onAddRelationshipFrom?: (id: string) => void;
-  /** Goes up by one on each "+ Element": the New element popover opens at the view's centre. */
+  /** Goes up by one on each `N`: the New element popover opens at the view's centre. */
   newElementRequest?: number;
   /**
    * New element's "Add to canvas": bring an existing element onto the canvas, at
@@ -196,12 +194,24 @@ interface ExplorerCanvasProps {
   fullText?: string | undefined;
   /** Over an empty canvas (a view with no elements). */
   emptyText?: ReactNode;
+  /** The cards with a remove button (×): they can be taken off the canvas, or out of the view. */
+  removable?: ReadonlySet<string>;
+  /** The remove button on a card: takes it off the canvas (or out of the open view). */
+  onRemoveCard?: (id: string) => void;
 }
 
 /** A popover on the canvas: New relationship, or New element (at a point on the canvas). */
 type CanvasPop =
   | { kind: 'relationship'; source: string; target: string; top: number; left: number }
-  | { kind: 'element'; at: Point; from?: string; top: number; left: number };
+  | {
+      kind: 'element';
+      at: Point;
+      from?: string;
+      top: number;
+      left: number;
+      /** Opened with `N`: where focus was then, to go back to on Esc. */
+      opener?: HTMLElement;
+    };
 
 const relPopWidth = 300;
 const relPopHeight = 340;
@@ -254,7 +264,7 @@ interface Laid {
 /** Stacking (React Flow's manual z-index): containers by depth, then edges, then cards. */
 const zIndexes = { nestedEdge: 500, card: 1000, lifted: 3000 } as const;
 
-/** "Show lines" off: React Flow gets no edges at all, so no line, label or mark is drawn. */
+/** "Show relationships" off: React Flow gets no edges at all, so no line, label or mark is drawn. */
 const noEdges: RelationshipFlowEdge[] = [];
 
 type Highlight = { ids: Set<string>; links: Set<string> } | null;
@@ -343,6 +353,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const [edgeMenu, setEdgeMenu] = useState<{ ids: string[]; top: number; left: number } | null>(
     null,
   );
+  // A line's chooser has nothing to point at once the lines go (Show relationships, in the legend).
+  if (edgeMenu !== null && !props.lines) setEdgeMenu(null);
   const relationshipById = useMemo(
     () => new Map<string, ModelRelationship>(graph.relationships.map((r) => [r.id, r])),
     [graph],
@@ -556,6 +568,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         moving: card.id === movingId,
         onShowRelated: showRelated,
         connectable: editable,
+        ...(props.onRemoveCard && props.removable?.has(card.id) === true
+          ? {
+              onRemove: props.onRemoveCard,
+              removeIn: inView ? ('view' as const) : ('canvas' as const),
+            }
+          : {}),
         ...(dropAt?.id === card.id
           ? { drop: dropAt.ok ? ('ok' as const) : ('self' as const) }
           : {}),
@@ -575,6 +593,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     editable,
     dropAt,
     props.selectedId,
+    props.removable,
+    props.onRemoveCard,
+    inView,
   ]);
 
   // The card being dragged or moved with the keyboard, with everything inside it, goes on top.
@@ -988,13 +1009,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     }
   };
 
-  const typesOnCanvas = useMemo(() => {
-    const present = new Set(
-      [...(laid?.placed.keys() ?? [])].map((id) => graph.elements.get(id)?.type),
-    );
-    return nodeTypes.filter((type) => present.has(type));
-  }, [laid, graph]);
-
   const capNotice = hood.capped
     ? `Showing ${formatNumber(hood.hops.size)} of ${formatNumber(hood.reachable)} elements.${depth > 1 ? ' Choose a smaller depth to see fewer.' : ''}`
     : null;
@@ -1179,7 +1193,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     });
   };
 
-  // "+ Element" in the toolbar: at the centre of the view.
+  // `N`: at the centre of the view. Esc goes back to where focus was when `N` was pressed.
   const newRequest = useRef(props.newElementRequest);
   useEffect(() => {
     if (newRequest.current === props.newElementRequest) return;
@@ -1188,12 +1202,14 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (!box || !editable) return;
     const x = box.left + box.width / 2;
     const y = box.top + box.height / 2;
+    const opener = document.activeElement;
     setRelated(null);
     setPop({
       kind: 'element',
       at: flow.screenToFlowPosition({ x, y }),
       top: Math.max(8, box.height / 2 - 160),
       left: Math.max(8, box.width / 2 - 160),
+      ...(opener instanceof HTMLElement && opener !== document.body ? { opener } : {}),
     });
     // Only on a new request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1225,9 +1241,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (!focusSource || !current) return;
     if (current.kind === 'relationship') focusCardOf(current.source);
     else if (current.from !== undefined) focusCardOf(current.from);
-    else if (props.newElementRequest !== undefined) {
-      document.getElementById('canvas-new-element')?.focus();
-    }
+    else if (current.opener?.isConnected === true) current.opener.focus();
+    else section.current?.focus();
   };
 
   const onNodesChange = (changes: NodeChange<CardNode>[]) => {
@@ -1527,100 +1542,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           onChange={props.onShownProperties}
         />
       </div>
-      <Legend
-        types={typesOnCanvas}
-        nest={props.nest}
-        onToggleNest={props.onToggleNest}
-        lines={props.lines}
-        onToggleLines={() => {
-          // A line's chooser has nothing to point at once the lines go.
-          if (props.lines) setEdgeMenu(null);
-          props.onLines(!props.lines);
-        }}
-      />
       <ZoomControls />
     </section>
-  );
-}
-
-function Legend(props: {
-  types: readonly (typeof nodeTypes)[number][];
-  nest: boolean;
-  onToggleNest: () => void;
-  lines: boolean;
-  onToggleLines: () => void;
-}) {
-  const [open, setOpen] = useState(readLegendOpen);
-  return (
-    <details
-      className="legend"
-      open={open}
-      onToggle={(event) => {
-        const next = event.currentTarget.open;
-        setOpen(next);
-        writeLegendOpen(next);
-      }}
-    >
-      <summary>
-        <Icon name="chev-right" size="sm" />
-        Legend
-      </summary>
-      <div className="legend-body">
-        {/* h2: the legend comes right after the page's h1 (axe heading-order). */}
-        <h2>Elements</h2>
-        <ul>
-          {props.types.map((type) => (
-            <li key={type}>
-              <TypeMark type={type} />
-              {type}
-            </li>
-          ))}
-        </ul>
-        <h2>Relationship state</h2>
-        <ul>
-          {(['Target', 'Deprecate'] as const).map((state) => (
-            <li key={state}>
-              <StateSample state={state} />
-              {state}
-            </li>
-          ))}
-        </ul>
-        <label className="nest" title="Draw contained elements inside their container">
-          <input
-            type="checkbox"
-            role="switch"
-            className="switch"
-            checked={props.nest}
-            onChange={props.onToggleNest}
-          />
-          <span className="lname">Nest contained elements</span>
-        </label>
-        <label className="lines" title="Draw the relationship lines">
-          <input
-            type="checkbox"
-            role="switch"
-            className="switch"
-            checked={props.lines}
-            onChange={props.onToggleLines}
-          />
-          <span className="lname">Show lines</span>
-        </label>
-      </div>
-    </details>
-  );
-}
-
-/** A 28px line sample with a 12px state mark, as in the legend. */
-function StateSample({ state }: { state: 'Target' | 'Deprecate' }) {
-  return (
-    <svg className="edge-sample" width="28" height="12" aria-hidden="true" focusable="false">
-      <path className="lsample" d="M1 6h22" />
-      <path className="mk" d="M21 2l6 4-6 4z" />
-      <g className={`smark ${state.toLowerCase()} legend-mark`} transform="translate(11 6)">
-        <circle r={6} />
-        <path d={statePath(state, 3)} />
-      </g>
-    </svg>
   );
 }
 

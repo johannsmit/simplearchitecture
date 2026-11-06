@@ -190,7 +190,9 @@ describe('the legend', () => {
     stubApi(viewer, api());
     renderAt(shop);
     await cardCount(6);
-    const legend = canvas().querySelector('.legend') as HTMLElement;
+    // In the left panel, out of the canvas.
+    expect(canvas().querySelector('.legend')).toBeNull();
+    const legend = document.querySelector('.tree-panel .legend') as HTMLElement;
     const headings = within(legend)
       .getAllByRole('heading')
       .map((heading) => heading.textContent);

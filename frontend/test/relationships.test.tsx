@@ -373,7 +373,50 @@ describe('New element on the canvas', () => {
     });
     // The new card goes on the canvas; the focused element stays the same.
     expect(currentLocation()).toBe(at('shop'));
-    expect(screen.getByRole('button', { name: 'New element on the canvas' })).toBeDefined();
+    // N is the keyboard's way: the toolbar has no + Element button.
+    const toolbar = document.querySelector('.toolbar') as HTMLElement;
+    expect(within(toolbar).queryByRole('button', { name: /Element/ })).toBeNull();
+    expect(document.getElementById('canvas-new-element')).toBeNull();
+  });
+
+  it('goes back on Esc to where focus was when N was pressed, else to the canvas', async () => {
+    await openShop();
+    const canvasEl = document.getElementById('canvas') as HTMLElement;
+    await waitFor(() => {
+      expect(canvasEl.querySelector('.card[data-element-id="till"] .card-main')).toBeTruthy();
+    });
+    const till = canvasEl.querySelector<HTMLElement>(
+      '.card[data-element-id="till"] .card-main',
+    ) as HTMLElement;
+    till.focus();
+    act(() => {
+      fireEvent.keyDown(till, { key: 'n' });
+    });
+    let pop = await screen.findByRole('dialog', { name: 'New element' });
+    await waitFor(() => {
+      expect(pop.contains(document.activeElement)).toBe(true);
+    });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'New element' })).toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(till);
+    });
+
+    // From nowhere in particular: back on the canvas.
+    (document.activeElement as HTMLElement).blur();
+    act(() => {
+      fireEvent.keyDown(document.body, { key: 'n' });
+    });
+    pop = await screen.findByRole('dialog', { name: 'New element' });
+    await waitFor(() => {
+      expect(pop.contains(document.activeElement)).toBe(true);
+    });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(canvasEl);
+    });
   });
 
   it('has no canvas editing in Viewing', async () => {

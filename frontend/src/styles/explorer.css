@@ -16,6 +16,13 @@
   padding: 12px;
   border-right: 1px solid var(--border);
   background: var(--surface);
+  /* Only on a window too short for everything at its smallest. */
+  overflow-y: auto;
+}
+
+/* The panel's parts keep their height; the element list, Views and the legend give way. */
+.tree-panel > * {
+  flex-shrink: 0;
 }
 
 .search {
@@ -395,9 +402,12 @@
   list-style: none;
 }
 
+/* As tall as its rows; when they don't fit it scrolls, keeping at least 4 rows (or all of them),
+ * and gives way first. Its shrink factor outweighs a long list's height, so Views and the legend
+ * give up no space (not even a fraction of a pixel) until it is down to its 4 rows. */
 .tree {
-  flex: 1;
-  min-height: 0;
+  flex: 0 100000 auto;
+  min-height: min(120px, calc(var(--tree-rows, 4) * 30px));
   margin: 0 -6px;
   padding: 0 2px;
   overflow-y: auto;
@@ -1116,11 +1126,12 @@
   overflow-wrap: anywhere;
 }
 
-/* The state badge on the top-left border: centred on the line, not clickable. */
+/* The state badge on the top-left border: centred on the line, not clickable. Clear of the
+ * remove button on the corner. */
 .cbadge {
   position: absolute;
   top: -10px;
-  left: 9px;
+  left: 17px;
   z-index: 1;
   height: 18px;
   padding: 0 6px;
@@ -1430,46 +1441,126 @@
   color: var(--accent);
 }
 
-.legend {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  z-index: 5;
-  width: 236px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  box-shadow: var(--e1);
-  font-size: 12.5px;
-}
-
-.legend summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  font-weight: 600;
-  list-style: none;
-  cursor: pointer;
-}
-
-.legend summary::-webkit-details-marker {
-  display: none;
-}
-
-.legend summary .ico,
 .meta > summary .ico {
   color: var(--text-muted);
   transition: transform var(--t-fast);
 }
 
-.legend[open] summary .ico,
 .meta[open] > summary .ico {
   transform: rotate(90deg);
 }
 
-.legend-body {
-  padding: 0 10px 10px;
+/* The left panel's sections, Views and the legend: a line across the panel, then a disclosure
+ * header in the legend's look. */
+.psec {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+/* The sections may shrink below their content (a flex item's default minimum is its whole
+ * content), so their lists scroll inside. Each keeps its header and 3 rows (or all of them): only
+ * below that does the panel scroll. */
+.tree-panel > .psec {
+  min-height: 0;
+}
+
+.tree-panel > .views-sec {
+  --vs-list: 0px;
+  --vs-filter: 0px;
+  --vs-save: 0px;
+  --vs-pad: 0px;
+  flex: 0 1 auto;
+  min-height: calc(34px + var(--vs-list) + var(--vs-filter) + var(--vs-save) + var(--vs-pad));
+}
+
+.tree-panel > .views-sec:has(> .psec-body) {
+  --vs-pad: 8px;
+}
+
+.tree-panel > .views-sec:has(.vp-list > li) {
+  --vs-list: 32px;
+}
+
+.tree-panel > .views-sec:has(.vp-list > li:nth-child(2)) {
+  --vs-list: 64px;
+}
+
+.tree-panel > .views-sec:has(.vp-list > li:nth-child(3)) {
+  --vs-list: 96px;
+}
+
+.tree-panel > .views-sec:has(.vp-filter) {
+  --vs-filter: 38px;
+}
+
+.tree-panel > .views-sec:has(.save-view) {
+  --vs-save: 38px;
+}
+
+/* The legend stays at the bottom, and gives way before Views. Open, it keeps its header and
+ * 96px of its body. */
+.tree-panel > .psec.legend {
+  flex: 0 2 auto;
+  margin-top: auto;
+}
+
+.tree-panel > .psec.legend:has(> .psec-body) {
+  min-height: calc(34px + 96px);
+}
+
+.psec-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.psec-head .ico {
+  color: var(--text-muted);
+  transition: transform var(--t-fast);
+}
+
+.psec-head[aria-expanded='true'] .ico {
+  transform: rotate(90deg);
+}
+
+.psec-head:focus-visible {
+  outline-offset: -2px;
+}
+
+.psec-body {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  /* Shrinks with its section, so the Views list inside can scroll. */
+  min-height: 0;
+  padding: 0 0 8px;
+}
+
+.psec-body > * {
+  flex-shrink: 0;
+}
+
+/* Scrolls inside when the panel is short, down to 3 rows. */
+.psec-body.legend-body {
+  min-height: 96px;
+  overflow-y: auto;
 }
 
 .legend h2 {
@@ -1952,7 +2043,7 @@
   --label-bg: color-mix(in srgb, var(--container-fill) 10%, var(--canvas));
 }
 
-/* "Nest contained elements" and "Show lines": switches at the bottom of the legend. */
+/* "Nest contained elements" and "Show relationships": switches at the bottom of the legend. */
 .legend label.nest,
 .legend label.lines {
   min-height: 24px;
@@ -3673,43 +3764,12 @@ li.is-new {
   color: var(--text-muted);
 }
 
-/* Views: the button and its list, in the Show Viewpoints look. */
-.views-menu {
-  position: relative;
-  flex: none;
-}
-
-@media (min-width: 1280px) {
-  .views-btn .tidy-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-}
-
-.views-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 30;
-  width: min(280px, 100vw - 24px);
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface-raised);
-  box-shadow: var(--e2);
-}
-
-.vp-title {
-  margin: 2px 6px 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.vp-list {
-  max-height: min(320px, 50dvh);
-  margin: 0;
+/* Views in the left panel: up to 6 rows, then the list scrolls; down to 3 on a short window. */
+.psec-body > .vp-list {
+  flex: 0 1 auto;
+  min-height: min(96px, calc(var(--vp-rows, 3) * 32px));
+  max-height: 192px;
+  margin: 0 -4px;
   padding: 0;
   overflow-y: auto;
   list-style: none;
@@ -3757,7 +3817,7 @@ li.is-new {
 }
 
 .vp-empty {
-  margin: 4px 8px 6px;
+  margin: 2px 0 4px;
   color: var(--text-muted);
   font-size: 12.5px;
   line-height: 18px;
@@ -3792,15 +3852,10 @@ li.is-new {
   font-size: 13.5px;
 }
 
-.vp-foot {
-  margin: 8px -8px -8px;
-  padding: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.vp-foot .btn {
-  width: 100%;
+.save-view {
   justify-content: flex-start;
+  width: 100%;
+  margin-top: 6px;
 }
 
 @media (pointer: coarse) {
@@ -3909,4 +3964,90 @@ li.is-new {
 
 .start-views .all-views {
   align-self: center;
+}
+
+/* The remove button (×) on a card's top-left corner: neutral gray, never the delete colour.
+ * Hidden (still focusable) until the card is hovered, selected or has keyboard focus. The invisible ::before makes the target 24 × 24px (WCAG 2.5.8). */
+.cremove {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: var(--e1);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    opacity var(--t-fast),
+    background-color var(--t-fast),
+    border-color var(--t-fast),
+    color var(--t-fast);
+}
+
+.cremove::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+}
+
+.cremove .ico {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+
+.cremove:hover {
+  border-color: var(--text-muted);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.cremove:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.card > .cremove {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.card:hover > .cremove,
+.card.is-selected > .cremove,
+.card:focus-within > .cremove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Not while a card is dragged or moved with M, or a line is drawn. */
+.canvas.is-dragging .card > .cremove,
+.canvas.is-drawing .card > .cremove,
+.card.is-moving > .cremove {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The Stakeholder circle: above its top left, mirroring the related pill. */
+.card.is-circle > .cremove {
+  top: -8px;
+  left: 36px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cremove {
+    transition: none;
+  }
+}
+
+/* Download CSV (Modelling), at the end of the catalog's search row. */
+.cat-search .cat-csv {
+  flex: none;
 }

@@ -48,6 +48,12 @@ export interface CardData extends Record<string, unknown> {
   connectable?: boolean;
   /** While a line is drawn over it: a valid target, or the source itself. */
   drop?: 'ok' | 'self';
+  /**
+   * The remove button (×) at the top left: takes the card off the canvas, or out of the open
+   * view. Only on cards that can be removed.
+   */
+  onRemove?: (elementId: string) => void;
+  removeIn?: 'canvas' | 'view';
 }
 
 export type CardNode = Node<CardData, 'element'>;
@@ -78,6 +84,15 @@ export function relatedButtonLabel(missing: number): string {
 /** The pill's tooltip: "3 related elements not on the canvas". */
 export function relatedButtonTitle(missing: number): string {
   return `${counted(missing, 'related element')} not on the canvas`;
+}
+
+/** The remove button's accessible name: "Remove Till from canvas" (or "from view"). */
+export function removeButtonLabel(name: string, where: 'canvas' | 'view'): string {
+  return `Remove ${name || '(unnamed)'} from ${where}`;
+}
+
+export function removeButtonTitle(where: 'canvas' | 'view'): string {
+  return `Remove from ${where}. The element stays in the model.`;
 }
 
 export function relatedButtonId(domId: string): string {
@@ -183,6 +198,14 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
           aria-hidden="true"
         />
       )}
+      {data.onRemove && (
+        <RemoveButton
+          label={removeButtonLabel(element.name, data.removeIn ?? 'canvas')}
+          title={removeButtonTitle(data.removeIn ?? 'canvas')}
+          tabbable={data.tabbable}
+          onRemove={() => data.onRemove?.(element.id)}
+        />
+      )}
       {badge !== undefined && <StateBadge state={badge} className="cbadge" />}
       {data.missing > 0 && (
         <button
@@ -207,3 +230,39 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
     </div>
   );
 });
+
+/**
+ * The small round remove button (×) on a card. Neutral, never the trash icon: it takes the card
+ * off the picture, never out of the model. A press on it doesn't select, drag, pan or focus the
+ * card.
+ */
+function RemoveButton(props: {
+  label: string;
+  title: string;
+  tabbable: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cremove nodrag nopan"
+      tabIndex={props.tabbable ? 0 : -1}
+      aria-label={props.label}
+      title={props.title}
+      onClick={(event) => {
+        // Not a click on the card (which selects it).
+        event.stopPropagation();
+        props.onRemove();
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+      }}
+      onKeyDown={(event) => {
+        // Enter and Space press the button: the canvas's Enter (focus the card) doesn't apply.
+        if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+      }}
+    >
+      <Icon name="x" />
+    </button>
+  );
+}

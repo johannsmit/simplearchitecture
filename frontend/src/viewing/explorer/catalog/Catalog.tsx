@@ -40,6 +40,7 @@ import { PropertyValue } from '../DetailsPanel';
 import type { ElementSearch } from '../search';
 import { SearchControls } from '../SearchControls';
 import { CellEditor, type CellEdit, type CellMove } from './CellEditor';
+import { catalogCsv, catalogCsvFileName, saveCsvFile } from './csv';
 
 /** The sort per model and tab, for this tab's session. */
 const sortByModelTab = new Map<string, CatalogSort>();
@@ -102,6 +103,8 @@ interface CatalogProps {
   hint: string;
   /** Under "This model has no elements yet". */
   emptyText: string;
+  /** Modelling: Download CSV saves the current tab's rows, as shown, for the file's name. */
+  download?: { modelName: string };
 }
 
 /**
@@ -899,6 +902,27 @@ export function Catalog(props: CatalogProps) {
         <div className="result-count" aria-live="polite">
           {resultText}
         </div>
+        {props.download && (
+          <button
+            type="button"
+            className="btn cat-csv"
+            title={
+              rows.length === 0
+                ? 'No rows to download'
+                : `Download the ${formatNumber(rows.length)} ${tabLabel(tab)} rows shown, as CSV`
+            }
+            disabled={rows.length === 0}
+            onClick={() => {
+              saveCsvFile(
+                catalogCsv(columns, rows),
+                catalogCsvFileName(props.download?.modelName ?? '', tab, new Date()),
+              );
+            }}
+          >
+            <Icon name="download" />
+            Download CSV
+          </button>
+        )}
       </div>
       <div className="cat-tabs-row">
         <div

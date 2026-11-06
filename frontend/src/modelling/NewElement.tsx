@@ -137,7 +137,7 @@ interface NewElementFormProps {
 
 /**
  * The New element popover: a name and a type. Used by the element list's
- * button and on the canvas (double-click, + Element, a line dropped on empty canvas).
+ * button and on the canvas (double-click, `N`, a line dropped on empty canvas).
  */
 export function NewElementForm({
   modelId,

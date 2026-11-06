@@ -1,6 +1,6 @@
 import type { JgfDocument, ModelSummary, StoredView } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   apiError,
   currentLocation,
@@ -208,8 +208,13 @@ const cardIds = () =>
     .sort();
 const edgeCount = () => canvasEl().querySelectorAll('.react-flow__edge').length;
 const labels = () => [...canvasEl().querySelectorAll('.edge-label')].map((l) => l.textContent);
-const viewsButton = () => screen.getByRole('button', { name: 'Views' });
-const viewsPanel = () => screen.getByRole('group', { name: 'Views in this model' });
+/** The left panel, and its Views section's header and contents. */
+const leftPanel = () => screen.getByRole('complementary', { name: 'Elements and views' });
+const viewsHeader = () => within(leftPanel()).getByRole('button', { name: 'Views' });
+const viewsSection = () => leftPanel().querySelector('.views-sec') as HTMLElement;
+const viewsList = () => screen.getByRole('list', { name: 'Views in this model' });
+const findViewsList = () => screen.findByRole('list', { name: 'Views in this model' });
+const toolbar = () => document.querySelector('.toolbar') as HTMLElement;
 const dragType = 'application/x-simplearchitecture-element';
 const dragged = (id: string) => ({
   types: [dragType],
@@ -230,32 +235,79 @@ async function shown(ids: string[]) {
   });
 }
 
+/** Opens the Views section (when closed) and gives its contents. */
 async function openPanel() {
-  fireEvent.click(viewsButton());
-  return within(viewsPanel());
+  if (viewsHeader().getAttribute('aria-expanded') !== 'true') fireEvent.click(viewsHeader());
+  await waitFor(() => {
+    expect(viewsHeader().getAttribute('aria-expanded')).toBe('true');
+  });
+  return within(viewsSection());
 }
 
 const lending = () => stored('v-lending', 'Lending', ['loans', 'server'], ['r5']);
 const reading = () =>
   stored('v-reading', 'Reading', ['reader', 'catalogue', 'loans'], ['r1', 'r2']);
 
-describe('the Views button and list', () => {
+describe('Views in the left panel', () => {
   it.each(['viewing', 'modelling'] as const)(
-    'sits right after Canvas | Catalog, now called "Show as" (%s)',
+    'sits under the element list, closed at first, with no Views button in the toolbar (%s)',
     async (space) => {
-      open(`${modelAt(space)}/elements/catalogue`, space);
+      const { fetchMock } = open(`${modelAt(space)}/elements/catalogue`, space);
       await waitFor(() => {
         expect(card('catalogue')).toBeTruthy();
       });
-      const group = screen.getByRole('group', { name: 'Show as' });
-      expect(group.nextElementSibling?.querySelector('button')).toBe(viewsButton());
-      expect(viewsButton().getAttribute('aria-expanded')).toBe('false');
+      expect(within(toolbar()).queryByRole('button', { name: /Views/ })).toBeNull();
+      const tree = within(leftPanel()).getByRole('tree', { name: 'Elements by type' });
+      // Right after the list, before the legend.
+      expect(tree.compareDocumentPosition(viewsHeader()) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      const legend = within(leftPanel()).getByRole('button', { name: 'Legend' });
+      expect(viewsHeader().compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(viewsHeader().getAttribute('aria-expanded')).toBe('false');
+      expect(viewsHeader().hasAttribute('aria-controls')).toBe(false);
+      // Nothing is read while it is closed.
+      expect(fetchMock.mock.calls.some(([url]) => url === `/api/models/${libraryId}/views`)).toBe(
+        false,
+      );
       // In the catalog too.
-      fireEvent.click(within(group).getByRole('button', { name: 'Catalog' }));
+      fireEvent.click(
+        within(screen.getByRole('group', { name: 'Show as' })).getByRole('button', {
+          name: 'Catalog',
+        }),
+      );
       await screen.findByRole('grid');
-      expect(viewsButton()).toBeTruthy();
+      expect(viewsHeader()).toBeTruthy();
     },
   );
+
+  it('remembers open or closed in this browser', async () => {
+    open(`${modelAt('viewing')}/elements/catalogue`, 'viewing', [lending()]);
+    await waitFor(() => {
+      expect(card('catalogue')).toBeTruthy();
+    });
+    const panel = await openPanel();
+    await panel.findByRole('link', { name: 'Lending' });
+    expect(localStorage.getItem('sa-views-open')).toBe('true');
+    expect(viewsHeader().getAttribute('aria-controls')).toBe(
+      viewsSection().querySelector('.psec-body')?.id,
+    );
+    fireEvent.click(viewsHeader());
+    expect(viewsHeader().getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('list', { name: 'Views in this model' })).toBeNull();
+    expect(localStorage.getItem('sa-views-open')).toBe('false');
+  });
+
+  it('opens at once when it was open before', async () => {
+    localStorage.setItem('sa-views-open', 'true');
+    open(`${modelAt('viewing')}/elements/catalogue`, 'viewing', [lending()]);
+    expect(
+      await within(await findViewsList()).findByRole('link', { name: 'Lending' }),
+    ).toBeTruthy();
+    expect(viewsHeader().getAttribute('aria-expanded')).toBe('true');
+  });
 
   it('lists the views by name as links, reading them again each time it opens', async () => {
     const { views, fetchMock } = open(`${modelAt('viewing')}/elements/catalogue`, 'viewing', [
@@ -269,13 +321,12 @@ describe('the Views button and list', () => {
     const links = await panel.findAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual(['Lending', 'Reading']);
     expect(links[0]?.getAttribute('href')).toBe(viewAt('viewing', 'v-lending'));
-    expect(viewsButton().getAttribute('aria-expanded')).toBe('true');
-    expect(viewsButton().getAttribute('aria-controls')).toBe(viewsPanel().id);
+    expect(viewsHeader().getAttribute('aria-expanded')).toBe('true');
 
-    // Esc closes it, back on the button.
+    // Esc no longer closes anything: it isn't a popup.
     fireEvent.keyDown(links[0] as HTMLElement, { key: 'Escape' });
-    expect(screen.queryByRole('group', { name: 'Views in this model' })).toBeNull();
-    expect(document.activeElement).toBe(viewsButton());
+    expect(viewsList()).toBeTruthy();
+    fireEvent.click(viewsHeader());
 
     views.set('v-new', stored('v-new', 'Acquisitions', ['archive']));
     const listed = () =>
@@ -297,7 +348,7 @@ describe('the Views button and list', () => {
     });
     const panel = await openPanel();
     const [first, second, third] = await panel.findAllByRole('link');
-    fireEvent.keyDown(viewsButton(), { key: 'ArrowDown' });
+    fireEvent.keyDown(viewsHeader(), { key: 'ArrowDown' });
     expect(document.activeElement).toBe(first);
     fireEvent.keyDown(first as HTMLElement, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(second);
@@ -307,12 +358,18 @@ describe('the Views button and list', () => {
     expect(document.activeElement).toBe(second);
     fireEvent.keyDown(second as HTMLElement, { key: 'Home' });
     expect(document.activeElement).toBe(first);
+    // ↑ from the first goes back to the header.
+    fireEvent.keyDown(first as HTMLElement, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(viewsHeader());
     // Enter on a link follows it, as a click does.
     fireEvent.click(first as HTMLElement);
     await waitFor(() => {
       expect(currentLocation()).toBe(viewAt('viewing', 'v-c'));
     });
-    expect(screen.queryByRole('group', { name: 'Views in this model' })).toBeNull();
+    // The section stays open, with the open view checked.
+    expect(
+      within(viewsList()).getByRole('link', { name: 'Cataloguing' }).getAttribute('aria-current'),
+    ).toBe('page');
     await screen.findByRole('heading', { level: 2, name: 'View Cataloguing' });
     await waitFor(() => {
       expect(document.activeElement?.id).toBe('view-name');
@@ -351,7 +408,7 @@ describe('the Views button and list', () => {
   ] as const)('says so without views (%s%s)', async (space, rest, text, canSave) => {
     open(`${modelAt(space)}${rest}`, space);
     await waitFor(() => {
-      expect(viewsButton()).toBeTruthy();
+      expect(viewsHeader()).toBeTruthy();
     });
     const panel = await openPanel();
     await panel.findByText(text);
@@ -377,7 +434,26 @@ describe("the model's start page", () => {
       'View E',
     ]);
     fireEvent.click(screen.getByRole('button', { name: 'All views (7)' }));
-    expect(await within(viewsPanel()).findAllByRole('link')).toHaveLength(7);
+    expect(await within(await findViewsList()).findAllByRole('link')).toHaveLength(7);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(viewsHeader());
+    });
+  });
+
+  it('All views shows the left panel when it was hidden', async () => {
+    const seven = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((name) =>
+      stored(`v-${name}`, `View ${name}`, ['reader']),
+    );
+    open(modelAt('viewing'), 'viewing', seven);
+    await screen.findByText('Or open a view:');
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the element list' }));
+    expect(screen.queryByRole('complementary', { name: 'Elements and views' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'All views (7)' }));
+    expect(await within(await findViewsList()).findAllByRole('link')).toHaveLength(7);
+    expect(viewsHeader().getAttribute('aria-expanded')).toBe('true');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(viewsHeader());
+    });
   });
 
   it('adds nothing without views', async () => {
@@ -425,6 +501,28 @@ describe('Save as view', () => {
     expect(
       screen.getByText('Saved the view “Finding books”: 4 elements, 4 relationships.'),
     ).toBeTruthy();
+  });
+
+  it('goes back to Save as view on Cancel, and lists the new view once saved', async () => {
+    open(`${modelAt('modelling')}/elements/catalogue?depth=1`, 'modelling', [lending()]);
+    await shown(['catalogue', 'reader', 'loans', 'search']);
+    const panel = await openPanel();
+    const save = await panel.findByRole('button', { name: 'Save as view…' });
+    fireEvent.click(save);
+    let dialog = await screen.findByRole('dialog', { name: 'Save as view' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(save);
+    });
+    fireEvent.click(save);
+    dialog = await screen.findByRole('dialog', { name: 'Save as view' });
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    fireEvent.change(name, { target: { value: 'Finding books' } });
+    fireEvent.submit(name);
+    await screen.findByRole('heading', { level: 2, name: 'View Finding books' });
+    // The open section reads the list again: the new view is there, checked.
+    const link = await within(viewsSection()).findByRole('link', { name: 'Finding books' });
+    expect(link.getAttribute('aria-current')).toBe('page');
   });
 
   it('checks the name: empty, too long and taken (from the server)', async () => {
@@ -506,7 +604,7 @@ describe('an open view', () => {
     expect(screen.queryByRole('heading', { level: 2, name: 'View Lending' })).toBeNull();
   });
 
-  it('closes to the start page, with focus on the Views button', async () => {
+  it('closes to the start page, with focus on the Views header', async () => {
     open(`${viewAt('viewing', 'v-lending')}?show=data`, 'viewing', [lending()]);
     await shown(['loans', 'server']);
     fireEvent.click(screen.getByRole('button', { name: 'Close view' }));
@@ -514,7 +612,57 @@ describe('an open view', () => {
       expect(currentLocation()).toBe(`${modelAt('viewing')}?show=data`);
     });
     await waitFor(() => {
-      expect(document.activeElement).toBe(viewsButton());
+      expect(document.activeElement).toBe(viewsHeader());
+    });
+  });
+
+  // A frame can come before the start page is drawn (the address changes in a transition), so
+  // these run requestAnimationFrame at once: focus must still land on the start page's canvas.
+  async function withFramesAtOnce(run: () => Promise<void>) {
+    const frames = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(performance.now());
+      return 0;
+    });
+    try {
+      await run();
+    } finally {
+      frames.mockRestore();
+    }
+  }
+  const startCanvasFocused = () => {
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.id).toBe('canvas');
+    expect(focused.isConnected).toBe(true);
+    expect(within(focused).getByText('Choose an element to explore')).toBeTruthy();
+  };
+
+  it('closes to the canvas area when the left panel is hidden', async () => {
+    open(viewAt('viewing', 'v-lending'), 'viewing', [lending()]);
+    await shown(['loans', 'server']);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the element list' }));
+    await withFramesAtOnce(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Close view' }));
+      await waitFor(() => {
+        expect(currentLocation()).toBe(modelAt('viewing'));
+      });
+      await screen.findByText('Choose an element to explore');
+      await waitFor(startCanvasFocused);
+    });
+  });
+
+  it('goes to the canvas area after Delete view when the left panel is hidden', async () => {
+    open(viewAt('modelling', 'v-lending'), 'modelling', [lending()]);
+    await shown(['loans', 'server']);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the element list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete the view “Lending”?' });
+    await withFramesAtOnce(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Delete view' }));
+      await waitFor(() => {
+        expect(currentLocation()).toBe(modelAt('modelling'));
+      });
+      await screen.findByText('Choose an element to explore');
+      await waitFor(startCanvasFocused);
     });
   });
 
@@ -580,7 +728,8 @@ describe('changing an open view (Modelling)', () => {
   it('adds an element made on its canvas', async () => {
     const { calls } = open(viewAt('modelling', 'v-lending'), 'modelling', [lending()]);
     await shown(['loans', 'server']);
-    fireEvent.click(screen.getByRole('button', { name: 'New element on the canvas' }));
+    // N: + Element left the toolbar.
+    fireEvent.keyDown(document.body, { key: 'n' });
     const pop = await screen.findByRole('dialog', { name: 'New element' });
     fireEvent.change(within(pop).getByRole('textbox', { name: /^Name/ }), {
       target: { value: 'Shelf' },
@@ -598,58 +747,60 @@ describe('changing an open view (Modelling)', () => {
     expect(currentLocation()).toBe(viewAt('modelling', 'v-lending'));
   });
 
-  it('removes a card, and with a line open only that line', async () => {
+  it('removes a card with its ×, with its relationships, and saves', async () => {
     const { calls } = open(viewAt('modelling', 'v-reading'), 'modelling', [reading()]);
     await shown(['reader', 'catalogue', 'loans']);
-    const remove = () =>
-      screen.getByRole<HTMLButtonElement>('button', { name: 'Remove from view' });
-    expect(remove().disabled).toBe(true);
-
-    // A line: open it from its label, then Remove takes only it out.
-    await waitFor(() => {
-      expect(labels()).toContain('Lends');
-    });
-    const label = [...canvasEl().querySelectorAll<HTMLElement>('.edge-label')].find(
-      (l) => l.textContent === 'Lends',
-    ) as HTMLElement;
-    fireEvent.pointerDown(label, { clientX: 100, clientY: 100 });
-    fireEvent.click(label, { clientX: 101, clientY: 100 });
-    await waitFor(() => {
-      expect(remove().disabled).toBe(false);
-    });
-    expect(remove().title).toBe('Take this relationship off this view. It stays in the model.');
-    fireEvent.click(remove());
-    await waitFor(() => {
-      expect(edgeCount()).toBe(1);
-    });
-    expect(
-      screen.getByText('Removed the relationship from the view. It stays in the model.'),
-    ).toBeTruthy();
+    expect(within(toolbar()).queryByRole('button', { name: /Remove/ })).toBeNull();
+    // Every card in a view that can change has its ×.
+    for (const id of ['reader', 'catalogue', 'loans']) {
+      expect(
+        within(card(id) as HTMLElement).getByRole('button', { name: /^Remove .* from view$/ })
+          .title,
+      ).toBe('Remove from view. The element stays in the model.');
+    }
+    // The card goes with its lines; the element stays in the model. It needn't be selected.
+    fireEvent.click(
+      within(card('reader') as HTMLElement).getByRole('button', {
+        name: 'Remove Reader from view',
+      }),
+    );
+    await shown(['catalogue', 'loans']);
+    expect(screen.getByText('Removed “Reader” from the view. It stays in the model.')).toBeTruthy();
+    expect(document.activeElement).toBe(canvasEl());
     await waitFor(() => {
       expect(changes(calls)).toHaveLength(1);
     });
     expect(changes(calls)[0]?.body).toMatchObject({
       version: 1,
-      elementIds: ['reader', 'catalogue', 'loans'],
-      relationshipIds: ['r1'],
-    });
-
-    // A card: it goes with its lines; the element stays in the model.
-    fireEvent.click(card('reader')?.querySelector('.card-main') as HTMLElement, { detail: 1 });
-    await waitFor(() => {
-      expect(remove().disabled).toBe(false);
-    });
-    fireEvent.click(remove());
-    await shown(['catalogue', 'loans']);
-    expect(screen.getByText('Removed “Reader” from the view. It stays in the model.')).toBeTruthy();
-    await waitFor(() => {
-      expect(changes(calls)).toHaveLength(2);
-    });
-    expect(changes(calls)[1]?.body).toMatchObject({
-      version: 2,
       elementIds: ['catalogue', 'loans'],
-      relationshipIds: [],
+      relationshipIds: ['r2'],
     });
+  });
+
+  it('offers no way to take one relationship out, on a line or a merged line', async () => {
+    const both = stored('v-both', 'Both', ['catalogue', 'loans'], ['r2', 'r3']);
+    const { calls } = open(viewAt('modelling', 'v-both'), 'modelling', [both]);
+    await shown(['catalogue', 'loans']);
+    await waitFor(() => {
+      expect(labels()).toContain('×2');
+    });
+    const label = [...canvasEl().querySelectorAll<HTMLElement>('.edge-label')].find(
+      (l) => l.textContent === '×2',
+    ) as HTMLElement;
+    fireEvent.pointerDown(label, { clientX: 100, clientY: 100 });
+    fireEvent.click(label, { clientX: 101, clientY: 100 });
+    const menu = await screen.findByRole('menu', { name: '2 relationships' });
+    fireEvent.click(within(menu).getAllByRole('menuitem')[0] as HTMLElement);
+    await screen.findByRole('form', { name: /^Relationship / });
+    // The relationship is open; nothing on the canvas, toolbar or view bar removes it from the view.
+    expect(screen.queryByRole('button', { name: /^Remove relationship/ })).toBeNull();
+    const removeButtons = screen
+      .getAllByRole('button', { name: /^Remove / })
+      .map((button) => button.getAttribute('aria-label'));
+    expect(removeButtons.every((name) => /^Remove .+ from view$/.test(name ?? ''))).toBe(true);
+    expect(canvasEl().querySelectorAll('.cremove')).toHaveLength(2);
+    expect(within(toolbar()).queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(changes(calls)).toEqual([]);
   });
 
   it('goes back when someone else changed the view, until Reload view', async () => {
@@ -663,14 +814,13 @@ describe('changing an open view (Modelling)', () => {
     expect(notice.textContent).toContain(
       "Someone else changed this view. Your change wasn't saved.",
     );
-    // Back to what was saved.
+    // Back to what was saved. No × on the cards, and N makes nothing, until Reload view.
     await shown(['loans', 'server']);
-    expect(
-      screen.getByRole<HTMLButtonElement>('button', { name: 'Remove from view' }).disabled,
-    ).toBe(true);
-    expect(
-      screen.getByRole<HTMLButtonElement>('button', { name: 'New element on the canvas' }).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(canvasEl().querySelector('.cremove')).toBeNull();
+    });
+    fireEvent.keyDown(document.body, { key: 'n' });
+    expect(screen.queryByRole('dialog', { name: 'New element' })).toBeNull();
     expect(next.failWith).toBeUndefined();
     fireEvent.click(within(notice).getByRole('button', { name: 'Reload view' }));
     await shown(['loans', 'server', 'reader']);
@@ -774,26 +924,24 @@ describe('changing an open view (Modelling)', () => {
     stubApi(modeller, gated);
     renderAt(viewAt('modelling', 'v-lending'));
     await shown(['loans', 'server']);
-    let panel = await openPanel();
+    const panel = await openPanel();
     expect((await panel.findAllByRole('link')).map((link) => link.textContent)).toEqual([
       'Lending',
       'Reading',
     ]);
-    fireEvent.keyDown(viewsPanel(), { key: 'Escape' });
 
+    // The section stays open: the rename reads the list again.
+    let release = () => {};
+    held.until = new Promise((resolve) => {
+      release = resolve;
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
     const dialog = await screen.findByRole('dialog', { name: 'Rename view' });
     const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
     fireEvent.change(name, { target: { value: 'Borrowing' } });
     fireEvent.submit(name);
     await screen.findByRole('heading', { level: 2, name: 'View Borrowing' });
-
-    let release = () => {};
-    held.until = new Promise((resolve) => {
-      release = resolve;
-    });
-    panel = await openPanel();
-    expect(panel.getByText('Loading views…')).toBeTruthy();
+    await panel.findByText('Loading views…');
     expect(panel.queryByRole('link', { name: 'Lending' })).toBeNull();
     release();
     expect((await panel.findAllByRole('link')).map((link) => link.textContent)).toEqual([
@@ -820,7 +968,7 @@ describe('changing an open view (Modelling)', () => {
     expect(views.has('v-lending')).toBe(false);
     expect(screen.getByText('Deleted the view “Lending”.')).toBeTruthy();
     await waitFor(() => {
-      expect(document.activeElement).toBe(viewsButton());
+      expect(document.activeElement).toBe(viewsHeader());
     });
   });
 });
@@ -832,8 +980,13 @@ describe('a view for a Viewer', () => {
     for (const name of ['Rename', 'Delete', 'Remove from view', 'New element on the canvas']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
-    // No related pill on the cards.
+    // No related pill, and no ×, on the cards.
     expect(canvasEl().querySelector('.cpill')).toBeNull();
+    expect(canvasEl().querySelector('.cremove')).toBeNull();
+    // The Views list is links only.
+    const panel = await openPanel();
+    await panel.findByRole('link', { name: 'Lending' });
+    expect(panel.queryByRole('button', { name: 'Save as view…' })).toBeNull();
     fireEvent.drop(canvasEl(), { dataTransfer: dragged('archive'), clientX: 200, clientY: 200 });
     // Shift+Enter on a row says where views change.
     const tree = screen.getByRole('tree', { name: 'Elements by type' });
@@ -858,8 +1011,9 @@ describe('a view for a Viewer', () => {
   });
 });
 
-describe('Show lines in an open view', () => {
-  const linesSwitch = () => screen.getByRole<HTMLInputElement>('switch', { name: 'Show lines' });
+describe('Show relationships in an open view', () => {
+  const linesSwitch = () =>
+    screen.getByRole<HTMLInputElement>('switch', { name: 'Show relationships' });
   const positions = () =>
     [...canvasEl().querySelectorAll<HTMLElement>('.react-flow__node')].map(
       (node) => `${node.getAttribute('data-id') ?? ''} ${node.style.transform}`,

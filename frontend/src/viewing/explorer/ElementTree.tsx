@@ -499,6 +499,8 @@ export function ElementTree({
           aria-label="Elements by type"
           ref={tree}
           onKeyDown={onKeyDown}
+          // The list keeps at least 4 rows (or all of them) when the panel's space runs short.
+          style={{ '--tree-rows': rows.length } as CSSProperties}
         >
           {groups.map(({ type, rows: groupRows, matchCount: count }) => {
             const groupIndex = rowIndex.get(groupKey(type)) ?? 0;

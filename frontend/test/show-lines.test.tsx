@@ -12,7 +12,7 @@ import {
   type Handler,
 } from './helpers';
 
-// "Show lines" in the legend: hides every relationship line and leaves the cards alone.
+// "Show relationships" in the legend: hides every relationship line and leaves the cards alone.
 // Made-up data (the bakery fixture, with a Target line and a Contains).
 
 const model: JgfDocument = structuredClone(bakeryModel);
@@ -51,14 +51,15 @@ const at = (space: Space, id = 'shop', search = '') =>
   `/${space}/models/${bakeryId}/elements/${encodeURIComponent(id)}?depth=1${search}`;
 
 const canvas = () => screen.getByRole('region', { name: /^Diagram:/ });
-/** React Flow's own part of the canvas: the legend (with its own samples) is outside it. */
+/** React Flow's own part of the canvas. */
 const flow = () => canvas().querySelector('.react-flow') as HTMLElement;
 const card = (id: string) =>
   canvas().querySelector<HTMLElement>(`.card[data-element-id="${CSS.escape(id)}"]`);
 const lines = () => [...flow().querySelectorAll('.react-flow__edge')];
 const line = (name: string) => lines().find((edge) => edge.getAttribute('aria-label') === name);
 const labels = () => [...flow().querySelectorAll('.edge-label')].map((label) => label.textContent);
-const linesSwitch = () => screen.getByRole<HTMLInputElement>('switch', { name: 'Show lines' });
+const linesSwitch = () =>
+  screen.getByRole<HTMLInputElement>('switch', { name: 'Show relationships' });
 const nestSwitch = () =>
   screen.getByRole<HTMLInputElement>('switch', { name: 'Nest contained elements' });
 const positions = () =>
@@ -81,7 +82,7 @@ async function linesDrawn() {
   });
 }
 
-describe('Show lines', () => {
+describe('Show relationships', () => {
   it.each(['viewing', 'modelling'] as const)(
     'is on by default, right after Nest contained elements (%s)',
     async (space) => {
@@ -216,7 +217,7 @@ describe('Show lines', () => {
   });
 });
 
-describe('Show lines in Modelling', () => {
+describe('Show relationships in Modelling', () => {
   it('Add relationship in the details panel turns the lines back on', async () => {
     localStorage.setItem('sa-show-lines', 'false');
     await open('modelling');

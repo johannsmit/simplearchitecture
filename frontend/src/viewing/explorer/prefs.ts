@@ -60,6 +60,15 @@ export function writeLegendOpen(open: boolean): void {
   writePref('legend-open', String(open));
 }
 
+/** The Views section in the left panel: closed unless opened before. */
+export function readViewsOpen(): boolean {
+  return readBooleanPref('views-open', false);
+}
+
+export function writeViewsOpen(open: boolean): void {
+  writePref('views-open', String(open));
+}
+
 /** The fixed viewpoint older versions remembered means nothing now, so it is dropped. */
 export function dropOldViewpoint(): void {
   writePref('viewpoint', null);
@@ -74,7 +83,7 @@ export function writeNestContained(nest: boolean): void {
   writePref('nest-contained', String(nest));
 }
 
-/** "Show lines" in the legend: on unless switched off. Never part of a view. */
+/** "Show relationships" in the legend: on unless switched off. Never part of a view. */
 export function readShowLines(): boolean {
   return readBooleanPref('show-lines', true);
 }

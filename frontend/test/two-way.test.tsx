@@ -70,7 +70,7 @@ describe('two-way relationships on the canvas', () => {
     expect(oneWay?.querySelector('path.react-flow__edge-path')?.hasAttribute('marker-start')).toBe(
       false,
     );
-    const legend = canvas().querySelector('.legend') as HTMLElement;
+    const legend = document.querySelector('.tree-panel .legend') as HTMLElement;
     expect(within(legend).queryByRole('heading', { name: 'Direction' })).toBeNull();
     expect(within(legend).queryByText('Both ways')).toBeNull();
   });

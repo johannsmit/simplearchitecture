@@ -7,7 +7,6 @@ import {
   withElementInView,
   withoutDeleted,
   withoutElementInView,
-  withoutRelationshipInView,
   withRelationshipInView,
 } from '../src/viewing/explorer/views';
 
@@ -105,12 +104,8 @@ describe('changing a view', () => {
     });
   });
 
-  it('removes one relationship, and what was deleted from the model', () => {
+  it('removes what was deleted from the model', () => {
     const contents = { elementIds: ['porter', 'desk'], relationshipIds: ['u1'] };
-    expect(withoutRelationshipInView(contents, 'u1')).toEqual({
-      elementIds: ['porter', 'desk'],
-      relationshipIds: [],
-    });
     expect(withoutDeleted(contents, { elementIds: ['desk'], relationshipIds: ['u1'] })).toEqual({
       elementIds: ['porter'],
       relationshipIds: [],

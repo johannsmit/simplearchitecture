@@ -231,7 +231,7 @@ describe('states', () => {
       await screen.findByRole('heading', { name: 'This model has no elements yet' }),
     ).toBeTruthy();
     expect(screen.getByText('Elements added in Modelling show here.')).toBeTruthy();
-    const list = screen.getByRole('complementary', { name: 'Elements' });
+    const list = screen.getByRole('complementary', { name: 'Elements and views' });
     expect(within(list).getByText('No elements yet.')).toBeTruthy();
     // Nothing to search, and no empty tree.
     expect(screen.queryByRole('searchbox', { name: 'Search elements' })).toBeNull();
@@ -918,9 +918,9 @@ describe('panels', () => {
     expect(screen.queryByRole('complementary', { name: 'Details' })).toBeNull();
     expect(localStorage.getItem('sa-details-open')).toBe('false');
     fireEvent.click(screen.getByRole('button', { name: 'Hide the element list' }));
-    expect(screen.queryByRole('complementary', { name: 'Elements' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Elements and views' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Show the element list' }));
-    expect(screen.getByRole('complementary', { name: 'Elements' })).toBeTruthy();
+    expect(screen.getByRole('complementary', { name: 'Elements and views' })).toBeTruthy();
   });
 
   it('resizes the element list with the keyboard', async () => {

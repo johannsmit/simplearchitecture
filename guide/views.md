@@ -13,7 +13,7 @@ Views are stored in the database, so they need PostgreSQL, as editing does.
 ## Saving a view
 
 1. In Modelling, focus an element, so the canvas shows it and its neighbours.
-2. Open **Views**, next to Canvas | Catalog, and choose **Save as view…**.
+2. Open **Views** at the bottom of the element list, and choose **Save as view…**.
 3. Give it a name, or keep the element's name, and choose **Save view**.
 
 The view holds exactly what the canvas draws: every card, including containers and cards added by hand, and every relationship among them, including each one inside a "×N" line and each Contains drawn as nesting. Cards held back by the 150-card limit aren't drawn, so they aren't saved.
@@ -22,9 +22,9 @@ A name has 1 to 200 characters and is unique within the model, ignoring case: "P
 
 ## Opening a view
 
-Open **Views** and pick one, or pick one on the model's start page. A view's address (`…/models/<model>/views/<view>`) can be copied and shared; swap `/viewing` for `/modelling` to open it in Modelling.
+Open **Views** at the bottom of the element list and pick one, or pick one on the model's start page. The section stays open, and the browser remembers whether it is open. A view's address (`…/models/<model>/views/<view>`) can be copied and shared; swap `/viewing` for `/modelling` to open it in Modelling.
 
-A view is laid out automatically each time it opens. Card positions, the depth, Show Viewpoints and the "Nest contained elements" and "Show lines" switches aren't saved in it, though Show Viewpoints stays in the address. Show lines off hides every relationship line and leaves the cards in place; the browser remembers it, in a view and outside one, and in Modelling drawing or adding a relationship turns the lines back on. A view has no focused element, no depth and no breadcrumbs, and brings in no containers: a card is drawn inside another only when the view holds both and the Contains between them.
+A view is laid out automatically each time it opens. Card positions, the depth, Show Viewpoints and the "Nest contained elements" and "Show relationships" switches (in the legend, at the bottom of the left panel) aren't saved in it, though Show Viewpoints stays in the address. Show relationships off hides every relationship line and leaves the cards in place; the browser remembers it, in a view and outside one, and in Modelling drawing or adding a relationship turns the lines back on. A view has no focused element, no depth and no breadcrumbs, and brings in no containers: a card is drawn inside another only when the view holds both and the Contains between them.
 
 Double-click a card, or press `Enter` on it, to leave the view and explore that element; Back returns to the view. **Close view** goes to the model's start page.
 
@@ -34,7 +34,8 @@ Every change is saved at once, one at a time: the bar above the view says "Savin
 
 - **Add to canvas**, dragging a row from the element list onto the canvas, a card's related elements, and a new element made on the canvas add the element to the view, with its relationships to elements already in it.
 - A relationship drawn between two cards of the view is added to it.
-- **Remove** takes the selected card out of the view, with its lines (and, with nesting on, the cards drawn inside it). With a relationship open, it takes only that line out.
+- The **×** on a card (shown when you point at the card, select it or Tab to it) takes it out of the view, with its relationships (and, with nesting on, the cards drawn inside it).
+- Relationships aren't taken out of a view one by one. To hide them all, switch **Show relationships** off in the legend: that is remembered by your browser, not saved in the view.
 - **Rename** and **Delete** are on the bar above the view. Deleting a view can't be undone.
 
 None of these change the model: the elements and relationships stay. If someone else changed the view meanwhile, your change isn't saved, the canvas goes back to what is stored, and **Reload view** shows their version.

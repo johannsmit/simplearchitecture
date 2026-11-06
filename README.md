@@ -10,7 +10,7 @@ The canvas in Viewing: one element in the middle, with what it relates to and th
 
 ![Canvas in the Viewing space: the Oven Planner application in the middle, with lines to the people, business functions, applications and infrastructure it relates to, and Target and Deprecate marks.](guide/images/canvas.png)
 
-The catalog: every element of a type in a table, with search and filters.
+The catalog: every element of a type in a table, with search and filters. In Modelling, **Download CSV** saves the table as shown.
 
 ![Catalog with the Application tab selected: a table of five applications with their description, architecture state, owning team, supplier country and sourcing.](guide/images/catalog.png)
 
@@ -516,6 +516,8 @@ An element contained by another element of the same type is listed under it. The
 
 A click elsewhere saves the open cell. `/` always moves to the search; to start a value with "/", press `Enter` first.
 
+**Download CSV** (Modelling), at the end of the catalog's search row, saves the current type tab as a CSV file, made in the browser: the rows as the search and filters narrow them and in the order they are sorted, with the tab's columns as headers and each cell's full text. The file is UTF-8 with a byte order mark, so Excel shows accents, comma-separated and quoted per RFC 4180, and named `<model>-<type>-<yyyy-mm-dd>.csv`. A cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a spreadsheet shows it as text and never runs it as a formula. The button is off when the tab shows no rows.
+
 **Canvas**
 
 | Key                              | What it does                                                                                   |
@@ -530,25 +532,27 @@ A click elsewhere saves the open cell. `/` always moves to the search; to start 
 | `M`                              | Starts moving the selected card (see below)                                                    |
 | `Esc`                            | Leaves the cards and returns to the canvas                                                     |
 
+`Tab` from a card reaches its remove button (×), then its related elements pill.
+
 These keys, `N` and `R` work in the Canvas view only.
 
 **Modelling (explorer with editing on)**
 
-| Key                                               | What it does                                                                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `Ctrl` + `Enter` (`⌘` + `Enter` on Mac)           | Saves the element or relationship (anywhere in the form, also in a text box)                                                    |
-| `Esc` (in the form)                               | Asks "Discard changes?" when there are unsaved changes                                                                          |
-| `Enter` (in New element)                          | Creates the element                                                                                                             |
-| `Esc` (in New element)                            | Closes it without creating                                                                                                      |
-| `N`                                               | New element at the centre of the canvas, like + Element (not while typing in a field); in an open view, it is added to the view |
-| `R` (on a card)                                   | Adds a relationship from this element: selects it and opens Add relationship, focus in the type                                 |
-| `Esc` (while drawing a line)                      | Cancels the line                                                                                                                |
-| `Enter` (in New relationship or Add relationship) | Adds the relationship (in the search list: picks the highlighted element)                                                       |
-| `Esc` (in New relationship or Add relationship)   | Closes it without adding (in the search with text: clears the text first)                                                       |
-| `↑` `↓` (in the Add relationship search)          | Moves through the matching elements                                                                                             |
-| `Esc` (on the canvas, with a relationship open)   | Closes the relationship; the panel goes back to the focused element                                                             |
+| Key                                               | What it does                                                                                                    |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Ctrl` + `Enter` (`⌘` + `Enter` on Mac)           | Saves the element or relationship (anywhere in the form, also in a text box)                                    |
+| `Esc` (in the form)                               | Asks "Discard changes?" when there are unsaved changes                                                          |
+| `Enter` (in New element)                          | Creates the element                                                                                             |
+| `Esc` (in New element)                            | Closes it without creating                                                                                      |
+| `N`                                               | New element at the centre of the canvas (not while typing in a field); in an open view, it is added to the view |
+| `R` (on a card)                                   | Adds a relationship from this element: selects it and opens Add relationship, focus in the type                 |
+| `Esc` (while drawing a line)                      | Cancels the line                                                                                                |
+| `Enter` (in New relationship or Add relationship) | Adds the relationship (in the search list: picks the highlighted element)                                       |
+| `Esc` (in New relationship or Add relationship)   | Closes it without adding (in the search with text: clears the text first)                                       |
+| `↑` `↓` (in the Add relationship search)          | Moves through the matching elements                                                                             |
+| `Esc` (on the canvas, with a relationship open)   | Closes the relationship; the panel goes back to the focused element                                             |
 
-The canvas shows every relationship around the focused element, down to the chosen depth. The details panel lists all of an element's relationships, grouped by wording. A line's label, or "×N" for a line holding several relationships, always shows on the line (long labels end in "…", with the full text in the tooltip); a line without a label shows nothing. Several Relations may link the same two elements, and they merge as "×N" when they run the same way. The legend explains the elements and states, and holds the "Nest contained elements" and "Show lines" switches. **Show lines** off hides every relationship line, with its label and marks; the cards stay where they are. The browser remembers the setting. In Modelling, drawing or adding a relationship turns the lines back on, so the new line shows.
+The canvas shows every relationship around the focused element, down to the chosen depth. The details panel lists all of an element's relationships, grouped by wording. A line's label, or "×N" for a line holding several relationships, always shows on the line (long labels end in "…", with the full text in the tooltip); a line without a label shows nothing. Several Relations may link the same two elements, and they merge as "×N" when they run the same way. The legend, at the bottom of the left panel, explains the elements and states, and holds the "Nest contained elements" and "Show relationships" switches. It shows with the canvas, not in the catalog. **Show relationships** off hides every relationship line, with its label and marks; the cards stay where they are. The browser remembers the setting. In Modelling, drawing or adding a relationship turns the lines back on, so the new line shows.
 
 **Show Viewpoints**, at the canvas's top left, selects a viewpoint: which relationship properties the lines show. These are Architecture state, Identity, Identity Context and Data (offered whenever the model has a Relation) and any custom metadata the model's relationships have. Lines show those values in place of their label, and a line with none of them is grayed out, though it still lights up on hover and opens with a click. With nothing selected, a line shows its label, or nothing: no type name, on hover either. Selecting never moves a card. The selection is in the address (`?show=protocol&show=data`), so a viewpoint can be shared as a link, and it isn't remembered in the browser. Contains is never grayed out. Older links still work: `?viewpoint=information-flow` opens with Data selected, and `?viewpoint=integration` with nothing selected. In Modelling, a Relation's Identity, Identity Context and Data are fields on its form, under the label, and a relationship's custom metadata is edited on its form, as on an element.
 
@@ -556,9 +560,9 @@ The canvas shows every relationship around the focused element, down to the chos
 
 A card added by hand (from a card's related elements, the element list or Add to canvas) also brings what it contains, through Contains only, down to the current depth; changing the depth updates it. Added cards stay until the focus changes. Its containers come along too, and the card limit applies.
 
-**Removing a card.** Select a card and choose **Remove** (Remove from canvas) at the top of the canvas, in Viewing or Modelling. The card goes, with its lines and the cards drawn inside it; the element stays in the model and in the list. The focused element, and a card it is drawn inside, can't be removed. A removed card stays off through Tidy up and depth changes, until you focus another element or reload the page. To bring it back, use Add to canvas, a card's related elements, or drag it from the element list. Like card positions, this is never saved.
+**Removing a card.** Point at a card, or select it, and choose the small × at its top-left corner (Remove from canvas), in Viewing or Modelling. With the keyboard, Tab from the card to it. The card goes, with its lines and the cards drawn inside it; the element stays in the model and in the list. The focused element, and a card it is drawn inside, can't be removed. A removed card stays off through Tidy up and depth changes, until you focus another element or reload the page. To bring it back, use Add to canvas, a card's related elements, or drag it from the element list. Like card positions, this is never saved.
 
-**Views.** A view is a named canvas that is stored: a set of elements and relationships of one model. In Modelling, with an element focused, open **Views** (next to Canvas | Catalog) and choose **Save as view…**: it saves exactly the cards and relationships the canvas draws, including each relationship in a "×N" line, under a name that is unique in the model (ignoring case). The **Views** list, and the model's start page, open a view; everyone who can see the model can open every view, in Viewing too, and a view's address (`…/models/<model>/views/<view>`) can be shared. A view opens laid out automatically: card positions, depth, Show Viewpoints and the Nest and Show lines switches aren't saved in it, and it has no focused element, no depth and no breadcrumbs, and brings in no containers. In Modelling (Modeller or Admin), Add to canvas, dragging a row onto the canvas, a card's related elements and a new element made on the canvas add to the open view, with the element's relationships to elements already in it; **Remove** takes the selected card, or the open relationship's line, out of the view. Each change is saved at once ("Saving…", then "Saved"); if someone else changed the view meanwhile, it isn't saved and the canvas goes back until you choose **Reload view**. Rename and Delete are on the bar above the view. Double-click or `Enter` on a card leaves the view for that element, and Back returns to it. Deleting an element or a relationship from the model removes it from every view. Removing from a view, renaming or deleting a view never changes the model. Views need PostgreSQL, and they aren't part of the JGF export or import. More in [Views](guide/views.md).
+**Views.** A view is a named canvas that is stored: a set of elements and relationships of one model. In Modelling, with an element focused, open **Views** at the bottom of the element list and choose **Save as view…**: it saves exactly the cards and relationships the canvas draws, including each relationship in a "×N" line, under a name that is unique in the model (ignoring case). The **Views** list, and the model's start page, open a view; everyone who can see the model can open every view, in Viewing too, and a view's address (`…/models/<model>/views/<view>`) can be shared. A view opens laid out automatically: card positions, depth, Show Viewpoints and the Nest and Show relationships switches aren't saved in it, and it has no focused element, no depth and no breadcrumbs, and brings in no containers. In Modelling (Modeller or Admin), Add to canvas, dragging a row onto the canvas, a card's related elements and a new element made on the canvas add to the open view, with the element's relationships to elements already in it; the × on a card takes it out of the view, with its relationships. Relationships aren't taken out of a view one by one: **Show relationships** in the legend hides them all. Each change is saved at once ("Saving…", then "Saved"); if someone else changed the view meanwhile, it isn't saved and the canvas goes back until you choose **Reload view**. Rename and Delete are on the bar above the view. Double-click or `Enter` on a card leaves the view for that element, and Back returns to it. Deleting an element or a relationship from the model removes it from every view. Removing from a view, renaming or deleting a view never changes the model. Views need PostgreSQL, and they aren't part of the JGF export or import. More in [Views](guide/views.md).
 
 With the pointer, in Viewing and Modelling: a single click (or tap) on a card or list row selects it (the details panel shows it; the canvas, breadcrumbs and address stay), and a double click (or double tap) focuses it. Click a line to see its relationship. Drag a row from the element list onto the canvas to add that element there. In the catalog, a click selects a row; a double click focuses it on the canvas (Viewing) or edits the cell (Modelling).
 
@@ -578,12 +582,11 @@ With the pointer, in Modelling: double-click empty canvas for a new element ther
 
 **Views list**
 
-| Key          | What it does                                                   |
-| ------------ | -------------------------------------------------------------- |
-| `↓` `↑`      | Next or previous view (from the filter, `↓` goes to the first) |
-| `Home` `End` | First or last view                                             |
-| `Enter`      | Opens the view                                                 |
-| `Esc`        | Closes the list; focus returns to the Views button             |
+| Key          | What it does                                                                       |
+| ------------ | ---------------------------------------------------------------------------------- |
+| `↓` `↑`      | Next or previous view (from the filter or the Views header, `↓` goes to the first) |
+| `Home` `End` | First or last view                                                                 |
+| `Enter`      | Opens the view                                                                     |
 
 **Moving a card (after `M`)**
 

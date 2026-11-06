@@ -169,11 +169,6 @@ export function withoutElementInView(
   };
 }
 
-/** The contents without one relationship. Its elements stay in the view, and it in the model. */
-export function withoutRelationshipInView(contents: ViewContents, id: string): ViewContents {
-  return { ...contents, relationshipIds: contents.relationshipIds.filter((other) => other !== id) };
-}
-
 /**
  * The contents without what was deleted from the model (the server has removed it from every view
  * already): an element and the relationships it had, or one relationship.

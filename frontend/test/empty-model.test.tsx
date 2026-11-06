@@ -50,7 +50,7 @@ function api(editable: boolean): Handler {
   };
 }
 
-const list = () => screen.getByRole('complementary', { name: 'Elements' });
+const list = () => screen.getByRole('complementary', { name: 'Elements and views' });
 
 describe('an empty model', () => {
   it('opens in Modelling with the empty states, and New element adds the first element', async () => {
