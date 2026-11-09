@@ -1,5 +1,6 @@
 import {
   isHexColour,
+  type AboutResponse,
   type ApiError,
   type Branding,
   type LogoMediaType,
@@ -256,6 +257,31 @@ function isDatabaseStatus(value: unknown): value is DatabaseStatus {
     (migrations.applied === null || typeof migrations.applied === 'number') &&
     typeof migrations.total === 'number'
   );
+}
+
+// The server sends a semantic version and a short hex commit (or a word for none); anything else
+// isn't shown.
+const aboutVersionPattern = /^[0-9A-Za-z.+-]{1,64}$/;
+const aboutCommitPattern = /^(?:[0-9a-f]{7}|unknown|development)$/;
+
+/**
+ * GET /api/about (Viewer or higher): the code version the server runs. A 401 ends the session as
+ * any other call does.
+ */
+export async function getAbout(signal?: AbortSignal): Promise<AboutResponse> {
+  const body = await json(await request('/api/about', signal ? { signal } : {}));
+  const about = body as Partial<Record<keyof AboutResponse, unknown>> | null;
+  const version = about?.version;
+  const commit = about?.commit;
+  if (
+    typeof version !== 'string' ||
+    typeof commit !== 'string' ||
+    !aboutVersionPattern.test(version) ||
+    !aboutCommitPattern.test(commit)
+  ) {
+    throw new ApiRequestError(200, 'The server sent an unexpected version.');
+  }
+  return { version, commit };
 }
 
 /** GET /api/admin/database (Admin): the database connection's status, never its password. */

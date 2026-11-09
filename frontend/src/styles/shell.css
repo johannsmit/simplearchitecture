@@ -410,6 +410,17 @@
   margin: 0;
 }
 
+/* The code version: the menu's quiet last line. */
+.about-line {
+  margin: 6px 4px 0;
+  padding: 8px 6px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1279px) {
   .who {
     position: absolute;

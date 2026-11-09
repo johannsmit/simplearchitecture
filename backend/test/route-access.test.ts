@@ -29,6 +29,7 @@ const expectedAccess: Record<string, Level> = {
   'GET /api/branding': 'public',
   'GET /api/branding/logo': 'public',
   'GET /api/me': 'authenticated',
+  'GET /api/about': 'viewing',
   'GET /api/viewing/ping': 'viewing',
   'GET /api/models': 'viewing',
   'GET /api/models/:id': 'viewing',

@@ -8,6 +8,8 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify';
 import helmet from 'helmet';
+import type { AboutResponse } from '@simplearchitecture/shared';
+import { AboutService, loadAbout } from './about/about-service.js';
 import { registerAuth } from './auth/auth.js';
 import { OidcClient } from './auth/oidc.js';
 import { PostgresSessionStore } from './auth/postgres-sessions.js';
@@ -22,6 +24,7 @@ import { DatabaseService } from './db/service.js';
 import { errorBody } from './errors.js';
 import { loadOefMapping, type OefMapping } from './oef/mapping-config.js';
 import { exchangeRoutes } from './routes/exchange.js';
+import { aboutRoutes } from './routes/about.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
 import { brandingRoutes } from './routes/branding.js';
@@ -75,6 +78,8 @@ export interface AppOptions {
   database?: DatabaseService;
   /** The built web app (see web-app.ts), served for every path outside /api and /auth. */
   webApp?: Parameters<typeof webAppRoutes>[0];
+  /** Tests only: the code version to serve. Without it, buildApp works it out (see about/). */
+  about?: AboutResponse;
 }
 
 /**
@@ -329,6 +334,9 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
 
   // 4. Routes. Each declares its access rule (see auth/access.ts).
   await app.register(healthRoutes);
+  const about = options.about ?? loadAbout({ nodeEnv: config.NODE_ENV });
+  app.log.info(about, 'code version');
+  await app.register(aboutRoutes(new AboutService(about)));
   await app.register(meRoutes);
   await app.register(spaceRoutes);
   // One upload budget per user across all upload routes (see rate-limit.ts).

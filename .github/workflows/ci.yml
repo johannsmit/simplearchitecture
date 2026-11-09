@@ -69,6 +69,10 @@ jobs:
           context: .
           platforms: ${{ env.PLATFORMS }}
           push: false
+          # The commit the app shows next to its version. The same in every build below, so they
+          # share the cache.
+          build-args: |
+            SOURCE_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # The checks and the scan below run on the amd64 image, loaded from the cache. The publish
@@ -81,6 +85,8 @@ jobs:
           load: true
           push: false
           tags: simplearchitecture:ci
+          build-args: |
+            SOURCE_COMMIT=${{ github.sha }}
           cache-from: type=gha
       # The build already checks the app folder; this checks the finished image.
       - name: Check the image holds only what runs, and its licence terms
@@ -152,6 +158,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: |
+            SOURCE_COMMIT=${{ github.sha }}
           # The provenance and the SBOM are attested below, for the whole image.
           provenance: false
           sbom: false

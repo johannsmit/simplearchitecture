@@ -1,4 +1,4 @@
-export type { ApiError, HealthResponse } from './api.js';
+export type { AboutResponse, ApiError, HealthResponse } from './api.js';
 export {
   isRole,
   knownRoles,

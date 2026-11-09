@@ -22,6 +22,9 @@ COPY tsconfig.base.json ./
 COPY shared/ shared/
 COPY backend/ backend/
 COPY frontend/ frontend/
+# The commit the image is built from, shown to signed-in people with the version (README, "The
+# code version"). Optional: without it the app shows "unknown". Only hex is ever shown.
+ARG SOURCE_COMMIT=""
 RUN npm run build
 
 # --- Production dependencies only: the backend's and shared's (the web app is static files) ---

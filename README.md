@@ -372,6 +372,18 @@ Optionally, under **Monitoring → Health check**, set the path to `/api/health`
 - **Rate limits:** at most 10 sign-in starts and 10 sign-in callbacks per minute per client address (counted apart), 10 uploads (model imports and checks, and the logo) per minute per user, and 10 new models per minute per user (counted apart from the uploads). AI agents: 20 registrations, 30 authorize requests and 60 token requests per minute per client address, and 120 MCP calls per minute per user. Over the sign-in limit the browser is sent to the sign-in page, which says to wait a minute; over the upload limit the API answers `429` with "Wait a minute and try again". A request may take at most 120 seconds in all, upload included. The counts are kept in memory in each container: with several containers, each counts on its own (and a restart resets them).
 - At startup the API applies the database migrations before it accepts requests. A second start changes nothing. If the database isn't reachable yet, it retries for up to 60 seconds (logging each retry, never the URL or password), then exits with an error, and the host restarts it. A wrong password, a missing database or a TLS problem fails at once.
 
+### The code version
+
+Signed-in people see which code they are working in at the bottom of the account menu (top right), for example `SimpleArchitecture 0.10.0 · a1b2c3d`: the version from the package files and the short commit the build came from. The version alone isn't enough, as every commit between two releases carries the same one. The API serves it at `GET /api/about`, to Viewers and above only; nothing names it before sign-in, the health check included.
+
+The commit comes from the build, not from a setting:
+
+- **The published image:** the workflow passes the commit it builds from as the `SOURCE_COMMIT` build argument.
+- **A host's own pipeline** that builds from the source passes it the same way, for example `docker build --build-arg SOURCE_COMMIT="$(git rev-parse HEAD)" .`, or `SOURCE_COMMIT=<commit> npm run build` outside Docker. It is optional: without it the app shows `unknown`, and starts as usual.
+- **`npm run dev`** shows the working copy's commit, or `development` if git can't name one.
+
+Only a commit is ever shown: 7 to 40 hex characters, cut to 7. Anything else passed shows as `unknown`.
+
 ### Behind the host's https proxy
 
 - The API trusts one proxy hop of `X-Forwarded-For` and `X-Forwarded-Proto`, so logs show the client's address and the API knows the request came over https. So never expose port 8080 to the internet directly: without the proxy in front, a client could fake its address.
@@ -424,6 +436,8 @@ For `import-files-cli.js`, mount the folder with the model files and give its pa
 - checked again from outside (`deploy/check-finished-image.sh`): its file list (`deploy/check-image-files.sh`), the `LICENSE` file, the licence label, and third-party notices that name every package bundled into the web app;
 - run with a read-only root file system, no capabilities and a throwaway PostgreSQL (`deploy/test-container.sh`): it must run as uid 1000, be unable to write anywhere, listen on port 8080 only, serve the web app, answer path tricks such as `/../` or `%2e%2e` with the app shell or an error (never a file), and log no errors;
 - scanned with Trivy (`deploy/scan-image.sh`), failing on high or critical vulnerabilities that have a fix. The web app's packages are bundled into its files, where Trivy can't see them, so the build lists them with their versions in `web-packages.cdx.json` and that list is scanned too. A scan in which Trivy finds no packages, in the image or in that list, fails: it would otherwise read as no vulnerabilities.
+
+Every image build passes the commit it builds from as the `SOURCE_COMMIT` build argument, so the app can show it (see The code version).
 
 A version tag (`v1.2.3`) publishes the image, from this repository only: a tag in any other repository, a fork included, publishes nothing. The workflow:
 
