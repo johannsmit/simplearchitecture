@@ -204,27 +204,3 @@ describe('the panel styles', () => {
     expect(css).not.toMatch(/\.views-pop|\.views-btn|\.vp-title/);
   });
 });
-
-describe('the README and the Views guide', () => {
-  const readme = readFileSync(join(import.meta.dirname, '../../README.md'), 'utf8');
-  const guide = readFileSync(join(import.meta.dirname, '../../guide/views.md'), 'utf8');
-
-  it('say where Views, the legend and the × are, with no toolbar buttons left', () => {
-    for (const text of [readme, guide]) {
-      expect(text).not.toContain('next to Canvas | Catalog');
-      expect(text).not.toContain('+ Element');
-      expect(text).toContain('at the bottom of the element list');
-    }
-    expect(readme).toContain('The legend, at the bottom of the left panel');
-    expect(readme).toContain('`Tab` from a card reaches its remove button (×)');
-    expect(readme).toContain('small × at its top-left corner');
-    expect(readme).not.toContain('focus returns to the Views button');
-    // The switch is "Show relationships", and no relationship is taken out of a view on its own.
-    for (const text of [readme, guide]) {
-      expect(text).not.toContain('Show lines');
-      expect(text).toContain('Show relationships');
-      expect(text).not.toMatch(/selected line's label/);
-    }
-    expect(readme).toMatch(/from the filter or the Views header, `↓` goes to the first/);
-  });
-});

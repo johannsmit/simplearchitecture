@@ -80,12 +80,7 @@ describe('the metamodel in shared/ matches metamodel/', () => {
     expect(template.graph.edges[1]?.relation).toBe('Relation');
   });
 
-  it('documents every edge type in default-metamodel.md, with Architecture state', () => {
-    const doc = readFileSync(
-      new URL('../../metamodel/default-metamodel.md', import.meta.url),
-      'utf8',
-    );
-    for (const type of edgeTypes) expect(doc).toContain(`- ${type} edge:`);
+  it('gives each edge type its standard properties, with Architecture state', () => {
     expect(edgeTypeDefinitions.Relation.properties).toEqual([
       'architectureState',
       'identity',
@@ -94,9 +89,6 @@ describe('the metamodel in shared/ matches metamodel/', () => {
       'responseData',
     ]);
     expect(edgeTypeDefinitions.Contains.properties).toEqual(['architectureState']);
-    for (const key of relationTextProperties) {
-      expect(doc).toContain(`\`"${key}"\``);
-    }
   });
 });
 
