@@ -35,7 +35,9 @@ import type {
   NewViewRequest,
   RenameViewRequest,
   ReplaceViewContentsRequest,
+  ReplaceViewLayoutRequest,
   StoredView,
+  ViewCardLayout,
   ViewSummary,
 } from '@simplearchitecture/shared';
 
@@ -467,11 +469,26 @@ function isViewSummary(value: unknown): value is ViewSummary {
 const isIdList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((id) => typeof id === 'string');
 
-function isStoredView(value: unknown): value is StoredView {
+function isCardLayout(value: unknown): value is ViewCardLayout {
   return (
-    isViewSummary(value) &&
-    isIdList((value as unknown as Record<string, unknown>).elementIds) &&
-    isIdList((value as unknown as Record<string, unknown>).relationshipIds)
+    isObject(value) &&
+    typeof value.elementId === 'string' &&
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y) &&
+    (value.width === undefined || (typeof value.width === 'number' && Number.isFinite(value.width)))
+  );
+}
+
+function isStoredView(value: unknown): value is StoredView {
+  if (!isViewSummary(value)) return false;
+  const fields = value as unknown as Record<string, unknown>;
+  return (
+    isIdList(fields.elementIds) &&
+    isIdList(fields.relationshipIds) &&
+    Array.isArray(fields.layout) &&
+    fields.layout.every(isCardLayout)
   );
 }
 
@@ -536,6 +553,23 @@ export async function replaceViewContents(
     await request(`${viewUrl(modelId, viewId)}/contents`, {
       method: 'PUT',
       ...jsonBody(contents),
+    }),
+  );
+}
+
+/**
+ * PUT /api/models/:id/views/:viewId/layout (Modeller): where the view's cards are. 409: changed
+ * meanwhile.
+ */
+export async function replaceViewLayout(
+  modelId: string,
+  viewId: string,
+  layout: ReplaceViewLayoutRequest,
+): Promise<StoredView> {
+  return viewResult(
+    await request(`${viewUrl(modelId, viewId)}/layout`, {
+      method: 'PUT',
+      ...jsonBody(layout),
     }),
   );
 }

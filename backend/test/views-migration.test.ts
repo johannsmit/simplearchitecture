@@ -76,7 +76,8 @@ describe('migration 010', () => {
 
   it('starts every model with no views, and views work on the migrated models', async () => {
     const { db: target, ids } = await at009();
-    await migrate(target, all);
+    // With the later migrations too: the view store is the current one.
+    await migrate(target, loadMigrations());
     const store = await PostgresModelStore.open(target, quiet);
     const service = new ViewService(store);
     const [first = '', second = ''] = ids;

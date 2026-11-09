@@ -30,7 +30,7 @@ function refusedView(reply: FastifyReply, error: unknown): FastifyReply {
 
 /**
  * A model's views. The rules are in ViewService; these routes only translate. The version goes in
- * the PATCH and PUT bodies and in the DELETE query (`?version=N`). The CSRF check (same Origin) and
+ * the PATCH and PUT bodies (contents and layout) and in the DELETE query (`?version=N`). The CSRF check (same Origin) and
  * the access guard run on every route (auth/access.ts).
  */
 export function viewRoutes(service: ViewService): FastifyPluginAsync {
@@ -117,6 +117,26 @@ export function viewRoutes(service: ViewService): FastifyPluginAsync {
           const result = await service.replaceContents(id, viewId, request.body, actor(request));
           if (result.view.version !== before?.version) {
             auditLog(request, 'view-changed', { modelId: id, viewId });
+          }
+          return result;
+        } catch (error) {
+          return refusedView(reply, error);
+        }
+      },
+    );
+
+    app.put<{ Params: ViewParams; Reply: ViewResult | ApiError }>(
+      '/api/models/:id/views/:viewId/layout',
+      { config: modelling, bodyLimit: viewBodyLimit, onRequest: jsonOnly },
+      async (request, reply) => {
+        const { id, viewId } = request.params;
+        const invalid = badModelId(reply, id);
+        if (invalid) return invalid;
+        try {
+          const before = request.body as { version?: unknown } | null;
+          const result = await service.replaceLayout(id, viewId, request.body, actor(request));
+          if (result.view.version !== before?.version) {
+            auditLog(request, 'view-laid-out', { modelId: id, viewId });
           }
           return result;
         } catch (error) {

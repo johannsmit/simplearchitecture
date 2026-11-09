@@ -9,6 +9,7 @@ import {
   type ModelAuthor,
   type RenamedViewResult,
   type StoredView,
+  type ViewCardLayout,
   type ViewListResponse,
   type ViewResult,
   type ViewSummary,
@@ -27,10 +28,13 @@ import {
 } from '../editing/common.js';
 import {
   maxElementIdLength,
+  maxViewCardCoordinate,
+  maxViewCardWidth,
   maxViewElements,
   maxViewNameLength,
   maxViewRelationships,
   maxViewsPerModel,
+  minViewCardWidth,
 } from '../limits.js';
 import type {
   PlannedViewChange,
@@ -52,7 +56,11 @@ import { unstorable } from '../storage/stored-model.js';
  * - Every element and relationship must be in the model, and a relationship may be in a view only
  *   with both of its elements. The model's own rules (validation) don't apply: a view adds nothing
  *   to the model.
- * - Rename, new contents and delete carry the view's version as read; another one is a conflict.
+ * - A layout names cards of the view only, each once: where each was left on the canvas, and a
+ *   width set by hand. Cards not named have no position afterwards. Taking a card out of the view
+ *   (or deleting its element) drops its position.
+ * - Rename, new contents, a new layout and delete carry the view's version as read; another one
+ *   is a conflict. A change that changes nothing stores nothing and keeps the version.
  * - Nothing is stored for a refused change, and every stored change has one audit row with field
  *   names and counts only (the store writes it in the same transaction): never the view's name.
  */
@@ -104,7 +112,37 @@ const contentsSchema = z.strictObject({
   relationshipIds: relationshipIdsSchema.optional(),
 });
 
-/** Parses a request; a list's own index isn't a field of the request, so it is left off. */
+const coordinateMessage = `Must be a number from -${maxViewCardCoordinate} to ${maxViewCardCoordinate}.`;
+const coordinateSchema = z
+  .number({ error: coordinateMessage })
+  .min(-maxViewCardCoordinate, { error: coordinateMessage })
+  .max(maxViewCardCoordinate, { error: coordinateMessage });
+const widthMessage = `Must be a whole number from ${minViewCardWidth} to ${maxViewCardWidth}.`;
+
+const layoutSchema = z.strictObject({
+  version: versionSchema,
+  cards: z
+    .array(
+      z.strictObject({
+        elementId: z
+          .string({ error: idMessage })
+          .min(1, { error: idMessage })
+          .max(maxElementIdLength, { error: idMessage }),
+        x: coordinateSchema,
+        y: coordinateSchema,
+        width: z
+          .number({ error: widthMessage })
+          .int({ error: widthMessage })
+          .min(minViewCardWidth, { error: widthMessage })
+          .max(maxViewCardWidth, { error: widthMessage })
+          .optional(),
+      }),
+      { error: 'Must be a list of cards.' },
+    )
+    .max(maxViewElements, { error: `A view can hold at most ${maxViewElements} elements.` }),
+});
+
+/** Parses a request; a list's own index (and a card's field) isn't a field of it, so it goes. */
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   try {
     return parseRequest(schema, input, 'a view');
@@ -112,7 +150,7 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
     if (!(error instanceof RejectedError)) throw error;
     const seen = new Set<string>();
     const fields = error.fields.flatMap((issue): ElementFieldIssue[] => {
-      const field = issue.field.replace(/^(elementIds|relationshipIds)\.\d+$/, '$1');
+      const field = issue.field.replace(/^(elementIds|relationshipIds|cards)\.\d+(\..*)?$/, '$1');
       const key = `${field}\n${issue.message}`;
       if (seen.has(key)) return [];
       seen.add(key);
@@ -146,7 +184,51 @@ function storedView(record: ViewRecord): StoredView {
     ...record.summary,
     elementIds: record.elementIds,
     relationshipIds: record.relationshipIds,
+    layout: record.layout,
   };
+}
+
+/** A card's layout as a comparable key. */
+const cardKey = (card: ViewCardLayout): string =>
+  `${card.elementId}\n${card.x}\n${card.y}\n${card.width ?? ''}`;
+
+/** Both name each card once, so the same keys are the same layout. */
+const sameLayout = (a: readonly ViewCardLayout[], b: readonly ViewCardLayout[]): boolean =>
+  sameSet(a.map(cardKey), b.map(cardKey));
+
+/** The cards of a new layout, or RejectedError: cards of the view only, each once. */
+function checkedLayout(
+  view: ViewRecord,
+  cards: readonly { elementId: string; x: number; y: number; width?: number | undefined }[],
+): ViewCardLayout[] {
+  const inView = new Set(view.elementIds);
+  const issues: ElementFieldIssue[] = [];
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const card of cards) {
+    if (seen.has(card.elementId)) twice.add(card.elementId);
+    seen.add(card.elementId);
+  }
+  if (twice.size > 0) {
+    issues.push({
+      field: 'cards',
+      message: `Each card can be in the layout once. These are in it more than once: ${listed([...twice])}.`,
+    });
+  }
+  const outside = [...seen].filter((id) => !inView.has(id));
+  if (outside.length > 0) {
+    issues.push({
+      field: 'cards',
+      message: `These cards are not in the view (they may have been removed, or deleted from the model): ${listed(outside)}.`,
+    });
+  }
+  if (issues.length > 0) throw new RejectedError(issues);
+  return cards.map(({ elementId, x, y, width }) => ({
+    elementId,
+    x,
+    y,
+    ...(width === undefined ? {} : { width }),
+  }));
 }
 
 /**
@@ -361,6 +443,38 @@ export class ViewService {
             actor,
             fields,
           );
+        },
+      );
+      if (changed?.view === undefined) throw new NotFoundError('model');
+      return { view: storedView(changed.view) };
+    } catch (error) {
+      if (error instanceof Unchanged) return { view: storedView(error.result as ViewRecord) };
+      throw error;
+    }
+  }
+
+  /**
+   * A new layout in place of the old: where each card named is, and its width when set by hand.
+   * Saved only on what the person did on the canvas (the caller's rule); a layout the canvas made
+   * on its own is never sent.
+   */
+  async replaceLayout(
+    modelId: string,
+    viewId: string,
+    input: unknown,
+    actor: ModelAuthor,
+  ): Promise<ViewResult> {
+    const views = this.#views();
+    const request = parse(layoutSchema, input);
+    try {
+      const changed = await views.change(
+        modelId,
+        { viewId, elementIds: [], relationshipIds: [] },
+        (state) => {
+          const view = currentView(state, request.version);
+          const cards = checkedLayout(view, request.cards);
+          if (sameLayout(view.layout, cards)) throw new Unchanged(view);
+          return plan({ kind: 'layout', viewId, cards }, 'view-changed', actor, ['layout']);
         },
       );
       if (changed?.view === undefined) throw new NotFoundError('model');

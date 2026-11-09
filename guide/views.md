@@ -24,7 +24,7 @@ A name has 1 to 200 characters and is unique within the model, ignoring case: "P
 
 Open **Views** at the bottom of the element list and pick one, or pick one on the model's start page. The section stays open, and the browser remembers whether it is open. A view's address (`…/models/<model>/views/<view>`) can be copied and shared; swap `/viewing` for `/modelling` to open it in Modelling.
 
-A view is laid out automatically each time it opens. Card positions, the depth, Show Viewpoints and the "Nest contained elements" and "Show relationships" switches (in the legend, at the bottom of the left panel) aren't saved in it, though Show Viewpoints stays in the address. Show relationships off hides every relationship line and leaves the cards in place; the browser remembers it, in a view and outside one, and in Modelling drawing or adding a relationship turns the lines back on. A view has no focused element, no depth and no breadcrumbs, and brings in no containers: a card is drawn inside another only when the view holds both and the Contains between them.
+A view opens as it was left: each card where it was put, at the width it was given (see [Layout](#layout)). The depth, Show Viewpoints and the "Nest contained elements" and "Show relationships" switches (in the legend, at the bottom of the left panel) aren't saved in it, though Show Viewpoints stays in the address. Show relationships off hides every relationship line and leaves the cards in place; the browser remembers it, in a view and outside one, and in Modelling drawing or adding a relationship turns the lines back on. A view has no focused element, no depth and no breadcrumbs, and brings in no containers: a card is drawn inside another only when the view holds both and the Contains between them.
 
 Double-click a card, or press `Enter` on it, to leave the view and explore that element; Back returns to the view. **Close view** goes to the model's start page.
 
@@ -42,12 +42,31 @@ None of these change the model: the elements and relationships stay. If someone 
 
 A view holds at most 150 elements and 5,000 relationships, and a model at most 500 views.
 
+## Layout
+
+A view keeps its cards where they were put. Only what you do saves the layout, in Modelling, at once:
+
+- moving a card (dragging it, or `M` and the arrow keys, then `Enter`),
+- setting a card's width (the grip on its right edge, or `Alt` + `←` `→` in move mode),
+- adding a card or taking one off (as above),
+- **Tidy up**, which lays the whole view out again and saves that, without asking.
+
+Each of these saves where every card of the view is, as you see them, with the width of each card whose width was set by hand (168 to 480 pixels). A cancelled move (`Esc`) saves nothing.
+
+Nothing else saves a layout. A view that has never been laid out by hand is laid out automatically when it opens. A card without a saved place (for example one that was in the view before the app saved layouts) goes to a free spot, next to a card it is related to. Switching Nest contained elements, or reloading the page, shows the saved layout again. Neither is saved until you move, resize, add or remove a card, or choose Tidy up; then the whole layout, those cards included, is saved. In a view opened with its saved layout, every line follows its cards, taking the shortest right-angled way round the other cards; Tidy up routes them all again.
+
+In Viewing, and for Viewers, cards can still be moved and resized, to look at the view another way, but nothing is saved: the next time, the view opens as it was saved. The server refuses a layout from anyone but a Modeller or an Admin.
+
+If a layout isn't saved (someone else changed the view meanwhile, or the connection failed), the bar says so and the cards stay where you put them. After a lost connection, the next move saves the whole layout again; after someone else's change, **Reload view** shows theirs.
+
+Taking a card out of a view, or deleting its element from the model, drops its saved place: added again, it goes to a free spot.
+
 ## When the model changes
 
 Deleting an element or a relationship from the model removes it from every view, without a message. Deleting a model deletes its views.
 
 ## Export and import
 
-Views aren't part of the JGF export, and an imported model starts with no views.
+Views and their layouts aren't part of the JGF export, and an imported model starts with no views.
 
 Only a relationship with an id can be in a view. An import (JGF or OEF) gives every relationship without an id a new one; ids in the file are kept. Relationships stored without an id by an earlier version can't be in a view.

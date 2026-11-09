@@ -49,6 +49,7 @@ const expectedAccess: Record<string, Level> = {
   'POST /api/models/:id/views': 'modelling',
   'PATCH /api/models/:id/views/:viewId': 'modelling',
   'PUT /api/models/:id/views/:viewId/contents': 'modelling',
+  'PUT /api/models/:id/views/:viewId/layout': 'modelling',
   'DELETE /api/models/:id/views/:viewId': 'modelling',
   'GET /api/admin/ping': 'admin',
   'GET /api/admin/models/damaged': 'admin',

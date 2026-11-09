@@ -375,6 +375,12 @@ function libraryApi(view: StoredView): Handler {
       view.relationshipIds = parsed.relationshipIds ?? view.relationshipIds;
       return Response.json({ view });
     }
+    if (url === `/api/models/${libraryId}/views/${view.id}/layout` && method === 'PUT') {
+      const parsed = JSON.parse(String(body)) as { cards: StoredView['layout'] };
+      view.version += 1;
+      view.layout = parsed.cards;
+      return Response.json({ view });
+    }
     return undefined;
   };
 }
@@ -393,6 +399,7 @@ function reading(): StoredView {
     updatedBy: author,
     elementIds: ['reader', 'catalogue', 'loans', 'server'],
     relationshipIds: ['r1', 'r2', 'r5'],
+    layout: [],
   };
 }
 

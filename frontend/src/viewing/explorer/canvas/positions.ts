@@ -3,9 +3,10 @@ import { containerBox, spacing, type PlacedCard } from './elkLayout';
 import type { Direction } from './view';
 
 /**
- * Cards the user moved on the canvas (by mouse or keyboard). Positions are visual only: they live
- * in memory, never in the model, the URL or the browser's storage, and are dropped on a focus or
- * depth change and by "Tidy up". Pure, so it is tested without a browser.
+ * Cards the user moved on the canvas (by mouse or keyboard). Positions live in memory, never in
+ * the model, the URL or the browser's storage, and are dropped on a focus or depth change and by
+ * "Tidy up". Only an open view saves where its cards are (`viewLayout.ts`). Pure, so it is tested
+ * without a browser.
  */
 
 export interface Point {

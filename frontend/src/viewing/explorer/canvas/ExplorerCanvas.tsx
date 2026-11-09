@@ -14,6 +14,7 @@ import {
   type Neighbourhood,
   type RelationshipChangeResult,
   type RelationshipViewField,
+  type ViewCardLayout,
 } from '@simplearchitecture/shared';
 import {
   Background,
@@ -85,6 +86,7 @@ import {
 import { LineProperties } from './LineProperties';
 import { keepCards, relinkHandles, samePlacement, type PlaceHint } from './placeCards';
 import { RelatedPopup } from './RelatedPopup';
+import { layoutOfCanvas, storedPlacement, storedPositions } from './viewLayout';
 import {
   EdgeMarkers,
   litArrowMarkerId,
@@ -154,14 +156,14 @@ interface ExplorerCanvasProps {
   onDepth: (depth: number) => void;
   /** Changes when the space around the canvas changes, so the view is fitted again. */
   fitKey: string;
-  /** Cards the user moved (visual only). Cleared by the page on a focus or depth change. */
+  /** Cards the user moved. Cleared by the page on a focus or depth change. */
   moved: MovedPositions;
   /**
    * A card was dragged or moved with the keyboard to this position; undefined puts it back in the
    * layout (a cancelled keyboard move of a card that hadn't moved before).
    */
   onMove: (id: string, position: Point | undefined) => void;
-  /** Card widths set by hand (rectangle cards only), visual only: cleared by a new canvas. */
+  /** Card widths set by hand (rectangle cards only): cleared by a new canvas (a view's stay). */
   widths: ReadonlyMap<string, number>;
   /** A card's width was set (its grip, or `Alt` + arrows in move mode); undefined drops it. */
   onResize: (id: string, width: number | undefined) => void;
@@ -221,6 +223,21 @@ interface ExplorerCanvasProps {
   removable?: ReadonlySet<string>;
   /** The remove button on a card: takes it off the canvas (or out of the open view). */
   onRemoveCard?: (id: string) => void;
+  /**
+   * An open view's stored layout: a new canvas (but not Tidy up) puts the cards with a position
+   * there, and the others at a free spot, in place of a layout by ELK. Read only then.
+   */
+  storedLayout?: readonly ViewCardLayout[] | undefined;
+  /**
+   * Goes up by one when the person added or took off cards, or chose Tidy up: once the canvas
+   * shows it, it reports where its cards are (`onArranged`).
+   */
+  arrangeRequest?: number;
+  /**
+   * Where every card is, after the person moved or resized a card, or after `arrangeRequest`.
+   * Never for a layout or a placement the canvas made on its own.
+   */
+  onArranged?: (cards: ViewCardLayout[]) => void;
 }
 
 /** A popover on the canvas: New relationship, or New element (at a point on the canvas). */
@@ -274,7 +291,10 @@ interface Laid {
   /** The canvas it was made for (`layoutKey`). */
   key: string;
   tidyCount: number;
-  /** Laid out by ELK; otherwise the previous canvas with cards added or taken off. */
+  /**
+   * A new canvas (laid out by ELK, or from a view's stored layout): the view is fitted to it.
+   * Otherwise the previous canvas with cards added or taken off.
+   */
   fresh: boolean;
   hood: Neighbourhood;
   /** Every relationship on the canvas, including the ones drawn as nesting. */
@@ -288,6 +308,8 @@ interface Laid {
   containers: ReadonlySet<string>;
   /** Each card's size when ELK laid it out: a line keeps ELK's route only while both stay so. */
   layoutSizes: ReadonlyMap<string, { width: number; height: number }>;
+  /** The widths set by hand it was made with. */
+  widths: ReadonlyMap<string, number>;
 }
 
 /** Stacking (React Flow's manual z-index): containers by depth, then edges, then cards. */
@@ -328,8 +350,8 @@ interface Moving {
 
 /**
  * The focused element and its neighbours, laid out by ELK, drawn with React Flow. Read-only: cards
- * can't be connected, and moving them (mouse drag, or M then arrows) changes only the picture. One
- * Tab stop (the focused element's card); arrow keys move between cards.
+ * can't be connected, and moving them (mouse drag, or M then arrows) changes only the picture,
+ * except in a view that can change, which saves it (`onArranged`). One Tab stop (the focused element's card); arrow keys move between cards.
  */
 export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const { graph, hood, focusId, depth } = props;
@@ -368,6 +390,17 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   /** The card being dragged with the mouse: edge labels are hidden until the drop. */
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragging = draggingId !== null;
+  /** The card being dragged moved: its drop is the person's change to the arrangement. */
+  const dragMoved = useRef(false);
+  // The person changed the arrangement (a move, a resize, or `arrangeRequest`): reported once
+  // the canvas shows it. The tick only makes the report's effect run.
+  const arrangeWanted = useRef(false);
+  const arrangeSeen = useRef(props.arrangeRequest);
+  const [arrangeTick, setArrangeTick] = useState(0);
+  const wantArranged = useCallback(() => {
+    arrangeWanted.current = true;
+    setArrangeTick((n) => n + 1);
+  }, []);
   const [movingState, setMoving] = useState<Moving | null>(null);
   const editable = props.editable === true && props.modelId !== undefined;
   const store = useStoreApi();
@@ -438,6 +471,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   });
   /** Where new cards should go (a drop point, or next to a card), until they are placed. */
   const hints = useRef(new Map<string, PlaceHint>());
+  // Read only when the canvas is a new one, so a layout saved meanwhile moves nothing.
+  const storedRef = useRef(props.storedLayout);
+  useEffect(() => {
+    storedRef.current = props.storedLayout;
+  });
 
   const { layoutKey, tidyCount, widths } = props;
   // A new canvas is measured (after the fonts load) and laid out in ELK's worker. Any other change
@@ -481,6 +519,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       tidyCount,
       fresh,
       layoutSizes,
+      widths,
       hood,
       links,
       drawn: links.filter((link) => !nested(parents)(link)),
@@ -530,6 +569,48 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         }
       }
       if (!samePlacement(before, placed)) latest.current.onKept?.(layoutKey);
+      return;
+    }
+
+    // A view with a stored layout: its cards where they were left, the others at a free spot.
+    // Tidy up lays it out with ELK instead.
+    const tidied = previous !== null && previous.tidyCount !== tidyCount;
+    const stored = tidied ? undefined : storedPositions(storedRef.current ?? []);
+    if (stored !== undefined && ids.some((id) => stored.has(id))) {
+      const cards = ids.map((id) => ({ id, parent: wanted.get(id) }));
+      const start = storedPlacement({ cards, stored, sizeOf });
+      const box = section.current?.getBoundingClientRect();
+      const kept = keepCards({
+        previous: start.placed,
+        previousContainers: start.containers,
+        cards,
+        related: hood.relationships,
+        sizeOf,
+        heightAt,
+        widths,
+        hints: new Map(),
+        centre: box
+          ? latest.current.flow.screenToFlowPosition({
+              x: box.left + box.width / 2,
+              y: box.top + box.height / 2,
+            })
+          : { x: 0, y: 0 },
+      });
+      const parents = new Map<string, string>();
+      for (const card of kept.placed.values()) {
+        if (card.parent !== undefined) parents.set(card.id, card.parent);
+      }
+      // No routes from ELK: every line follows its cards, as after a move.
+      const placed = relinkHandles(
+        kept.placed,
+        new Map(),
+        layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
+      );
+      hints.current.clear();
+      setLayoutError(null);
+      setLaid(made(placed, parents, kept.containers, true, new Map()));
+      // Not ELK's layout: Tidy up has something to do.
+      latest.current.onKept?.(layoutKey);
       return;
     }
 
@@ -608,21 +689,52 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   };
   /** The width grip: the card's width when the press started, plus how far the pointer went. */
   const resizing = useRef<{ id: string; width: number } | null>(null);
-  const resizeFromGrip = useCallback((id: string, phase: 'start' | 'move' | 'end', dx: number) => {
-    if (phase === 'start') {
-      const card = shownRef.current.get(id);
-      resizing.current = card ? { id, width: card.width } : null;
-      setRelated(null);
-      return;
-    }
-    const from = resizing.current;
-    if (from?.id !== id) return;
-    const zoom = latest.current.flow.getZoom() || 1;
-    latest.current.onResize(id, setWidth(from.width + dx / zoom));
-    if (phase === 'end') resizing.current = null;
-  }, []);
+  const resizeFromGrip = useCallback(
+    (id: string, phase: 'start' | 'move' | 'end', dx: number) => {
+      if (phase === 'start') {
+        const card = shownRef.current.get(id);
+        resizing.current = card ? { id, width: card.width } : null;
+        setRelated(null);
+        return;
+      }
+      const from = resizing.current;
+      if (from?.id !== id) return;
+      const zoom = latest.current.flow.getZoom() || 1;
+      const width = setWidth(from.width + dx / zoom);
+      latest.current.onResize(id, width);
+      if (phase === 'end') {
+        resizing.current = null;
+        if (width !== from.width) wantArranged();
+      }
+    },
+    [wantArranged],
+  );
   // Positions on the canvas (cards inside containers are placed relative to them).
   const absolute = useMemo(() => absoluteBoxes(shown), [shown]);
+
+  // Where every card is, once the canvas shows the person's change: the layout made for this
+  // canvas, its cards and its widths.
+  const { onArranged, arrangeRequest } = props;
+  useEffect(() => {
+    if (arrangeSeen.current !== arrangeRequest) {
+      arrangeSeen.current = arrangeRequest;
+      arrangeWanted.current = true;
+    }
+    if (!arrangeWanted.current || !laid) return;
+    if (laid.key !== layoutKey || laid.hood !== hood || laid.widths !== widths) return;
+    arrangeWanted.current = false;
+    onArranged?.(
+      layoutOfCanvas(shown, (id) => {
+        const element = graph.elements.get(id);
+        return (
+          widths.has(id) &&
+          !laid.containers.has(id) &&
+          element !== undefined &&
+          cardShape(element.type) === 'card'
+        );
+      }),
+    );
+  }, [arrangeTick, arrangeRequest, laid, layoutKey, hood, widths, shown, graph, onArranged]);
   // Move mode ends by itself when the focus changes or the card leaves the canvas.
   const moving = movingState?.focusId === focusId && shown.has(movingState.id) ? movingState : null;
   const movingId = moving?.id;
@@ -1145,6 +1257,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
 
   const endMove = (how: 'drop' | 'cancel') => {
     if (!moving) return;
+    if (
+      how === 'drop' &&
+      (moved.get(moving.id) !== moving.before || props.widths.get(moving.id) !== moving.widthBefore)
+    ) {
+      wantArranged();
+    }
     if (how === 'cancel') {
       props.onMove(moving.id, moving.before);
       if (props.widths.get(moving.id) !== moving.widthBefore) {
@@ -1455,6 +1573,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
 
   const onNodesChange = (changes: NodeChange<CardNode>[]) => {
     const moves = draggedPositions(changes, (id) => elementIds.get(id));
+    if (moves.length > 0) dragMoved.current = true;
     for (const [id, position] of moves) props.onMove(id, position);
   };
 
@@ -1515,9 +1634,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         onNodeDragStart={(_event, node) => {
           setRelated(null);
           setDraggingId(node.data.element.id);
+          dragMoved.current = false;
         }}
         onNodeDragStop={() => {
           setDraggingId(null);
+          if (dragMoved.current) wantArranged();
+          dragMoved.current = false;
         }}
         onNodeClick={(event, node) => {
           // A single click (or tap) selects; the second click of a double click (or a double tap)

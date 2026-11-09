@@ -67,6 +67,7 @@ function stored(id: string, name: string, elementIds: string[], relationshipIds:
     updatedBy: author,
     elementIds,
     relationshipIds,
+    layout: [],
   };
   return view;
 }
@@ -89,6 +90,7 @@ function server(initial: StoredView[] = []) {
     const copy: Partial<StoredView> = { ...view };
     delete copy.elementIds;
     delete copy.relationshipIds;
+    delete copy.layout;
     return copy;
   };
   const handler: Handler = ({ url, method, body }) => {
@@ -189,6 +191,12 @@ function server(initial: StoredView[] = []) {
       view.relationshipIds = parsed?.relationshipIds as string[];
       view.elementCount = view.elementIds.length;
       view.relationshipCount = view.relationshipIds.length;
+      const kept = new Set(view.elementIds);
+      view.layout = view.layout.filter((card) => kept.has(card.elementId));
+      return Response.json({ view });
+    }
+    if (method === 'PUT' && part === 'layout') {
+      view.layout = parsed?.cards as StoredView['layout'];
       return Response.json({ view });
     }
     return undefined;
@@ -221,6 +229,11 @@ const dragged = (id: string) => ({
   getData: (type: string) => (type === dragType ? id : ''),
 });
 const changes = (calls: Call[]) => calls.filter((call) => call.method !== 'GET');
+/** New contents saved, without the layouts saved after them. */
+const contentsSaves = (calls: Call[]) =>
+  changes(calls).filter((call) => !call.url.endsWith('/layout'));
+const layoutSaves = (calls: Call[]) =>
+  changes(calls).filter((call) => call.url.endsWith('/layout'));
 
 function open(path: string, space: Space, views: StoredView[] = []) {
   const fake = server(views);
@@ -707,9 +720,9 @@ describe('changing an open view (Modelling)', () => {
     fireEvent.drop(canvasEl(), { dataTransfer: dragged('archive'), clientX: 200, clientY: 200 });
     await shown(['loans', 'server', 'archive']);
     await waitFor(() => {
-      expect(changes(calls)).toHaveLength(1);
+      expect(contentsSaves(calls)).toHaveLength(1);
     });
-    expect(changes(calls)[0]).toMatchObject({
+    expect(contentsSaves(calls)[0]).toMatchObject({
       method: 'PUT',
       url: `/api/models/${libraryId}/views/v-lending/contents`,
       body: {
@@ -720,7 +733,19 @@ describe('changing an open view (Modelling)', () => {
     });
     expect(screen.getByText('Added “Archive” to the view, with 1 relationship.')).toBeTruthy();
     await screen.findByText('Saved');
-    expect(views.get('v-lending')?.version).toBe(2);
+    // Then where its cards are, the new one included, with the version after.
+    await waitFor(() => {
+      expect(layoutSaves(calls)).toHaveLength(1);
+    });
+    expect(layoutSaves(calls)[0]?.body?.version).toBe(2);
+    expect(
+      (layoutSaves(calls)[0]?.body?.cards as { elementId: string }[])
+        .map((c) => c.elementId)
+        .sort(),
+    ).toEqual(['archive', 'loans', 'server']);
+    await waitFor(() => {
+      expect(views.get('v-lending')?.version).toBe(3);
+    });
     // No Save button for the view.
     expect(screen.queryByRole('button', { name: /^Save/ })).toBeNull();
   });
@@ -737,9 +762,9 @@ describe('changing an open view (Modelling)', () => {
     fireEvent.click(within(pop).getByRole('button', { name: 'Create' }));
     await shown(['loans', 'server', 'shelf']);
     await waitFor(() => {
-      expect(changes(calls)).toHaveLength(1);
+      expect(contentsSaves(calls)).toHaveLength(1);
     });
-    expect(changes(calls)[0]?.body).toMatchObject({
+    expect(contentsSaves(calls)[0]?.body).toMatchObject({
       version: 1,
       elementIds: ['loans', 'server', 'shelf'],
       relationshipIds: ['r5'],
@@ -768,13 +793,19 @@ describe('changing an open view (Modelling)', () => {
     expect(screen.getByText('Removed “Reader” from the view. It stays in the model.')).toBeTruthy();
     expect(document.activeElement).toBe(canvasEl());
     await waitFor(() => {
-      expect(changes(calls)).toHaveLength(1);
+      expect(contentsSaves(calls)).toHaveLength(1);
     });
-    expect(changes(calls)[0]?.body).toMatchObject({
+    expect(contentsSaves(calls)[0]?.body).toMatchObject({
       version: 1,
       elementIds: ['catalogue', 'loans'],
       relationshipIds: ['r2'],
     });
+    await waitFor(() => {
+      expect(layoutSaves(calls)).toHaveLength(1);
+    });
+    expect(
+      (layoutSaves(calls)[0]?.body?.cards as { elementId: string }[]).map((c) => c.elementId),
+    ).toEqual(['catalogue', 'loans']);
   });
 
   it('offers no way to take one relationship out, on a line or a merged line', async () => {
@@ -867,11 +898,13 @@ describe('changing an open view (Modelling)', () => {
     fireEvent.drop(canvasEl(), { dataTransfer: dragged('reader'), clientX: 300, clientY: 200 });
     await shown(['loans', 'server', 'archive', 'reader']);
     await waitFor(() => {
-      expect(changes(calls).length).toBeGreaterThanOrEqual(2);
+      expect(contentsSaves(calls).length).toBeGreaterThanOrEqual(2);
     });
+    await screen.findByText('Saved');
+    // Contents and layouts alike, each with the version the one before left.
     const versions = changes(calls).map((call) => call.body?.version);
-    expect(versions).toEqual([1, 2]);
-    expect(changes(calls).at(-1)?.body?.elementIds).toEqual([
+    expect(versions).toEqual(versions.map((_, index) => index + 1));
+    expect(contentsSaves(calls).at(-1)?.body?.elementIds).toEqual([
       'loans',
       'server',
       'archive',

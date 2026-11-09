@@ -5,6 +5,7 @@ import type {
   JgfValidationResult,
   ModelAuthor,
   ModelSummary,
+  ViewCardLayout,
   ViewSummary,
 } from '@simplearchitecture/shared';
 
@@ -114,11 +115,15 @@ export interface ElementStore {
   ): Promise<AppliedElementChange | undefined>;
 }
 
-/** A view as stored: its summary and contents, element and relationship ids in model order. */
+/**
+ * A view as stored: its summary and contents, element and relationship ids in model order, and
+ * the layout of its cards that have a position (in model order too).
+ */
 export interface ViewRecord {
   summary: ViewSummary;
   elementIds: string[];
   relationshipIds: string[];
+  layout: ViewCardLayout[];
 }
 
 /** The two ends of a relationship as stored (null when the edge has none). */
@@ -142,7 +147,10 @@ export interface ViewChangeState {
   relationships: ReadonlyMap<string, RelationshipEnds>;
 }
 
-/** One view created, renamed, given new contents or deleted. Ids are already checked. */
+/**
+ * One view created, renamed, given new contents or a new layout, or deleted. Ids are already
+ * checked.
+ */
 export type ViewWrite =
   | {
       kind: 'create';
@@ -152,6 +160,7 @@ export type ViewWrite =
       relationshipIds: readonly string[];
     }
   | { kind: 'rename'; viewId: string; name: string }
+  | { kind: 'layout'; viewId: string; cards: readonly ViewCardLayout[] }
   | {
       kind: 'replace';
       viewId: string;

@@ -5,9 +5,9 @@ import type { ModelAuthor } from './models.js';
 
 /**
  * Views: a named, stored set of elements and relationships of one model, by id. A view never
- * changes the model, and card positions aren't stored (the canvas lays a view out when it opens).
- * Viewer and higher list and open views; Modeller and higher create, rename, change and delete
- * them. Every view is visible to everyone who can see the model. Views need PostgreSQL: without a
+ * changes the model. Each card can keep where it was left (its layout); a card without one is
+ * placed by the canvas when the view opens. Viewer and higher list and open views; Modeller and
+ * higher create, rename, change, lay out and delete them. Every view is visible to everyone who can see the model. Views need PostgreSQL: without a
  * database the routes answer 501 with `editingUnavailableMessage`.
  *
  * Deleting an element or a relationship from the model removes it from every view, and deleting a
@@ -28,6 +28,11 @@ export const maxViewElements = defaultNeighbourhoodCap;
 export const maxViewRelationships = 5_000;
 /** Most views one model may have. */
 export const maxViewsPerModel = 500;
+/** A card's width in a view's layout, when set by hand: as on the canvas. */
+export const minViewCardWidth = 168;
+export const maxViewCardWidth = 480;
+/** How far from the canvas's origin a card in a view's layout may be, either way, in pixels. */
+export const maxViewCardCoordinate = 1_000_000;
 
 /** The key two view names are compared by: the same key is the same name. */
 export function viewNameKey(name: string): string {
@@ -51,22 +56,38 @@ export const viewConflictMessage =
 export interface ViewSummary {
   id: string;
   name: string;
-  /** Starts at 1 and goes up by one with every rename or change of contents. */
+  /** Starts at 1 and goes up by one with every rename, change of contents or of layout. */
   version: number;
   elementCount: number;
   relationshipCount: number;
   /** ISO 8601, UTC. */
   createdAt: string;
   createdBy: ModelAuthor;
-  /** ISO 8601, UTC: the last rename or change of contents. */
+  /** ISO 8601, UTC: the last rename, change of contents or of layout. */
   updatedAt: string;
   updatedBy: ModelAuthor;
 }
 
-/** A view with its contents: element ids and relationship ids, each in the model's order. */
+/**
+ * Where one card of a view was left: its top left corner on the canvas (in canvas pixels, also for
+ * a card drawn inside a container) and, when its width was set by hand, that width.
+ */
+export interface ViewCardLayout {
+  elementId: string;
+  x: number;
+  y: number;
+  /** A whole number from `minViewCardWidth` to `maxViewCardWidth`. Absent: the card's own width. */
+  width?: number;
+}
+
+/**
+ * A view with its contents: element ids and relationship ids, each in the model's order, and the
+ * layout of those of its cards that have one (in the model's order too).
+ */
 export interface StoredView extends ViewSummary {
   elementIds: string[];
   relationshipIds: string[];
+  layout: ViewCardLayout[];
 }
 
 /** Response body of `GET /api/models/:id/views`: by name. */
@@ -75,8 +96,8 @@ export interface ViewListResponse {
 }
 
 /**
- * Response body of `GET /api/models/:id/views/:viewId` (200), `POST /api/models/:id/views` (201)
- * and `PUT /api/models/:id/views/:viewId/contents` (200).
+ * Response body of `GET /api/models/:id/views/:viewId` (200), `POST /api/models/:id/views` (201),
+ * `PUT /api/models/:id/views/:viewId/contents` (200) and `PUT …/layout` (200).
  */
 export interface ViewResult {
   view: StoredView;
@@ -119,6 +140,17 @@ export interface ReplaceViewContentsRequest {
   relationshipIds?: string[];
 }
 
+/**
+ * Body of `PUT /api/models/:id/views/:viewId/layout`: where the view's cards are, in place of the
+ * old layout. Each card at most once, and only cards in the view; a card of the view that isn't
+ * listed has no position afterwards. The same layout as stored changes nothing (no new version).
+ */
+export interface ReplaceViewLayoutRequest {
+  /** The view's version as read. An older one gets 409. */
+  version: number;
+  cards: ViewCardLayout[];
+}
+
 /** Query of the delete route, as sent: `?version=N`. */
 export interface DeleteViewRequest {
   version: number;
@@ -136,7 +168,7 @@ export interface ViewNotFound extends ApiError {
 
 /**
  * Response body (422) when a request is refused. Nothing was stored. `field`: `name`,
- * `elementIds`, `relationshipIds`, `version`, or '' (a general message).
+ * `elementIds`, `relationshipIds`, `cards`, `version`, or '' (a general message).
  */
 export interface ViewRejected extends ApiError {
   fields: ElementFieldIssue[];

@@ -50,6 +50,7 @@ import { TypeMark } from '../metamodel-ui';
 import { useModels } from '../models';
 import { counted, formatNumber } from '../words';
 import { ExplorerCanvas } from './explorer/canvas/ExplorerCanvas';
+import { storedWidths } from './explorer/canvas/viewLayout';
 import {
   hasMovedCards,
   noMovedPositions,
@@ -673,8 +674,8 @@ function Explorer({
     [addedKey, graph],
   );
 
-  // Cards moved on the canvas: visual only (never in the model or the URL), and dropped on a focus
-  // or depth change, or by Tidy up.
+  // Cards moved on the canvas: never in the model or the URL, and dropped on a focus or depth
+  // change, or by Tidy up. An open view saves its layout from what the canvas shows.
   const movedKey = inView ? canvasKey : `${elementId ?? ''}|${depth}`;
   const [moved, setMoved] = useState<{ key: string; positions: MovedPositions }>({
     key: movedKey,
@@ -699,25 +700,41 @@ function Explorer({
   // The canvas is laid out only when it is a new one; changes in between keep every card in place.
   const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}`;
   const layoutKey = `${canvasLayoutKey}|${tidyCount}`;
-  // Card widths set by hand on the canvas: visual only, like moved cards, and kept through Tidy up
-  // until the canvas is a new one.
-  const [widths, setWidths] = useState<{ key: string; widths: ReadonlyMap<string, number> }>({
-    key: canvasLayoutKey,
-    widths: noWidths,
-  });
-  if (widths.key !== canvasLayoutKey) setWidths({ key: canvasLayoutKey, widths: noWidths });
-  const cardWidths = widths.key === canvasLayoutKey ? widths.widths : noWidths;
+  // An open view's stored layout: a new canvas opens with it (cards where they were left, with
+  // their widths). A focus canvas has none.
+  const storedLayout = inView ? openView.view?.layout : undefined;
+  const baseWidths = useMemo(
+    () => (storedLayout === undefined ? noWidths : storedWidths(storedLayout)),
+    [storedLayout],
+  );
+  // Card widths set by hand on the canvas, kept through Tidy up until the canvas is a new one,
+  // which starts from the view's stored widths (none on a focus canvas). Saved only in a view.
+  const [widths, setWidths] = useState<{
+    key: string;
+    widths: ReadonlyMap<string, number> | undefined;
+  }>({ key: canvasLayoutKey, widths: undefined });
+  if (widths.key !== canvasLayoutKey) setWidths({ key: canvasLayoutKey, widths: undefined });
+  const cardWidths = (widths.key === canvasLayoutKey ? widths.widths : undefined) ?? baseWidths;
   const resizeCard = useCallback(
     (id: string, width: number | undefined) => {
       setWidths((current) => {
-        const next = new Map(current.key === canvasLayoutKey ? current.widths : noWidths);
+        const next = new Map(
+          (current.key === canvasLayoutKey ? current.widths : undefined) ?? baseWidths,
+        );
         if (width === undefined) next.delete(id);
         else next.set(id, width);
         return { key: canvasLayoutKey, widths: next };
       });
     },
-    [canvasLayoutKey],
+    [canvasLayoutKey, baseWidths],
   );
+  // Adding or taking off cards, and Tidy up, in a view that can change: once the canvas shows the
+  // change, it reports where its cards are, and the view's layout is saved.
+  const [arrangeRequest, setArrangeRequest] = useState(0);
+  const requestArrange = () => {
+    setArrangeRequest((n) => n + 1);
+  };
+  const saveViewLayout = openView.saveLayout;
   /** The canvas changed without a new layout (its key then): Tidy up has something to do. */
   const [keptFor, setKeptFor] = useState<string | null>(null);
 
@@ -1129,6 +1146,7 @@ function Explorer({
       return added?.contents;
     });
     if (!changed || added === undefined) return;
+    requestArrange();
     setViewFull(null);
     const count = added.relationships;
     setAnnouncement(
@@ -1141,11 +1159,12 @@ function Explorer({
       setViewFull(viewFullText);
       return;
     }
-    openView.change((current) =>
+    const changed = openView.change((current) =>
       current.elementIds.includes(id)
         ? undefined
         : { ...current, elementIds: [...current.elementIds, id] },
     );
+    if (changed) requestArrange();
   }
   const addRelationshipFrom = (id: string) => {
     ask(() => {
@@ -1337,7 +1356,9 @@ function Explorer({
     const takesSelection = selectedId !== undefined && !after.hops.has(selectedId);
     const apply = () => {
       if (inView) {
-        openView.change((current) => withoutElementInView(graph, current, id, nest));
+        if (openView.change((current) => withoutElementInView(graph, current, id, nest))) {
+          requestArrange();
+        }
         setViewFull(null);
       } else {
         setRemoved((current) => ({
@@ -1362,6 +1383,8 @@ function Explorer({
   const tidyUp = () => {
     setMoved({ key: movedKey, positions: noMovedPositions });
     setTidyCount((n) => n + 1);
+    // In a view, the new layout is saved.
+    if (inView) requestArrange();
     // The button is disabled now: keep keyboard focus on the canvas, never on <body>.
     document.getElementById('canvas')?.focus();
   };
@@ -1816,6 +1839,9 @@ function Explorer({
                 reveal={reveal}
                 removable={removableIds}
                 onRemoveCard={removeCard}
+                storedLayout={storedLayout}
+                arrangeRequest={arrangeRequest}
+                {...(viewEditable && !viewBlocked ? { onArranged: saveViewLayout } : {})}
               />
             </ReactFlowProvider>
           </ErrorBoundary>

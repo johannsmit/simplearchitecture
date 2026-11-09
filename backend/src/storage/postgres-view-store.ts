@@ -1,4 +1,4 @@
-import type { ViewSummary } from '@simplearchitecture/shared';
+import type { ViewCardLayout, ViewSummary } from '@simplearchitecture/shared';
 import type { Db, Queryable } from '../db/db.js';
 import {
   isModelId,
@@ -11,8 +11,8 @@ import {
 } from './model-store.js';
 
 /**
- * Views in PostgreSQL (migration 010): one row per view, plus one per element and per relationship
- * in it. The foreign keys keep views consistent with the model: deleting an element, a
+ * Views in PostgreSQL (migrations 010 and 011): one row per view, plus one per element and per
+ * relationship in it; a card's position is on its element's row. The foreign keys keep views consistent with the model: deleting an element, a
  * relationship or the model removes it from every view in the same transaction. Ids travel as one
  * JSON parameter, whatever their number.
  */
@@ -31,9 +31,17 @@ interface ViewRow {
   relationship_count: number;
 }
 
+interface StoredCard {
+  elementId: string;
+  x: number;
+  y: number;
+  width: number | null;
+}
+
 interface FullViewRow extends ViewRow {
   element_ids: string[];
   relationship_ids: string[];
+  layout: StoredCard[];
 }
 
 /** A row of the model joined with its views: without a view, every view column is null. */
@@ -55,7 +63,12 @@ const contentColumns = `
   coalesce((select jsonb_agg(r.id order by r.ordinal)
             from view_relationships vr
             join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
-            where vr.view_id = v.id and r.id is not null), '[]'::jsonb) as relationship_ids`;
+            where vr.view_id = v.id and r.id is not null), '[]'::jsonb) as relationship_ids,
+  coalesce((select jsonb_agg(jsonb_build_object('elementId', ve.element_id, 'x', ve.x, 'y', ve.y,
+                               'width', ve.width) order by e.ordinal)
+            from view_elements ve
+            join elements e on e.model_id = ve.model_id and e.id = ve.element_id
+            where ve.view_id = v.id and ve.x is not null), '[]'::jsonb) as layout`;
 
 // One statement, so the view and its contents are read as one. No row: no model; a row without a
 // view id: no such view in the model.
@@ -109,6 +122,15 @@ const deleteOtherRelationships = `delete from view_relationships vr
       where r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
         and r.id in (select jsonb_array_elements_text($2::text::jsonb)))`;
 
+// A new layout: every card's position goes, then the cards sent get theirs.
+const clearLayout = `update view_elements set x = null, y = null, width = null
+  where view_id = $1::uuid and x is not null`;
+
+const setLayout = `update view_elements ve set x = c.x, y = c.y, width = c.width
+  from jsonb_to_recordset($2::text::jsonb)
+    as c(element_id text, x double precision, y double precision, width integer)
+  where ve.view_id = $1::uuid and ve.element_id = c.element_id`;
+
 const touchView = `update views set version = version + 1, updated_at = $3, updated_by_id = $4,
   updated_by_name = $5 where id = $1::uuid and model_id = $2::uuid`;
 
@@ -136,6 +158,12 @@ function recordOf(row: FullViewRow): ViewRecord {
     summary: summaryOf(row),
     elementIds: row.element_ids,
     relationshipIds: row.relationship_ids,
+    layout: row.layout.map(({ elementId, x, y, width }): ViewCardLayout => ({
+      elementId,
+      x,
+      y,
+      ...(width === null ? {} : { width }),
+    })),
   };
 }
 
@@ -222,6 +250,23 @@ export class PostgresViewStore implements ViewStore {
           modelId,
           write.name,
         ]);
+        await tx.query(touchView, [write.viewId, modelId, at, actor.id, actor.name]);
+      } else if (write.kind === 'layout') {
+        await tx.query(clearLayout, [write.viewId]);
+        if (write.cards.length > 0) {
+          await tx.query(setLayout, [
+            write.viewId,
+            JSON.stringify(
+              write.cards.map((card) => ({
+                element_id: card.elementId,
+                x: card.x,
+                y: card.y,
+                width: card.width ?? null,
+              })),
+            ),
+          ]);
+        }
+        details = { ...details, cards: write.cards.length };
         await tx.query(touchView, [write.viewId, modelId, at, actor.id, actor.name]);
       } else if (write.kind === 'replace') {
         await tx.query(deleteOtherElements, [write.viewId, JSON.stringify(write.elementIds)]);

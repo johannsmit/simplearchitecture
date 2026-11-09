@@ -137,6 +137,7 @@ describe('creating and reading views', () => {
     const summary: Partial<typeof view> = { ...view };
     delete summary.elementIds;
     delete summary.relationshipIds;
+    delete summary.layout;
     expect(views).toEqual([summary]);
   });
 
@@ -717,6 +718,296 @@ describe('deletes in the model keep views consistent', () => {
   });
 });
 
+describe('layouts', () => {
+  const create = async () =>
+    (
+      await service.createView(
+        modelId,
+        {
+          name: 'Baking',
+          elementIds: ['baker', 'kitchen', 'oven', 'orders'],
+          relationshipIds: ['r1', 'r2'],
+        },
+        modeller,
+      )
+    ).view;
+  const layout = (version: number, cards: unknown) => ({ version, cards });
+
+  it('starts with no layout, and stores where each card is, read back in model order', async () => {
+    const view = await create();
+    expect(view.layout).toEqual([]);
+    const { view: laid } = await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(1, [
+        { elementId: 'orders', x: 412.5, y: -36.25 },
+        { elementId: 'baker', x: 0, y: 0, width: 240 },
+        { elementId: 'oven', x: -1_000_000, y: 1_000_000, width: 168 },
+      ]),
+      other,
+    );
+    expect(laid).toMatchObject({
+      version: 2,
+      updatedBy: other,
+      elementIds: ['baker', 'kitchen', 'oven', 'orders'],
+      relationshipIds: ['r1', 'r2'],
+      layout: [
+        { elementId: 'baker', x: 0, y: 0, width: 240 },
+        { elementId: 'oven', x: -1_000_000, y: 1_000_000, width: 168 },
+        { elementId: 'orders', x: 412.5, y: -36.25 },
+      ],
+    });
+    expect(laid.layout[2]).not.toHaveProperty('width');
+    expect((await service.getView(modelId, view.id)).view).toEqual(laid);
+  });
+
+  it('keeps a position exactly as sent', async () => {
+    const view = await create();
+    const x = 0.1 + 0.2;
+    const y = -123.456789012345;
+    const { view: laid } = await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(1, [{ elementId: 'baker', x, y }]),
+      modeller,
+    );
+    expect(laid.layout).toEqual([{ elementId: 'baker', x, y }]);
+  });
+
+  it('replaces the whole layout: a card not sent has no position afterwards', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(1, [
+        { elementId: 'baker', x: 1, y: 2 },
+        { elementId: 'orders', x: 3, y: 4, width: 300 },
+      ]),
+      modeller,
+    );
+    const { view: laid } = await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(2, [{ elementId: 'orders', x: 5, y: 6 }]),
+      modeller,
+    );
+    expect(laid).toMatchObject({ version: 3, layout: [{ elementId: 'orders', x: 5, y: 6 }] });
+    const { view: cleared } = await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(3, []),
+      modeller,
+    );
+    expect(cleared).toMatchObject({ version: 4, layout: [] });
+  });
+
+  it('changes nothing, and keeps the version, when the layout is the same', async () => {
+    const view = await create();
+    const cards = [
+      { elementId: 'orders', x: 3, y: 4, width: 300 },
+      { elementId: 'baker', x: 1, y: 2 },
+    ];
+    await service.replaceLayout(modelId, view.id, layout(1, cards), modeller);
+    const before = await audits();
+    const { view: same } = await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(2, [...cards].reverse()),
+      other,
+    );
+    expect(same).toMatchObject({ version: 2, updatedBy: modeller });
+    expect(await audits()).toEqual(before);
+    const fresh = (await service.createView(modelId, { name: 'Empty', elementIds: [] }, modeller))
+      .view;
+    const { view: empty } = await service.replaceLayout(modelId, fresh.id, layout(1, []), other);
+    expect(empty).toMatchObject({ version: 1, updatedBy: modeller });
+  });
+
+  it('keeps the layout when the contents change, and drops the position of a card taken out', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(1, [
+        { elementId: 'baker', x: 1, y: 2 },
+        { elementId: 'orders', x: 3, y: 4, width: 200 },
+      ]),
+      modeller,
+    );
+    const { view: fewer } = await service.replaceContents(
+      modelId,
+      view.id,
+      { version: 2, elementIds: ['kitchen', 'oven', 'orders', 'till'] },
+      modeller,
+    );
+    expect(fewer.layout).toEqual([{ elementId: 'orders', x: 3, y: 4, width: 200 }]);
+    const { view: back } = await service.replaceContents(
+      modelId,
+      view.id,
+      { version: 3, elementIds: ['baker', 'kitchen', 'oven', 'orders', 'till'] },
+      modeller,
+    );
+    expect(back.layout).toEqual([{ elementId: 'orders', x: 3, y: 4, width: 200 }]);
+  });
+
+  it('drops the position of an element deleted from the model', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(1, [
+        { elementId: 'baker', x: 1, y: 2 },
+        { elementId: 'orders', x: 3, y: 4 },
+      ]),
+      modeller,
+    );
+    await new ElementService(store).deleteElement(modelId, 'orders', { version: '1' }, modeller);
+    expect((await service.getView(modelId, view.id)).view.layout).toEqual([
+      { elementId: 'baker', x: 1, y: 2 },
+    ]);
+  });
+
+  it('refuses cards that are not in the view, or in it twice, naming them', async () => {
+    const view = await create();
+    const fields = await fieldsOf(
+      service.replaceLayout(
+        modelId,
+        view.id,
+        layout(1, [
+          { elementId: 'baker', x: 1, y: 2 },
+          { elementId: 'baker', x: 3, y: 4 },
+          { elementId: 'till', x: 0, y: 0 },
+          { elementId: 'ghost', x: 0, y: 0 },
+        ]),
+        modeller,
+      ),
+    );
+    expect(fields).toEqual([
+      { field: 'cards', message: expect.stringContaining('"baker"') as string },
+      {
+        field: 'cards',
+        message: expect.stringMatching(/not in the view.*"till", "ghost"/) as string,
+      },
+    ]);
+    expect((await service.getView(modelId, view.id)).view).toMatchObject({
+      version: 1,
+      layout: [],
+    });
+  });
+
+  it('refuses a card of another model, through that model', async () => {
+    const view = await create();
+    const second = (await store.save(bakery, modeller)).id;
+    const error = await refusal(
+      service.replaceLayout(
+        second,
+        view.id,
+        layout(1, [{ elementId: 'baker', x: 0, y: 0 }]),
+        modeller,
+      ),
+    );
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect((error as NotFoundError).what).toBe('view');
+  });
+
+  it('refuses positions and widths that are not finite numbers within bounds', async () => {
+    const view = await create();
+    for (const card of [
+      { elementId: 'baker', x: 1_000_001, y: 0 },
+      { elementId: 'baker', x: 0, y: -1_000_001 },
+      { elementId: 'baker', x: Number.NaN, y: 0 },
+      { elementId: 'baker', x: Number.POSITIVE_INFINITY, y: 0 },
+      { elementId: 'baker', x: '12', y: 0 },
+      { elementId: 'baker', x: 0 },
+      { elementId: 'baker', x: 0, y: 0, width: 167 },
+      { elementId: 'baker', x: 0, y: 0, width: 481 },
+      { elementId: 'baker', x: 0, y: 0, width: 200.5 },
+      { elementId: 'baker', x: 0, y: 0, width: null },
+      { elementId: '', x: 0, y: 0 },
+      { elementId: 7, x: 0, y: 0 },
+      { elementId: 'baker', x: 0, y: 0, height: 80 },
+      'baker',
+    ]) {
+      const fields = await fieldsOf(
+        service.replaceLayout(modelId, view.id, layout(1, [card]), modeller),
+      );
+      expect(fields.map((issue) => issue.field)).toEqual(['cards']);
+    }
+    for (const body of [
+      { version: 1 },
+      { version: 1, cards: {} },
+      { cards: [] },
+      { version: 1, cards: [], extra: true },
+      null,
+    ]) {
+      expect(await refusal(service.replaceLayout(modelId, view.id, body, modeller))).toBeInstanceOf(
+        RejectedError,
+      );
+    }
+    expect((await service.getView(modelId, view.id)).view).toMatchObject({
+      version: 1,
+      layout: [],
+    });
+  });
+
+  it('refuses more cards than a view holds', async () => {
+    const view = await create();
+    const cards = Array.from({ length: maxViewElements + 1 }, (_, index) => ({
+      elementId: `e${index}`,
+      x: 0,
+      y: 0,
+    }));
+    const fields = await fieldsOf(
+      service.replaceLayout(modelId, view.id, layout(1, cards), modeller),
+    );
+    expect(fields).toEqual([
+      { field: 'cards', message: expect.stringContaining(`${maxViewElements}`) as string },
+    ]);
+  });
+
+  it('refuses an older version with the current one, and stores nothing', async () => {
+    const view = await create();
+    await service.renameView(modelId, view.id, { version: 1, name: 'Renamed' }, other);
+    const error = await refusal(
+      service.replaceLayout(
+        modelId,
+        view.id,
+        layout(1, [{ elementId: 'baker', x: 0, y: 0 }]),
+        modeller,
+      ),
+    );
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).currentVersion).toBe(2);
+    expect((error as ConflictError).message).toBe(viewConflictMessage);
+    expect((await service.getView(modelId, view.id)).view.layout).toEqual([]);
+  });
+
+  it('audits a new layout with its field name and count only, never a position', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      layout(1, [
+        { elementId: 'baker', x: 17, y: 23, width: 211 },
+        { elementId: 'oven', x: 5, y: 6 },
+      ]),
+      other,
+    );
+    const rows = await audits();
+    expect(rows.at(-1)).toEqual({
+      action: 'view-changed',
+      user_id: other.id,
+      user_name: other.name,
+      model_id: modelId,
+      view_id: view.id,
+      element_id: null,
+      relationship_id: null,
+      details: { fields: ['layout'], cards: 2 },
+    });
+    expect(JSON.stringify(rows.at(-1)?.details)).not.toMatch(/17|23|211|baker|oven/);
+  });
+});
+
 describe('without a database', () => {
   it('refuses every call: views need PostgreSQL', async () => {
     const files = await FileModelStore.open(tempDataDir(), quiet);
@@ -729,6 +1020,7 @@ describe('without a database', () => {
       withoutDb.createView(id, { name: 'X', elementIds: [] }, modeller),
       withoutDb.renameView(id, id, { version: 1, name: 'X' }, modeller),
       withoutDb.replaceContents(id, id, { version: 1, elementIds: [] }, modeller),
+      withoutDb.replaceLayout(id, id, { version: 1, cards: [] }, modeller),
       withoutDb.deleteView(id, id, { version: '1' }, modeller),
     ]) {
       expect(await refusal(promise)).toBeInstanceOf(EditingUnavailableError);

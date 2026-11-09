@@ -253,6 +253,7 @@ describe('a Modeller', () => {
         cookie,
         body: { version: 1, elementIds: [] },
       }),
+      await call(target, 'PUT', `${url}/layout`, { cookie, body: { version: 1, cards: [] } }),
       await call(target, 'DELETE', `${url}?version=1`, { cookie }),
     ]) {
       expect(res.statusCode).toBe(409);
@@ -276,6 +277,7 @@ describe('a Modeller', () => {
         cookie,
         body: { version: 1, elementIds: [] },
       }),
+      await call(target, 'PUT', `${url}/layout`, { cookie, body: { version: 1, cards: [] } }),
       await call(target, 'DELETE', `${url}?version=1`, { cookie }),
       await call(target, 'GET', `${views()}/not-a-view-id`, { cookie }),
     ]) {
@@ -343,6 +345,85 @@ describe('a Modeller', () => {
   });
 });
 
+describe('layouts', () => {
+  it('a Modeller or an Admin saves where the cards are, logged without positions', async () => {
+    for (const roles of [['Modeller'], ['Admin']]) {
+      const { target, cookie } = await signedInAs(roles);
+      const logs = captureLogs(target);
+      const view = await created(target, cookie);
+      const url = `${views()}/${view.id}/layout`;
+      const res = await call(target, 'PUT', url, {
+        cookie,
+        body: {
+          version: 1,
+          cards: [
+            { elementId: 'ledger', x: 314.5, y: -27 },
+            { elementId: 'clerk', x: 8, y: 9, width: 256 },
+          ],
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const { view: laid } = res.json<ViewResult>();
+      expect(laid).toMatchObject({
+        version: 2,
+        layout: [
+          { elementId: 'clerk', x: 8, y: 9, width: 256 },
+          { elementId: 'ledger', x: 314.5, y: -27 },
+        ],
+      });
+      const opened = await call(target, 'GET', `${views()}/${view.id}`, { cookie });
+      expect(opened.json<ViewResult>().view).toEqual(laid);
+      // The same again: nothing changes, nothing is logged.
+      const same = await call(target, 'PUT', url, {
+        cookie,
+        body: { version: 2, cards: laid.layout },
+      });
+      expect(same.json<ViewResult>().view.version).toBe(2);
+      const audit = logs.filter((line) => line.includes('"audit":"view-laid-out"'));
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toContain(view.id);
+      expect(audit[0]).not.toMatch(/314|256|ledger|clerk/);
+      await app?.close();
+      app = undefined;
+      await resetTestDb(db);
+      const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
+      modelId = (await store.save(harbour, { id: 'oid-seed', name: 'Made-up Seeder' })).id;
+    }
+  });
+
+  it('gets 422 on cards for a card not in the view and for a position out of bounds', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    const url = `${views()}/${view.id}/layout`;
+    for (const cards of [
+      [{ elementId: 'crane', x: 0, y: 0 }],
+      [{ elementId: 'clerk', x: 2_000_000, y: 0 }],
+      [{ elementId: 'clerk', x: 0, y: 0, width: 999 }],
+      [{ elementId: 'clerk', x: 0, y: '0' }],
+    ]) {
+      const res = await call(target, 'PUT', url, { cookie, body: { version: 1, cards } });
+      expect(res.statusCode).toBe(422);
+      expect(res.json<ViewRejected>().fields.map((issue) => issue.field)).toEqual(['cards']);
+    }
+    const wrongType = await call(target, 'PUT', url, {
+      cookie,
+      raw: 'version=1',
+      contentType: 'application/x-www-form-urlencoded',
+    });
+    expect(wrongType.statusCode).toBe(415);
+    const tooLarge = await call(target, 'PUT', url, {
+      cookie,
+      body: { version: 1, cards: [{ elementId: 'x'.repeat(viewBodyLimit), x: 0, y: 0 }] },
+    });
+    expect(tooLarge.statusCode).toBe(413);
+    const bad = await call(target, 'PUT', `/api/models/not-a-model/views/${view.id}/layout`, {
+      cookie,
+      body: { version: 1, cards: [] },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+});
+
 describe('a Viewer', () => {
   it('lists and opens views, and can change none', async () => {
     const modeller = await signedInAs(['Modeller']);
@@ -361,10 +442,15 @@ describe('a Viewer', () => {
         cookie,
         body: { version: 1, elementIds: [] },
       }),
+      await call(target, 'PUT', `${url}/layout`, {
+        cookie,
+        body: { version: 1, cards: [{ elementId: 'clerk', x: 10, y: 20 }] },
+      }),
       await call(target, 'DELETE', `${url}?version=1`, { cookie }),
     ]) {
       expect(res.statusCode).toBe(403);
     }
+    expect((await call(target, 'GET', url, { cookie })).json<ViewResult>().view.layout).toEqual([]);
     expect((await call(target, 'GET', url, { cookie })).json<ViewResult>().view.version).toBe(1);
   });
 });

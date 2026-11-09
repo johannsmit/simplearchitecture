@@ -170,7 +170,7 @@ export function SaveViewDialog(props: SaveViewDialogProps) {
     <NameDialog
       id="save-view"
       title="Save as view"
-      text={`Saves the ${counted(elementIds.length, 'element')} and ${counted(relationshipIds.length, 'relationship')} on the canvas. Everyone who can open this model can open the view. Card positions aren't saved: it's laid out when it opens.`}
+      text={`Saves the ${counted(elementIds.length, 'element')} and ${counted(relationshipIds.length, 'relationship')} on the canvas. Everyone who can open this model can open the view. It's laid out when it opens, and keeps where you then put its cards.`}
       initialName={props.initialName}
       submitLabel="Save view"
       busyLabel="Saving…"

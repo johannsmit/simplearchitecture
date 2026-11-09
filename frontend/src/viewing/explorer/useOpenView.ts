@@ -1,6 +1,6 @@
-import type { StoredView, ViewSummary } from '@simplearchitecture/shared';
+import type { StoredView, ViewCardLayout, ViewSummary } from '@simplearchitecture/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiRequestError, getView, replaceViewContents } from '../../api';
+import { ApiRequestError, getView, replaceViewContents, replaceViewLayout } from '../../api';
 import type { ViewContents } from './views';
 
 /** Why the last change to the view wasn't saved. */
@@ -28,6 +28,12 @@ export interface OpenView {
    * reloaded after someone else changed or deleted it.
    */
   change: (next: (current: ViewContents) => ViewContents | undefined) => boolean;
+  /**
+   * Saves where the view's cards are, after a change of contents on its way. Only for what the
+   * person did on the canvas: a layout the canvas made on its own is never saved. Refused (false)
+   * as `change` is. Cards no longer in the view are left out.
+   */
+  saveLayout: (cards: readonly ViewCardLayout[]) => boolean;
   /** Something was deleted from the model: the server has taken it out of every view already. */
   prune: (next: (current: ViewContents) => ViewContents) => void;
   /** Reads the view again (Reload view) and drops a problem. */
@@ -38,6 +44,16 @@ export interface OpenView {
 }
 
 const noContents: ViewContents = { elementIds: [], relationshipIds: [] };
+
+interface Queue {
+  running: boolean;
+  /** The contents changed since the last save. */
+  contents: boolean;
+  /** The layout to save after the contents. */
+  layout: readonly ViewCardLayout[] | undefined;
+}
+
+const idleQueue = (): Queue => ({ running: false, contents: false, layout: undefined });
 
 const contentsOf = (view: StoredView | undefined): ViewContents =>
   view ? { elementIds: view.elementIds, relationshipIds: view.relationshipIds } : noContents;
@@ -65,6 +81,7 @@ const initial = (key: string): State => ({
 /**
  * The open view: read from the server, changed on the canvas and saved at once. After a failed
  * save the canvas goes back to the last saved contents, so what is shown is always what is stored.
+ * A layout that wasn't saved stays on the canvas: the next one saved holds every card again.
  */
 export function useOpenView(modelId: string, viewId: string | undefined): OpenView {
   const [attempt, setAttempt] = useState(0);
@@ -75,11 +92,12 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
 
   // Read by the save queue, which runs outside rendering.
   const live = useRef({ key, saved: undefined as StoredView | undefined, shown: noContents });
-  const queue = useRef({ running: false, again: false });
+  // What waits to be saved: the contents, and the latest layout asked for.
+  const queue = useRef(idleQueue());
 
   useEffect(() => {
     live.current = { key, saved: undefined, shown: noContents };
-    queue.current = { running: false, again: false };
+    queue.current = idleQueue();
     if (viewId === undefined) return;
     const controller = new AbortController();
     getView(modelId, viewId, controller.signal)
@@ -111,33 +129,38 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
 
   const run = useCallback(() => {
     const q = queue.current;
-    if (q.running) {
-      // Saved next, with whatever the view holds by then.
-      q.again = true;
-      return;
-    }
+    // Set by a change made while a save runs (outside this function).
+    const pending = (): boolean => q.contents || q.layout !== undefined;
+    // Saved next, with whatever the view holds by then.
+    if (q.running || !pending()) return;
     if (live.current.saved === undefined || viewId === undefined) return;
     q.running = true;
     const runKey = live.current.key;
     const stale = () => live.current.key !== runKey;
-    // Set by a change made while a save runs (outside this function).
-    const wantsAgain = (): boolean => q.again;
     setState((previous) => (previous.key === runKey ? { ...previous, saving: true } : previous));
     void (async () => {
       try {
         let view: StoredView | undefined;
-        do {
-          q.again = false;
+        while (pending()) {
           const { saved, shown } = live.current;
           if (saved === undefined) return;
-          view = await replaceViewContents(modelId, viewId, {
-            version: saved.version,
-            elementIds: [...shown.elementIds],
-            relationshipIds: [...shown.relationshipIds],
-          });
+          if (q.contents) {
+            q.contents = false;
+            view = await replaceViewContents(modelId, viewId, {
+              version: saved.version,
+              elementIds: [...shown.elementIds],
+              relationshipIds: [...shown.relationshipIds],
+            });
+          } else {
+            const inView = new Set(saved.elementIds);
+            const cards = (q.layout ?? []).filter((card) => inView.has(card.elementId));
+            q.layout = undefined;
+            view = await replaceViewLayout(modelId, viewId, { version: saved.version, cards });
+          }
           if (stale()) return;
           live.current.saved = view;
-        } while (wantsAgain());
+        }
+        if (view === undefined) return;
         live.current.shown = contentsOf(view);
         const done = view;
         setState((previous) =>
@@ -171,8 +194,7 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
             : previous,
         );
       } finally {
-        q.running = false;
-        q.again = false;
+        if (!stale()) Object.assign(q, idleQueue());
       }
     })();
   }, [modelId, viewId]);
@@ -187,6 +209,23 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
       const changeKey = live.current.key;
       setState((previous) =>
         previous.key === changeKey ? { ...previous, contents, problem: undefined } : previous,
+      );
+      queue.current.contents = true;
+      run();
+      return true;
+    },
+    [blocked, run],
+  );
+
+  const saveLayout = useCallback(
+    (cards: readonly ViewCardLayout[]): boolean => {
+      if (live.current.saved === undefined || blocked) return false;
+      queue.current.layout = cards;
+      const layoutKey = live.current.key;
+      setState((previous) =>
+        previous.key === layoutKey && previous.problem !== undefined
+          ? { ...previous, problem: undefined }
+          : previous,
       );
       run();
       return true;
@@ -236,6 +275,7 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
     savedCount: current.savedCount,
     problem: current.problem,
     change,
+    saveLayout,
     prune,
     reload,
     renamed,
