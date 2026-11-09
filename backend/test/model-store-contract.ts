@@ -76,7 +76,11 @@ export function roundTripDocuments(): [string, JgfDocument][] {
           relation: 'Relation',
           directed: true,
           label: 'Edge label',
-          metadata: { data: 'Made-up data', architectureState: 'Target', note: 'Made-up note' },
+          metadata: {
+            requestData: 'Made-up data',
+            architectureState: 'Target',
+            note: 'Made-up note',
+          },
         },
         { id: 'e-3', source: '42', target: 'type-not-first', relation: 'Contains' },
       ],

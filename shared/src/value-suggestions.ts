@@ -10,6 +10,7 @@ import {
   isStandardPropertyKey,
   isStandardPropertyOf,
   nodeTypes,
+  retiredDataKey,
   standardProperties,
 } from './metamodel.js';
 import { isRelationshipViewKey } from './relationship-views.js';
@@ -28,7 +29,8 @@ const isCountryKey = (key: string): boolean =>
 function valuesOf(
   items: Iterable<{ metadata: Readonly<Record<string, unknown>> }>,
   isKey: (key: string) => boolean,
-): PropertyValues {
+  poolOf: (key: string) => string = (key) => key,
+): Map<string, readonly string[]> {
   const counts = new Map<string, Map<string, number>>();
   for (const item of items) {
     for (const key of Object.keys(item.metadata)) {
@@ -36,15 +38,16 @@ function valuesOf(
       const read = filterValueOf(item, key);
       if (read === undefined || /[\r\n]/.test(read)) continue;
       const value = isCountryKey(key) ? read.toUpperCase() : read;
-      let values = counts.get(key);
+      const pool = poolOf(key);
+      let values = counts.get(pool);
       if (!values) {
         values = new Map();
-        counts.set(key, values);
+        counts.set(pool, values);
       }
       values.set(value, (values.get(value) ?? 0) + 1);
     }
   }
-  const result = new Map<string, string[]>();
+  const result = new Map<string, readonly string[]>();
   for (const [key, values] of counts) {
     const sorted = [...values].sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]));
     result.set(
@@ -68,14 +71,25 @@ export function elementPropertyValues(graph: ModelGraph): PropertyValues {
   return values;
 }
 
+/**
+ * Request Data and Response Data suggest the same values, from both: the same data are often sent
+ * one way and returned another.
+ */
+const dataKeys = new Set<string>(['requestData', 'responseData']);
+const dataPool = 'requestData';
+
 /** What relationships hold, apart from elements, worked out once per graph. */
 export function relationshipPropertyValues(graph: ModelGraph): PropertyValues {
   let values = relationshipCache.get(graph);
   if (values === undefined) {
-    values = valuesOf(
+    const found = valuesOf(
       graph.relationships,
       (key) => isRelationshipViewKey(key) && key !== 'architectureState',
+      (key) => (dataKeys.has(key) ? dataPool : key),
     );
+    const data = found.get(dataPool);
+    if (data !== undefined) for (const key of dataKeys) found.set(key, data);
+    values = found;
     relationshipCache.set(graph, values);
   }
   return values;
@@ -102,9 +116,11 @@ function namesOf(
 const isElementName = (key: string): boolean =>
   isFilterableKey(key) && !nodeTypes.some((type) => isStandardPropertyOf(type, key));
 
-/** A key a relationship's form can take as custom metadata: not one of its own fields. */
+/** A key a relationship's form can take as custom metadata: not one of its own fields, nor Data. */
 const isRelationshipName = (key: string): boolean =>
-  isRelationshipViewKey(key) && !(isStandardPropertyKey(key) && hasStandardEdgeProperty(key));
+  isRelationshipViewKey(key) &&
+  key !== retiredDataKey &&
+  !(isStandardPropertyKey(key) && hasStandardEdgeProperty(key));
 
 const elementNameCache = new WeakMap<ModelGraph, readonly string[]>();
 const relationshipNameCache = new WeakMap<ModelGraph, readonly string[]>();

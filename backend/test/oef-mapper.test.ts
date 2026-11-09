@@ -174,7 +174,7 @@ describe('convertOef: the made-up bakery sample', () => {
     expect(report.functions.keptAsNodes).toEqual([{ id: 'e-fn-report', name: 'Sales report' }]);
   });
 
-  it('maps Flow to a Relation with its name as Data, mapping relationship properties like element ones', () => {
+  it('maps Flow to a Relation with its name as Request Data, mapping relationship properties like element ones', () => {
     expect(jgf.graph.edges).toEqual([
       {
         id: 'r-orders',
@@ -184,7 +184,7 @@ describe('convertOef: the made-up bakery sample', () => {
         directed: true,
         label: 'Orders',
         metadata: {
-          data: 'Orders',
+          requestData: 'Orders',
           archimateType: 'Flow',
           description: 'Customers send orders.',
           integrationType: 'API Gateway',
@@ -1219,15 +1219,15 @@ describe('convertOef: two-way relationships', () => {
     expect(validateJgf(jgf).warnings).toEqual([]);
   });
 
-  it('sets Data from the name only where a rule says so, and keeps a custom property apart', () => {
+  it('sets Request Data from the name only where a rule says so, and keeps a custom property apart', () => {
     const { jgf } = convertOef(
       oef({
         elements,
-        definitions: `<propertyDefinition identifier="pd-flow" type="string"><name>Information Flow</name></propertyDefinition>`,
+        definitions: `<propertyDefinition identifier="pd-flow" type="string"><name>Information Flow</name></propertyDefinition><propertyDefinition identifier="pd-data" type="string"><name>Data</name></propertyDefinition>`,
         relationships: `
           <relationship identifier="r-flow" source="a" target="b" xsi:type="Flow">
             <name xml:lang="en">Made-up rows</name>
-            <properties><property propertyDefinitionRef="pd-flow"><value xml:lang="en">Made-up</value></property></properties>
+            <properties><property propertyDefinitionRef="pd-flow"><value xml:lang="en">Made-up</value></property><property propertyDefinitionRef="pd-data"><value xml:lang="en">Made-up data</value></property></properties>
           </relationship>
           <relationship identifier="r-plain" source="a" target="b" xsi:type="Association">
             <name xml:lang="en">Made-up link</name>
@@ -1236,12 +1236,15 @@ describe('convertOef: two-way relationships', () => {
       withAssociation('Relation'),
     );
     expect(jgf.graph.edges?.[0]?.metadata).toMatchObject({
-      data: 'Made-up rows',
+      requestData: 'Made-up rows',
       oefInformationFlow: 'Made-up',
+      // A property named Data never takes the retired key.
+      oefData: 'Made-up data',
     });
+    expect(jgf.graph.edges?.[0]?.metadata).not.toHaveProperty('data');
     expect(jgf.graph.edges?.[0]?.metadata).not.toHaveProperty('informationFlow');
     expect(jgf.graph.edges?.[1]?.label).toBe('Made-up link');
-    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('data');
+    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('requestData');
     expect(validateJgf(jgf).valid).toBe(true);
   });
 

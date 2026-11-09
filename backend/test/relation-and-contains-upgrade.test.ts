@@ -445,7 +445,12 @@ describe('through the routes', () => {
           target: 'b',
           relation: 'Relation',
           label: 'Orders',
-          metadata: { data: 'Orders', identity: 'made-up-client', protocol: 'REST' },
+          metadata: {
+            requestData: 'Orders',
+            responseData: 'Order ids',
+            identity: 'made-up-client',
+            protocol: 'REST',
+          },
         },
         {
           id: 'context',
@@ -459,7 +464,7 @@ describe('through the routes', () => {
           source: 'a',
           target: 'b',
           relation: 'Relation',
-          metadata: { data: 7 },
+          metadata: { requestData: 7 },
         },
         {
           id: 'two',
@@ -475,7 +480,7 @@ describe('through the routes', () => {
           source: 'a',
           target: 'd',
           relation: 'Contains',
-          metadata: { data: 'Kept on a Contains' },
+          metadata: { requestData: 'Kept on a Contains' },
         },
       ],
     },
@@ -554,13 +559,13 @@ describe('through the routes', () => {
       [body.model.id],
     );
     expect(rows).toEqual([
-      { relation: 'Relation', metadata: { data: 'L' }, directed: false },
+      { relation: 'Relation', metadata: { requestData: 'L' }, directed: false },
       { relation: 'Relation', metadata: { protocol: 'REST' }, directed: null },
       { relation: 'Contains', metadata: null, directed: null },
     ]);
   });
 
-  it('Data is Modeller-only, text-only, and audited by name; Information flow is refused', async () => {
+  it('Request Data is Modeller-only, text-only, and audited by name; Information flow and Data are refused', async () => {
     const seeded = await PostgresModelStore.open(db, quiet);
     const { id } = await seeded.save(
       model([
@@ -577,15 +582,15 @@ describe('through the routes', () => {
       {},
       idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) }),
     );
-    expect((await call(app, 'PATCH', patch, undefined, { version: 1, data: 'x' })).statusCode).toBe(
-      401,
-    );
+    expect(
+      (await call(app, 'PATCH', patch, undefined, { version: 1, requestData: 'x' })).statusCode,
+    ).toBe(401);
     expect((await call(app, 'POST', post, undefined, relation)).statusCode).toBe(401);
     await app.close();
 
     const viewer = await signedIn(['Viewer']);
     expect(
-      (await call(viewer.target, 'PATCH', patch, viewer.cookie, { version: 1, data: 'x' }))
+      (await call(viewer.target, 'PATCH', patch, viewer.cookie, { version: 1, requestData: 'x' }))
         .statusCode,
     ).toBe(403);
     expect((await call(viewer.target, 'POST', post, viewer.cookie, relation)).statusCode).toBe(403);
@@ -594,14 +599,18 @@ describe('through the routes', () => {
     const { target, cookie } = await signedIn(['Modeller']);
     const logs = captureLogs(target);
     for (const value of [true, 1, [], {}]) {
-      const refused = await call(target, 'PATCH', patch, cookie, { version: 1, data: value });
+      const refused = await call(target, 'PATCH', patch, cookie, {
+        version: 1,
+        requestData: value,
+      });
       expect(refused.statusCode, JSON.stringify(value)).toBe(422);
-      expect(refused.json<{ fields: { field: string }[] }>().fields[0]?.field).toBe('data');
+      expect(refused.json<{ fields: { field: string }[] }>().fields[0]?.field).toBe('requestData');
     }
     for (const body of [
       { version: 1, informationFlow: true },
       { version: 1, metadata: { informationFlow: true } },
       { version: 1, metadata: { data: 'x' } },
+      { version: 1, data: 'x' },
     ]) {
       expect((await call(target, 'PATCH', patch, cookie, body)).statusCode).toBe(422);
     }
@@ -609,7 +618,7 @@ describe('through the routes', () => {
     expect(onPost.statusCode).toBe(422);
     const onContains = await call(target, 'PATCH', `/api/models/${id}/relationships/c`, cookie, {
       version: 1,
-      data: 'x',
+      responseData: 'x',
     });
     expect(onContains.statusCode).toBe(422);
 
@@ -632,14 +641,14 @@ describe('through the routes', () => {
 
     const saved = await call(target, 'PATCH', patch, cookie, {
       version: 1,
-      data: 'made-up-data',
+      requestData: 'made-up-data',
       metadata: { secretish: 'made-up-value' },
     });
     expect(saved.statusCode).toBe(200);
     const [audit] = await db.query<{ details: { fields: string[] } }>(
       `select details from audit where relationship_id = 'r' order by id desc limit 1`,
     );
-    expect(audit?.details.fields.sort()).toEqual(['data', 'metadata.secretish']);
+    expect(audit?.details.fields.sort()).toEqual(['metadata.secretish', 'requestData']);
     expect(JSON.stringify(audit)).not.toContain('made-up-value');
     expect(JSON.stringify(audit)).not.toContain('made-up-data');
     expect(logs.join('\n')).not.toContain('made-up-value');

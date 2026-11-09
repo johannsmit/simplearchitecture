@@ -213,14 +213,15 @@ describe('relationship information in Viewing', () => {
     expect(within(panel).getByRole('button', { name: /^To: Web Shop/ })).toBeTruthy();
     expect(within(panel).getByText('Orders come in online.')).toBeTruthy();
     expect(within(panel).getByText('Target')).toBeTruthy();
-    // The type line, and Data as a row of its own, never a custom one.
+    // The type line, and Request Data and Response Data as rows of their own, never custom ones.
     expect(panel.querySelector('.d-type')?.textContent).toBe('Relation');
     expect(within(panel).queryByText('Information flow')).toBeNull();
-    expect(within(panel).getByText('Data')).toBeTruthy();
-    expect(within(panel).queryByText('data')).toBeNull();
+    expect(within(panel).getByText('Request Data')).toBeTruthy();
+    expect(within(panel).getByText('Response Data')).toBeTruthy();
+    expect(within(panel).queryByText('requestData')).toBeNull();
     expect(within(panel).getByText('archimateType')).toBeTruthy();
     expect(within(panel).getByText('Flow')).toBeTruthy();
-    // The label, and Data (set from it where Information flow once was).
+    // The label, and Request Data (set from it where Information flow once was).
     expect(within(panel).getAllByText(/Places orders/)).toHaveLength(2);
     // No inputs, no Delete, no Open in Modelling.
     expect(panel.querySelector('input, textarea, select')).toBeNull();

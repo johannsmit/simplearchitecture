@@ -90,7 +90,8 @@ describe('the metamodel in shared/ matches metamodel/', () => {
       'architectureState',
       'identity',
       'identityContext',
-      'data',
+      'requestData',
+      'responseData',
     ]);
     expect(edgeTypeDefinitions.Contains.properties).toEqual(['architectureState']);
     for (const key of relationTextProperties) {

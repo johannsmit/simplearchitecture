@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   cardTopReach,
   labelHeight,
+  labelHeightOf,
+  labelLineHeight,
   labelMaxWidth,
   labelWidth,
   placeLabel,
@@ -111,6 +113,31 @@ describe('a label that is always visible', () => {
   it('leaves room for the state mark, and has no place on a path that isn’t a curve', () => {
     expect(placeRestingLabel(straight, 'Ab', true, [])?.width).toBe(labelWidth('Ab', true));
     expect(placeRestingLabel([], 'Ab', false, [])).toBeUndefined();
+  });
+
+  it('measures a label of two lines (Data) by its widest line and both lines’ height', () => {
+    const two = 'Request: A\nResponse: Order numbers';
+    expect(labelWidth(two, false, 500)).toBe(labelWidth('Response: Order numbers', false, 500));
+    expect(labelHeightOf('One line')).toBe(labelHeight);
+    expect(labelHeightOf(two)).toBe(labelHeight + labelLineHeight);
+  });
+
+  it('keeps the extra line clear of a card just below the line', () => {
+    // A card under the middle, its top (with the badge's reach) 15px below the line: a one-line
+    // label (13px down with its margin) fits at 50%, a two-line one (20px down) moves along.
+    const under = [box(150, 15 + cardTopReach, 100, 40)];
+    expect(placeRestingLabel(straight, 'Request: A', false, under)).toMatchObject({ x: 200, y: 0 });
+    const two = placeRestingLabel(straight, 'Request: A\nResponse: B', false, under);
+    expect(two?.x).not.toBe(200);
+    if (two === undefined) throw new Error('not placed');
+    const height = labelHeightOf('Request: A\nResponse: B') + 8;
+    const covers = under.some(
+      (card) =>
+        two.x - two.width / 2 - 4 < card.x + card.width &&
+        card.x < two.x + two.width / 2 + 4 &&
+        two.y + height / 2 > card.y - cardTopReach,
+    );
+    expect(covers).toBe(false);
   });
 });
 

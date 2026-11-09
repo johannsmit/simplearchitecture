@@ -52,16 +52,19 @@ export interface UpdateRelationshipRequest {
    */
   twoWay?: boolean;
   /**
-   * Relation only: free text stored as `metadata.identity`, `metadata.identityContext` and
-   * `metadata.data`, trimmed. `null` or a blank removes it, and a change to Contains removes them.
+   * Relation only: free text stored as `metadata.identity`, `metadata.identityContext`,
+   * `metadata.requestData` and `metadata.responseData`, trimmed. `null` or a blank removes it, and
+   * a change to Contains removes them.
    */
   identity?: string | null;
   identityContext?: string | null;
-  data?: string | null;
+  requestData?: string | null;
+  responseData?: string | null;
   /**
    * Custom metadata: text. `null` removes a key, and keys not sent stay as they are. A custom list
    * or object read from the model may be sent back unchanged. Architecture state, description,
-   * Identity, Identity Context and Data have their own fields.
+   * Identity, Identity Context, Request Data and Response Data have their own fields. `data` is
+   * reserved: it was Data, now Request Data.
    */
   metadata?: Record<string, unknown>;
 }
@@ -114,7 +117,8 @@ export interface RelationshipNotFound extends ApiError {
 
 /**
  * One problem with a change: `source`, `target`, `type`, `architectureState`, `description`,
- * `label`, `version`, `reverse`, `identity`, `identityContext`, `data`, or '' (a general message).
+ * `label`, `version`, `reverse`, `identity`, `identityContext`, `requestData`, `responseData`, or ''
+ * (a general message).
  */
 export type RelationshipFieldIssue = ElementFieldIssue;
 

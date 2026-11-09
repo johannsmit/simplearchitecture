@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
-// Identity, Identity Context and Data on the relationship form and in the details panel.
-// Made-up data.
+// Identity, Identity Context, Request Data and Response Data on the relationship form and in the
+// details panel. Made-up data.
 
 const model = (): JgfDocument => ({
   graph: {
@@ -13,7 +13,7 @@ const model = (): JgfDocument => ({
     edges: (bakeryModel.graph.edges ?? []).map((edge): JgfEdge => {
       if (edge.id === 'e7') return { ...edge, metadata: { identity: 'svc-shop' } };
       if (edge.id === 'e8' || edge.id === 'e9') {
-        return { ...edge, metadata: { ...edge.metadata, data: 'Orders' } };
+        return { ...edge, metadata: { ...edge.metadata, requestData: 'Orders' } };
       }
       return edge;
     }),
@@ -71,27 +71,41 @@ async function openHostedOn(space: 'modelling' | 'viewing') {
 }
 
 describe('on the relationship form', () => {
-  it('shows the three under the label, with suggestions, and saves only what changed', async () => {
+  it('shows the four under the label, with suggestions, and saves only what changed', async () => {
     const { sent } = await openHostedOn('modelling');
     const form = await screen.findByRole('form', { name: /^Relationship / });
     const labels = [...form.querySelectorAll('label')].map((label) => label.textContent);
-    expect(labels.slice(0, 4)).toEqual(['Label', 'Identity', 'Identity Context', 'Data']);
+    expect(labels.slice(0, 5)).toEqual([
+      'Label',
+      'Identity',
+      'Identity Context',
+      'Request Data',
+      'Response Data',
+    ]);
+    expect(labels).not.toContain('Data');
     const identity = within(form).getByRole<HTMLInputElement>('combobox', { name: 'Identity' });
     expect(identity.value).toBe('svc-shop');
-    const data = within(form).getByRole<HTMLInputElement>('combobox', { name: 'Data' });
-    fireEvent.click(data);
-    expect(
-      within(screen.getByRole('listbox', { name: 'Suggestions for Data' }))
-        .getAllByRole('option')
-        .map((option) => option.textContent),
-    ).toEqual(['Orders', 'Places orders']);
-    fireEvent.click(screen.getByRole('option', { name: 'Orders' }));
+    // Both offer the values either has in the model: the values Data had.
+    for (const name of ['Request Data', 'Response Data']) {
+      fireEvent.click(within(form).getByRole('combobox', { name }));
+      expect(
+        within(screen.getByRole('listbox', { name: `Suggestions for ${name}` }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Orders', 'Places orders']);
+      fireEvent.click(screen.getByRole('option', { name: 'Orders' }));
+    }
     fireEvent.change(identity, { target: { value: '  ' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
-    expect(sent[0]).toEqual({ version: 1, identity: null, data: 'Orders' });
+    expect(sent[0]).toEqual({
+      version: 1,
+      identity: null,
+      requestData: 'Orders',
+      responseData: 'Orders',
+    });
   });
 
   it('has none of them on a Contains, and says they go when the type changes', async () => {
@@ -99,23 +113,29 @@ describe('on the relationship form', () => {
     const form = await screen.findByRole('form', { name: /^Relationship / });
     fireEvent.click(within(form).getByRole('radio', { name: /^Contains/ }));
     expect(within(form).queryByRole('combobox', { name: 'Identity' })).toBeNull();
-    expect(within(form).queryByRole('textbox', { name: 'Data' })).toBeNull();
+    expect(within(form).queryByRole('combobox', { name: 'Request Data' })).toBeNull();
+    expect(within(form).queryByRole('combobox', { name: 'Response Data' })).toBeNull();
     expect(
-      within(form).getByText('Identity, Identity Context and Data are removed when you save.'),
+      within(form).getByText(
+        'Identity, Identity Context, Request Data and Response Data are removed when you save.',
+      ),
     ).toBeTruthy();
   });
 
-  it('refuses a custom row with one of their keys', async () => {
+  it.each([
+    ['identityContext', '“identityContext” is a standard property of a Relation.'],
+    ['requestData', '“requestData” is a standard property of a Relation.'],
+    ['responseData', '“responseData” is a standard property of a Relation.'],
+    ['data', '“data” is reserved: Data is now Request Data and Response Data.'],
+  ])('refuses a custom row with the key %s', async (key, message) => {
     const { sent } = await openHostedOn('modelling');
     const form = await screen.findByRole('form', { name: /^Relationship / });
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
     fireEvent.change(within(form).getAllByLabelText('Key').at(-1) as HTMLElement, {
-      target: { value: 'identityContext' },
+      target: { value: key },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(
-      await within(form).findByText('“identityContext” is a standard property of a Relation.'),
-    ).toBeTruthy();
+    expect(await within(form).findByText(message)).toBeTruthy();
     expect(sent).toEqual([]);
   });
 });
@@ -128,7 +148,16 @@ describe('in the details panel', () => {
       return heading.closest('section') as HTMLElement;
     });
     const terms = [...panel.querySelectorAll('dt')].map((dt) => dt.textContent);
-    expect(terms).toEqual(expect.arrayContaining(['Identity', 'Identity Context', 'Data']));
+    expect(terms).toEqual(
+      expect.arrayContaining(['Identity', 'Identity Context', 'Request Data', 'Response Data']),
+    );
+    const value = (term: string) =>
+      [...panel.querySelectorAll('dt')].find((dt) => dt.textContent === term)?.nextElementSibling
+        ?.textContent;
+    expect(value('Identity')).toBe('svc-shop');
+    expect(value('Request Data')).toBe('Not set');
+    expect(value('Response Data')).toBe('Not set');
+    expect(terms).not.toContain('Data');
     expect(within(details()).queryByRole('heading', { name: /^Custom metadata/ })).toBeNull();
   });
 });

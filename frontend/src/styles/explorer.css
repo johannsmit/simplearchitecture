@@ -1049,6 +1049,14 @@
   text-overflow: ellipsis;
 }
 
+/* Data's parts, "Request: …" above "Response: …" (labelLineHeight in labels.ts). */
+.edge-label .tl {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 14px;
+}
+
 /* Cards (measured in viewing/explorer/canvas/cardSize.ts: keep the numbers
  * in sync). Light and compact: a 1px type-coloured border on a lighter type tint, the name
  * centred both ways, no type label (the colour, column, shape, legend and accessible name carry

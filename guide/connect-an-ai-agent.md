@@ -61,10 +61,10 @@ The agent gets five read-only tools:
 - **List models**: the models you can see, with their size.
 - **Model summary**: how many elements of each type, and how many relationships.
 - **Search elements**: by name, type and properties, 50 at a time.
-- **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity, Identity Context and Data, when set.
+- **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity, Identity Context, Request Data and Response Data, when set.
 - **Get neighbours**: the elements up to three relationship steps away, as on the canvas, with the same details for each relationship.
 
-A relationship's label comes twice: `label` as stored, which may name properties in braces (such as `{Identity} {Data}`), and `displayLabel`, the label as the canvas shows it, with those values filled in.
+A relationship's label comes twice: `label` as stored, which may name properties in braces (such as `{Identity} {Request Data}`), and `displayLabel`, the label as the canvas shows it, with those values filled in.
 
 Model content (names, descriptions, properties) is passed to the agent as data, marked as untrusted, never as instructions. The app logs each call with your user id, the tool and the model, never the content.
 

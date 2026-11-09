@@ -1,12 +1,13 @@
 /**
- * Relationship labels that show property values: in a label such as `{Identity} {Data}`, each
- * `{Name}` stands for the relationship's value of that property. Pure functions, linear in the
+ * Relationship labels that show property values: in a label such as `{Identity} {Request Data}`,
+ * each `{Name}` stands for the relationship's value of that property. Pure functions, linear in the
  * label's length, so the canvas, the details panel, the form and the MCP tools fill in a label the
  * same way. The stored label is always the expression as typed; nothing here changes it.
  */
 import type { ModelGraph, ModelRelationship } from './graph.js';
 import {
   hasStandardEdgeProperty,
+  isStandardPropertyKey,
   relationTextProperties,
   standardProperties,
   type ArchitectureState,
@@ -82,7 +83,12 @@ function lookUp(
   // An exact match first, so `Owner` and `owner` can both be read.
   const key = keys.includes(name.trim())
     ? name.trim()
-    : keys.find((candidate) => nameKey(candidate) === wanted);
+    : keys.find(
+        (candidate) =>
+          nameKey(candidate) === wanted ||
+          (isStandardPropertyKey(candidate) &&
+            nameKey(standardProperties[candidate].label) === wanted),
+      );
   if (key !== undefined) {
     const value = textOf(subject.metadata[key]);
     return value === undefined ? { known: true } : { known: true, value };
@@ -95,8 +101,9 @@ type Piece = string | null;
 
 /**
  * Fills in a label: `{Name}` becomes the value of the property with that name, as the form shows it
- * (Identity, Identity Context, Data, Architecture state, Description) or a custom metadata name,
- * ignoring case. A property with no value gives nothing, and the spaces around it close up. A name
+ * (Identity, Identity Context, Request Data, Response Data, Architecture state, Description) or a
+ * custom metadata name, ignoring case. A standard key kept as custom metadata (Request Data on a
+ * Contains) answers to its standard name too. A property with no value gives nothing, and the spaces around it close up. A name
  * the relationship can't have stays as typed and is listed in `unknown`. `{{` and `}}` give literal
  * braces. `names` are custom metadata names other relationships in the model use: this one has no
  * value for them, so they give nothing rather than staying as typed.

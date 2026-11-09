@@ -363,6 +363,27 @@ describe('the line rules', () => {
     ]);
   });
 
+  it('offers Request Data and Response Data as one choice, Data, and never Data kept from before', () => {
+    const graph = buildModelGraph({
+      graph: {
+        ...model.graph,
+        edges: [
+          {
+            id: 'c1',
+            source: 'shop',
+            target: 'till',
+            relation: 'Relation',
+            metadata: { requestData: 'a', responseData: 'b', data: 'c' },
+          },
+        ],
+      },
+    });
+    const fields = relationshipViewFields(graph);
+    expect(fields.filter((field) => /data/i.test(field.key))).toEqual([
+      { key: 'data', label: 'Data' },
+    ]);
+  });
+
   // The element filter's exclusions were read for relationships too. On a relationship,
   // `functions` is an ordinary custom key that the form accepts and the panel lists.
   it('offers a custom key named functions, which the form accepts', () => {
@@ -403,13 +424,58 @@ describe('the line rules', () => {
 });
 
 describe('Data in a viewpoint', () => {
-  it('shows its value beside other values, and grays out the rest', async () => {
-    await open('&show=data&show=protocol');
+  /** The lines of each label on the canvas, sorted by their text. */
+  const labelLines = () =>
+    [...document.querySelectorAll('.edge-label')]
+      .map((label) => [...label.querySelectorAll('.t')].map((part) => part.textContent))
+      .sort((a, b) => (a.join('\n') < b.join('\n') ? -1 : 1));
+
+  it('shows Request Data and Response Data under the other values, and grays out the rest', async () => {
+    const edges = (model.graph.edges ?? []).map((edge) =>
+      edge.source === 'customer'
+        ? { ...edge, metadata: { ...edge.metadata, responseData: 'Order numbers' } }
+        : edge,
+    );
+    await open('&show=data&show=protocol', { graph: { ...model.graph, edges } });
     await waitFor(() => {
-      expect(labels()).toContain('Places orders · REST');
+      expect(labelLines()).toContainEqual([
+        'REST',
+        'Request: Places orders',
+        'Response: Order numbers',
+      ]);
     });
     // The till's line has neither: gray, and its label gives way.
     expect(tillLine().classList.contains('is-grayed')).toBe(true);
+  });
+
+  it('leaves out an empty part, and the other keeps its prefix', () => {
+    const relationship = (metadata: Record<string, unknown>) => ({
+      id: 'r',
+      source: 'a',
+      target: 'b',
+      type: 'Relation' as const,
+      architectureState: 'Target' as const,
+      metadata,
+    });
+    for (const [metadata, text] of [
+      [
+        { requestData: 'Orders', responseData: 'Order ids' },
+        'Request: Orders\nResponse: Order ids',
+      ],
+      [{ requestData: 'Orders' }, 'Request: Orders'],
+      [{ responseData: ' Order\n  ids ' }, 'Response: Order ids'],
+      [{ requestData: '  ', responseData: ['a'] }, ''],
+      [{ data: 'From before', requestData: 'Orders' }, 'Request: Orders'],
+    ] as const) {
+      const [link] = mergeRelationships([relationship(metadata)]);
+      if (!link) throw new Error('no link');
+      expect(linkText(link, ['data'])).toBe(text);
+      expect(isGrayed(link, ['data'])).toBe(text === '');
+      // Other values go first, on one line.
+      expect(linkText(link, ['data', 'architectureState'])).toBe(
+        text === '' ? 'Target' : `Target\n${text}`,
+      );
+    }
   });
 
   it('counts blank text, lists and objects as not having it', () => {
@@ -419,10 +485,10 @@ describe('Data in a viewpoint', () => {
       target: 'b',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
-      metadata: { data: value },
+      metadata: { requestData: value, responseData: value },
     });
     for (const [value, text] of [
-      ['Orders', 'Orders'],
+      ['Orders', 'Request: Orders\nResponse: Orders'],
       ['  ', ''],
       [['a'], ''],
       [{ a: 1 }, ''],
@@ -434,6 +500,22 @@ describe('Data in a viewpoint', () => {
     }
   });
 
+  it('keeps a label on one line', () => {
+    const [link] = mergeRelationships([
+      {
+        id: 'r',
+        source: 'a',
+        target: 'b',
+        type: 'Relation' as const,
+        architectureState: 'Current' as const,
+        label: 'Sends\n  orders',
+        metadata: {},
+      },
+    ]);
+    if (!link) throw new Error('no link');
+    expect(linkText(link)).toBe('Sends orders');
+  });
+
   it('merges Relations whatever their Data, and keeps two-way lines apart', () => {
     const relation = (id: string, data: string, twoWay = false) => ({
       id,
@@ -441,7 +523,7 @@ describe('Data in a viewpoint', () => {
       target: 'b',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
-      metadata: { data },
+      metadata: { requestData: data },
       ...(twoWay ? { twoWay } : {}),
     });
     const merged = mergeRelationships([
@@ -454,7 +536,7 @@ describe('Data in a viewpoint', () => {
       [false, 3],
       [true, 1],
     ]);
-    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', 'Orders']);
+    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', 'Request: Orders']);
   });
 
   it('leaves Contains out of it', async () => {
@@ -464,13 +546,22 @@ describe('Data in a viewpoint', () => {
     ];
     await open('&show=data', { graph: { ...model.graph, edges } });
     await waitFor(() => {
-      expect(labels()).toContain('Places orders');
+      expect(labels()).toContain('Request: Places orders');
     });
     expect(canvas().querySelectorAll('.is-grayed').length).toBeGreaterThan(0);
     const contains = [...canvas().querySelectorAll('.react-flow__edge')].filter((edge) =>
       edge.getAttribute('aria-label')?.includes(' contains '),
     );
     for (const edge of contains) expect(edge.classList.contains('is-grayed')).toBe(false);
+  });
+
+  it('is one choice, Data, for both parts', async () => {
+    await open();
+    fireEvent.click(button());
+    const choices = screen.getAllByRole('checkbox').map((box) => box.closest('label')?.textContent);
+    expect(choices).toContain('Data');
+    expect(choices).not.toContain('Request Data');
+    expect(choices).not.toContain('Response Data');
   });
 });
 

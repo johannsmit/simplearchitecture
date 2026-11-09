@@ -44,6 +44,7 @@ export {
   nodeTypeKey,
   nodeTypes,
   relationTextProperties,
+  retiredDataKey,
   sourcingOptions,
   standardProperties,
   type ArchitectureState,
@@ -167,8 +168,10 @@ export {
   type FilterValueCount,
 } from './filters.js';
 export {
+  dataViewKey,
   relationshipValue,
   relationshipViewFields,
+  relationshipViewText,
   relationshipViewValues,
   type RelationshipViewField,
 } from './relationship-views.js';

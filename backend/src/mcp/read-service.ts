@@ -86,7 +86,10 @@ function relationshipFields(graph: ModelGraph, relationship: ModelRelationship) 
   };
 }
 
-/** Identity, Identity Context and Data, on a Relation, when set (as the canvas reads them). */
+/**
+ * Identity, Identity Context, Request Data and Response Data, on a Relation, when set (as the
+ * canvas reads them).
+ */
 function relationTexts(
   relationship: ModelRelationship,
 ): Partial<Record<RelationTextProperty, string>> {

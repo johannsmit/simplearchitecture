@@ -50,10 +50,12 @@ export const standardProperties = {
   sourcing: { label: 'Sourcing', value: { kind: 'choice', options: sourcingOptions } },
   // ISO 3166-1 alpha-2, e.g. NL. Non-ISO values are warnings, not errors (imported as is for now).
   supplierHqCountry: { label: 'Supplier HQ country', value: { kind: 'country' } },
-  // A Relation's exchange: the active identity used, more context on it, and the data exchanged.
+  // A Relation's exchange: the active identity used, more context on it, and the data sent with
+  // the request and returned in the response.
   identity: { label: 'Identity', value: { kind: 'text' } },
   identityContext: { label: 'Identity Context', value: { kind: 'text' } },
-  data: { label: 'Data', value: { kind: 'text' } },
+  requestData: { label: 'Request Data', value: { kind: 'text' } },
+  responseData: { label: 'Response Data', value: { kind: 'text' } },
 } as const satisfies Record<string, StandardPropertyDefinition>;
 export type StandardPropertyKey = keyof typeof standardProperties;
 
@@ -127,12 +129,24 @@ const allEdges = ['architectureState'] as const;
  * The free-text standard properties of a Relation, in display order: edited on the relationship
  * form under the label, and never custom metadata there.
  */
-export const relationTextProperties = ['identity', 'identityContext', 'data'] as const;
+export const relationTextProperties = [
+  'identity',
+  'identityContext',
+  'requestData',
+  'responseData',
+] as const;
 export type RelationTextProperty = (typeof relationTextProperties)[number];
 
 export function isRelationTextProperty(key: string): key is RelationTextProperty {
   return (relationTextProperties as readonly string[]).includes(key);
 }
+
+/**
+ * Data, before it became Request Data and Response Data. Reading a model or a file turns it into
+ * Request Data (unless it has Request Data already), so it is never set as custom metadata on a
+ * relationship.
+ */
+export const retiredDataKey = 'data';
 
 export const edgeTypeDefinitions: Record<EdgeType, EdgeTypeDefinition> = {
   Relation: {

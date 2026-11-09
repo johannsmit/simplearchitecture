@@ -25,15 +25,19 @@ const model = (): JgfDocument => ({
         case 'e1':
           return {
             ...edge,
-            label: '{Data} via {protocol}',
-            metadata: { data: 'Places orders', protocol: markup },
+            label: '{Request Data} via {protocol}',
+            metadata: { requestData: 'Places orders', protocol: markup },
           };
         case 'e3':
-          return { ...edge, label: '{Data} ({Dtaa})' };
+          return { ...edge, label: '{Request Data} ({Dtaa})' };
         case 'e5':
           return { ...edge, label: '{Identity}' };
         case 'e7':
-          return { ...edge, label: '{Identity} on {Data}', metadata: { identity: 'svc-shop' } };
+          return {
+            ...edge,
+            label: '{Identity} on {Request Data}',
+            metadata: { identity: 'svc-shop' },
+          };
         case 'e9':
           // The other way round, so it isn't merged with e7.
           return { ...edge, source: 'server', target: 'shop' };
@@ -59,8 +63,8 @@ function api() {
       if (edge && request.method === 'PATCH' && typeof request.body === 'string') {
         const change = JSON.parse(request.body) as Record<string, unknown>;
         sent.push(change);
-        if (typeof change.data === 'string')
-          edge.metadata = { ...edge.metadata, data: change.data };
+        if (typeof change.requestData === 'string')
+          edge.metadata = { ...edge.metadata, requestData: change.requestData };
         if (typeof change.label === 'string') edge.label = change.label;
       }
       return Response.json({
@@ -152,12 +156,12 @@ describe('on the canvas', () => {
     await waitFor(() => {
       expect(labels()).toContain('svc-shop on');
     });
-    fireEvent.change(within(form).getByRole('combobox', { name: 'Data' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Request Data' }), {
       target: { value: 'Stock' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, data: 'Stock' }]);
+      expect(sent).toEqual([{ version: 1, requestData: 'Stock' }]);
     });
     await waitFor(() => {
       expect(labels()).toContain('svc-shop on Stock');
@@ -194,23 +198,23 @@ describe('in the details panel', () => {
 describe('on the relationship form', () => {
   it('says what the label shows, and follows the other fields as they are typed', async () => {
     const { form, label } = await openForm();
-    expect(label.value).toBe('{Identity} on {Data}');
+    expect(label.value).toBe('{Identity} on {Request Data}');
     const shows = () => form.querySelector('.label-shows')?.textContent;
     expect(shows()).toBe('Shows as: “svc-shop on”');
     expect(label.getAttribute('aria-describedby')).toContain(
       form.querySelector('.label-shows')?.id ?? 'missing',
     );
-    fireEvent.change(within(form).getByRole('combobox', { name: 'Data' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Request Data' }), {
       target: { value: 'Stock' },
     });
     expect(shows()).toBe('Shows as: “svc-shop on Stock”');
     fireEvent.change(within(form).getByRole('combobox', { name: 'Identity' }), {
       target: { value: '' },
     });
-    fireEvent.change(within(form).getByRole('combobox', { name: 'Data' }), {
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Request Data' }), {
       target: { value: '' },
     });
-    fireEvent.change(label, { target: { value: '{Identity} {Data}' } });
+    fireEvent.change(label, { target: { value: '{Identity} {Request Data}' } });
     expect(shows()).toBe('Shows as: no label');
     fireEvent.change(label, { target: { value: 'Plain label' } });
     expect(form.querySelector('.label-shows')).toBeNull();
@@ -226,6 +230,20 @@ describe('on the relationship form', () => {
     expect(form.querySelector('.label-shows')?.textContent).toBe('Shows as: “{Identty} {Dtaa}”');
   });
 
+  it('knows {Data} no longer, and {Response Data} instead', async () => {
+    const { form, label } = await openForm();
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Response Data' }), {
+      target: { value: 'Stock levels' },
+    });
+    fireEvent.change(label, { target: { value: '{Data} gets {Response Data}' } });
+    expect(form.querySelector('.label-shows + .warn-note')?.textContent).toBe(
+      'No property called “Data”.',
+    );
+    expect(form.querySelector('.label-shows')?.textContent).toBe(
+      'Shows as: “{Data} gets Stock levels”',
+    );
+  });
+
   it('suggests the property names when { is typed, and puts one in with its brace', async () => {
     const { form, label, sent } = await openForm();
     expect(screen.queryByRole('listbox', { name: 'Suggestions for property names' })).toBeNull();
@@ -239,7 +257,8 @@ describe('on the relationship form', () => {
     ).toEqual([
       'Identity',
       'Identity Context',
-      'Data',
+      'Request Data',
+      'Response Data',
       'Architecture state',
       'Description',
       'protocol',
@@ -280,10 +299,10 @@ describe('on the relationship form', () => {
 
   it('saves the label as typed', async () => {
     const { form, label, sent } = await openForm();
-    fireEvent.change(label, { target: { value: '{Data} by {Identity}' } });
+    fireEvent.change(label, { target: { value: '{Request Data} by {Identity}' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, label: '{Data} by {Identity}' }]);
+      expect(sent).toEqual([{ version: 1, label: '{Request Data} by {Identity}' }]);
     });
   });
 });

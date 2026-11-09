@@ -6,6 +6,7 @@ import {
   isStandardPropertyOf,
   nodeTypeKey,
   nodeTypes,
+  retiredDataKey,
   standardProperties,
   type CountsByReasonAndType,
   type EdgeType,
@@ -362,7 +363,7 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
   const reservedNodeKeys = new Set<string>([
     nodeTypeKey,
     ...ownKeys,
-    // Keys standard on edges only (such as data) are free for an element's custom metadata.
+    // Keys standard on edges only (such as requestData) are free for an element's custom metadata.
     ...Object.keys(standardProperties).filter((key) =>
       nodeTypes.some((type) => isStandardPropertyOf(type, key)),
     ),
@@ -376,6 +377,7 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
     ),
     ...mapping.properties.mappings.map((entry) => entry.key),
     retiredInformationFlowKey,
+    retiredDataKey,
   ]);
   const reservedGraphKeys = new Set<string>(ownKeys);
   const mappingsByName = new Map(mapping.properties.mappings.map((entry) => [entry.name, entry]));
@@ -620,14 +622,15 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
     }
     applyProperties(meta, relationship.properties, reservedEdgeKeys, true);
     applyDefaults(meta, { relation: rule.relation });
-    // The option once set Information flow; now, as for older files, the label becomes its Data.
+    // The option once set Information flow; now, as for older files, the label becomes its
+    // Request Data.
     if (
       rule.informationFlow === true &&
-      hasStandardEdgeProperty('data', rule.relation) &&
+      hasStandardEdgeProperty('requestData', rule.relation) &&
       relationship.name.trim() !== '' &&
-      !Object.hasOwn(meta, 'data')
+      !Object.hasOwn(meta, 'requestData')
     ) {
-      meta.data = relationship.name;
+      meta.requestData = relationship.name;
     }
     const [source, target] = rule.reverse
       ? [relationship.target, relationship.source]

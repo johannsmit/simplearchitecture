@@ -11,6 +11,7 @@ import {
   relationshipProblems,
   relationshipMetadataNames,
   relationshipPropertyValues,
+  retiredDataKey,
   type ArchitectureState,
   type DeletedRelationshipResult,
   type EdgeType,
@@ -78,7 +79,7 @@ interface Draft {
   reversed: boolean;
   /** Both ways; always false for a type that can't be two-way. */
   twoWay: boolean;
-  /** Identity, Identity Context and Data, as typed. */
+  /** Identity, Identity Context, Request Data and Response Data, as typed. */
   texts: Record<RelationTextProperty, string>;
   custom: CustomRow[];
 }
@@ -88,7 +89,7 @@ const ownFields = new Set<string>(['architectureState', 'description', ...relati
 
 const noValues: readonly string[] = [];
 
-/** A stored Identity, Identity Context or Data as text: what the field shows. */
+/** A stored Identity, Identity Context, Request Data or Response Data as text: what the field shows. */
 function textOf(value: unknown): string {
   if (typeof value === 'string') return value;
   return typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
@@ -110,11 +111,9 @@ function draftOf(relationship: ModelRelationship): Draft {
     label: relationship.label ?? '',
     reversed: false,
     twoWay: relationship.twoWay === true,
-    texts: {
-      identity: textOf(relationship.metadata.identity),
-      identityContext: textOf(relationship.metadata.identityContext),
-      data: textOf(relationship.metadata.data),
-    },
+    texts: Object.fromEntries(
+      relationTextProperties.map((key) => [key, textOf(relationship.metadata[key])]),
+    ) as Draft['texts'],
     custom: Object.entries(relationship.metadata)
       // On a Contains these keys aren't fields, so a stored value shows as a custom row.
       .filter(
@@ -131,6 +130,8 @@ const rowInputId = (slot: string): string => `rf-${slot.replace(/[^A-Za-z0-9_-]/
 /** Why a key can't be a custom row here, if so. */
 function reservedKeyWord(key: string): string | undefined {
   if (key === 'type' || key === 'informationFlow') return `“${key}” is reserved.`;
+  if (key === retiredDataKey)
+    return `“${key}” is reserved: Data is now Request Data and Response Data.`;
   if (isRelationTextProperty(key)) return `“${key}” is a standard property of a Relation.`;
   return ownFields.has(key) ? `“${key}” has its own field above.` : undefined;
 }
@@ -699,7 +700,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 onShow={props.onShow}
                 disabled={saving}
                 onChange={(type) => {
-                  // Contains is always one way, and has no Identity, Identity Context or Data.
+                  // Contains is always one way, and has none of a Relation's text properties.
                   setDraft({
                     ...draft,
                     type,
@@ -722,7 +723,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                       <TypeNote
                         note={{
                           kind: 'info',
-                          text: 'Identity, Identity Context and Data are removed when you save.',
+                          text: 'Identity, Identity Context, Request Data and Response Data are removed when you save.',
                         }}
                       />
                     )}

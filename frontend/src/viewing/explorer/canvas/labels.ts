@@ -13,6 +13,8 @@ export const labelMaxWidth = 88;
 /** A resting label may be this wide where that covers no card. */
 export const restingLabelMaxWidth = 140;
 export const labelHeight = 18;
+/** Each further line of a label (Data's "Response: …") adds this much: its 14px line height. */
+export const labelLineHeight = 14;
 const labelMargin = 4;
 /** How far the state badge and the relationship pill reach above a card. */
 export const cardTopReach = 10;
@@ -23,10 +25,21 @@ const restingSpots = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8] as const;
 // The pill: 7px padding and a 1px border on each side; 11px text, weight 500 (explorer.css).
 const labelInset = 2 * 7 + 2 * 1;
 
-/** The drawn width of a label pill, up to the cut. A state mark adds 16px. */
+/** The drawn width of a label pill, up to the cut: its widest line. A state mark adds 16px. */
 export function labelWidth(text: string, withMark = false, max = labelMaxWidth): number {
   const mark = withMark ? 16 : 0;
-  return Math.min(max, Math.ceil(textWidth(text, 11, 500)) + labelInset + mark);
+  const widest = Math.max(...labelLines(text).map((line) => textWidth(line, 11, 500)));
+  return Math.min(max, Math.ceil(widest) + labelInset + mark);
+}
+
+/** A label's lines: one, or Data's "Request: …" and "Response: …" each on its own. */
+export function labelLines(text: string): string[] {
+  return text.split('\n');
+}
+
+/** The drawn height of a label pill with its lines. */
+export function labelHeightOf(text: string): number {
+  return labelHeight + (labelLines(text).length - 1) * labelLineHeight;
 }
 
 /** The state mark on an edge line: a 14px circle. */
@@ -102,8 +115,9 @@ export function placeRestingLabel(
   const middle = pointOnLine(line, labelSpots[0]);
   if (!middle) return undefined;
   const narrow = labelWidth(text, withMark);
+  const height = labelHeightOf(text);
   for (const width of [labelWidth(text, withMark, restingLabelMaxWidth), narrow]) {
-    const at = placeLabel(line, width, cards, labelHeight, restingSpots);
+    const at = placeLabel(line, width, cards, height, restingSpots);
     if (at) return { ...at, width };
   }
   return { ...middle, width: narrow };

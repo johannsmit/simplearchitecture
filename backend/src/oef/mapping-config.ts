@@ -81,16 +81,17 @@ const relationshipRule = z
       .optional(),
     relation: edgeType,
     /**
-     * Optional, Relation only: the imported relationship's name (its label) also becomes its Data,
-     * where Information flow once was set. It keeps its older name, so existing mapping files
-     * still load.
+     * Optional, Relation only: the imported relationship's name (its label) also becomes its
+     * Request Data, where Information flow once was set. It keeps its older name, so existing
+     * mapping files still load.
      */
     informationFlow: flag.optional(),
     /** Optional: swap source and target on import (the rule still matches the OEF direction). */
     reverse: flag.optional(),
   })
   .refine(
-    (rule) => rule.informationFlow !== true || hasStandardEdgeProperty('data', rule.relation),
+    (rule) =>
+      rule.informationFlow !== true || hasStandardEdgeProperty('requestData', rule.relation),
     {
       path: ['informationFlow'],
       message: 'only applies to a type that can have it (Relation)',

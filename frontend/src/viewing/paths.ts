@@ -1,6 +1,6 @@
 import { catalogTabs, type CatalogTab } from '@simplearchitecture/shared';
 
-/** What the older Information Flow viewpoint shows today: a Relation's Data. */
+/** What the older Information Flow viewpoint shows today: Data (Request Data and Response Data). */
 const olderFlowKey = 'data';
 
 /**

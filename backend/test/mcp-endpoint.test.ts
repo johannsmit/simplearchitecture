@@ -56,7 +56,11 @@ const garden: JgfDocument = {
         target: 'spade',
         relation: 'Relation',
         label: 'digs with',
-        metadata: { data: 'Soil depth', identity: 'Made-up gardener' },
+        metadata: {
+          requestData: 'Soil depth',
+          responseData: 'Dig plan',
+          identity: 'Made-up gardener',
+        },
       },
       { id: 'r2', source: 'spade', target: 'bed-0', relation: 'Relation', directed: false },
     ],
@@ -370,7 +374,8 @@ describe('the read tools', () => {
           label: 'digs with',
           displayLabel: 'digs with',
           identity: 'Made-up gardener',
-          data: 'Soil depth',
+          requestData: 'Soil depth',
+          responseData: 'Dig plan',
           direction: 'incoming',
           other: { id: 'gardener', name: 'Gardener', type: 'Stakeholder' },
         },
@@ -396,8 +401,8 @@ describe('the read tools', () => {
             source: 'rake',
             target: 'bed',
             relation: 'Relation',
-            label: '{Data} as {Identity} {{note}}',
-            metadata: { data: '<b>Leaves</b>' },
+            label: '{Request Data} as {Identity} {{note}}',
+            metadata: { requestData: '<b>Leaves</b>' },
           },
           { id: 'r4', source: 'rake', target: 'bed', relation: 'Relation', label: '{Identity}' },
           { id: 'c2', source: 'shed', target: 'rake', relation: 'Contains' },
@@ -413,9 +418,9 @@ describe('the read tools', () => {
     const relationships = (rake.value as { relationships: Record<string, unknown>[] })
       .relationships;
     expect(relationships.find((r) => r.id === 'r3')).toMatchObject({
-      label: '{Data} as {Identity} {{note}}',
+      label: '{Request Data} as {Identity} {{note}}',
       displayLabel: '<b>Leaves</b> as {note}',
-      data: '<b>Leaves</b>',
+      requestData: '<b>Leaves</b>',
     });
     expect(relationships.find((r) => r.id === 'r4')).toMatchObject({
       label: '{Identity}',

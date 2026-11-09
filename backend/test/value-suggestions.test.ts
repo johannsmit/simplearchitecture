@@ -163,6 +163,21 @@ describe('relationshipPropertyValues', () => {
       expect(values.has(key)).toBe(false);
     }
   });
+
+  it('offers Request Data and Response Data the values of both', () => {
+    const graph = buildModelGraph(
+      model({}, [
+        edge('r1', { requestData: 'Orders' }),
+        edge('r2', { responseData: 'Orders' }),
+        edge('r3', { responseData: 'Order ids' }),
+        edge('r4', { requestData: 'Invoices', responseData: 'Orders' }),
+      ]),
+    );
+    const values = relationshipPropertyValues(graph);
+    expect(values.get('requestData')).toEqual(['Orders', 'Invoices', 'Order ids']);
+    expect(values.get('responseData')).toEqual(values.get('requestData'));
+    expect(relationshipPropertyValues(buildModelGraph(model({}))).has('requestData')).toBe(false);
+  });
 });
 
 describe('suggestedValues', () => {
@@ -210,7 +225,9 @@ describe('metadata names', () => {
     const graph = buildModelGraph(
       model({ c: node({ zone: 'element' }) }, [
         edge('e1', { protocol: 'REST', architectureState: 'Target', description: 'd' }),
-        edge('e2', { protocol: 'SOAP', data: 'Orders', functions: ['f'] }),
+        edge('e2', { protocol: 'SOAP', requestData: 'Orders', functions: ['f'] }),
+        // Data kept from before is never offered as a name: the key is reserved.
+        edge('e4', { data: 'Old', requestData: 'New', responseData: 'x' }),
         edge('e3', { owningTeam: 'Web', type: 'odd' }),
       ]),
     );

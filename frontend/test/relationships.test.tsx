@@ -245,7 +245,8 @@ describe('The relationship form', () => {
     // e4 is a plain Relation between the same ends: fine, as several may link them.
     expect(within(form).getByRole('radio', { name: 'Relation' })).toHaveProperty('disabled', false);
     expect(within(form).queryByRole('button', { name: 'Show it' })).toBeNull();
-    expect(within(form).getByLabelText<HTMLInputElement>('Data').value).toBe('Orders');
+    expect(within(form).getByLabelText<HTMLInputElement>('Request Data').value).toBe('Orders');
+    expect(within(form).getByLabelText<HTMLInputElement>('Response Data').value).toBe('');
 
     // No footer until something changes.
     expect(within(form).queryByRole('button', { name: /^Save/ })).toBeNull();
@@ -699,7 +700,8 @@ describe('Relation properties on the forms', () => {
     const fields = [
       within(form).getByRole('combobox', { name: 'Label' }),
       within(form).getByLabelText('Identity'),
-      within(form).getByLabelText('Data'),
+      within(form).getByLabelText('Request Data'),
+      within(form).getByLabelText('Response Data'),
       within(form).getByLabelText('Key'),
       within(form).getByRole('textbox', { name: 'Value of the new field' }),
       within(form).getByRole('radio', { name: 'Relation' }),
@@ -730,17 +732,20 @@ describe('Relation properties on the forms', () => {
     });
   });
 
-  it('warns before saving Data away as Contains, and Discard restores it', async () => {
+  it('warns before saving Request Data away as Contains, and Discard restores it', async () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
-    const data = () => within(form).queryByLabelText<HTMLInputElement>('Data');
+    const data = () => within(form).queryByLabelText<HTMLInputElement>('Request Data');
     expect(data()?.value).toBe('Orders');
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     expect(data()).toBeNull();
+    expect(within(form).queryByLabelText('Response Data')).toBeNull();
     expect(
-      within(form).getByText('Identity, Identity Context and Data are removed when you save.'),
+      within(form).getByText(
+        'Identity, Identity Context, Request Data and Response Data are removed when you save.',
+      ),
     ).toBeDefined();
-    // Back to Relation: Data is empty, so it still counts as a change.
+    // Back to Relation: Request Data is empty, so it still counts as a change.
     fireEvent.click(within(form).getByRole('radio', { name: 'Relation' }));
     expect(data()?.value).toBe('');
     expect(within(form).getByRole('button', { name: 'Save' })).toBeDefined();
@@ -752,7 +757,7 @@ describe('Relation properties on the forms', () => {
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', data: null });
+      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', requestData: null });
     });
   });
 
@@ -769,19 +774,21 @@ describe('Relation properties on the forms', () => {
     expect(sent.filter((request) => request.method === 'PATCH')).toHaveLength(0);
   });
 
-  it('shows the server’s refusal of Data under its field', async () => {
+  it('shows the server’s refusal of Response Data under its field', async () => {
     await openShop((method) =>
       method === 'PATCH'
         ? apiError(422, 'Refused', {
-            fields: [{ field: 'data', message: 'Must be at most 2000 characters.' }],
+            fields: [{ field: 'responseData', message: 'Must be at most 2000 characters.' }],
           })
         : undefined,
     );
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/, 1);
-    fireEvent.change(within(form).getByLabelText('Data'), { target: { value: 'Made-up' } });
+    fireEvent.change(within(form).getByLabelText('Response Data'), {
+      target: { value: 'Made-up' },
+    });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     const message = await within(form).findByText('Must be at most 2000 characters.');
-    expect(within(form).getByLabelText('Data').getAttribute('aria-describedby')).toContain(
+    expect(within(form).getByLabelText('Response Data').getAttribute('aria-describedby')).toContain(
       message.closest('.field-error')?.id ?? 'missing',
     );
   });

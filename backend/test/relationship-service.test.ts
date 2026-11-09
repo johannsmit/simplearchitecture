@@ -397,7 +397,7 @@ describe('RelationshipService: update and reverse', () => {
     expect(
       (await audit()).map((row) => [row.action, row.relationship_id, row.details.fields]),
     ).toEqual([
-      ['relationship-updated', 'r3', ['type', 'architectureState', 'description', 'data']],
+      ['relationship-updated', 'r3', ['type', 'architectureState', 'description', 'requestData']],
       ['relationship-updated', 'r3', ['description']],
     ]);
   });
@@ -698,7 +698,7 @@ describe('RelationshipService: custom metadata', () => {
     expect(added.relationship.version).toBe(2);
     expect(added.relationship.edge.metadata).toEqual({
       // Read from the stored Information flow and label, as every model is read now.
-      data: 'Reads the level',
+      requestData: 'Reads the level',
       protocol: 'REST',
       auth: 'OAuth',
     });
@@ -710,7 +710,7 @@ describe('RelationshipService: custom metadata', () => {
       modeller,
     );
     expect(changed.relationship.edge.metadata).toEqual({
-      data: 'Reads the level',
+      requestData: 'Reads the level',
       protocol: 'gRPC',
     });
 
@@ -794,9 +794,9 @@ describe('custom metadata at the edges of the rules', () => {
       { version: 1, metadata },
       modeller,
     );
-    expect(relationship.edge.metadata).toEqual({ data: 'Reads the level', ...metadata });
+    expect(relationship.edge.metadata).toEqual({ requestData: 'Reads the level', ...metadata });
     const edge = (await edgesOf(store, modelId)).find((e) => e.id === 'r3');
-    expect(edge?.metadata).toEqual({ data: 'Reads the level', ...metadata });
+    expect(edge?.metadata).toEqual({ requestData: 'Reads the level', ...metadata });
     expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
     expect(typeof {}.toString).toBe('function');
     // A second change finds the odd key as its own value, not as an inherited member.

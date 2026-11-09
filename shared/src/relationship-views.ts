@@ -4,7 +4,12 @@
  */
 import { filterValueOf, isFilterableKey } from './filters.js';
 import { compareNames, containsType, type ModelGraph, type ModelRelationship } from './graph.js';
-import { isRelationTextProperty, relationTextProperties, standardProperties } from './metamodel.js';
+import {
+  isRelationTextProperty,
+  relationTextProperties,
+  retiredDataKey,
+  standardProperties,
+} from './metamodel.js';
 
 /** A property that a viewpoint can show. */
 export interface RelationshipViewField {
@@ -15,6 +20,17 @@ export interface RelationshipViewField {
 }
 
 const stateKey = 'architectureState';
+
+/**
+ * The Data viewpoint: one choice that shows Request Data and Response Data, each on a line of its
+ * own. Its key is the one Data had, so an address or a browser that remembers it keeps working.
+ */
+export const dataViewKey = retiredDataKey;
+const dataViewParts = [
+  ['requestData', 'Request'],
+  ['responseData', 'Response'],
+] as const;
+const dataViewKeys = new Set<string>(dataViewParts.map(([key]) => key));
 
 /** The element filter's keys, plus `functions`: only elements have that as a property of their own. */
 export const isRelationshipViewKey = (key: string): boolean =>
@@ -29,7 +45,21 @@ export function relationshipValue(
   relationship: ModelRelationship,
   key: string,
 ): string | undefined {
-  return key === stateKey ? relationship.architectureState : filterValueOf(relationship, key);
+  if (key === stateKey) return relationship.architectureState;
+  if (key === dataViewKey) return dataViewValue(relationship);
+  return filterValueOf(relationship, key);
+}
+
+/**
+ * The Data viewpoint's value: "Request: …" above "Response: …", on two lines, leaving out a part
+ * without a value; undefined when neither has one.
+ */
+function dataViewValue(relationship: ModelRelationship): string | undefined {
+  const lines = dataViewParts.flatMap(([key, prefix]) => {
+    const value = filterValueOf(relationship, key)?.replace(/\s+/g, ' ');
+    return value === undefined ? [] : [`${prefix}: ${value}`];
+  });
+  return lines.length === 0 ? undefined : lines.join('\n');
 }
 
 /** The values a line shows for the selected properties, in their order. */
@@ -41,8 +71,29 @@ export function relationshipViewValues(
 }
 
 /**
+ * What a line shows for the selected properties: their one-line values joined by " · " on the first
+ * line, then Data's lines ("Request: …", "Response: …") each on its own. Empty when the
+ * relationship has none of them.
+ */
+export function relationshipViewText(
+  relationship: ModelRelationship,
+  keys: readonly string[],
+): string {
+  const inline: string[] = [];
+  const lines: string[] = [];
+  for (const key of keys) {
+    const value = relationshipValue(relationship, key);
+    if (value === undefined) continue;
+    if (key === dataViewKey) lines.push(value);
+    else inline.push(value);
+  }
+  return [inline.join(' · '), ...lines].filter((line) => line !== '').join('\n');
+}
+
+/**
  * The properties a viewpoint can show: those found on this model's relationships, plus the standard
- * ones whenever the model has a Relation, sorted by name. Contains isn't part of a viewpoint. A key
+ * ones whenever the model has a Relation (Request Data and Response Data as one choice, Data),
+ * sorted by name. Contains isn't part of a viewpoint. A key
  * holding a list or an object on any relationship is left out, as in the element filter, because
  * every value differs.
  */
@@ -55,7 +106,8 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
     any = true;
     for (const [key, value] of Object.entries(relationship.metadata)) {
       if (!isRelationshipViewKey(key) || key === stateKey) continue;
-      if (isRelationTextProperty(key)) continue;
+      // Leftover Data (kept where Request Data had a value) has no choice: "Data" is the viewpoint.
+      if (isRelationTextProperty(key) || key === retiredDataKey) continue;
       if (typeof value === 'object' && value !== null) structured.add(key);
       else if (relationshipValue(relationship, key) !== undefined) found.add(key);
     }
@@ -66,8 +118,9 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
   if (any) {
     fields.push({ key: stateKey, label: standardProperties[stateKey].label });
     for (const key of relationTextProperties) {
-      fields.push({ key, label: standardProperties[key].label });
+      if (!dataViewKeys.has(key)) fields.push({ key, label: standardProperties[key].label });
     }
+    fields.push({ key: dataViewKey, label: 'Data' });
   }
   return fields.sort((a, b) => compareNames(a.label, b.label) || (a.key < b.key ? -1 : 1));
 }

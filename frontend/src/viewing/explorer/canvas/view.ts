@@ -1,6 +1,7 @@
 import {
   containsType,
   displayLabel,
+  relationshipViewText,
   relationshipViewValues,
   type ArchitectureState,
   type EdgeType,
@@ -103,7 +104,8 @@ export function layoutLinkRelationships(
 
 /**
  * What a line shows. With no property selected: its label filled in (`labelOf`), or nothing. With
- * properties selected: their values in place of its label. Merged lines always say how many they
+ * properties selected: their values in place of its label, Data's "Request: …" and "Response: …" on
+ * lines of their own below the rest. Merged lines always say how many they
  * are. Contains isn't part of a viewpoint, so it only ever shows its label or count. There is no
  * type name, on hover either: the details panel and screen readers have it.
  */
@@ -116,10 +118,18 @@ export function linkText(
   if (shown.length === 0 || link.type === containsType) {
     // A line with a label stands for one relationship: its properties fill the label in.
     const [only] = link.members;
-    if (link.label === undefined || only === undefined) return link.label ?? '';
-    return labelOf({ ...only, label: link.label }) ?? '';
+    // A label is one line, as it always showed: only Data's parts get lines of their own.
+    const label =
+      link.label === undefined || only === undefined
+        ? (link.label ?? '')
+        : (labelOf({ ...only, label: link.label }) ?? '');
+    return label.replace(/\s*[\r\n]+\s*/g, ' ');
   }
-  return link.members.flatMap((member) => relationshipViewValues(member, shown)).join(' · ');
+  // Data's parts go on lines of their own (`relationshipViewText`).
+  return link.members
+    .map((member) => relationshipViewText(member, shown))
+    .filter((text) => text !== '')
+    .join('\n');
 }
 
 /** Whether a line is grayed out: properties are selected and it has none of them. */

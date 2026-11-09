@@ -81,7 +81,7 @@ export const bakeryModel: JgfDocument = {
         source: 'customer',
         target: 'shop',
         relation: 'Relation',
-        metadata: { data: 'Places orders' },
+        metadata: { requestData: 'Places orders' },
         label: 'Places orders',
       },
       {
@@ -95,7 +95,7 @@ export const bakeryModel: JgfDocument = {
         source: 'shop',
         target: 'oven/planner #1',
         relation: 'Relation',
-        metadata: { data: 'Orders' },
+        metadata: { requestData: 'Orders' },
         label: 'Orders',
       },
       {

@@ -1,8 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
+import type { JgfDocument, JgfEdge, ModelAuthor } from '@simplearchitecture/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
-import { convertOlderTypes } from '../src/jgf/older-types.js';
+import { convertedEdgeType, convertOlderTypes } from '../src/jgf/older-types.js';
 import { validateJgf } from '../src/jgf/validate.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
@@ -151,14 +151,15 @@ describe('migration 009', () => {
 
 describe('older files and imports', () => {
   it('follow the same rule as the migration', () => {
-    const { document: converted, converted: count } = convertOlderTypes(document());
+    const { converted: count } = convertOlderTypes(document());
     expect(count).toBe(8);
-    const edges = (converted as JgfDocument).graph.edges ?? [];
+    // The step migration 009 matches; reading today also moves Data to Request Data (012).
+    const edges = (document().graph.edges ?? []).map((e) => convertedEdgeType(e) as JgfEdge);
     expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => after));
     expect(edges.map((e) => e.label)).toEqual(cases.map(([stored]) => stored.label));
   });
 
-  it('turn an older Information flow type into a Relation with its label as Data', () => {
+  it('turn an older Information flow type into a Relation with its label as Request Data', () => {
     const older = {
       graph: {
         nodes,
@@ -177,7 +178,7 @@ describe('older files and imports', () => {
         target: 'b',
         relation: 'Relation',
         label: 'Claims',
-        metadata: { data: 'Claims' },
+        metadata: { requestData: 'Claims' },
       },
       { id: 'g', source: 'a', target: 'b', relation: 'Relation', metadata: { x: 1 } },
       { id: 'i', source: 'a', target: 'c', relation: 'Relation', label: 'API' },
@@ -186,6 +187,6 @@ describe('older files and imports', () => {
 
   it('leave a document without Information flow as it is', () => {
     const plain = { graph: { nodes, edges: [cases[8]?.[0]] } };
-    expect(convertOlderTypes(plain)).toEqual({ document: plain, converted: 0 });
+    expect(convertOlderTypes(plain)).toEqual({ document: plain, converted: 0, dataConverted: 0 });
   });
 });

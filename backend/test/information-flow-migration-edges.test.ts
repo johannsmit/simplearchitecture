@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
-import { convertedEdge } from '../src/jgf/older-types.js';
+import { convertedEdge, convertedEdgeType } from '../src/jgf/older-types.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
@@ -152,11 +152,11 @@ describe('migration 009 at its edges', () => {
       { data: '\tOrders\t' },
       { data: '\u00a0Orders\n' },
     ]);
-    // The same as the read path gives for these labels.
+    // The same as the read path's step for migration 009 gives for these labels.
     const read = ['\tOrders\t', '\u00a0Orders\n'].map(
       (label) =>
         (
-          convertedEdge({
+          convertedEdgeType({
             id: 'x',
             source: 'a',
             target: 'b',
@@ -221,11 +221,12 @@ describe('migration 009 at its edges', () => {
     const store = await PostgresModelStore.open(db, quiet);
     expect(await store.listDamaged()).toEqual([]);
     expect((await store.list()).map((summary) => summary.id)).toEqual([id]);
+    // Reading today also moves Data to Request Data (migration 012's rule).
     const edges = (await store.get(id))?.graph.edges ?? [];
     expect(edges.map((edge) => edge.metadata)).toEqual([
-      { identity: 7, data: ['x'] },
-      { data: 'Kept', identityContext: { a: 1 } },
-      { data: 5 },
+      { identity: 7, requestData: ['x'] },
+      { requestData: 'Kept', identityContext: { a: 1 } },
+      { requestData: 5 },
     ]);
   });
 });

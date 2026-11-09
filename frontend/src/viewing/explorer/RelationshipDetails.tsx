@@ -49,7 +49,8 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   const label = displayLabel(relationship, graph);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
-  // Identity, Identity Context and Data on a Relation; elsewhere such keys stay custom metadata.
+  // A Relation's text properties (Identity to Response Data); elsewhere such keys stay custom
+  // metadata.
   const texts = relationTextProperties.filter((key) =>
     hasStandardEdgeProperty(key, relationship.type),
   );

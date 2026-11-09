@@ -10,6 +10,7 @@ import {
   isEdgeType,
   isNodeType,
   isRelationTextProperty,
+  retiredDataKey,
   isStandardPropertyKey,
   nodeTypeKey,
   nodeTypes,
@@ -200,7 +201,7 @@ function checkNodeMetadata(
       continue;
     }
     if (key === nodeTypeKey || !isStandardPropertyKey(key)) continue; // custom metadata: any value
-    // A key standard on edges only (such as data) is ordinary custom metadata on a node.
+    // A key standard on edges only (such as requestData) is ordinary custom metadata on a node.
     if (!nodeTypes.some((type) => hasStandardProperty(type, key))) continue;
     const field = `metadata.${key}`;
     if (nodeType && !hasStandardProperty(nodeType, key)) {
@@ -229,7 +230,8 @@ function checkNodeMetadata(
  *
  * A bad value is a warning, never an error: edge properties became standard after models were
  * stored, and a stored model must stay readable. The graph reads a bad Architecture state as
- * Current. Identity, Identity Context and Data apply to a Relation only.
+ * Current. Identity, Identity Context, Request Data and Response Data apply to a Relation only. Data
+ * (`data`) left from before, where Request Data had a value already, is kept as it is.
  */
 function checkEdgeMetadata(
   issues: IssueList,
@@ -240,6 +242,16 @@ function checkEdgeMetadata(
   for (const [key, value] of Object.entries(meta)) {
     if (key === reservedKey) {
       issues.add('error', subject, `metadata.${key}`, 'reserved-key', 'is a reserved key');
+      continue;
+    }
+    if (key === retiredDataKey) {
+      issues.add(
+        'warning',
+        subject,
+        `metadata.${key}`,
+        'retired-property',
+        'is Data from before it became Request Data and Response Data; it is kept as it is',
+      );
       continue;
     }
     if (edgeType !== undefined && isRelationTextProperty(key)) {

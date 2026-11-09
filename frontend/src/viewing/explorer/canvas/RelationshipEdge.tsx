@@ -3,7 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, type Edge, type EdgeProps } from '@xyflow/
 import { memo, useMemo, useRef } from 'react';
 import { edgeEnds } from '../../../metamodel-ui';
 import { directLine, edgeLine, linePath, type LineEnd } from './edgeLine';
-import { placeRestingLabel, placeStateMark } from './labels';
+import { labelLines, placeRestingLabel, placeStateMark } from './labels';
 import { dragThreshold } from './positions';
 import type { Box, Point } from './positions';
 
@@ -76,6 +76,8 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const lit = data?.lit === true;
   const ends = data === undefined ? edgeEnds('Relation') : edgeEnds(data.type);
   const text = data?.text ?? '';
+  // Data shows its parts on lines of their own; anything else is one line.
+  const lines = useMemo(() => labelLines(text), [text]);
   const cards = data?.cards;
   const state = data?.state ?? 'Current';
   const marked = state !== 'Current';
@@ -149,7 +151,17 @@ export const RelationshipEdge = memo(function RelationshipEdge(
             onMouseLeave={() => data?.onLabelHover?.(false)}
           >
             {marked && <StateMark state={state} />}
-            <span className="t">{text}</span>
+            {lines.length === 1 ? (
+              <span className="t">{text}</span>
+            ) : (
+              <span className="tl">
+                {lines.map((part, index) => (
+                  <span className="t" key={index}>
+                    {part}
+                  </span>
+                ))}
+              </span>
+            )}
           </div>
         </EdgeLabelRenderer>
       )}

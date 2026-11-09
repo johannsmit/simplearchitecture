@@ -22,6 +22,8 @@ const issueWords: Record<string, string> = {
   'non-iso-country': 'Country is not an ISO code',
   'not-standard-for-type': 'Not a standard property for this type',
   'property-not-for-type': 'Property not for this relationship type',
+  'retired-property': 'Data kept as it was',
+  'older-data-property': 'Data converted to Request Data',
 };
 
 export function issueInWords(code: string): string {

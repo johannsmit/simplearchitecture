@@ -11,6 +11,7 @@ import {
   isEdgeType,
   isRelationTextProperty,
   relationTextProperties,
+  retiredDataKey,
   standardProperties,
   relationshipConflictMessage,
   relationshipProblems,
@@ -57,8 +58,7 @@ import {
 
 /**
  * Adding, changing (type, Architecture state, description, label, direction, Identity, Identity
- * Context, Data) and deleting one
- * relationship of a stored model, beside ElementService and through the same store change: one
+ * Context, Request Data, Response Data) and deleting one relationship of a stored model, beside ElementService and through the same store change: one
  * transaction under the model's row lock, the counts and list cache kept, one audit row.
  *
  * - Every change is checked against the whole model with the full validation and refused on an
@@ -105,12 +105,15 @@ const metadataSchema = z
       const problem =
         key === retiredInformationFlowKey
           ? 'This key is reserved.'
-          : key === 'description' ||
-              key === 'architectureState' ||
-              // Removing one kept as custom metadata (on a Contains) is fine.
-              (isRelationTextProperty(key) && record[key] !== null)
-            ? 'Set this in its own field.'
-            : keyProblem(key);
+          : // Removing one kept from before (where Request Data had a value) is fine.
+            key === retiredDataKey && record[key] !== null
+            ? 'This key is reserved: Data is now Request Data and Response Data.'
+            : key === 'description' ||
+                key === 'architectureState' ||
+                // Removing one kept as custom metadata (on a Contains) is fine.
+                (isRelationTextProperty(key) && record[key] !== null)
+              ? 'Set this in its own field.'
+              : keyProblem(key);
       if (problem !== undefined) ctx.addIssue({ code: 'custom', message: problem, path: [key] });
     }
   });
@@ -146,7 +149,8 @@ const updateRelationshipSchema = z.strictObject({
   twoWay: z.boolean({ error: 'Must be true or false.' }).optional(),
   identity: z.string({ error: 'Must be text.' }).nullable().optional(),
   identityContext: z.string({ error: 'Must be text.' }).nullable().optional(),
-  data: z.string({ error: 'Must be text.' }).nullable().optional(),
+  requestData: z.string({ error: 'Must be text.' }).nullable().optional(),
+  responseData: z.string({ error: 'Must be text.' }).nullable().optional(),
   metadata: metadataSchema.optional(),
 });
 
@@ -360,7 +364,8 @@ export class RelationshipService {
           if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
           apply(metadata, key, value, `metadata.${key}`, changed);
         }
-        // Identity, Identity Context and Data: trimmed text, and blank removes the key. A change to
+        // Identity, Identity Context, Request Data and Response Data: trimmed text, and blank
+        // removes the key. A change to
         // a type without them removes them.
         const textFits = (key: (typeof relationTextProperties)[number]) =>
           !isEdgeType(relation) || hasStandardEdgeProperty(key, relation);
