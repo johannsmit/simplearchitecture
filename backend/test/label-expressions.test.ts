@@ -123,6 +123,30 @@ describe('fillLabel', () => {
     expect(fill('{Data}', relation({ data: 'Old', requestData: 'New' })).text).toBe('Old');
   });
 
+  it('fills in the values of Request Data and Response Data joined by ", "', () => {
+    const subject = relation({
+      requestData: ['Orders', ' Invoices ', '', 'Order\n lines'],
+      responseData: ['Order ids'],
+    });
+    expect(fill('Sends {Request Data}, gets {Response Data}', subject).text).toBe(
+      'Sends Orders, Invoices, Order lines, gets Order ids',
+    );
+    // An empty list, or one of blanks, gives nothing, and the spaces around it close up.
+    expect(fill('Sends {Request Data} now', relation({ requestData: [] })).text).toBe('Sends now');
+    expect(fill('{Response Data}', relation({ responseData: ['  '] })).text).toBe('');
+    // A single text, as stored before, is one value; another shape gives nothing.
+    expect(fill('{Request Data}', relation({ requestData: 'Orders' })).text).toBe('Orders');
+    expect(fill('{Request Data}', relation({ requestData: { a: 1 } })).text).toBe('');
+    // Kept on a Contains, a list reads by both names too.
+    const kept: LabelSubject = {
+      type: 'Contains',
+      architectureState: 'Current',
+      metadata: { requestData: ['Kept', 'Too'] },
+    };
+    expect(fill('{Request Data}', kept).text).toBe('Kept, Too');
+    expect(fill('{requestData}', kept).text).toBe('Kept, Too');
+  });
+
   it('never reads the type or internal keys', () => {
     const subject = relation({ type: 'Relation', 'simplearchitecture:stored': 'x' });
     expect(fill('{type}', subject).unknown).toEqual(['type']);

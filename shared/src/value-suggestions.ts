@@ -3,13 +3,16 @@
  * Pure functions, linear in the model size, so the web app and a future MCP server read them the
  * same way. They only read: nothing here changes what is stored or validated.
  */
+import { dataValuesOf } from './data-values.js';
 import { compareText, filterValueOf, isFilterableKey } from './filters.js';
 import { normaliseForSearch, type ModelGraph } from './graph.js';
 import {
   hasStandardEdgeProperty,
+  isRelationDataProperty,
   isStandardPropertyKey,
   isStandardPropertyOf,
   nodeTypes,
+  relationDataProperties,
   retiredDataKey,
   standardProperties,
 } from './metamodel.js';
@@ -21,30 +24,41 @@ export type PropertyValues = ReadonlyMap<string, readonly string[]>;
 const isCountryKey = (key: string): boolean =>
   isStandardPropertyKey(key) && standardProperties[key].value.kind === 'country';
 
+type Item = { metadata: Readonly<Record<string, unknown>> };
+
+/** One value per reading of `filterValueOf`, or none. */
+const singleValue = (item: Item, key: string): readonly string[] => {
+  const read = filterValueOf(item, key);
+  return read === undefined ? [] : [read];
+};
+
 /**
- * One value per reading of `filterValueOf`: own keys, text, numbers and true or false, trimmed, with
- * empties, lists and objects skipped value by value. A value with a line break is left out, as a
- * one-line field can't hold it. A country counts as what the field stores: upper case.
+ * The values `read` finds: by default one per reading of `filterValueOf` (own keys, text, numbers
+ * and true or false, trimmed, with empties, lists and objects skipped value by value). A value with a
+ * line break is left out, as a one-line field can't hold it. A country counts as what the field
+ * stores: upper case.
  */
 function valuesOf(
-  items: Iterable<{ metadata: Readonly<Record<string, unknown>> }>,
+  items: Iterable<Item>,
   isKey: (key: string) => boolean,
   poolOf: (key: string) => string = (key) => key,
+  read: (item: Item, key: string) => readonly string[] = singleValue,
 ): Map<string, readonly string[]> {
   const counts = new Map<string, Map<string, number>>();
   for (const item of items) {
     for (const key of Object.keys(item.metadata)) {
       if (!isKey(key)) continue;
-      const read = filterValueOf(item, key);
-      if (read === undefined || /[\r\n]/.test(read)) continue;
-      const value = isCountryKey(key) ? read.toUpperCase() : read;
-      const pool = poolOf(key);
-      let values = counts.get(pool);
-      if (!values) {
-        values = new Map();
-        counts.set(pool, values);
+      for (const found of read(item, key)) {
+        if (/[\r\n]/.test(found)) continue;
+        const value = isCountryKey(key) ? found.toUpperCase() : found;
+        const pool = poolOf(key);
+        let values = counts.get(pool);
+        if (!values) {
+          values = new Map();
+          counts.set(pool, values);
+        }
+        values.set(value, (values.get(value) ?? 0) + 1);
       }
-      values.set(value, (values.get(value) ?? 0) + 1);
     }
   }
   const result = new Map<string, readonly string[]>();
@@ -73,10 +87,15 @@ export function elementPropertyValues(graph: ModelGraph): PropertyValues {
 
 /**
  * Request Data and Response Data suggest the same values, from both: the same data are often sent
- * one way and returned another.
+ * one way and returned another. Each value in their lists counts.
  */
-const dataKeys = new Set<string>(['requestData', 'responseData']);
 const dataPool = 'requestData';
+const relationshipValues = (item: Item, key: string): readonly string[] =>
+  isRelationDataProperty(key)
+    ? Object.hasOwn(item.metadata, key)
+      ? dataValuesOf(item.metadata[key])
+      : []
+    : singleValue(item, key);
 
 /** What relationships hold, apart from elements, worked out once per graph. */
 export function relationshipPropertyValues(graph: ModelGraph): PropertyValues {
@@ -85,10 +104,11 @@ export function relationshipPropertyValues(graph: ModelGraph): PropertyValues {
     const found = valuesOf(
       graph.relationships,
       (key) => isRelationshipViewKey(key) && key !== 'architectureState',
-      (key) => (dataKeys.has(key) ? dataPool : key),
+      (key) => (isRelationDataProperty(key) ? dataPool : key),
+      relationshipValues,
     );
     const data = found.get(dataPool);
-    if (data !== undefined) for (const key of dataKeys) found.set(key, data);
+    if (data !== undefined) for (const key of relationDataProperties) found.set(key, data);
     values = found;
     relationshipCache.set(graph, values);
   }

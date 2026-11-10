@@ -65,6 +65,8 @@ Taking a card out of a view, or deleting its element from the model, drops its s
 
 Deleting an element or a relationship from the model removes it from every view, without a message. Deleting a model deletes its views.
 
+Changing a relationship's source or target (**Change** on its form, in Modelling) keeps it in every view that holds it: the new end is added to each of those views, and the old end stays. The new card has no saved place, so it goes to a free spot when the view opens; in the view you are in, it goes there at once and the layout is saved, as for any added card. This counts as a change to each of those views: someone else with one open is told that someone else changed it, and **Reload view** shows the new end. A view that already holds 150 elements and lacks the new end can't take it, so the change isn't saved; take a card out of that view first.
+
 ## Export and import
 
 Views and their layouts aren't part of the JGF export, and an imported model starts with no views.

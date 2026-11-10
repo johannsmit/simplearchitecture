@@ -24,6 +24,7 @@ const issueWords: Record<string, string> = {
   'property-not-for-type': 'Property not for this relationship type',
   'retired-property': 'Data kept as it was',
   'older-data-property': 'Data converted to Request Data',
+  'data-values-not-kept': 'Request or Response Data breaks its rules',
 };
 
 export function issueInWords(code: string): string {

@@ -4,7 +4,9 @@ import {
   checkStandardProperty,
   edgeTypes,
   hasStandardEdgeProperty,
+  isRelationDataProperty,
   isStandardPropertyKey,
+  isStandardPropertyOf,
   nodeTypeKey,
   nodeTypes,
   standardProperties,
@@ -47,10 +49,15 @@ const metadataKey = z
   .string()
   .regex(/^[A-Za-z][A-Za-z0-9]*$/, 'must be a camelCase key, e.g. owningTeam')
   .refine((key) => key !== nodeTypeKey, `must not be "${nodeTypeKey}" (that holds the node type)`);
-// List-typed standard properties (functions) are filled by function folding, which would replace
-// the text from the OEF file without a trace. So they never hold documentation or a property.
+// List-typed standard properties of elements (functions) are filled by function folding, which
+// would replace the text from the OEF file without a trace. So they never hold documentation or a
+// property. A Relation's lists (Request Data, Response Data) take a mapped text as one value.
 const listKeys: readonly string[] = Object.entries(standardProperties)
-  .filter(([, definition]) => definition.value.kind === 'text-list')
+  .filter(
+    ([key, definition]) =>
+      definition.value.kind === 'text-list' &&
+      nodeTypes.some((type) => isStandardPropertyOf(type, key)),
+  )
   .map(([key]) => key);
 const textKey = metadataKey.refine(
   (key) => !listKeys.includes(key),
@@ -109,7 +116,8 @@ const propertyMapping = z
     values: z.record(z.string(), z.string()).optional(),
   })
   .superRefine((mapping, ctx) => {
-    if (!isStandardPropertyKey(mapping.key)) return;
+    // A text set as Request Data or Response Data becomes one value of the list.
+    if (!isStandardPropertyKey(mapping.key) || isRelationDataProperty(mapping.key)) return;
     for (const [from, to] of Object.entries(mapping.values ?? {})) {
       const check = checkStandardProperty(mapping.key, to);
       if (!check.ok && check.severity === 'error') {
@@ -140,7 +148,7 @@ const propertyDefault = z
         message: 'must list nodeTypes, relations or both (a default must apply to something)',
       });
     }
-    if (!isStandardPropertyKey(entry.key)) return;
+    if (!isStandardPropertyKey(entry.key) || isRelationDataProperty(entry.key)) return;
     const check = checkStandardProperty(entry.key, entry.value);
     if (!check.ok && check.severity === 'error') {
       ctx.addIssue({ code: 'custom', path: ['value'], message: `${entry.key} ${check.problem}` });

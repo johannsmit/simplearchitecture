@@ -3,23 +3,25 @@ import {
   childrenOf,
   compareNames,
   containerOf,
+  dataValuesOf,
   defaultNeighbourhoodCap,
   displayLabel,
   edgeTypes,
   findElements,
   hasStandardEdgeProperty,
+  isRelationDataProperty,
   neighbourhood,
   nodeTypes,
   relationshipsOf,
   relationshipValue,
-  relationTextProperties,
+  relationProperties,
   type EdgeType,
   type ElementFilters,
   type ModelElement,
   type ModelGraph,
   type ModelRelationship,
   type NodeType,
-  type RelationTextProperty,
+  type RelationProperty,
 } from '@simplearchitecture/shared';
 import { isModelId, ModelUnreadableError, type ModelStore } from '../storage/model-store.js';
 
@@ -87,15 +89,20 @@ function relationshipFields(graph: ModelGraph, relationship: ModelRelationship) 
 }
 
 /**
- * Identity, Identity Context, Request Data and Response Data, on a Relation, when set (as the
- * canvas reads them).
+ * Identity and Identity Context (text), and Request Data and Response Data (lists of texts), on a
+ * Relation, when set (as the canvas reads them).
  */
 function relationTexts(
   relationship: ModelRelationship,
-): Partial<Record<RelationTextProperty, string>> {
-  const texts: Partial<Record<RelationTextProperty, string>> = {};
-  for (const key of relationTextProperties) {
+): Partial<Record<RelationProperty, string | string[]>> {
+  const texts: Partial<Record<RelationProperty, string | string[]>> = {};
+  for (const key of relationProperties) {
     if (!hasStandardEdgeProperty(key, relationship.type)) continue;
+    if (isRelationDataProperty(key)) {
+      const values = dataValuesOf(relationship.metadata[key]);
+      if (values.length > 0) texts[key] = values;
+      continue;
+    }
     const value = relationshipValue(relationship, key);
     if (value !== undefined) texts[key] = value;
   }

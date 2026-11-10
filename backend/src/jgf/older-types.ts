@@ -1,4 +1,5 @@
 import {
+  relationDataProperties,
   retiredDataKey,
   type JgfValidationResult,
   type ValidationIssue,
@@ -16,6 +17,10 @@ import { validateJgf } from './validate.js';
  * Request Data (`"requestData"`), on any edge, unless it has Request Data already (then both stay as
  * they are), and every `{Data}` in a label becomes `{Request Data}`, ignoring case and spaces inside
  * the braces (`{{Data}}` is literal text and stays). Migration 012 does the same in SQL.
+ *
+ * Later again, Request Data and Response Data became lists of texts: a single text in either, on
+ * any edge, becomes a list of that one text, and a blank one is removed (it held no value). Any other
+ * shape stays as it is, for the validation to warn about. Migration 013 does the same in SQL.
  *
  * Older files and imports convert, so a model never fails or reads as damaged for this.
  */
@@ -78,9 +83,30 @@ export function convertedData(edge: unknown, labels = true): unknown {
   return next;
 }
 
+/**
+ * The edge with a single text in Request Data or Response Data as a list of that text, and a blank
+ * one removed; the same object when there is nothing to convert. The text is kept exactly, as
+ * migration 013 keeps it.
+ */
+export function convertedDataLists(edge: unknown): unknown {
+  if (!isPlainObject(edge)) return edge;
+  const { metadata } = edge;
+  if (!isPlainObject(metadata)) return edge;
+  if (!relationDataProperties.some((key) => typeof metadata[key] === 'string')) return edge;
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if ((relationDataProperties as readonly string[]).includes(key) && typeof value === 'string') {
+      if (value.trim() !== '') next[key] = [value];
+    } else {
+      next[key] = value;
+    }
+  }
+  return { ...edge, metadata: next };
+}
+
 /** The edge in today's types and properties; the same object when there is nothing to convert. */
 export function convertedEdge(edge: unknown, labels = true): unknown {
-  return convertedData(convertedEdgeType(edge), labels);
+  return convertedDataLists(convertedData(convertedEdgeType(edge), labels));
 }
 
 /** The edge with the older types and Information flow converted (to Data, as migration 009 does). */
@@ -110,9 +136,10 @@ export function convertedEdgeType(edge: unknown): unknown {
 }
 
 /**
- * The document with its older edge types, Information flow and Data converted, and how many edges
- * were: `converted` for the types and Information flow, `dataConverted` for Data and `{Data}` on
- * the others.
+ * The document with its older edge types, Information flow, Data and single-text Request Data and
+ * Response Data converted, and how many edges were: `converted` for the types and Information flow,
+ * `dataConverted` for Data and `{Data}` on the others. A single text read as a list isn't counted:
+ * it is the same value.
  * Never throws, whatever the input's shape, and leaves anything but those edges alone (and the
  * input unchanged). With `labels` false, labels stay as they are (see `convertedData`).
  */
@@ -126,15 +153,20 @@ export function convertOlderTypes(
   }
   let converted = 0;
   let dataConverted = 0;
+  let listed = 0;
   const edges = (graph.edges as unknown[]).map((edge) => {
     const typed = convertedEdgeType(edge);
-    const next = convertedData(typed, labels);
+    const withData = convertedData(typed, labels);
+    const next = convertedDataLists(withData);
     // An edge counts once: an older type or Information flow says it all.
     if (typed !== edge) converted += 1;
-    else if (next !== typed) dataConverted += 1;
+    else if (withData !== typed) dataConverted += 1;
+    if (next !== withData) listed += 1;
     return next;
   });
-  if (converted === 0 && dataConverted === 0) return { document: input, converted, dataConverted };
+  if (converted === 0 && dataConverted === 0 && listed === 0) {
+    return { document: input, converted, dataConverted };
+  }
   return {
     document: { ...(input as object), graph: { ...graph, edges } },
     converted,

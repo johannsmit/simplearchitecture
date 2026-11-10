@@ -184,7 +184,7 @@ describe('convertOef: the made-up bakery sample', () => {
         directed: true,
         label: 'Orders',
         metadata: {
-          requestData: 'Orders',
+          requestData: ['Orders'],
           archimateType: 'Flow',
           description: 'Customers send orders.',
           integrationType: 'API Gateway',
@@ -1236,7 +1236,7 @@ describe('convertOef: two-way relationships', () => {
       withAssociation('Relation'),
     );
     expect(jgf.graph.edges?.[0]?.metadata).toMatchObject({
-      requestData: 'Made-up rows',
+      requestData: ['Made-up rows'],
       oefInformationFlow: 'Made-up',
       // A property named Data never takes the retired key.
       oefData: 'Made-up data',
@@ -1246,6 +1246,35 @@ describe('convertOef: two-way relationships', () => {
     expect(jgf.graph.edges?.[1]?.label).toBe('Made-up link');
     expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('requestData');
     expect(validateJgf(jgf).valid).toBe(true);
+  });
+
+  it('takes a property mapped to Response Data as one value of its list, and drops a blank one', () => {
+    const config = withMapping((draft) => {
+      draft.relationships.rules = [
+        ...draft.relationships.rules.filter((rule) => rule.type !== 'Association'),
+        { type: 'Association', relation: 'Relation' },
+      ];
+      draft.properties.mappings.push({ name: 'Returns', key: 'responseData' });
+    });
+    const { jgf } = convertOef(
+      oef({
+        elements,
+        definitions: `<propertyDefinition identifier="pd-returns" type="string"><name>Returns</name></propertyDefinition>`,
+        relationships: `
+          <relationship identifier="r1" source="a" target="b" xsi:type="Association">
+            <properties><property propertyDefinitionRef="pd-returns"><value xml:lang="en">Made-up totals, by day</value></property></properties>
+          </relationship>
+          <relationship identifier="r2" source="a" target="b" xsi:type="Association">
+            <properties><property propertyDefinitionRef="pd-returns"><value xml:lang="en"> </value></property></properties>
+          </relationship>`,
+      }),
+      config,
+    );
+    expect(jgf.graph.edges?.[0]?.metadata).toMatchObject({
+      responseData: ['Made-up totals, by day'],
+    });
+    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('responseData');
+    expect(validateJgf(jgf).warnings).toEqual([]);
   });
 
   it('keeps an undirected Association one-way when the config maps it to Contains', () => {

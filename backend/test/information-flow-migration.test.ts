@@ -178,7 +178,7 @@ describe('older files and imports', () => {
         target: 'b',
         relation: 'Relation',
         label: 'Claims',
-        metadata: { requestData: 'Claims' },
+        metadata: { requestData: ['Claims'] },
       },
       { id: 'g', source: 'a', target: 'b', relation: 'Relation', metadata: { x: 1 } },
       { id: 'i', source: 'a', target: 'c', relation: 'Relation', label: 'API' },

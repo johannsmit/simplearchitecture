@@ -14,6 +14,7 @@ import {
   ModelNotStorableError,
   ModelTooLargeError,
   ModelUnreadableError,
+  ViewFullError,
 } from '../storage/model-store.js';
 import { invalidModelIdMessage } from './models.js';
 
@@ -61,7 +62,7 @@ export function refused(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof EditingUnavailableError) {
     return reply.code(501).send(errorBody(501, error.message));
   }
-  if (error instanceof ModelNotStorableError) {
+  if (error instanceof ModelNotStorableError || error instanceof ViewFullError) {
     const body: RelationshipRejected = {
       ...errorBody(422, rejectedMessage),
       fields: [{ field: '', message: error.message }],

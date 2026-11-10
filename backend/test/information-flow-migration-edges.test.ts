@@ -221,11 +221,12 @@ describe('migration 009 at its edges', () => {
     const store = await PostgresModelStore.open(db, quiet);
     expect(await store.listDamaged()).toEqual([]);
     expect((await store.list()).map((summary) => summary.id)).toEqual([id]);
-    // Reading today also moves Data to Request Data (migration 012's rule).
+    // Reading today also moves Data to Request Data (migration 012's rule), and reads a single
+    // text there as a list (013's).
     const edges = (await store.get(id))?.graph.edges ?? [];
     expect(edges.map((edge) => edge.metadata)).toEqual([
       { identity: 7, requestData: ['x'] },
-      { requestData: 'Kept', identityContext: { a: 1 } },
+      { requestData: ['Kept'], identityContext: { a: 1 } },
       { requestData: 5 },
     ]);
   });

@@ -42,8 +42,8 @@
                     "architectureState": "Deprecate | Current | Target",
                     "identity": "the active identity used for the exchange",
                     "identityContext": "additional context, such as the original user's ID",
-                    "requestData": "the data sent with the request",
-                    "responseData": "the data returned in the response",
+                    "requestData": ["the data sent with the request", "another value"],
+                    "responseData": ["the data returned in the response"],
                     "anyCustomKey": "custom metadata, added by the modeller"
                 }
             }

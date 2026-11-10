@@ -63,12 +63,15 @@ export interface EditableModel {
 
 /**
  * One element written (added or replaced) or deleted with every relationship from or to it; or
- * one relationship (by id) written (added last, or replaced in place) or deleted.
+ * one relationship (by id) written (added last, or replaced in place) or deleted. A relationship
+ * whose ends moved (`endsIntoViews`) stays in every view that holds it: each of those views gets
+ * the ends it lacks, without a position, in the same transaction (ViewFullError when one has no
+ * room), and a view that gains one gets a new version, as for any other change to it.
  */
 export type ElementWrite =
   | { kind: 'put'; elementId: string; node: JgfNode }
   | { kind: 'delete'; elementId: string }
-  | { kind: 'put-relationship'; relationshipId: string; edge: JgfEdge }
+  | { kind: 'put-relationship'; relationshipId: string; edge: JgfEdge; endsIntoViews?: boolean }
   | { kind: 'delete-relationship'; relationshipId: string };
 
 export type ElementAuditAction =
@@ -98,6 +101,8 @@ export interface AppliedElementChange {
   version: number | undefined;
   /** The relationships deleted with the element, in model order (`id` null when it has none). */
   deletedRelationships: { id: string | null }[];
+  /** The views a relationship's new end was added to (`endsIntoViews`), with their new versions. */
+  viewsChanged?: { id: string; version: number }[];
 }
 
 export interface ElementStore {
@@ -247,6 +252,19 @@ export class ModelTooLargeError extends Error {
   override name = 'ModelTooLargeError';
   constructor(readonly maxBytes: number) {
     super(`The model is too large to store (more than ${maxBytes} bytes).`);
+  }
+}
+
+/**
+ * A relationship's new end can't go into a view that holds it: the view has the most elements it
+ * may. Nothing was stored. The message is user-safe.
+ */
+export class ViewFullError extends Error {
+  override name = 'ViewFullError';
+  constructor(readonly maxElements: number) {
+    super(
+      `This relationship is in a view that already has ${maxElements} elements, the most it may have, so its new end can't be added to it. Remove a card from that view first.`,
+    );
   }
 }
 

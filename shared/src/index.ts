@@ -36,14 +36,16 @@ export {
   isEdgeType,
   isIsoCountryCode,
   isNodeType,
-  isRelationTextProperty,
+  isRelationDataProperty,
+  isRelationProperty,
   isStandardPropertyKey,
   isStandardPropertyOf,
   keptAsCustomOnTypeChange,
   nodeTypeDefinitions,
   nodeTypeKey,
   nodeTypes,
-  relationTextProperties,
+  relationDataProperties,
+  relationProperties,
   retiredDataKey,
   sourcingOptions,
   standardProperties,
@@ -54,7 +56,8 @@ export {
   type NodeTypeDefinition,
   type PropertyCheck,
   type PropertyKind,
-  type RelationTextProperty,
+  type RelationDataProperty,
+  type RelationProperty,
   type Sourcing,
   type StandardPropertyDefinition,
   type StandardPropertyKey,
@@ -168,6 +171,16 @@ export {
   type FilterValueCount,
 } from './filters.js';
 export {
+  dataValueKey,
+  dataValuesOf,
+  dataValuesText,
+  maxDataValueLength,
+  maxDataValues,
+  repeatedDataValue,
+  sameDataValue,
+  withDataValue,
+} from './data-values.js';
+export {
   dataViewKey,
   relationshipValue,
   relationshipViewFields,
@@ -203,6 +216,7 @@ export {
 } from './elements.js';
 export {
   relationshipConflictMessage,
+  type ChangedView,
   type DeletedRelationshipResult,
   type DeleteRelationshipRequest,
   type NestingChange,

@@ -57,8 +57,8 @@ const garden: JgfDocument = {
         relation: 'Relation',
         label: 'digs with',
         metadata: {
-          requestData: 'Soil depth',
-          responseData: 'Dig plan',
+          requestData: ['Soil depth', 'Weeds'],
+          responseData: ['Dig plan'],
           identity: 'Made-up gardener',
         },
       },
@@ -374,8 +374,8 @@ describe('the read tools', () => {
           label: 'digs with',
           displayLabel: 'digs with',
           identity: 'Made-up gardener',
-          requestData: 'Soil depth',
-          responseData: 'Dig plan',
+          requestData: ['Soil depth', 'Weeds'],
+          responseData: ['Dig plan'],
           direction: 'incoming',
           other: { id: 'gardener', name: 'Gardener', type: 'Stakeholder' },
         },
@@ -402,7 +402,7 @@ describe('the read tools', () => {
             target: 'bed',
             relation: 'Relation',
             label: '{Request Data} as {Identity} {{note}}',
-            metadata: { requestData: '<b>Leaves</b>' },
+            metadata: { requestData: ['<b>Leaves</b>', 'Twigs'] },
           },
           { id: 'r4', source: 'rake', target: 'bed', relation: 'Relation', label: '{Identity}' },
           { id: 'c2', source: 'shed', target: 'rake', relation: 'Contains' },
@@ -419,8 +419,8 @@ describe('the read tools', () => {
       .relationships;
     expect(relationships.find((r) => r.id === 'r3')).toMatchObject({
       label: '{Request Data} as {Identity} {{note}}',
-      displayLabel: '<b>Leaves</b> as {note}',
-      requestData: '<b>Leaves</b>',
+      displayLabel: '<b>Leaves</b>, Twigs as {note}',
+      requestData: ['<b>Leaves</b>', 'Twigs'],
     });
     expect(relationships.find((r) => r.id === 'r4')).toMatchObject({
       label: '{Identity}',
@@ -435,7 +435,7 @@ describe('the read tools', () => {
       (around.value as { relationships: Record<string, unknown>[] }).relationships.find(
         (r) => r.id === 'r3',
       ),
-    ).toMatchObject({ displayLabel: '<b>Leaves</b> as {note}' });
+    ).toMatchObject({ displayLabel: '<b>Leaves</b>, Twigs as {note}' });
   });
 
   it('get_neighbours: 1 to 3 steps, like the canvas', async () => {

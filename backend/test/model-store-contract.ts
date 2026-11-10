@@ -77,7 +77,7 @@ export function roundTripDocuments(): [string, JgfDocument][] {
           directed: true,
           label: 'Edge label',
           metadata: {
-            requestData: 'Made-up data',
+            requestData: ['Made-up data', 'More made-up data'],
             architectureState: 'Target',
             note: 'Made-up note',
           },

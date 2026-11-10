@@ -446,8 +446,8 @@ describe('through the routes', () => {
           relation: 'Relation',
           label: 'Orders',
           metadata: {
-            requestData: 'Orders',
-            responseData: 'Order ids',
+            requestData: ['Orders', 'Customer ids'],
+            responseData: ['Order ids'],
             identity: 'made-up-client',
             protocol: 'REST',
           },
@@ -480,7 +480,7 @@ describe('through the routes', () => {
           source: 'a',
           target: 'd',
           relation: 'Contains',
-          metadata: { requestData: 'Kept on a Contains' },
+          metadata: { requestData: ['Kept on a Contains'] },
         },
       ],
     },
@@ -559,13 +559,13 @@ describe('through the routes', () => {
       [body.model.id],
     );
     expect(rows).toEqual([
-      { relation: 'Relation', metadata: { requestData: 'L' }, directed: false },
+      { relation: 'Relation', metadata: { requestData: ['L'] }, directed: false },
       { relation: 'Relation', metadata: { protocol: 'REST' }, directed: null },
       { relation: 'Contains', metadata: null, directed: null },
     ]);
   });
 
-  it('Request Data is Modeller-only, text-only, and audited by name; Information flow and Data are refused', async () => {
+  it('Request Data is Modeller-only, a list of texts only, and audited by name; Information flow and Data are refused', async () => {
     const seeded = await PostgresModelStore.open(db, quiet);
     const { id } = await seeded.save(
       model([
@@ -598,7 +598,7 @@ describe('through the routes', () => {
 
     const { target, cookie } = await signedIn(['Modeller']);
     const logs = captureLogs(target);
-    for (const value of [true, 1, [], {}]) {
+    for (const value of [true, 1, 'x', {}, [''], [1], ['x', 'X']]) {
       const refused = await call(target, 'PATCH', patch, cookie, {
         version: 1,
         requestData: value,
@@ -618,7 +618,7 @@ describe('through the routes', () => {
     expect(onPost.statusCode).toBe(422);
     const onContains = await call(target, 'PATCH', `/api/models/${id}/relationships/c`, cookie, {
       version: 1,
-      responseData: 'x',
+      responseData: ['x'],
     });
     expect(onContains.statusCode).toBe(422);
 
@@ -641,7 +641,7 @@ describe('through the routes', () => {
 
     const saved = await call(target, 'PATCH', patch, cookie, {
       version: 1,
-      requestData: 'made-up-data',
+      requestData: ['made-up-data'],
       metadata: { secretish: 'made-up-value' },
     });
     expect(saved.statusCode).toBe(200);

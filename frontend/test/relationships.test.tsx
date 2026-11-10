@@ -16,6 +16,14 @@ import {
   type Handler,
 } from './helpers';
 
+/** The values a Request Data or Response Data field shows as chips. */
+const chipTexts = (form: HTMLElement, name: string): (string | null)[] =>
+  [
+    ...(within(form)
+      .queryByRole('list', { name: new RegExp(`^${name}: `) })
+      ?.querySelectorAll('.chip-text') ?? []),
+  ].map((chip) => chip.textContent);
+
 // Relationships in the Modelling explorer. Made-up data (the bakery fixture).
 
 const graph = buildModelGraph(bakeryModel);
@@ -123,6 +131,8 @@ function api(answer?: (method: string, url: string, body: unknown) => Response |
         Reflect.deleteProperty(next.metadata, 'informationFlow');
       }
       if (change.reverse === true) [next.source, next.target] = [edge.target, edge.source];
+      if (typeof change.source === 'string') next.source = change.source;
+      if (typeof change.target === 'string') next.target = change.target;
       if (typeof change.twoWay === 'boolean') next.directed = !change.twoWay;
       for (const [key, value] of Object.entries(change.metadata ?? {})) {
         if (value === null) Reflect.deleteProperty(next.metadata, key);
@@ -245,8 +255,9 @@ describe('The relationship form', () => {
     // e4 is a plain Relation between the same ends: fine, as several may link them.
     expect(within(form).getByRole('radio', { name: 'Relation' })).toHaveProperty('disabled', false);
     expect(within(form).queryByRole('button', { name: 'Show it' })).toBeNull();
-    expect(within(form).getByLabelText<HTMLInputElement>('Request Data').value).toBe('Orders');
-    expect(within(form).getByLabelText<HTMLInputElement>('Response Data').value).toBe('');
+    expect(chipTexts(form, 'Request Data')).toEqual(['Orders']);
+    expect(chipTexts(form, 'Response Data')).toEqual([]);
+    expect(within(form).getByLabelText<HTMLInputElement>('Request Data').value).toBe('');
 
     // No footer until something changes.
     expect(within(form).queryByRole('button', { name: /^Save/ })).toBeNull();
@@ -350,6 +361,295 @@ describe('The relationship form', () => {
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }));
     await screen.findByRole('form', { name: /^Edit / });
+  });
+});
+
+describe('changing a relationship’s ends', () => {
+  const canvasEl = () => document.getElementById('canvas') as HTMLElement;
+  const onCanvas = (id: string) =>
+    canvasEl().querySelector(`.card[data-element-id="${CSS.escape(id)}"]`) !== null;
+  const ends = () => within(details()).getByRole('region', { name: 'Ends' });
+
+  it('picks a new end from a search, shows it unsaved, and saves it with the form', async () => {
+    const { sent } = await openShop();
+    // Till relates to Web Shop; only that relationship brings the till onto the canvas.
+    await waitFor(() => {
+      expect(onCanvas('till')).toBe(true);
+    });
+    expect(onCanvas('lonely')).toBe(false);
+    const form = await openRelationship(/^Open relationship: .*Till/);
+    const change = within(ends()).getByRole('button', { name: 'Change From: Till' });
+    expect(change.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(change);
+    expect(change.getAttribute('aria-expanded')).toBe('true');
+    const search = within(ends()).getByRole('combobox', { name: 'New element for “From”' });
+    expect(document.activeElement).toBe(search);
+    // The whole model, with each element's type; the current end and the other one are marked.
+    const list = within(ends()).getByRole('listbox', { name: 'Elements' });
+    expect(within(list).getAllByRole('option')).toHaveLength(7);
+    expect(within(list).getByRole('option', { name: /Till.*Now/ })).toBeDefined();
+    expect(within(list).getByRole('option', { name: /Web Shop.*Other end/ })).toBeDefined();
+    fireEvent.change(search, { target: { value: 'recipe' } });
+    // No row starts highlighted: Enter picks nothing yet.
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(within(ends()).getByRole('combobox')).toBe(search);
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    const option = within(list).getByRole('option', { name: /Recipe Archive/ });
+    expect(option.getAttribute('aria-selected')).toBe('true');
+    expect(search.getAttribute('aria-activedescendant')).toBe(option.id);
+    fireEvent.keyDown(search, { key: 'Enter' });
+
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+    expect(
+      within(ends()).getByRole('button', {
+        name: 'From: Recipe Archive, Other, changed, not saved yet. Go to element',
+      }),
+    ).toBeDefined();
+    expect(within(form).getByText('Unsaved changes')).toBeDefined();
+    // The heading keeps the saved wording until the change is saved.
+    expect(
+      within(details()).getByRole('heading', { name: 'Till relates to Web Shop' }),
+    ).toBeDefined();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        within(ends()).getByRole('button', { name: 'Change From: Recipe Archive' }),
+      );
+    });
+    expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
+
+    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    await waitFor(() => {
+      expect(sent.find((r) => r.method === 'PATCH')).toEqual({
+        method: 'PATCH',
+        url: `${relationshipsUrl}/e5`,
+        body: { version: 1, source: 'lonely' },
+      });
+    });
+    expect(
+      await within(details()).findByRole('heading', { name: 'Recipe Archive relates to Web Shop' }),
+    ).toBeDefined();
+    // The new end joins the canvas, and the old one stays.
+    await waitFor(() => {
+      expect(onCanvas('lonely')).toBe(true);
+    });
+    expect(onCanvas('till')).toBe(true);
+  });
+
+  it('saves with Ctrl+Enter or ⌘+Enter from Ends too; Enter alone never saves', async () => {
+    const { sent } = await openShop();
+    await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const patches = () => sent.filter((r) => r.method === 'PATCH');
+    const change = within(ends()).getByRole('button', { name: 'Change To: Back Office Server' });
+    fireEvent.click(change);
+    const search = within(ends()).getByRole('combobox');
+    fireEvent.change(search, { target: { value: 'till' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    // Focus is back on Change; Enter there, and on Reverse direction, doesn't save.
+    const changed = within(ends()).getByRole('button', { name: 'Change To: Till' });
+    fireEvent.keyDown(changed, { key: 'Enter' });
+    fireEvent.keyDown(within(ends()).getByRole('button', { name: 'Reverse direction' }), {
+      key: 'Enter',
+    });
+    expect(patches()).toEqual([]);
+    fireEvent.keyDown(changed, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(patches().map((r) => r.body)).toEqual([{ version: 1, target: 'till' }]);
+    });
+    await within(details()).findByRole('heading', { name: 'Web Shop relates to Till' });
+
+    // ⌘+Enter on Reverse direction, and in an end's search.
+    const reverse = within(ends()).getByRole('button', { name: 'Reverse direction' });
+    fireEvent.click(reverse);
+    fireEvent.keyDown(reverse, { key: 'Enter', metaKey: true });
+    await waitFor(() => {
+      expect(patches()).toHaveLength(2);
+    });
+    expect(patches()[1]?.body).toEqual({ version: 2, reverse: true });
+    await within(details()).findByRole('heading', { name: 'Till relates to Web Shop' });
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Web Shop' }));
+    const again = within(ends()).getByRole('combobox');
+    fireEvent.change(again, { target: { value: 'recipe' } });
+    fireEvent.keyDown(again, { key: 'ArrowDown' });
+    fireEvent.keyDown(again, { key: 'Enter' });
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change From: Till' }));
+    fireEvent.keyDown(within(ends()).getByRole('combobox'), { key: 'Enter', metaKey: true });
+    await waitFor(() => {
+      expect(patches()).toHaveLength(3);
+    });
+    expect(patches()[2]?.body).toEqual({ version: 3, target: 'lonely' });
+  });
+
+  it('closes the search on Esc with nothing changed and no question, focus back on Change', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const change = within(ends()).getByRole('button', { name: 'Change To: Back Office Server' });
+    fireEvent.click(change);
+    const search = within(ends()).getByRole('combobox');
+    fireEvent.change(search, { target: { value: 'till' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Escape' });
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(change);
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(form).queryByText('Unsaved changes')).toBeNull();
+    // A click opens it again, and a second click closes it.
+    fireEvent.click(change);
+    expect(within(ends()).getByRole('combobox')).toBeDefined();
+    fireEvent.click(change);
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+  });
+
+  it('refuses both ends on the same element, at the ends, before anything is sent', async () => {
+    const { sent } = await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Back Office Server' }));
+    fireEvent.click(
+      within(within(ends()).getByRole('listbox')).getByRole('option', { name: /Web Shop/ }),
+    );
+    const problem = within(ends()).getByText('Both ends are the same element.');
+    expect(problem.closest('.field-error')?.id).toBe('rf-ends-error');
+    const save = within(form).getByRole<HTMLButtonElement>('button', { name: /^Save/ });
+    expect(save.disabled).toBe(true);
+    expect(
+      within(ends()).getByRole<HTMLButtonElement>('button', { name: 'Reverse direction' }).disabled,
+    ).toBe(true);
+    // No type is refused for it: the problem is the ends.
+    for (const radio of within(form).getAllByRole<HTMLInputElement>('radio', {
+      name: /Relation|Contains/,
+    })) {
+      expect(radio.disabled).toBe(false);
+    }
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(document.activeElement?.id).toBe('rf-change-target');
+    });
+    expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
+    // Picking the server again undoes it.
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Web Shop' }));
+    fireEvent.click(
+      within(within(ends()).getByRole('listbox')).getByRole('option', {
+        name: /Back Office Server/,
+      }),
+    );
+    expect(within(ends()).queryByText('Both ends are the same element.')).toBeNull();
+    expect(within(form).queryByText('Unsaved changes')).toBeNull();
+  });
+
+  it('sends a reversed relationship with a new end as its new source and target', async () => {
+    const { sent } = await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Reverse direction' }));
+    // Reversed: the server is now From and Web Shop To; the To end becomes the till.
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Web Shop' }));
+    fireEvent.click(
+      within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
+    );
+    expect(
+      within(ends()).getByRole('button', { name: /^From: Back Office Server, Infrastructure\. / }),
+    ).toBeDefined();
+    expect(
+      within(ends()).getByRole('button', { name: /^To: Till, Application, changed/ }),
+    ).toBeDefined();
+    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    await waitFor(() => {
+      expect(sent.find((r) => r.method === 'PATCH')?.body).toEqual({
+        version: 1,
+        source: 'server',
+        target: 'till',
+      });
+    });
+    expect(
+      await within(details()).findByRole('heading', { name: 'Back Office Server relates to Till' }),
+    ).toBeDefined();
+  });
+
+  it('shows a refusal from the server at the ends', async () => {
+    await openShop((method) =>
+      method === 'PATCH'
+        ? apiError(422, 'The change is not valid. Nothing was saved.', {
+            fields: [{ field: 'target', message: 'Not possible: Till contains Web Shop.' }],
+          })
+        : undefined,
+    );
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Back Office Server' }));
+    fireEvent.click(
+      within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
+    );
+    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    const error = await within(ends()).findByText('Not possible: Till contains Web Shop.');
+    expect(error.closest('.field-error')?.id).toBe('rf-ends-error');
+    expect(
+      within(ends())
+        .getByRole('button', { name: 'Change To: Till' })
+        .getAttribute('aria-describedby'),
+    ).toBe('rf-ends-error');
+  });
+
+  it('moves the nesting of a Contains: the element list follows after the save', async () => {
+    const nested = {
+      graph: {
+        ...bakeryModel.graph,
+        edges: [
+          ...(bakeryModel.graph.edges ?? []),
+          { id: 'c1', source: 'shop', target: 'till', relation: 'Contains' },
+        ],
+      },
+    };
+    const contains = (source: string, version: number) =>
+      Response.json({
+        relationship: {
+          id: 'c1',
+          version,
+          edge: { id: 'c1', source, target: 'till', relation: 'Contains' },
+        },
+        warnings: [],
+        nestingChanges: [],
+      });
+    await openShop((method, url, body) => {
+      if (url === `/api/models/${bakeryId}`) return Response.json(nested);
+      if (!url.startsWith(`${relationshipsUrl}/c1`)) return undefined;
+      return method === 'PATCH'
+        ? contains((body as { source: string }).source, 2)
+        : contains('shop', 1);
+    });
+    const tree = () => screen.getByRole('tree');
+    const row = (name: string) => within(tree()).getByRole('treeitem', { name });
+    await waitFor(() => {
+      expect(row('Web Shop').getAttribute('aria-expanded')).not.toBeNull();
+    });
+    expect(row('Oven Planner').getAttribute('aria-expanded')).toBeNull();
+    const form = await openRelationship(/^Open relationship: Contains Till/);
+    fireEvent.click(within(ends()).getByRole('button', { name: 'Change From: Web Shop' }));
+    const search = within(ends()).getByRole('combobox');
+    fireEvent.change(search, { target: { value: 'oven' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    await within(details()).findByRole('heading', { name: 'Oven Planner contains Till' });
+    await waitFor(() => {
+      expect(row('Oven Planner').getAttribute('aria-expanded')).not.toBeNull();
+    });
+    expect(row('Web Shop').getAttribute('aria-expanded')).toBeNull();
+  });
+
+  it('has no Change in Viewing', async () => {
+    const { handler } = api();
+    stubApi(modeller, handler);
+    renderAt(`/viewing/models/${bakeryId}/elements/shop`);
+    const panel = await screen.findByRole('complementary', { name: 'Details' });
+    await within(panel).findByRole('heading', { name: 'Web Shop' });
+    fireEvent.click(
+      within(panel).getAllByRole('button', {
+        name: /^Open relationship: Relates to Back Office Server/,
+      })[0] as HTMLElement,
+    );
+    await within(panel).findByRole('heading', { name: 'Web Shop relates to Back Office Server' });
+    expect(within(panel).queryByRole('button', { name: /^Change/ })).toBeNull();
+    expect(within(panel).queryByRole('combobox')).toBeNull();
   });
 });
 
@@ -736,7 +1036,7 @@ describe('Relation properties on the forms', () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
     const data = () => within(form).queryByLabelText<HTMLInputElement>('Request Data');
-    expect(data()?.value).toBe('Orders');
+    expect(chipTexts(form, 'Request Data')).toEqual(['Orders']);
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     expect(data()).toBeNull();
     expect(within(form).queryByLabelText('Response Data')).toBeNull();
@@ -747,12 +1047,12 @@ describe('Relation properties on the forms', () => {
     ).toBeDefined();
     // Back to Relation: Request Data is empty, so it still counts as a change.
     fireEvent.click(within(form).getByRole('radio', { name: 'Relation' }));
-    expect(data()?.value).toBe('');
+    expect(chipTexts(form, 'Request Data')).toEqual([]);
     expect(within(form).getByRole('button', { name: 'Save' })).toBeDefined();
     fireEvent.click(within(form).getByRole('button', { name: 'Discard changes' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /^Discard/ }));
-    expect(data()?.value).toBe('Orders');
+    expect(chipTexts(form, 'Request Data')).toEqual(['Orders']);
 
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
@@ -778,7 +1078,9 @@ describe('Relation properties on the forms', () => {
     await openShop((method) =>
       method === 'PATCH'
         ? apiError(422, 'Refused', {
-            fields: [{ field: 'responseData', message: 'Must be at most 2000 characters.' }],
+            fields: [
+              { field: 'responseData', message: 'Each value must be at most 200 characters.' },
+            ],
           })
         : undefined,
     );
@@ -787,7 +1089,7 @@ describe('Relation properties on the forms', () => {
       target: { value: 'Made-up' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    const message = await within(form).findByText('Must be at most 2000 characters.');
+    const message = await within(form).findByText('Each value must be at most 200 characters.');
     expect(within(form).getByLabelText('Response Data').getAttribute('aria-describedby')).toContain(
       message.closest('.field-error')?.id ?? 'missing',
     );

@@ -1551,7 +1551,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "REST",
-          "requestData": "repair estimates"
+          "requestData": ["repair estimates"]
         }
       },
       {
@@ -1575,7 +1575,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "Secure file upload",
-          "requestData": "regulatory returns"
+          "requestData": ["regulatory returns"]
         }
       },
       {
@@ -1841,8 +1841,8 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "REST",
-          "requestData": "quotes and policy requests",
-          "responseData": "quotes and policies",
+          "requestData": ["quote requests", "policy requests"],
+          "responseData": ["quotes", "policies"],
           "identity": "portal-gateway-client",
           "identityContext": "The signed-in policyholder's customer number"
         }
@@ -1857,7 +1857,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "REST",
-          "requestData": "photo claims",
+          "requestData": ["photo claims"],
           "identity": "mobile-app-client"
         }
       },
@@ -1871,7 +1871,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "REST",
-          "requestData": "broker quotes"
+          "requestData": ["broker quotes"]
         }
       },
       {
@@ -1884,7 +1884,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "REST",
-          "requestData": "policy requests"
+          "requestData": ["policy requests"]
         }
       },
       {
@@ -1897,7 +1897,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "REST",
-          "requestData": "new claims"
+          "requestData": ["new claims"]
         }
       },
       {
@@ -1910,7 +1910,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "SOAP",
-          "requestData": "new claims"
+          "requestData": ["new claims"]
         }
       },
       {
@@ -1923,7 +1923,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "File",
-          "requestData": "quote requests"
+          "requestData": ["quote requests"]
         }
       },
       {
@@ -1936,7 +1936,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "SOAP",
-          "requestData": "quote requests"
+          "requestData": ["quote requests"]
         }
       },
       {
@@ -1949,7 +1949,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "SOAP",
-          "requestData": "policy changes"
+          "requestData": ["policy changes"]
         }
       },
       {
@@ -1962,7 +1962,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "File",
-          "requestData": "premium schedules"
+          "requestData": ["premium schedules"]
         }
       },
       {
@@ -1975,7 +1975,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "Events",
-          "requestData": "policy events"
+          "requestData": ["policy events"]
         }
       },
       {
@@ -1988,7 +1988,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "Events",
-          "requestData": "premium schedules"
+          "requestData": ["premium schedules"]
         }
       },
       {
@@ -2001,7 +2001,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "Events",
-          "requestData": "claim events"
+          "requestData": ["claim events"]
         }
       },
       {
@@ -2014,7 +2014,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "Events",
-          "requestData": "policy and claim events"
+          "requestData": ["policy events", "claim events"]
         }
       },
       {
@@ -2027,7 +2027,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "File",
-          "requestData": "nightly claims extract"
+          "requestData": ["nightly claims extract"]
         }
       },
       {
@@ -2040,7 +2040,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "File",
-          "requestData": "nightly policy extract"
+          "requestData": ["nightly policy extract"]
         }
       },
       {
@@ -2053,7 +2053,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "SQL",
-          "requestData": "finance marts"
+          "requestData": ["finance marts"]
         }
       },
       {
@@ -2066,7 +2066,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "SQL",
-          "requestData": "data products"
+          "requestData": ["data products"]
         }
       },
       {
@@ -2079,7 +2079,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "SQL",
-          "requestData": "loss history"
+          "requestData": ["loss history"]
         }
       },
       {
@@ -2092,7 +2092,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "File",
-          "requestData": "rating factors"
+          "requestData": ["rating factors"]
         }
       },
       {
@@ -2105,7 +2105,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "File",
-          "requestData": "batch fraud check"
+          "requestData": ["batch fraud check"]
         }
       },
       {
@@ -2118,7 +2118,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "REST",
-          "requestData": "payment instructions"
+          "requestData": ["payment instructions"]
         }
       },
       {
@@ -2131,7 +2131,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "File",
-          "requestData": "payment files"
+          "requestData": ["payment files"]
         }
       },
       {
@@ -2144,7 +2144,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "File",
-          "requestData": "premium journals"
+          "requestData": ["premium journals"]
         }
       },
       {
@@ -2157,7 +2157,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "File",
-          "requestData": "payment journals"
+          "requestData": ["payment journals"]
         }
       },
       {
@@ -2170,7 +2170,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "REST",
-          "requestData": "claim reserves"
+          "requestData": ["claim reserves"]
         }
       },
       {
@@ -2183,8 +2183,8 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "REST",
-          "requestData": "price requests",
-          "responseData": "prices"
+          "requestData": ["price requests"],
+          "responseData": ["prices"]
         }
       },
       {
@@ -2197,8 +2197,8 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "REST",
-          "requestData": "document requests",
-          "responseData": "documents"
+          "requestData": ["document requests"],
+          "responseData": ["documents"]
         }
       },
       {
@@ -2211,7 +2211,7 @@
         "metadata": {
           "architectureState": "Current",
           "protocol": "REST",
-          "requestData": "sent letters"
+          "requestData": ["sent letters"]
         }
       },
       {
@@ -2224,7 +2224,7 @@
         "metadata": {
           "architectureState": "Target",
           "protocol": "REST",
-          "requestData": "claim documents"
+          "requestData": ["claim documents"]
         }
       },
       {
@@ -2237,7 +2237,7 @@
         "metadata": {
           "architectureState": "Deprecate",
           "protocol": "File",
-          "requestData": "claim documents"
+          "requestData": ["claim documents"]
         }
       },
       {

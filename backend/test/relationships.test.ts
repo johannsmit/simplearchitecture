@@ -1,5 +1,6 @@
 import {
   editingUnavailableMessage,
+  maxViewElements,
   type DeletedRelationshipResult,
   type ElementConflict,
   type JgfDocument,
@@ -103,7 +104,7 @@ interface Call {
 
 function call(
   target: FastifyInstance,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   url: string,
   opts: Call = {},
 ) {
@@ -134,6 +135,7 @@ const routes = (id: string): ['GET' | 'POST' | 'PATCH' | 'DELETE', string, unkno
     { source: 'baker', target: 'kitchen', type: 'Relation' },
   ],
   ['PATCH', `/api/models/${id}/relationships/b2`, { version: 1, reverse: true }],
+  ['PATCH', `/api/models/${id}/relationships/b2`, { version: 1, target: 'tray' }],
   ['DELETE', `/api/models/${id}/relationships/b2?version=1`, undefined],
 ];
 
@@ -317,6 +319,198 @@ describe('relationship routes: editing', () => {
     ]);
     for (const res of statuses) expect(res.json()).not.toHaveProperty('stack');
     expect((await auditRows()).map((row) => row.action)).toEqual(['relationship-added']);
+  });
+});
+
+describe('relationship routes: new ends', () => {
+  it('lets a Modeller change an end, refuses what a new relationship would be refused', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const logs = captureLogs(target);
+    const base = `/api/models/${modelId}/relationships`;
+    const view = await call(target, 'POST', `/api/models/${modelId}/views`, {
+      cookie,
+      body: { name: 'Made-up baking', elementIds: ['baker', 'oven'], relationshipIds: ['b2'] },
+    });
+    expect(view.statusCode).toBe(201);
+    const viewId = view.json<{ view: { id: string } }>().view.id;
+
+    const moved = await call(target, 'PATCH', `${base}/b2`, {
+      cookie,
+      body: { version: 1, target: 'tray' },
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json<RelationshipChangeResult>().relationship).toMatchObject({
+      id: 'b2',
+      version: 2,
+      edge: { source: 'baker', target: 'tray' },
+    });
+    // Still in the view, with its new end.
+    const read = await call(target, 'GET', `/api/models/${modelId}/views/${viewId}`, { cookie });
+    expect(
+      read.json<{ view: { elementIds: string[]; relationshipIds: string[] } }>().view,
+    ).toMatchObject({ elementIds: ['baker', 'oven', 'tray'], relationshipIds: ['b2'] });
+
+    const both = await call(target, 'PATCH', `${base}/b2`, {
+      cookie,
+      body: { version: 2, reverse: true, source: 'oven' },
+    });
+    expect(both.statusCode).toBe(422);
+    expect(both.json<RelationshipRejected>().fields.map((issue) => issue.field)).toEqual([
+      'reverse',
+    ]);
+    const self = await call(target, 'PATCH', `${base}/b2`, {
+      cookie,
+      body: { version: 2, source: 'tray' },
+    });
+    expect(self.statusCode).toBe(422);
+    expect(self.json<RelationshipRejected>().fields).toEqual([
+      { field: 'source', message: "Can't connect an element to itself." },
+    ]);
+    // The oven inside the tray would contain the kitchen that contains it.
+    const inside = await call(target, 'POST', base, {
+      cookie,
+      body: { source: 'oven', target: 'tray', type: 'Contains' },
+    });
+    expect(inside.statusCode).toBe(201);
+    const cycle = await call(target, 'PATCH', `${base}/b1`, {
+      cookie,
+      body: { version: 1, source: 'tray' },
+    });
+    expect(cycle.statusCode).toBe(422);
+    expect(cycle.json<RelationshipRejected>().fields[0]).toMatchObject({ field: 'source' });
+    const gone = await call(target, 'PATCH', `${base}/b2`, {
+      cookie,
+      body: { version: 2, target: 'nobody' },
+    });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.json<RelationshipNotFound>()).toMatchObject({ missing: 'target' });
+    const stale = await call(target, 'PATCH', `${base}/b2`, {
+      cookie,
+      body: { version: 1, target: 'kitchen' },
+    });
+    expect(stale.statusCode).toBe(409);
+
+    expect((await auditRows()).filter((row) => row.relationship_id === 'b2')).toEqual([
+      { action: 'relationship-updated', relationship_id: 'b2', details: { fields: ['target'] } },
+    ]);
+    const text = logs.join('\n');
+    expect(text).toContain('"audit":"relationship-updated"');
+    expect(text).not.toContain('tray');
+  });
+
+  it('gives the view a new version, so someone with it open gets a conflict, not a refusal', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const views = `/api/models/${modelId}/views`;
+    const created = await call(target, 'POST', views, {
+      cookie,
+      body: { name: 'Made-up shared', elementIds: ['baker', 'oven'], relationshipIds: ['b2'] },
+    });
+    const viewId = created.json<{ view: { id: string; version: number } }>().view.id;
+    // One person changes the relationship's end, outside the view.
+    const moved = await call(target, 'PATCH', `/api/models/${modelId}/relationships/b2`, {
+      cookie,
+      body: { version: 1, target: 'tray' },
+    });
+    expect(moved.json<RelationshipChangeResult>().viewsChanged).toEqual([
+      { id: viewId, version: 2 },
+    ]);
+    // Another, with the view open from before, takes a card out of it: a conflict with the
+    // version now stored, as for any change to the view made meanwhile.
+    const stale = await call(target, 'PUT', `${views}/${viewId}/contents`, {
+      cookie,
+      body: { version: 1, elementIds: ['baker', 'oven'], relationshipIds: [] },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json<ElementConflict>()).toMatchObject({ currentVersion: 2 });
+    // The one who changed it saves the view's layout with the version the change gave it.
+    const layout = await call(target, 'PUT', `${views}/${viewId}/layout`, {
+      cookie,
+      body: { version: 2, cards: [{ elementId: 'tray', x: 10, y: 20 }] },
+    });
+    expect(layout.statusCode).toBe(200);
+    expect(layout.json<{ view: { version: number; elementIds: string[] } }>().view).toMatchObject({
+      version: 3,
+      elementIds: ['baker', 'oven', 'tray'],
+    });
+  });
+
+  it('answers 422 when a view holding the relationship has no room for the new end', async () => {
+    const extra = Array.from({ length: maxViewElements }, (_, n) => `extra-${n}`);
+    const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
+    const crowded = await store.save(
+      {
+        graph: {
+          ...bakery.graph,
+          nodes: {
+            ...bakery.graph.nodes,
+            ...Object.fromEntries(
+              extra.map((id) => [id, { label: id, metadata: { type: 'Other' } }]),
+            ),
+          },
+        },
+      },
+      { id: 'oid-seed', name: 'Made-up Seeder' },
+    );
+    const { target, cookie } = await signedInAs(['Admin']);
+    const view = await call(target, 'POST', `/api/models/${crowded.id}/views`, {
+      cookie,
+      body: {
+        name: 'Full',
+        elementIds: ['baker', 'oven', ...extra.slice(2)],
+        relationshipIds: ['b2'],
+      },
+    });
+    expect(view.statusCode).toBe(201);
+    const full = await call(target, 'PATCH', `/api/models/${crowded.id}/relationships/b2`, {
+      cookie,
+      body: { version: 1, target: 'tray' },
+    });
+    expect(full.statusCode).toBe(422);
+    expect(full.json<RelationshipRejected>().fields).toEqual([
+      { field: '', message: expect.stringContaining(`${maxViewElements} elements`) as string },
+    ]);
+    // Nothing stored: the relationship keeps its end and version, and there is no audit row.
+    const read = await call(target, 'GET', `/api/models/${crowded.id}/relationships/b2`, {
+      cookie,
+    });
+    expect(read.json<RelationshipChangeResult>().relationship).toMatchObject({
+      version: 1,
+      edge: { target: 'oven' },
+    });
+    expect((await auditRows()).filter((row) => row.relationship_id === 'b2')).toEqual([]);
+  });
+
+  it("refuses an end from another model, or a name only an object's prototype has", async () => {
+    const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
+    const other = await store.save(
+      {
+        graph: {
+          label: 'Made-up other',
+          nodes: { stranger: { label: 'Stranger', metadata: { type: 'Other' } } },
+          edges: [],
+        },
+      },
+      { id: 'oid-seed', name: 'Made-up Seeder' },
+    );
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const url = `/api/models/${modelId}/relationships/b2`;
+    for (const [end, id] of [
+      ['target', 'stranger'],
+      ['source', 'constructor'],
+      ['target', '__proto__'],
+    ] as const) {
+      const refused = await call(target, 'PATCH', url, { cookie, body: { version: 1, [end]: id } });
+      expect(refused.statusCode).toBe(404);
+      expect(refused.json<RelationshipNotFound>()).toMatchObject({ missing: end });
+    }
+    // The other model's element is untouched, and this relationship unchanged.
+    expect((await store.get(other.id))?.graph.nodes).toHaveProperty('stranger');
+    const read = await call(target, 'GET', url, { cookie });
+    expect(read.json<RelationshipChangeResult>().relationship).toMatchObject({
+      version: 1,
+      edge: { source: 'baker', target: 'oven' },
+    });
+    expect(await auditRows()).toEqual([]);
   });
 });
 

@@ -51,11 +51,11 @@ export const standardProperties = {
   // ISO 3166-1 alpha-2, e.g. NL. Non-ISO values are warnings, not errors (imported as is for now).
   supplierHqCountry: { label: 'Supplier HQ country', value: { kind: 'country' } },
   // A Relation's exchange: the active identity used, more context on it, and the data sent with
-  // the request and returned in the response.
+  // the request and returned in the response (each a list of values: data-values.ts).
   identity: { label: 'Identity', value: { kind: 'text' } },
   identityContext: { label: 'Identity Context', value: { kind: 'text' } },
-  requestData: { label: 'Request Data', value: { kind: 'text' } },
-  responseData: { label: 'Response Data', value: { kind: 'text' } },
+  requestData: { label: 'Request Data', value: { kind: 'text-list' } },
+  responseData: { label: 'Response Data', value: { kind: 'text-list' } },
 } as const satisfies Record<string, StandardPropertyDefinition>;
 export type StandardPropertyKey = keyof typeof standardProperties;
 
@@ -126,19 +126,28 @@ export interface EdgeTypeDefinition {
 const allEdges = ['architectureState'] as const;
 
 /**
- * The free-text standard properties of a Relation, in display order: edited on the relationship
- * form under the label, and never custom metadata there.
+ * A Relation's own standard properties, in display order: edited on the relationship form under the
+ * label, and never custom metadata there. Identity and Identity Context are text; Request Data and
+ * Response Data are lists of texts (`relationDataProperties`).
  */
-export const relationTextProperties = [
+export const relationProperties = [
   'identity',
   'identityContext',
   'requestData',
   'responseData',
 ] as const;
-export type RelationTextProperty = (typeof relationTextProperties)[number];
+export type RelationProperty = (typeof relationProperties)[number];
 
-export function isRelationTextProperty(key: string): key is RelationTextProperty {
-  return (relationTextProperties as readonly string[]).includes(key);
+export function isRelationProperty(key: string): key is RelationProperty {
+  return (relationProperties as readonly string[]).includes(key);
+}
+
+/** Request Data and Response Data: each zero or more text values, stored as a JSON list. */
+export const relationDataProperties = ['requestData', 'responseData'] as const;
+export type RelationDataProperty = (typeof relationDataProperties)[number];
+
+export function isRelationDataProperty(key: string): key is RelationDataProperty {
+  return (relationDataProperties as readonly string[]).includes(key);
 }
 
 /**
@@ -154,7 +163,7 @@ export const edgeTypeDefinitions: Record<EdgeType, EdgeTypeDefinition> = {
       'Any relation between elements, such as integration, hosting or serving a business process.',
     line: 'solid',
     twoWay: true,
-    properties: [...allEdges, ...relationTextProperties],
+    properties: [...allEdges, ...relationProperties],
   },
   Contains: {
     description:

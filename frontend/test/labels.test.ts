@@ -116,8 +116,8 @@ describe('a label that is always visible', () => {
   });
 
   it('measures a label of two lines (Data) by its widest line and both lines’ height', () => {
-    const two = 'Request: A\nResponse: Order numbers';
-    expect(labelWidth(two, false, 500)).toBe(labelWidth('Response: Order numbers', false, 500));
+    const two = 'Req: A\nResp: Order numbers';
+    expect(labelWidth(two, false, 500)).toBe(labelWidth('Resp: Order numbers', false, 500));
     expect(labelHeightOf('One line')).toBe(labelHeight);
     expect(labelHeightOf(two)).toBe(labelHeight + labelLineHeight);
   });
@@ -126,11 +126,11 @@ describe('a label that is always visible', () => {
     // A card under the middle, its top (with the badge's reach) 15px below the line: a one-line
     // label (13px down with its margin) fits at 50%, a two-line one (20px down) moves along.
     const under = [box(150, 15 + cardTopReach, 100, 40)];
-    expect(placeRestingLabel(straight, 'Request: A', false, under)).toMatchObject({ x: 200, y: 0 });
-    const two = placeRestingLabel(straight, 'Request: A\nResponse: B', false, under);
+    expect(placeRestingLabel(straight, 'Req: A', false, under)).toMatchObject({ x: 200, y: 0 });
+    const two = placeRestingLabel(straight, 'Req: A\nResp: B', false, under);
     expect(two?.x).not.toBe(200);
     if (two === undefined) throw new Error('not placed');
-    const height = labelHeightOf('Request: A\nResponse: B') + 8;
+    const height = labelHeightOf('Req: A\nResp: B') + 8;
     const covers = under.some(
       (card) =>
         two.x - two.width / 2 - 4 < card.x + card.width &&

@@ -4,11 +4,13 @@
  * label's length, so the canvas, the details panel, the form and the MCP tools fill in a label the
  * same way. The stored label is always the expression as typed; nothing here changes it.
  */
+import { dataValuesOf, dataValuesText } from './data-values.js';
 import type { ModelGraph, ModelRelationship } from './graph.js';
 import {
   hasStandardEdgeProperty,
+  isRelationDataProperty,
   isStandardPropertyKey,
-  relationTextProperties,
+  relationProperties,
   standardProperties,
   type ArchitectureState,
   type EdgeType,
@@ -33,7 +35,7 @@ export interface FilledLabel {
 /** The standard fields a relationship of this type has on its form, in the form's order. */
 function fieldKeys(type: EdgeType): StandardPropertyKey[] {
   return [
-    ...relationTextProperties.filter((key) => hasStandardEdgeProperty(key, type)),
+    ...relationProperties.filter((key) => hasStandardEdgeProperty(key, type)),
     'architectureState',
     'description',
   ];
@@ -55,7 +57,14 @@ function customKeys(subject: LabelSubject): string[] {
 /** How names are compared: ignoring case, and runs of spaces count as one. */
 const nameKey = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase();
 
-/** A value as one line of text, or undefined when it has none (lists and objects have none). */
+/**
+ * A value as one line of text, or undefined when it has none. Lists and objects have none, except
+ * Request Data's and Response Data's lists: their values joined by ", ".
+ */
+function valueText(key: string, value: unknown): string | undefined {
+  return isRelationDataProperty(key) ? dataValuesText(dataValuesOf(value)) : textOf(value);
+}
+
 function textOf(value: unknown): string | undefined {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (typeof value !== 'string') return undefined;
@@ -76,7 +85,9 @@ function lookUp(
   for (const key of fieldKeys(subject.type)) {
     if (nameKey(standardProperties[key].label) !== wanted) continue;
     const value =
-      key === 'architectureState' ? subject.architectureState : textOf(subject.metadata[key]);
+      key === 'architectureState'
+        ? subject.architectureState
+        : valueText(key, subject.metadata[key]);
     return value === undefined ? { known: true } : { known: true, value };
   }
   const keys = customKeys(subject);
@@ -90,7 +101,7 @@ function lookUp(
             nameKey(standardProperties[candidate].label) === wanted),
       );
   if (key !== undefined) {
-    const value = textOf(subject.metadata[key]);
+    const value = valueText(key, subject.metadata[key]);
     return value === undefined ? { known: true } : { known: true, value };
   }
   return { known: names.some((other) => nameKey(other) === wanted) };
@@ -102,8 +113,9 @@ type Piece = string | null;
 /**
  * Fills in a label: `{Name}` becomes the value of the property with that name, as the form shows it
  * (Identity, Identity Context, Request Data, Response Data, Architecture state, Description) or a
- * custom metadata name, ignoring case. A standard key kept as custom metadata (Request Data on a
- * Contains) answers to its standard name too. A property with no value gives nothing, and the spaces around it close up. A name
+ * custom metadata name, ignoring case. Request Data and Response Data give their values joined by
+ * ", ". A standard key kept as custom metadata (Request Data on a Contains) answers to its standard
+ * name too. A property with no value gives nothing, and the spaces around it close up. A name
  * the relationship can't have stays as typed and is listed in `unknown`. `{{` and `}}` give literal
  * braces. `names` are custom metadata names other relationships in the model use: this one has no
  * value for them, so they give nothing rather than staying as typed.

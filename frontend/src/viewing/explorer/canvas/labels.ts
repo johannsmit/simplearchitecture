@@ -13,7 +13,7 @@ export const labelMaxWidth = 88;
 /** A resting label may be this wide where that covers no card. */
 export const restingLabelMaxWidth = 140;
 export const labelHeight = 18;
-/** Each further line of a label (Data's "Response: …") adds this much: its 14px line height. */
+/** Each further line of a label (Data's "Resp: …") adds this much: its 14px line height. */
 export const labelLineHeight = 14;
 const labelMargin = 4;
 /** How far the state badge and the relationship pill reach above a card. */
@@ -32,7 +32,7 @@ export function labelWidth(text: string, withMark = false, max = labelMaxWidth):
   return Math.min(max, Math.ceil(widest) + labelInset + mark);
 }
 
-/** A label's lines: one, or Data's "Request: …" and "Response: …" each on its own. */
+/** A label's lines: one, or Data's "Req: …" and "Resp: …" each on its own. */
 export function labelLines(text: string): string[] {
   return text.split('\n');
 }

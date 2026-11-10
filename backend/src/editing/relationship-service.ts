@@ -9,8 +9,12 @@ import {
   canBeTwoWay,
   hasStandardEdgeProperty,
   isEdgeType,
-  isRelationTextProperty,
-  relationTextProperties,
+  isRelationDataProperty,
+  isRelationProperty,
+  maxDataValueLength,
+  maxDataValues,
+  relationProperties,
+  repeatedDataValue,
   retiredDataKey,
   standardProperties,
   relationshipConflictMessage,
@@ -57,17 +61,23 @@ import {
 } from './common.js';
 
 /**
- * Adding, changing (type, Architecture state, description, label, direction, Identity, Identity
- * Context, Request Data, Response Data) and deleting one relationship of a stored model, beside ElementService and through the same store change: one
- * transaction under the model's row lock, the counts and list cache kept, one audit row.
+ * Adding, changing (ends, type, Architecture state, description, label, direction, Identity,
+ * Identity Context, Request Data, Response Data) and deleting one relationship of a stored model, beside
+ * ElementService and through the same store change: one transaction under the model's row lock, the
+ * counts and list cache kept, one audit row.
  *
  * - Every change is checked against the whole model with the full validation and refused on an
  *   error; warnings never stop it.
  * - Rules for changes made here only (never applied to stored models), from
  *   `relationshipProblems`: a relationship from an element to itself (any type), a Contains that
  *   makes a cycle, and the same Contains twice (naming the existing one). They apply when the ends
- *   or the type change
- *   (add, type change, reverse): a stored model may already break them.
+ *   or the type change (add, a new source or target, type change, reverse): a stored model may
+ *   already break them.
+ * - A new source or target must be an element of the same model, as for a new relationship. Every
+ *   view holding the relationship gets the new end too, so the relationship stays in it; a view
+ *   that gains one gets a new version (`viewsChanged`). `reverse`
+ *   can't come with a new end: the client sends a reversed relationship with a new end as its new
+ *   `source` and `target`, so there is one way to read the request.
  * - Update and delete carry the relationship's version as read; another one is a conflict.
  */
 
@@ -88,6 +98,45 @@ const stateSchema = z.enum(architectureStates, {
 const tooLong = `Must be at most ${maxRelationshipDescriptionLength} characters.`;
 const labelTooLong = `Must be at most ${maxRelationshipLabelLength} characters.`;
 const valueTooLong = `Must be at most ${maxPropertyValueLength} characters.`;
+const dataValueTooLong = `Each value must be at most ${maxDataValueLength} characters.`;
+const dataListMessage = 'Must be a list of texts.';
+const reverseWithEndsMessage =
+  "Reverse can't be sent with a new source or target: send the new source and target instead.";
+
+/**
+ * Request Data or Response Data: the whole list, each value trimmed, in the order sent. No blank
+ * value, none twice (ignoring case), and at most `maxDataValues`. A value's length is checked
+ * against what is stored (`dataValueProblems`): one stored already may be longer.
+ */
+const dataListSchema = z
+  .array(z.unknown(), { error: dataListMessage })
+  .max(maxDataValues, { error: `Can hold at most ${maxDataValues} values.` })
+  .superRefine((values, ctx) => {
+    // Issues name the field, never a value's index: the form shows them under the field.
+    if (!values.every((value) => typeof value === 'string')) {
+      ctx.addIssue({ code: 'custom', message: dataListMessage });
+      return;
+    }
+    const texts = values.map((value) => value.trim());
+    if (texts.some((text) => text === '')) {
+      ctx.addIssue({ code: 'custom', message: "A value can't be empty." });
+    }
+    if (repeatedDataValue(texts) !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Each value can be there only once (ignoring case).',
+      });
+    }
+  })
+  .transform((values) => (values as string[]).map((value) => value.trim()));
+
+/** Why the values can't be stored: a new value is too long. A value stored already may stay. */
+function dataValueProblem(values: readonly string[], stored: unknown): string | undefined {
+  const kept = new Set(Array.isArray(stored) ? stored : []);
+  return values.some((value) => value.length > maxDataValueLength && !kept.has(value))
+    ? dataValueTooLong
+    : undefined;
+}
 
 /** Custom metadata: the count and the keys here; the values are checked against the stored ones. */
 const metadataSchema = z
@@ -111,7 +160,7 @@ const metadataSchema = z
             : key === 'description' ||
                 key === 'architectureState' ||
                 // Removing one kept as custom metadata (on a Contains) is fine.
-                (isRelationTextProperty(key) && record[key] !== null)
+                (isRelationProperty(key) && record[key] !== null)
               ? 'Set this in its own field.'
               : keyProblem(key);
       if (problem !== undefined) ctx.addIssue({ code: 'custom', message: problem, path: [key] });
@@ -141,6 +190,8 @@ const newRelationshipSchema = z.strictObject({
 // The description's and label's lengths are checked when they change: an imported one may be longer.
 const updateRelationshipSchema = z.strictObject({
   version: versionSchema,
+  source: endSchema('Choose the source element.').optional(),
+  target: endSchema('Choose the target element.').optional(),
   type: typeSchema.optional(),
   architectureState: stateSchema.optional(),
   description: z.string({ error: 'Must be text.' }).nullable().optional(),
@@ -149,8 +200,8 @@ const updateRelationshipSchema = z.strictObject({
   twoWay: z.boolean({ error: 'Must be true or false.' }).optional(),
   identity: z.string({ error: 'Must be text.' }).nullable().optional(),
   identityContext: z.string({ error: 'Must be text.' }).nullable().optional(),
-  requestData: z.string({ error: 'Must be text.' }).nullable().optional(),
-  responseData: z.string({ error: 'Must be text.' }).nullable().optional(),
+  requestData: dataListSchema.nullable().optional(),
+  responseData: dataListSchema.nullable().optional(),
   metadata: metadataSchema.optional(),
 });
 
@@ -160,7 +211,7 @@ function requestField(field: string): string {
   if (field === 'metadata.architectureState') return 'architectureState';
   if (field === 'metadata.description') return 'description';
   const key = field.slice('metadata.'.length);
-  if (field.startsWith('metadata.') && isRelationTextProperty(key)) return key;
+  if (field.startsWith('metadata.') && isRelationProperty(key)) return key;
   if (field === 'label') return 'label';
   if (field.startsWith('metadata.')) return field;
   return field === 'source' || field === 'target' ? field : '';
@@ -326,6 +377,12 @@ export class RelationshipService {
   ): Promise<RelationshipChangeResult> {
     const elements = this.#elements();
     const request = parse(updateRelationshipSchema, input);
+    if (
+      request.reverse === true &&
+      (request.source !== undefined || request.target !== undefined)
+    ) {
+      throw new RejectedError([{ field: 'reverse', message: reverseWithEndsMessage }]);
+    }
     let stored: StoredRelationship | undefined;
     let warnings: ValidationIssue[] = [];
     let nesting: NestingChange[] = [];
@@ -340,6 +397,18 @@ export class RelationshipService {
         const changed: string[] = [];
         const issues: RelationshipFieldIssue[] = [];
         let { source, target, relation } = current.edge;
+        // A new end: an element of this model, as for a new relationship.
+        const moved: ('source' | 'target')[] = [];
+        const nodes = model.document.graph.nodes ?? {};
+        for (const end of ['source', 'target'] as const) {
+          const wanted = request[end];
+          if (wanted === undefined || wanted === current.edge[end]) continue;
+          if (!Object.hasOwn(nodes, wanted)) throw new NotFoundError(end);
+          if (end === 'source') source = wanted;
+          else target = wanted;
+          moved.push(end);
+          changed.push(end);
+        }
         if (request.type !== undefined && request.type !== relation) {
           relation = request.type;
           changed.push('type');
@@ -364,27 +433,34 @@ export class RelationshipService {
           if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
           apply(metadata, key, value, `metadata.${key}`, changed);
         }
-        // Identity, Identity Context, Request Data and Response Data: trimmed text, and blank
-        // removes the key. A change to
-        // a type without them removes them.
-        const textFits = (key: (typeof relationTextProperties)[number]) =>
+        // Identity and Identity Context: trimmed text, and blank removes the key. Request Data and
+        // Response Data: the whole list, and an empty one removes the key. A change to a type
+        // without them removes them.
+        const fits = (key: (typeof relationProperties)[number]) =>
           !isEdgeType(relation) || hasStandardEdgeProperty(key, relation);
-        for (const key of relationTextProperties) {
+        for (const key of relationProperties) {
           const sent = request[key];
           if (sent === undefined) {
-            if (!textFits(key) && changed.includes('type')) {
+            if (!fits(key) && changed.includes('type')) {
               apply(metadata, key, null, key, changed);
             }
             continue;
           }
-          const text = sent === null ? '' : sent.trim();
-          if (text !== '' && !textFits(key)) {
+          const value: string | readonly string[] | null =
+            sent === null ? null : typeof sent === 'string' ? sent.trim() : sent;
+          const empty = value === null || value.length === 0;
+          if (!empty && !fits(key)) {
             const label = standardProperties[key].label;
             issues.push({ field: key, message: `A ${String(relation)} can't have ${label}.` });
-          } else if (text.length > maxPropertyValueLength && !sameValue(before?.[key], text)) {
-            issues.push({ field: key, message: valueTooLong });
+          } else if (typeof value === 'string') {
+            if (value.length > maxPropertyValueLength && !sameValue(before?.[key], value)) {
+              issues.push({ field: key, message: valueTooLong });
+            }
+          } else if (value !== null && isRelationDataProperty(key)) {
+            const problem = dataValueProblem(value, before?.[key]);
+            if (problem !== undefined) issues.push({ field: key, message: problem });
           }
-          apply(metadata, key, text === '' ? null : text, key, changed);
+          apply(metadata, key, empty ? null : value, key, changed);
         }
         // Blank removes the label from the edge.
         const label = request.label === undefined ? undefined : (request.label ?? '').trim();
@@ -436,15 +512,20 @@ export class RelationshipService {
         const document = withEdge(model.document, edge, current.index);
         const validation = validateJgf(document);
         refuseErrors(validation, { kind: 'edge', id: relationshipId }, requestField);
-        if (reversed || changed.includes('type')) {
-          const field = reversed ? 'reverse' : 'type';
+        if (reversed || moved.length > 0 || changed.includes('type')) {
+          const field = reversed ? 'reverse' : (moved.at(-1) ?? 'type');
           refuseModellingProblems(model.document, edge, field, relationshipId);
         }
         warnings = warningsFor(validation, edge);
         nesting = nestingChanges(model.document, document);
         stored = { id: relationshipId, version: current.version, edge };
         const action = reversed ? 'relationship-reversed' : 'relationship-updated';
-        const write = { kind: 'put-relationship', relationshipId, edge } as const;
+        const write = {
+          kind: 'put-relationship',
+          relationshipId,
+          edge,
+          ...(moved.length > 0 ? { endsIntoViews: true } : {}),
+        } as const;
         return plan(write, document, action, actor, changed);
       });
       if (applied === undefined) throw new NotFoundError('model');
@@ -455,6 +536,7 @@ export class RelationshipService {
         relationship: { ...stored, version: applied.version },
         warnings,
         nestingChanges: nesting,
+        ...(applied.viewsChanged === undefined ? {} : { viewsChanged: applied.viewsChanged }),
       };
     } catch (error) {
       if (error instanceof Unchanged) return error.result as RelationshipChangeResult;

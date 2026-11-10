@@ -19,6 +19,7 @@ import {
 import { ElementService } from '../src/editing/element-service.js';
 import { RelationshipService } from '../src/editing/relationship-service.js';
 import { FileModelStore } from '../src/storage/file-model-store.js';
+import { ViewFullError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { ViewLimitError, ViewService } from '../src/views/view-service.js';
 import { tempDataDir } from './helpers.js';
@@ -666,6 +667,137 @@ describe('deletes in the model keep views consistent', () => {
       'r2',
       'r3',
     ]);
+  });
+
+  it('adds a new end to every view holding the relationship, without a position, as a new version', async () => {
+    // "Selling" holds r1 (baker to orders); "Kitchen" holds the kitchen and the oven only.
+    const { view: selling } = await service.createView(
+      modelId,
+      { name: 'Selling', elementIds: ['baker', 'orders'], relationshipIds: ['r1'] },
+      modeller,
+    );
+    await service.replaceLayout(
+      modelId,
+      selling.id,
+      { version: 1, cards: [{ elementId: 'baker', x: 10, y: 20 }] },
+      modeller,
+    );
+    const { view: kitchen } = await service.createView(
+      modelId,
+      { name: 'Kitchen', elementIds: ['kitchen', 'oven'], relationshipIds: ['r2'] },
+      modeller,
+    );
+    const relationships = new RelationshipService(store);
+    const moved = await relationships.updateRelationship(
+      modelId,
+      'r1',
+      { version: 1, target: 'till' },
+      other,
+    );
+    expect(moved.viewsChanged).toEqual([{ id: selling.id, version: 3 }]);
+
+    const { view: after } = await service.getView(modelId, selling.id);
+    // The old end stays and the new one has no position; the view has a new version, by the one
+    // who changed the relationship. A view without the relationship is untouched.
+    expect(after).toMatchObject({
+      version: 3,
+      updatedBy: other,
+      elementIds: ['baker', 'orders', 'till'],
+      relationshipIds: ['r1'],
+      elementCount: 3,
+      layout: [{ elementId: 'baker', x: 10, y: 20 }],
+    });
+    expect((await service.getView(modelId, kitchen.id)).view).toMatchObject({
+      version: 1,
+      elementIds: ['kitchen', 'oven'],
+    });
+    // Both ends new, in another view too: only those it lacks are added.
+    const { view: both } = await service.createView(
+      modelId,
+      { name: 'Both', elementIds: ['baker', 'till'], relationshipIds: ['r1'] },
+      modeller,
+    );
+    const again = await relationships.updateRelationship(
+      modelId,
+      'r1',
+      { version: 2, source: 'kitchen', target: 'oven' },
+      other,
+    );
+    expect(again.viewsChanged).toEqual(
+      [
+        { id: selling.id, version: 4 },
+        { id: both.id, version: 2 },
+      ].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    );
+    // A view that already holds both ends gains nothing and keeps its version.
+    const kept = await relationships.updateRelationship(
+      modelId,
+      'r1',
+      { version: 3, source: 'baker' },
+      other,
+    );
+    expect(kept.viewsChanged).toEqual([]);
+    expect((await service.getView(modelId, both.id)).view.version).toBe(2);
+    // A change without a new end says nothing about views.
+    const plain = await relationships.updateRelationship(
+      modelId,
+      'r1',
+      { version: 4, label: 'Made-up' },
+      other,
+    );
+    expect(plain).not.toHaveProperty('viewsChanged');
+    expect((await service.getView(modelId, both.id)).view.elementIds).toEqual([
+      'baker',
+      'kitchen',
+      'oven',
+      'till',
+    ]);
+    expect((await service.getView(modelId, selling.id)).view.elementIds).toEqual([
+      'baker',
+      'kitchen',
+      'oven',
+      'orders',
+      'till',
+    ]);
+    // No view rows of their own: the relationship's audit row says what changed.
+    expect(await audits()).toHaveLength(4);
+  });
+
+  it('refuses a new end that a full view holding the relationship has no room for', async () => {
+    const elementIds = Array.from({ length: maxViewElements - 1 }, (_, n) => `extra-${n}`);
+    const nodes = Object.fromEntries(
+      elementIds.map((id): [string, JgfNode] => [id, { label: id, metadata: { type: 'Other' } }]),
+    );
+    const big: JgfDocument = {
+      graph: { ...bakery.graph, nodes: { ...bakery.graph.nodes, ...nodes } },
+    };
+    const bigId = (await store.save(big, modeller)).id;
+    const { view } = await service.createView(
+      bigId,
+      {
+        name: 'Full',
+        elementIds: ['baker', 'orders', ...elementIds.slice(2)],
+        relationshipIds: ['r1'],
+      },
+      modeller,
+    );
+    expect(view.elementCount).toBe(maxViewElements - 1);
+    const relationships = new RelationshipService(store);
+    // One free place: the till fits.
+    await relationships.updateRelationship(bigId, 'r1', { version: 1, target: 'till' }, modeller);
+    expect((await service.getView(bigId, view.id)).view.elementCount).toBe(maxViewElements);
+    // Now full: a new source that isn't there is refused, and nothing is stored.
+    const error = await refusal(
+      relationships.updateRelationship(bigId, 'r1', { version: 2, source: 'kitchen' }, modeller),
+    );
+    expect(error).toBeInstanceOf(ViewFullError);
+    expect((await store.get(bigId))?.graph.edges?.[0]).toMatchObject({
+      source: 'baker',
+      target: 'till',
+    });
+    // An end the view holds already needs no room.
+    await relationships.updateRelationship(bigId, 'r1', { version: 2, source: 'orders' }, modeller);
+    expect((await service.getView(bigId, view.id)).view.elementCount).toBe(maxViewElements);
   });
 
   it('never puts a new relationship in a view in the place of a deleted one', async () => {

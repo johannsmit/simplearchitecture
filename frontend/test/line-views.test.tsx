@@ -373,7 +373,7 @@ describe('the line rules', () => {
             source: 'shop',
             target: 'till',
             relation: 'Relation',
-            metadata: { requestData: 'a', responseData: 'b', data: 'c' },
+            metadata: { requestData: ['a'], responseData: ['b'], data: 'c' },
           },
         ],
       },
@@ -433,15 +433,15 @@ describe('Data in a viewpoint', () => {
   it('shows Request Data and Response Data under the other values, and grays out the rest', async () => {
     const edges = (model.graph.edges ?? []).map((edge) =>
       edge.source === 'customer'
-        ? { ...edge, metadata: { ...edge.metadata, responseData: 'Order numbers' } }
+        ? { ...edge, metadata: { ...edge.metadata, responseData: ['Order numbers', 'Receipts'] } }
         : edge,
     );
     await open('&show=data&show=protocol', { graph: { ...model.graph, edges } });
     await waitFor(() => {
       expect(labelLines()).toContainEqual([
         'REST',
-        'Request: Places orders',
-        'Response: Order numbers',
+        'Req: Places orders',
+        'Resp: Order numbers, Receipts',
       ]);
     });
     // The till's line has neither: gray, and its label gives way.
@@ -459,13 +459,13 @@ describe('Data in a viewpoint', () => {
     });
     for (const [metadata, text] of [
       [
-        { requestData: 'Orders', responseData: 'Order ids' },
-        'Request: Orders\nResponse: Order ids',
+        { requestData: ['Orders', 'Invoices'], responseData: ['Order ids'] },
+        'Req: Orders, Invoices\nResp: Order ids',
       ],
-      [{ requestData: 'Orders' }, 'Request: Orders'],
-      [{ responseData: ' Order\n  ids ' }, 'Response: Order ids'],
-      [{ requestData: '  ', responseData: ['a'] }, ''],
-      [{ data: 'From before', requestData: 'Orders' }, 'Request: Orders'],
+      [{ requestData: ['Orders'] }, 'Req: Orders'],
+      [{ responseData: [' Order\n  ids '] }, 'Resp: Order ids'],
+      [{ requestData: [], responseData: ['  '] }, ''],
+      [{ data: 'From before', requestData: ['Orders'] }, 'Req: Orders'],
     ] as const) {
       const [link] = mergeRelationships([relationship(metadata)]);
       if (!link) throw new Error('no link');
@@ -478,7 +478,7 @@ describe('Data in a viewpoint', () => {
     }
   });
 
-  it('counts blank text, lists and objects as not having it', () => {
+  it('reads a single text as one value, and counts blanks and objects as not having it', () => {
     const relationship = (value: unknown) => ({
       id: 'r',
       source: 'a',
@@ -488,10 +488,14 @@ describe('Data in a viewpoint', () => {
       metadata: { requestData: value, responseData: value },
     });
     for (const [value, text] of [
-      ['Orders', 'Request: Orders\nResponse: Orders'],
+      [['Orders', 'Bills'], 'Req: Orders, Bills\nResp: Orders, Bills'],
+      ['Orders', 'Req: Orders\nResp: Orders'],
       ['  ', ''],
-      [['a'], ''],
+      [[], ''],
+      [['  ', ''], ''],
+      [[{ a: 1 }], ''],
       [{ a: 1 }, ''],
+      [[1, 'a'], 'Req: 1, a\nResp: 1, a'],
     ] as const) {
       const [link] = mergeRelationships([relationship(value)]);
       if (!link) throw new Error('no link');
@@ -536,7 +540,7 @@ describe('Data in a viewpoint', () => {
       [false, 3],
       [true, 1],
     ]);
-    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', 'Request: Orders']);
+    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', 'Req: Orders']);
   });
 
   it('leaves Contains out of it', async () => {
@@ -546,7 +550,7 @@ describe('Data in a viewpoint', () => {
     ];
     await open('&show=data', { graph: { ...model.graph, edges } });
     await waitFor(() => {
-      expect(labels()).toContain('Request: Places orders');
+      expect(labels()).toContain('Req: Places orders');
     });
     expect(canvas().querySelectorAll('.is-grayed').length).toBeGreaterThan(0);
     const contains = [...canvas().querySelectorAll('.react-flow__edge')].filter((edge) =>

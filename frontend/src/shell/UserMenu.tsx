@@ -22,9 +22,10 @@ export function initials(name: string): string {
 }
 
 /**
- * The code version the server runs, e.g. "SimpleArchitecture 0.10.0 · a1b2c3d", asked for each
- * time the menu opens (so it shows a new deployment). Nothing while loading, without a role or
- * on an error: it's a detail, never a message.
+ * The code version the server runs, e.g. "Version 0.10.0", asked for each time the menu opens (so
+ * it shows a new deployment). Plain text only, so a copy of it reads as it shows. The commit stays in
+ * GET /api/about and the server's log. Nothing while loading, without a role or on an error: it's a
+ * detail, never a message.
  */
 function AboutLine() {
   const [about, setAbout] = useState<AboutResponse | null>(null);
@@ -38,12 +39,7 @@ function AboutLine() {
   }, []);
 
   if (about === null) return null;
-  return (
-    <p className="about-line">
-      SimpleArchitecture {about.version} <span aria-hidden="true">·</span>
-      <span className="vh">, commit</span> {about.commit}
-    </p>
-  );
+  return <p className="about-line">Version {about.version}</p>;
 }
 
 /** The user button (name and all roles) and its menu: who, roles, access per space, sign out. */

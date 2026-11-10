@@ -87,6 +87,9 @@ function server(initial: StoredView) {
     if (url === `/api/models/${modelId}/views`) {
       return Response.json({ views: [{ ...view, elementIds: undefined, layout: undefined }] });
     }
+    if (url.startsWith(`/api/models/${modelId}/relationships/`)) {
+      return relationship(url, method, body);
+    }
     if (!url.startsWith(base)) return undefined;
     const parsed =
       typeof body === 'string' ? (JSON.parse(body) as Record<string, unknown>) : undefined;
@@ -117,6 +120,38 @@ function server(initial: StoredView) {
     }
     return undefined;
   };
+  // Relationships with versions; a new end goes into the view with a new version, as the API does.
+  const edges = new Map(
+    (greenhouse.graph.edges ?? []).map((edge) => [edge.id ?? '', { edge, version: 1 }]),
+  );
+  function relationship(url: string, method: string, body: unknown) {
+    const id = decodeURIComponent(url.split('/relationships/')[1] ?? '');
+    const stored = edges.get(id);
+    if (!stored) return apiError(404, 'Not found', { missing: 'relationship' });
+    let viewsChanged: { id: string; version: number }[] | undefined;
+    if (method === 'PATCH') {
+      const change = JSON.parse(body as string) as { source?: string; target?: string };
+      calls.push({ method, url, body: change });
+      const edge = { ...stored.edge, ...change };
+      Reflect.deleteProperty(edge, 'version');
+      edges.set(id, { edge, version: stored.version + 1 });
+      if (view.relationshipIds.includes(id)) {
+        const fresh = [edge.source, edge.target].filter((end) => !view.elementIds.includes(end));
+        if (fresh.length > 0) {
+          view = { ...view, version: view.version + 1, elementIds: [...view.elementIds, ...fresh] };
+          viewsChanged = [{ id: view.id, version: view.version }];
+        }
+      }
+      viewsChanged ??= [];
+    }
+    const now = edges.get(id) ?? stored;
+    return Response.json({
+      relationship: { id, version: now.version, edge: now.edge },
+      warnings: [],
+      nestingChanges: [],
+      ...(viewsChanged ? { viewsChanged } : {}),
+    });
+  }
   return {
     handler,
     calls,
@@ -403,6 +438,74 @@ describe('saving the layout (Modelling)', () => {
     });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(fake.view().layout).toContainEqual({ elementId: 'pump', x: 400, y: 284 });
+  });
+});
+
+describe('a relationship’s new end in a view', () => {
+  it('joins the view at a free spot, the old end stays, and the layout is saved', async () => {
+    const { calls } = await open('modelling', watering(left));
+    fireEvent.click(mainOf('sensors'));
+    const panel = screen.getByRole('complementary', { name: 'Details' });
+    fireEvent.click(
+      await within(panel).findByRole('button', { name: /^Open relationship: Relates to Pump/ }),
+    );
+    const form = await screen.findByRole('form', { name: /^Relationship / });
+    const ends = within(panel).getByRole('region', { name: 'Ends' });
+    fireEvent.click(within(ends).getByRole('button', { name: 'Change To: Pump' }));
+    const search = within(ends).getByRole('combobox');
+    fireEvent.change(search, { target: { value: 'shed' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    await waitFor(() => {
+      expect(cardIds()).toEqual(['gardener', 'planner', 'pump', 'sensors', 'shed']);
+    });
+    await waitFor(() => {
+      expect(layoutSaves(calls)).toHaveLength(1);
+    });
+    // The relationship's own change, then the layout with the version the view still has: the
+    // view's contents were never sent.
+    expect(changes(calls).map((call) => call.url.split('/').slice(-2).join('/'))).toEqual([
+      'relationships/g3',
+      'v-water/layout',
+    ]);
+    expect(changes(calls)[0]?.body).toEqual({ version: 1, target: 'shed' });
+    // With the view's version the change gave it: saved, with no conflict.
+    expect(layoutSaves(calls)[0]?.body?.version).toBe(2);
+    await settle();
+    expect(screen.queryByRole('alert')).toBeNull();
+    const saved = savedCards(layoutSaves(calls)[0]);
+    // No card moved; the new one is where the canvas put it, covering none of them.
+    for (const stays of left) expect(saved).toContainEqual(stays);
+    const shed = boxOf('shed');
+    expect(saved.find((c) => c.elementId === 'shed')).toEqual({ elementId: 'shed', ...pick(shed) });
+    for (const other of left) {
+      const box = boxOf(other.elementId);
+      const apart =
+        shed.x + shed.width <= box.x ||
+        box.x + box.width <= shed.x ||
+        shed.y + shed.height <= box.y ||
+        box.y + box.height <= shed.y;
+      expect(apart, other.elementId).toBe(true);
+    }
+  });
+});
+
+describe('a view someone else changed with a new end', () => {
+  it('reports the conflict with Reload view on the next change, not a refusal', async () => {
+    const fake = await open('modelling', watering(left));
+    // Elsewhere, Sensors to Pump now goes to the shed: the server added it, with a new version.
+    fake.set({ ...fake.view(), version: 2, elementIds: [...fake.view().elementIds, 'shed'] });
+    fireEvent.click(
+      within(card('gardener') as HTMLElement).getByRole('button', {
+        name: 'Remove Gardener from view',
+      }),
+    );
+    const notice = await screen.findByRole('alert');
+    expect(notice.textContent).toContain(
+      "Someone else changed this view. Your change wasn't saved.",
+    );
+    expect(within(notice).getByRole('button', { name: 'Reload view' })).toBeTruthy();
   });
 });
 

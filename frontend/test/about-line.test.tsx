@@ -27,18 +27,19 @@ async function openAccountMenu() {
 }
 
 describe('the code version in the account menu', () => {
-  it('shows the version and commit as the last line, once the menu opens', async () => {
+  it('shows the version, without the commit, as the last line once the menu opens', async () => {
     const fetchMock = stubApi(admin, models, madeUpAbout);
     renderAt('/admin/models');
     await screen.findByRole('button', { name: /account menu$/ });
     expect(requests(fetchMock)).not.toContain('GET /api/about');
 
     const menu = await openAccountMenu();
-    const line = await screen.findByText(/^SimpleArchitecture 0\.10\.0/);
-    // Seen as "SimpleArchitecture 0.10.0 · a1b2c3d"; a screen reader hears ", commit" for the dot.
-    expect(line.textContent).toBe('SimpleArchitecture 0.10.0 ·, commit a1b2c3d');
-    expect(line.querySelector('[aria-hidden="true"]')?.textContent).toBe('·');
-    expect(line.querySelector('.vh')?.textContent).toBe(', commit');
+    const line = await screen.findByText(/^Version 0\.10\.0/);
+    // Plain text, so what is seen, heard and copied is the same.
+    expect(line.textContent).toBe('Version 0.10.0');
+    expect(line.children).toHaveLength(0);
+    expect(menu.textContent).not.toContain('a1b2c3d');
+    expect(menu.textContent).not.toContain('commit');
     expect(menu.lastElementChild).toBe(line);
     // No Copy button, and nothing to click.
     expect(line.querySelector('button, a')).toBeNull();
@@ -46,20 +47,20 @@ describe('the code version in the account menu', () => {
   });
 
   it('asks again each time the menu opens, so a new deployment shows', async () => {
-    let commit = 'a1b2c3d';
+    let version = '0.10.0';
     stubApi(
       admin,
       models,
-      aboutAs(() => Response.json({ version: '0.10.0', commit })),
+      aboutAs(() => Response.json({ version, commit: 'a1b2c3d' })),
     );
     renderAt('/admin/models');
     await openAccountMenu();
-    await screen.findByText(/a1b2c3d/);
+    await screen.findByText('Version 0.10.0');
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    commit = 'e4f5a6b';
+    version = '0.11.0';
     await openAccountMenu();
-    await screen.findByText(/e4f5a6b/);
+    await screen.findByText('Version 0.11.0');
   });
 
   it('asks nothing before sign-in', async () => {
@@ -106,16 +107,15 @@ describe('the code version in the account menu', () => {
     }
   });
 
-  it('shows "unknown" for a build that did not record its commit', async () => {
+  it('shows the version for a build that did not record its commit', async () => {
     stubApi(
       admin,
       models,
       aboutAs(() => Response.json({ version: '0.10.0', commit: 'unknown' })),
     );
     renderAt('/admin/models');
-    await openAccountMenu();
-    expect((await screen.findByText(/^SimpleArchitecture 0/)).textContent).toContain(
-      'commit unknown',
-    );
+    const menu = await openAccountMenu();
+    expect((await screen.findByText(/^Version 0/)).textContent).toBe('Version 0.10.0');
+    expect(menu.textContent).not.toContain('unknown');
   });
 });

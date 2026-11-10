@@ -8,7 +8,7 @@ import {
   isIsoCountryCode,
   nodeTypeDefinitions,
   nodeTypes,
-  relationTextProperties,
+  relationProperties,
   sourcingOptions,
   standardProperties,
 } from '@simplearchitecture/shared';
@@ -42,7 +42,7 @@ describe('the metamodel in shared/ matches metamodel/', () => {
     const relationKeys = Object.keys(template.graph.edges[1]?.metadata ?? {}).filter(
       (key) => !['architectureState', 'anyCustomKey'].includes(key),
     );
-    expect(relationKeys).toEqual([...relationTextProperties]);
+    expect(relationKeys).toEqual([...relationProperties]);
     expect(Object.keys(standardProperties).sort()).toEqual([...keys, ...relationKeys].sort());
   });
 

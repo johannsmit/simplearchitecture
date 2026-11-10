@@ -2,11 +2,13 @@
  * A viewpoint on the canvas: which relationship properties its lines show. Pure
  * functions, linear in the model size, so the web app and a future MCP server read one the same way.
  */
+import { dataValuesOf, dataValuesText } from './data-values.js';
 import { filterValueOf, isFilterableKey } from './filters.js';
 import { compareNames, containsType, type ModelGraph, type ModelRelationship } from './graph.js';
 import {
-  isRelationTextProperty,
-  relationTextProperties,
+  isRelationDataProperty,
+  isRelationProperty,
+  relationProperties,
   retiredDataKey,
   standardProperties,
 } from './metamodel.js';
@@ -27,8 +29,8 @@ const stateKey = 'architectureState';
  */
 export const dataViewKey = retiredDataKey;
 const dataViewParts = [
-  ['requestData', 'Request'],
-  ['responseData', 'Response'],
+  ['requestData', 'Req'],
+  ['responseData', 'Resp'],
 ] as const;
 const dataViewKeys = new Set<string>(dataViewParts.map(([key]) => key));
 
@@ -38,8 +40,9 @@ export const isRelationshipViewKey = (key: string): boolean =>
 
 /**
  * A relationship's value for a property as text, or undefined when it doesn't have it. The rules
- * are the element filter's: an empty text, a list or an object counts as not having it. Every
- * relationship has an Architecture state, as none means Current.
+ * are the element filter's: an empty text, a list or an object counts as not having it, except for
+ * Request Data and Response Data, whose values are joined by ", ". Every relationship has an
+ * Architecture state, as none means Current.
  */
 export function relationshipValue(
   relationship: ModelRelationship,
@@ -47,16 +50,20 @@ export function relationshipValue(
 ): string | undefined {
   if (key === stateKey) return relationship.architectureState;
   if (key === dataViewKey) return dataViewValue(relationship);
+  if (isRelationDataProperty(key)) {
+    if (!Object.hasOwn(relationship.metadata, key)) return undefined;
+    return dataValuesText(dataValuesOf(relationship.metadata[key]));
+  }
   return filterValueOf(relationship, key);
 }
 
 /**
- * The Data viewpoint's value: "Request: …" above "Response: …", on two lines, leaving out a part
+ * The Data viewpoint's value: "Req: a, b" above "Resp: c", on two lines, leaving out a part
  * without a value; undefined when neither has one.
  */
 function dataViewValue(relationship: ModelRelationship): string | undefined {
   const lines = dataViewParts.flatMap(([key, prefix]) => {
-    const value = filterValueOf(relationship, key)?.replace(/\s+/g, ' ');
+    const value = relationshipValue(relationship, key);
     return value === undefined ? [] : [`${prefix}: ${value}`];
   });
   return lines.length === 0 ? undefined : lines.join('\n');
@@ -72,7 +79,7 @@ export function relationshipViewValues(
 
 /**
  * What a line shows for the selected properties: their one-line values joined by " · " on the first
- * line, then Data's lines ("Request: …", "Response: …") each on its own. Empty when the
+ * line, then Data's lines ("Req: …", "Resp: …") each on its own. Empty when the
  * relationship has none of them.
  */
 export function relationshipViewText(
@@ -107,7 +114,7 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
     for (const [key, value] of Object.entries(relationship.metadata)) {
       if (!isRelationshipViewKey(key) || key === stateKey) continue;
       // Leftover Data (kept where Request Data had a value) has no choice: "Data" is the viewpoint.
-      if (isRelationTextProperty(key) || key === retiredDataKey) continue;
+      if (isRelationProperty(key) || key === retiredDataKey) continue;
       if (typeof value === 'object' && value !== null) structured.add(key);
       else if (relationshipValue(relationship, key) !== undefined) found.add(key);
     }
@@ -117,7 +124,7 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
     .map((key) => ({ key, label: key }));
   if (any) {
     fields.push({ key: stateKey, label: standardProperties[stateKey].label });
-    for (const key of relationTextProperties) {
+    for (const key of relationProperties) {
       if (!dataViewKeys.has(key)) fields.push({ key, label: standardProperties[key].label });
     }
     fields.push({ key: dataViewKey, label: 'Data' });

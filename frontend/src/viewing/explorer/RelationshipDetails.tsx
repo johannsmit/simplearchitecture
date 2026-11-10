@@ -1,8 +1,10 @@
 import {
   canBeTwoWay,
+  dataValuesOf,
   displayLabel,
   hasStandardEdgeProperty,
-  relationTextProperties,
+  isRelationDataProperty,
+  relationProperties,
   standardProperties,
   type ModelGraph,
   type ModelRelationship,
@@ -49,11 +51,9 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   const label = displayLabel(relationship, graph);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
-  // A Relation's text properties (Identity to Response Data); elsewhere such keys stay custom
+  // A Relation's own properties (Identity to Response Data); elsewhere such keys stay custom
   // metadata.
-  const texts = relationTextProperties.filter((key) =>
-    hasStandardEdgeProperty(key, relationship.type),
-  );
+  const texts = relationProperties.filter((key) => hasStandardEdgeProperty(key, relationship.type));
   const other = Object.entries(metadata)
     .filter(([key]) => !ownRows.has(key) && !(texts as readonly string[]).includes(key))
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
@@ -156,9 +156,13 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
             <div key={key}>
               <dt>{standardProperties[key].label}</dt>
               <dd>
-                <PropertyValue
-                  row={{ key, label: standardProperties[key].label, value: metadata[key] }}
-                />
+                {isRelationDataProperty(key) ? (
+                  <DataValues label={standardProperties[key].label} value={metadata[key]} />
+                ) : (
+                  <PropertyValue
+                    row={{ key, label: standardProperties[key].label, value: metadata[key] }}
+                  />
+                )}
               </dd>
             </div>
           ))}
@@ -215,5 +219,31 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Request Data or Response Data: its values, in their order, or "Not set". A value of another shape
+ * (kept from an import, with a warning) shows as it is stored.
+ */
+function DataValues({ label, value }: { label: string; value: unknown }) {
+  const values = dataValuesOf(value);
+  if (values.length === 0) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? (
+      <MetadataValue name={label} value={value} />
+    ) : (
+      <span className="muted">Not set</span>
+    );
+  }
+  return (
+    <ul className="chips is-static" aria-label={label}>
+      {values.map((text, index) => (
+        <li className="chip" key={`${String(index)}:${text}`}>
+          <span className="chip-text" title={text}>
+            {text}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

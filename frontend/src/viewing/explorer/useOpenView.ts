@@ -34,8 +34,14 @@ export interface OpenView {
    * as `change` is. Cards no longer in the view are left out.
    */
   saveLayout: (cards: readonly ViewCardLayout[]) => boolean;
-  /** Something was deleted from the model: the server has taken it out of every view already. */
-  prune: (next: (current: ViewContents) => ViewContents) => void;
+  /**
+   * The server has changed the view already, with a change to the model: something deleted from
+   * the model is out of every view, and a relationship's new end is in every view that holds it.
+   * The view takes the change without saving. `version`: the view's version after the server's
+   * change, taken only when it follows the one read (else someone else changed the view too, and
+   * the next save reports the conflict).
+   */
+  adopt: (next: (current: ViewContents) => ViewContents, version?: number) => void;
   /** Reads the view again (Reload view) and drops a problem. */
   reload: () => void;
   /** A rename was saved: the new name and version. */
@@ -233,20 +239,31 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
     [blocked, run],
   );
 
-  const prune = useCallback((next: (contents: ViewContents) => ViewContents) => {
+  const adopt = useCallback((next: (contents: ViewContents) => ViewContents, version?: number) => {
     const { saved } = live.current;
     if (saved === undefined) return;
     const kept = next(contentsOf(saved));
-    live.current.saved = {
+    const follows = version !== undefined && version === saved.version + 1;
+    const view = {
       ...saved,
       elementIds: [...kept.elementIds],
       relationshipIds: [...kept.relationshipIds],
+      ...(follows ? { version } : {}),
     };
+    live.current.saved = view;
     live.current.shown = next(live.current.shown);
     const shown = live.current.shown;
-    const pruneKey = live.current.key;
+    const adoptKey = live.current.key;
     setState((previous) =>
-      previous.key === pruneKey ? { ...previous, contents: shown } : previous,
+      previous.key === adoptKey
+        ? {
+            ...previous,
+            contents: shown,
+            ...(follows && previous.view
+              ? { view: { ...previous.view, version: view.version } }
+              : {}),
+          }
+        : previous,
     );
   }, []);
 
@@ -276,7 +293,7 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
     problem: current.problem,
     change,
     saveLayout,
-    prune,
+    adopt,
     reload,
     renamed,
     dismiss,

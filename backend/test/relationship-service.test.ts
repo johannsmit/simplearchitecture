@@ -520,12 +520,190 @@ describe('RelationshipService: update and reverse', () => {
       ).rejects.toMatchObject({ what: 'relationship' });
     }
     const unknownField = await rejection(
-      service.updateRelationship(modelId, 'r3', { version: 2, source: 'barn' }, modeller),
+      service.updateRelationship(modelId, 'r3', { version: 2, relation: 'Contains' }, modeller),
     );
     expect(unknownField.fields).toEqual([
-      { field: 'source', message: 'Is not a field of a relationship.' },
+      { field: 'relation', message: 'Is not a field of a relationship.' },
     ]);
     expect(await audit()).toHaveLength(1);
+  });
+});
+
+describe('RelationshipService: new ends', () => {
+  it('changes the target, the source or both, keeping the id, with the field names audited', async () => {
+    const { store, service, modelId } = await setup();
+    // farmer relates to pump; then to the tractor.
+    const target = await service.updateRelationship(
+      modelId,
+      'r3',
+      { version: 1, target: 'tractor' },
+      modeller,
+    );
+    expect(target.relationship).toMatchObject({
+      id: 'r3',
+      version: 2,
+      edge: { source: 'farmer', target: 'tractor', relation: 'Relation', label: 'Reads the level' },
+    });
+    expect(target.nestingChanges).toEqual([]);
+    const both = await service.updateRelationship(
+      modelId,
+      'r3',
+      { version: 2, source: 'tractor', target: 'barn', description: 'Made-up' },
+      modeller,
+    );
+    expect(both.relationship.edge).toMatchObject({ source: 'tractor', target: 'barn' });
+    // An end sent as it is changes nothing.
+    const same = await service.updateRelationship(
+      modelId,
+      'r3',
+      { version: 3, source: 'tractor', target: 'barn' },
+      modeller,
+    );
+    expect(same.relationship.version).toBe(3);
+    expect((await edgesOf(store, modelId)).map((edge) => edge.id)).toEqual([
+      'r1',
+      'r2',
+      'r3',
+      undefined,
+    ]);
+    expect(
+      (await audit()).map((row) => [row.action, row.relationship_id, row.details.fields]),
+    ).toEqual([
+      ['relationship-updated', 'r3', ['target']],
+      ['relationship-updated', 'r3', ['source', 'target', 'description']],
+    ]);
+  });
+
+  it('refuses reverse with a new end, an end not in the model, and a stale version', async () => {
+    const { store, service, modelId } = await setup();
+    const before = await edgesOf(store, modelId);
+    for (const change of [
+      { version: 1, reverse: true, target: 'tractor' },
+      { version: 1, reverse: true, source: 'tractor' },
+    ]) {
+      const refused = await rejection(service.updateRelationship(modelId, 'r3', change, modeller));
+      expect(refused.fields).toEqual([
+        {
+          field: 'reverse',
+          message:
+            "Reverse can't be sent with a new source or target: send the new source and target instead.",
+        },
+      ]);
+    }
+    // reverse: false is no reverse.
+    const kept = await service.updateRelationship(
+      modelId,
+      'r3',
+      { version: 1, reverse: false, target: 'tractor' },
+      modeller,
+    );
+    expect(kept.relationship.edge).toMatchObject({ source: 'farmer', target: 'tractor' });
+    for (const [change, what] of [
+      [{ version: 2, target: 'ghost' }, 'target'],
+      [{ version: 2, source: 'toString' }, 'source'],
+    ] as const) {
+      const missing = await service.updateRelationship(modelId, 'r3', change, modeller).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(missing).toBeInstanceOf(NotFoundError);
+      expect((missing as NotFoundError).what).toBe(what);
+    }
+    for (const bad of [
+      { version: 2, target: '' },
+      { version: 2, source: 7 },
+    ]) {
+      const refused = await rejection(service.updateRelationship(modelId, 'r3', bad, modeller));
+      expect(refused.fields.map((issue) => issue.field)).toEqual([Object.keys(bad)[1]]);
+    }
+    await expect(
+      service.updateRelationship(modelId, 'r3', { version: 1, target: 'barn' }, modeller),
+    ).rejects.toBeInstanceOf(ConflictError);
+    expect((await edgesOf(store, modelId))[2]).toEqual({ ...before[2], target: 'tractor' });
+    expect((await audit()).length).toBe(1);
+  });
+
+  it('applies the rules for a new relationship: no self, no cycle, no Contains twice', async () => {
+    const { store, service, modelId } = await setup();
+    const before = await edgesOf(store, modelId);
+    const self = await rejection(
+      service.updateRelationship(modelId, 'r3', { version: 1, target: 'farmer' }, modeller),
+    );
+    expect(self.fields).toEqual([
+      { field: 'target', message: "Can't connect an element to itself." },
+    ]);
+    const selfBySource = await rejection(
+      service.updateRelationship(modelId, 'r3', { version: 1, source: 'pump' }, modeller),
+    );
+    expect(selfBySource.fields[0]?.field).toBe('source');
+    // silo contains pump; with the barn as its target, the barn would contain the silo that
+    // contains it.
+    const cycle = await rejection(
+      service.updateRelationship(modelId, 'r2', { version: 1, target: 'barn' }, modeller),
+    );
+    expect(cycle.fields[0]).toEqual({
+      field: 'target',
+      message: 'Not possible: Barn contains Silo.',
+    });
+    const twin = await rejection(
+      service.updateRelationship(
+        modelId,
+        'r2',
+        { version: 1, source: 'barn', target: 'silo' },
+        modeller,
+      ),
+    );
+    expect(twin.duplicateOf).toBe('r1');
+    // A Relation may repeat: two Relations from the farmer to the pump are fine.
+    await service.addRelationship(
+      modelId,
+      { source: 'farmer', target: 'tractor', type: 'Relation' },
+      modeller,
+    );
+    const repeated = await service.updateRelationship(
+      modelId,
+      'r3',
+      { version: 1, target: 'tractor' },
+      modeller,
+    );
+    expect(repeated.relationship.edge.target).toBe('tractor');
+    expect((await edgesOf(store, modelId)).slice(0, 2)).toEqual(before.slice(0, 2));
+  });
+
+  it('moves the nesting with a Contains end, and warns about a second container', async () => {
+    const { service, modelId } = await setup();
+    // silo contains pump; with the barn as its source, the pump is nested in the barn.
+    const moved = await service.updateRelationship(
+      modelId,
+      'r2',
+      { version: 1, source: 'barn' },
+      modeller,
+    );
+    expect(moved.nestingChanges).toEqual([{ elementId: 'pump', containerId: 'barn' }]);
+    expect(moved.warnings).toEqual([]);
+    // barn contains silo; with the tractor as its target the silo is no longer nested, and the
+    // tractor is.
+    const retargeted = await service.updateRelationship(
+      modelId,
+      'r1',
+      { version: 1, target: 'tractor' },
+      modeller,
+    );
+    expect(retargeted.nestingChanges).toEqual([
+      { elementId: 'silo', containerId: null },
+      { elementId: 'tractor', containerId: 'barn' },
+    ]);
+    // The silo contains the tractor too: a second container is allowed, with a warning, and the
+    // first Contains in the model's order still holds it. The pump, left by r2, is no longer
+    // nested.
+    const second = await service.updateRelationship(
+      modelId,
+      'r2',
+      { version: 2, source: 'silo', target: 'tractor' },
+      modeller,
+    );
+    expect(second.nestingChanges).toEqual([{ elementId: 'pump', containerId: null }]);
+    expect(second.warnings.map((issue) => issue.code)).toEqual(['multiple-containers']);
   });
 });
 
@@ -698,7 +876,7 @@ describe('RelationshipService: custom metadata', () => {
     expect(added.relationship.version).toBe(2);
     expect(added.relationship.edge.metadata).toEqual({
       // Read from the stored Information flow and label, as every model is read now.
-      requestData: 'Reads the level',
+      requestData: ['Reads the level'],
       protocol: 'REST',
       auth: 'OAuth',
     });
@@ -710,7 +888,7 @@ describe('RelationshipService: custom metadata', () => {
       modeller,
     );
     expect(changed.relationship.edge.metadata).toEqual({
-      requestData: 'Reads the level',
+      requestData: ['Reads the level'],
       protocol: 'gRPC',
     });
 
@@ -794,9 +972,9 @@ describe('custom metadata at the edges of the rules', () => {
       { version: 1, metadata },
       modeller,
     );
-    expect(relationship.edge.metadata).toEqual({ requestData: 'Reads the level', ...metadata });
+    expect(relationship.edge.metadata).toEqual({ requestData: ['Reads the level'], ...metadata });
     const edge = (await edgesOf(store, modelId)).find((e) => e.id === 'r3');
-    expect(edge?.metadata).toEqual({ requestData: 'Reads the level', ...metadata });
+    expect(edge?.metadata).toEqual({ requestData: ['Reads the level'], ...metadata });
     expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
     expect(typeof {}.toString).toBe('function');
     // A second change finds the odd key as its own value, not as an inherited member.

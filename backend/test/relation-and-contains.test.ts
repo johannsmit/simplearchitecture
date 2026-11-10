@@ -63,7 +63,7 @@ describe('older JGF', () => {
         target: 'b',
         relation: 'Relation',
         label: 'Orders',
-        metadata: { requestData: 'Orders' },
+        metadata: { requestData: ['Orders'] },
       },
       {
         id: 'both',
@@ -324,7 +324,7 @@ describe('migration 006', () => {
         r.twoWay ?? false,
       ]),
     ).toEqual([
-      ['flow-none', 'Relation', 'Orders', false],
+      ['flow-none', 'Relation', ['Orders'], false],
       ['flow-both', 'Relation', null, true],
       ['edges[2]', 'Relation', null, false],
       ['plain-both', 'Relation', null, true],
@@ -371,7 +371,7 @@ describe('migration 006', () => {
     );
     expect(saved.relationship.version).toBe(8);
     expect(saved.relationship.edge.metadata).toEqual({
-      requestData: 'Orders',
+      requestData: ['Orders'],
       description: 'Made-up',
     });
     // Several Relations with the same ends stay, and merge only on the UI.
@@ -550,7 +550,7 @@ describe('RelationshipService: Information flow is gone', () => {
   it('reads a stored yes with a label as Request Data, and a change to Contains removes it', async () => {
     const { service, id } = await setup();
     const read = await service.getRelationship(id, 'flow');
-    expect(read.relationship.edge.metadata).toEqual({ zone: 'x', requestData: 'Orders' });
+    expect(read.relationship.edge.metadata).toEqual({ zone: 'x', requestData: ['Orders'] });
     const result = await service.updateRelationship(
       id,
       'flow',

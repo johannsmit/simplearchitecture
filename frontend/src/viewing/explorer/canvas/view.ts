@@ -104,7 +104,7 @@ export function layoutLinkRelationships(
 
 /**
  * What a line shows. With no property selected: its label filled in (`labelOf`), or nothing. With
- * properties selected: their values in place of its label, Data's "Request: …" and "Response: …" on
+ * properties selected: their values in place of its label, Data's "Req: …" and "Resp: …" on
  * lines of their own below the rest. Merged lines always say how many they
  * are. Contains isn't part of a viewpoint, so it only ever shows its label or count. There is no
  * type name, on hover either: the details panel and screen readers have it.

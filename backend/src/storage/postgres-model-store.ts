@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  maxViewElements,
   storedModelKey,
   type JgfDocument,
   type ModelAuthor,
@@ -19,6 +20,7 @@ import {
   ModelStoreFullError,
   ModelTooLargeError,
   ModelUnreadableError,
+  ViewFullError,
   type DeletedModel,
   type ModelStore,
   type ViewStore,
@@ -180,6 +182,35 @@ const addRelationship = `insert into relationships (model_id, ordinal, id, sourc
   select $1::uuid, coalesce(max(ordinal), -1) + 1, $2, $3, $4, $5, $6, $7, $8::text::jsonb,
     $9::text::jsonb
   from relationships where model_id = $1::uuid returning version`;
+
+// The views holding a relationship (by id; ids are unique in a valid model) that would have more
+// than $4 elements with the ends ($3, a JSON list of element ids) they lack.
+const viewsWithoutRoom = `select count(*)::int as count from (
+  select (select count(*) from view_elements ve where ve.view_id = vr.view_id)
+       + (select count(*) from jsonb_array_elements_text($3::text::jsonb) as x(id)
+          where not exists (select 1 from view_elements ve
+            where ve.view_id = vr.view_id and ve.element_id = x.id)) as held
+  from view_relationships vr
+  join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
+  where vr.model_id = $1::uuid and r.id = $2) as v
+  where v.held > $4`;
+
+// Gives every view holding the relationship the ends it lacks, without a position (the canvas
+// places them when the view opens), and a new version to each view that gained one, so someone
+// with it open gets a conflict and reloads it.
+const addEndsToViews = `with added as (
+    insert into view_elements (view_id, model_id, element_id)
+    select vr.view_id, vr.model_id, x.id
+    from view_relationships vr
+    join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
+    cross join jsonb_array_elements_text($3::text::jsonb) as x(id)
+    where vr.model_id = $1::uuid and r.id = $2
+    on conflict do nothing
+    returning view_id)
+  update views set version = version + 1, updated_at = $4, updated_by_id = $5,
+    updated_by_name = $6
+  where model_id = $1::uuid and id in (select view_id from added)
+  returning id, version`;
 
 const deleteRelationshipsOf = `delete from relationships
   where model_id = $1::uuid and (source = $2 or target = $2) returning ordinal, id`;
@@ -485,6 +516,7 @@ export class PostgresModelStore implements ModelStore {
       }
       let version: number | undefined;
       let deleted: { id: string | null }[] = [];
+      let viewsChanged: { id: string; version: number }[] | undefined;
       if (write.kind === 'put-relationship') {
         if (!isStorable(write.relationshipId) || !isStorable(write.edge)) {
           throw new ModelNotStorableError();
@@ -506,6 +538,25 @@ export class PostgresModelStore implements ModelStore {
           ],
         );
         version = written?.version;
+        if (exists && write.endsIntoViews === true) {
+          const ends = JSON.stringify([...new Set([row.source, row.target])].filter(Boolean));
+          const params = [modelId, write.relationshipId, ends];
+          const [crowded] = await tx.query<{ count: number }>(viewsWithoutRoom, [
+            ...params,
+            maxViewElements,
+          ]);
+          if ((crowded?.count ?? 0) > 0) throw new ViewFullError(maxViewElements);
+          const { actor } = audit;
+          const touched = await tx.query<{ id: string; version: number }>(addEndsToViews, [
+            ...params,
+            new Date(this.#now()),
+            actor.id,
+            actor.name,
+          ]);
+          viewsChanged = touched
+            .map(({ id, version }) => ({ id, version }))
+            .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        }
       } else if (write.kind === 'delete-relationship') {
         await tx.query('delete from relationships where model_id = $1::uuid and id = $2', [
           modelId,
@@ -555,7 +606,9 @@ export class PostgresModelStore implements ModelStore {
         'relationshipId' in write ? write.relationshipId : null,
         JSON.stringify(details),
       ]);
-      return { applied: { version, deletedRelationships: deleted }, updated };
+      const applied: AppliedElementChange = { version, deletedRelationships: deleted };
+      if (viewsChanged !== undefined) applied.viewsChanged = viewsChanged;
+      return { applied, updated };
     });
     if (outcome === undefined) return undefined;
     // The plan validated the model as it now is, so the list needn't check it again.

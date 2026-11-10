@@ -47,8 +47,15 @@ describe('samples/sample-insurance.jgf.json', () => {
       expect(edges.some((edge) => edge.metadata?.architectureState === state)).toBe(true);
     }
     const relations = edges.filter((edge) => edge.relation === 'Relation');
-    for (const key of ['identity', 'identityContext', 'requestData', 'responseData']) {
+    for (const key of ['identity', 'identityContext']) {
       expect(relations.some((edge) => typeof edge.metadata?.[key] === 'string')).toBe(true);
+      expect(relations.some((edge) => edge.metadata?.[key] === undefined)).toBe(true);
+    }
+    // Request Data and Response Data are lists, some with more than one value.
+    for (const key of ['requestData', 'responseData']) {
+      const lists = relations.map((edge) => edge.metadata?.[key]).filter(Array.isArray);
+      expect(lists.length).toBeGreaterThan(0);
+      expect(lists.some((list) => list.length > 1)).toBe(true);
       expect(relations.some((edge) => edge.metadata?.[key] === undefined)).toBe(true);
     }
     expect(edges.some((edge) => edge.metadata?.informationFlow !== undefined)).toBe(false);

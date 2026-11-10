@@ -9,7 +9,10 @@ import {
   hasStandardProperty,
   isEdgeType,
   isNodeType,
-  isRelationTextProperty,
+  isRelationDataProperty,
+  isRelationProperty,
+  maxDataValues,
+  repeatedDataValue,
   retiredDataKey,
   isStandardPropertyKey,
   nodeTypeKey,
@@ -254,7 +257,7 @@ function checkEdgeMetadata(
       );
       continue;
     }
-    if (edgeType !== undefined && isRelationTextProperty(key)) {
+    if (edgeType !== undefined && isRelationProperty(key)) {
       // Custom metadata before it became standard: kept and read as stored, never an error.
       if (!hasStandardEdgeProperty(key, edgeType)) {
         issues.add(
@@ -274,8 +277,35 @@ function checkEdgeMetadata(
       const readAs =
         key === 'architectureState' ? `; it is read as ${defaultArchitectureState}` : '';
       issues.add('warning', subject, `metadata.${key}`, code, `${check.problem}${readAs}`);
+    } else if (isRelationDataProperty(key)) {
+      const problem = dataValuesProblem(value as unknown[]);
+      if (problem !== undefined) {
+        issues.add('warning', subject, `metadata.${key}`, 'data-values-not-kept', problem);
+      }
     }
   }
+}
+
+/**
+ * What a stored list of Request Data or Response Data has that a change can't make: a blank value,
+ * a value twice (ignoring case), more than `maxDataValues` values. A warning only: the list is kept
+ * and read as it is.
+ */
+function dataValuesProblem(values: readonly unknown[]): string | undefined {
+  const texts = values.filter((value): value is string => typeof value === 'string');
+  const problems = [
+    texts.some((text) => text.trim() === '') ? 'a blank value' : undefined,
+    repeatedDataValue(texts.filter((text) => text.trim() !== '')) !== undefined
+      ? 'a value more than once (ignoring case)'
+      : undefined,
+    values.length > maxDataValues ? `more than ${maxDataValues} values` : undefined,
+  ].filter((problem) => problem !== undefined);
+  if (problems.length === 0) return undefined;
+  const listed =
+    problems.length === 1
+      ? problems[0]
+      : `${problems.slice(0, -1).join(', ')} and ${problems[problems.length - 1]}`;
+  return `has ${listed}; it is kept as it is, and a change to it must leave that out`;
 }
 
 /**

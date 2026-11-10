@@ -199,7 +199,7 @@ describe('Show relationships', () => {
       expect(line('Till relates to Web Shop')?.classList.contains('is-grayed')).toBe(true);
     });
     expect(line('Customer relates to Web Shop')?.classList.contains('is-grayed')).toBe(false);
-    expect(labels()).toContain('Request: Places orders');
+    expect(labels()).toContain('Req: Places orders');
   });
 
   it('still opens a relationship from the details panel, with the lines left off', async () => {

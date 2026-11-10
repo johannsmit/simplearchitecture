@@ -11,7 +11,7 @@ import type { ArchitectureState, EdgeType } from './metamodel.js';
  * without one is read-only). Rules for changes made in Modelling (stored models are
  * never checked against them):
  * - an element can't be related to itself (any type), and a Contains change may not create a
- *   cycle (`relationshipProblems`);
+ *   cycle (`relationshipProblems`), checked again when the type or an end changes;
  * - a second container is allowed, with a `multiple-containers` warning;
  * - the same Contains twice is refused, with `duplicateOf` in the 422 body. Several Relations may
  *   link the same two elements.
@@ -35,11 +35,18 @@ export interface NewRelationshipRequest {
 /**
  * Body of `PATCH /api/models/:id/relationships/:relationshipId`. Only the fields sent change;
  * `description: null` and `label: null` (or a blank label) remove them. `reverse: true` swaps source and target (same id and
- * history); it can be sent with other changes.
+ * history); it can be sent with other changes, but not with `source` or `target`.
  */
 export interface UpdateRelationshipRequest {
   /** The relationship's version as read (`StoredRelationship.version`). An older one gets 409. */
   version: number;
+  /**
+   * A new source or target element (an id in the same model), checked as for a new relationship.
+   * Every view holding the relationship gets the new end too. Not with `reverse: true`: a
+   * reversed relationship with a new end is sent as its new `source` and `target`.
+   */
+  source?: string;
+  target?: string;
   type?: EdgeType;
   architectureState?: ArchitectureState;
   description?: string | null;
@@ -52,14 +59,20 @@ export interface UpdateRelationshipRequest {
    */
   twoWay?: boolean;
   /**
-   * Relation only: free text stored as `metadata.identity`, `metadata.identityContext`,
-   * `metadata.requestData` and `metadata.responseData`, trimmed. `null` or a blank removes it, and
-   * a change to Contains removes them.
+   * Relation only: free text stored as `metadata.identity` and `metadata.identityContext`, trimmed.
+   * `null` or a blank removes it, and a change to Contains removes them.
    */
   identity?: string | null;
   identityContext?: string | null;
-  requestData?: string | null;
-  responseData?: string | null;
+  /**
+   * Relation only: the whole list of values, stored as `metadata.requestData` and
+   * `metadata.responseData` in the order sent, each value trimmed. No value may be blank or come
+   * twice (ignoring case); at most `maxDataValues` values of at most `maxDataValueLength` characters
+   * (a value already stored in the field may be longer). `null` or an empty list removes it, and a
+   * change to Contains removes them.
+   */
+  requestData?: string[] | null;
+  responseData?: string[] | null;
   /**
    * Custom metadata: text. `null` removes a key, and keys not sent stay as they are. A custom list
    * or object read from the model may be sent back unchanged. Architecture state, description,
@@ -99,6 +112,18 @@ export interface RelationshipChangeResult {
   relationship: StoredRelationship;
   warnings: ValidationIssue[];
   nestingChanges: NestingChange[];
+  /**
+   * The views a new end was added to, each with its new version: a view holding the relationship
+   * gets the new end, which changes the view (others with it open get a conflict). Only after a
+   * change of ends that added an element to a view.
+   */
+  viewsChanged?: ChangedView[];
+}
+
+/** A view changed along with a relationship, and its version now. */
+export interface ChangedView {
+  id: string;
+  version: number;
 }
 
 /** Response body (200) of `DELETE /api/models/:id/relationships/:relationshipId?version=N`. */

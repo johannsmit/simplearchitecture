@@ -3,7 +3,9 @@ import type { JgfDocument, JgfEdge, ModelAuthor } from '@simplearchitecture/shar
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
 import {
+  convertedData,
   convertedEdge,
+  convertedEdgeType,
   convertOlderTypes,
   validateImported,
   withRequestDataInLabel,
@@ -13,7 +15,8 @@ import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
 // Data becomes Request Data: migration 012 on made-up data, and the same rule for files and
-// imports.
+// imports. Reading today also turns a single text in Request Data into a list (migration 013's
+// rule, tested on its own): `asRead` gives that step for the cases here.
 
 const author: ModelAuthor = { id: 'oid-made-up', name: 'Made-up author' };
 const all = loadMigrations().filter((migration) => migration.version <= '012');
@@ -98,6 +101,22 @@ const cases: [Record<string, unknown>, unknown][] = [
     { requestData: 'Flour' },
   ]),
 ];
+
+/**
+ * Metadata as reading it today gives it: a single text in Request Data or Response Data as a list,
+ * a blank one gone.
+ */
+const asRead = (metadata: unknown): unknown => {
+  if (typeof metadata !== 'object' || metadata === null) return metadata;
+  return Object.fromEntries(
+    Object.entries(metadata).flatMap(([key, value]): [string, unknown][] => {
+      if ((key !== 'requestData' && key !== 'responseData') || typeof value !== 'string') {
+        return [[key, value]];
+      }
+      return value.trim() === '' ? [] : [[key, [value]]];
+    }),
+  );
+};
 
 const document = (): JgfDocument =>
   ({
@@ -190,7 +209,7 @@ describe('migration 012', () => {
     expect(byId.get('empty')).toBe('data');
   });
 
-  it('gives what reading the stored row through the import conversion gives', async () => {
+  it('gives what reading the stored row through the conversion of Data gives', async () => {
     const { db, id } = await olderDatabase();
     const was = await rowsOf(db, id);
     await migrate(db, all);
@@ -204,7 +223,7 @@ describe('migration 012', () => {
       ...(row?.metadata === null ? {} : { metadata: row?.metadata }),
     });
     const differences = was.flatMap((row, index) => {
-      const read = convertedEdge(asEdge(row));
+      const read = convertedData(convertedEdgeType(asEdge(row)));
       const migrated = asEdge(now[index]);
       return JSON.stringify(sorted(read)) === JSON.stringify(sorted(migrated))
         ? []
@@ -273,7 +292,7 @@ describe('older files and imports', () => {
   it('follow the same rule as the migration', () => {
     const { document: converted, dataConverted } = convertOlderTypes(document());
     const edges = (converted as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => after));
+    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => asRead(after)));
     expect(edges.map((e) => e.label ?? null)).toEqual(cases.map(([stored]) => labelAfter(stored)));
     const changed = cases.filter(
       ([stored, after]) =>
@@ -285,7 +304,10 @@ describe('older files and imports', () => {
 
   it('keep the label as stored when reading a stored model', () => {
     const stored = edge('x', { label: '{Data}', metadata: { data: 'Flour' } });
-    expect(convertedEdge(stored, false)).toEqual({ ...stored, metadata: { requestData: 'Flour' } });
+    expect(convertedEdge(stored, false)).toEqual({
+      ...stored,
+      metadata: { requestData: ['Flour'] },
+    });
   });
 
   it('note the conversion in the report, once per relationship', () => {
@@ -314,10 +336,10 @@ describe('older files and imports', () => {
     ]);
     const edges = (stored as JgfDocument).graph.edges ?? [];
     expect(edges.map((e: JgfEdge) => [e.id, e.label, e.metadata])).toEqual([
-      ['d', undefined, { requestData: 'Flour' }],
+      ['d', undefined, { requestData: ['Flour'] }],
       ['l', '{Request Data}', undefined],
-      ['f', 'Loaves', { requestData: 'Loaves' }],
-      ['t', undefined, { requestData: 'Flour' }],
+      ['f', 'Loaves', { requestData: ['Loaves'] }],
+      ['t', undefined, { requestData: ['Flour'] }],
     ]);
   });
 

@@ -45,16 +45,18 @@ Several Relation edges may link the same two elements in the same direction.
 **Relation edges**
 - Identity (free text): the active identity used for the exchange. Stored as `"identity"`.
 - Identity Context (free text): additional context, such as the original user's ID. Stored as `"identityContext"`.
-- Request Data (free text): the data sent with the request over the relationship. Stored as `"requestData"`.
-- Response Data (free text): the data returned in the response. Stored as `"responseData"`.
+- Request Data (list of texts): the data sent with the request over the relationship. Stored as `"requestData"`, a JSON list such as `["Orders", "Customer ids"]`.
+- Response Data (list of texts): the data returned in the response. Stored as `"responseData"`, a JSON list.
 
 Identity, Identity Context, Request Data and Response Data are optional and apply to Relation edges only. On a Contains edge, such a key is a validation warning, and the value is kept as it is.
+
+Request Data and Response Data each hold zero or more values, in the order they were added; the same value is never there twice, ignoring case, and an empty text is not a value. A single text (as stored before they were lists) is read as a list of that one value. Any other value that isn't a list of texts is a validation warning, and is kept as it is.
 
 Custom metadata is allowed to be added to any edge as needed
 
 ## Viewpoints
 A viewpoint is a selection of relationship properties: Architecture state, Identity, Identity Context, Data or any custom metadata found on the model's edges.
-- Data is one choice for both Request Data and Response Data. An edge shows them on two lines, "Request: …" above "Response: …", leaving out a part that is empty.
+- Data is one choice for both Request Data and Response Data. An edge shows them on two lines, "Req: a, b" (Request Data) above "Resp: c" (Response Data), the values joined by ", ", leaving out a part that is empty.
 - With nothing selected, an edge shows its label, or nothing. An edge never shows its type name.
 - With properties selected, an edge that has at least one of them shows their values instead of its label. Any other edge is grayed out.
 - Contains edges are never grayed out and keep their label.
@@ -68,3 +70,4 @@ This metamodel is always exchanged using the JSON Graph Format (JGF v2, https://
 - The direction goes in the standard JGF `directed` field of the edge: `false` for a two-way Relation edge (see Direction above).
 - Older files with `Information flow` or `Integration` still import: both become a Relation. An `Information flow` edge, or an edge with `"informationFlow": true`, that has a label also gets that label as its Request Data, unless it has Data already; the label stays. `"informationFlow"` itself is no longer stored.
 - Older files with Data (`"data"`) still import: Data becomes Request Data (`"requestData"`), unless the edge has Request Data already (then both are kept as they are), and every `{Data}` in a label becomes `{Request Data}`.
+- Older files with a single text in Request Data or Response Data still import: it becomes a list of that one value, and an empty one is left out.

@@ -26,7 +26,7 @@ const model = (): JgfDocument => ({
           return {
             ...edge,
             label: '{Request Data} via {protocol}',
-            metadata: { requestData: 'Places orders', protocol: markup },
+            metadata: { requestData: ['Places orders', 'Returns'], protocol: markup },
           };
         case 'e3':
           return { ...edge, label: '{Request Data} ({Dtaa})' };
@@ -63,7 +63,7 @@ function api() {
       if (edge && request.method === 'PATCH' && typeof request.body === 'string') {
         const change = JSON.parse(request.body) as Record<string, unknown>;
         sent.push(change);
-        if (typeof change.requestData === 'string')
+        if (Array.isArray(change.requestData))
           edge.metadata = { ...edge.metadata, requestData: change.requestData };
         if (typeof change.label === 'string') edge.label = change.label;
       }
@@ -115,7 +115,10 @@ describe('on the canvas', () => {
   it('shows each label filled in, and no label where it fills in to nothing', async () => {
     await openAt('viewing');
     await waitFor(() => {
-      expect(labels()).toEqual([`Places orders via ${markup}`, 'svc-shop on', '×3'].sort());
+      // A list fills in as its values joined by ", ".
+      expect(labels()).toEqual(
+        [`Places orders, Returns via ${markup}`, 'svc-shop on', '×3'].sort(),
+      );
     });
     // A value is text, never markup.
     expect(canvas().querySelector('.edge-label b')).toBeNull();
@@ -124,7 +127,7 @@ describe('on the canvas', () => {
   it('keeps the expression when a viewpoint shows properties in place of labels', () => {
     const graph = buildModelGraph(model());
     const [e1] = mergeRelationships(graph.relationships);
-    expect(e1 && linkText(e1)).toBe(`Places orders via ${markup}`);
+    expect(e1 && linkText(e1)).toBe(`Places orders, Returns via ${markup}`);
     expect(e1 && linkText(e1, ['protocol'])).toBe(markup);
   });
 
@@ -156,15 +159,17 @@ describe('on the canvas', () => {
     await waitFor(() => {
       expect(labels()).toContain('svc-shop on');
     });
-    fireEvent.change(within(form).getByRole('combobox', { name: 'Request Data' }), {
-      target: { value: 'Stock' },
-    });
+    const data = within(form).getByRole('combobox', { name: 'Request Data' });
+    for (const value of ['Stock', 'Prices']) {
+      fireEvent.change(data, { target: { value } });
+      fireEvent.keyDown(data, { key: 'Enter' });
+    }
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, requestData: 'Stock' }]);
+      expect(sent).toEqual([{ version: 1, requestData: ['Stock', 'Prices'] }]);
     });
     await waitFor(() => {
-      expect(labels()).toContain('svc-shop on Stock');
+      expect(labels()).toContain('svc-shop on Stock, Prices');
     });
   });
 });
@@ -173,12 +178,12 @@ describe('in the details panel', () => {
   it('lists relationships with their labels filled in, as text', async () => {
     await openAt('viewing');
     const shown = [...details().querySelectorAll('.rlabel')].map((label) => label.textContent);
-    expect(shown).toContain(`“Places orders via ${markup}”`);
+    expect(shown).toContain(`“Places orders, Returns via ${markup}”`);
     expect(shown).toContain('“svc-shop on”');
     expect(shown.some((text) => text.includes('{Identity}'))).toBe(false);
     expect(details().querySelector('.rlabel b')).toBeNull();
     const row = within(details()).getAllByRole('button', { name: /Customer/ })[0];
-    expect(row?.getAttribute('aria-label')).toContain(`"Places orders via ${markup}"`);
+    expect(row?.getAttribute('aria-label')).toContain(`"Places orders, Returns via ${markup}"`);
   });
 
   it('shows the filled-in label of an open relationship in Viewing', async () => {

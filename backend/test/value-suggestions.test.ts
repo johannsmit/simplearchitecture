@@ -178,6 +178,21 @@ describe('relationshipPropertyValues', () => {
     expect(values.get('responseData')).toEqual(values.get('requestData'));
     expect(relationshipPropertyValues(buildModelGraph(model({}))).has('requestData')).toBe(false);
   });
+
+  it('offers each value of the lists, most used first, skipping blanks and line breaks', () => {
+    const graph = buildModelGraph(
+      model({}, [
+        edge('r1', { requestData: ['Orders', 'Invoices'] }),
+        edge('r2', { responseData: ['Orders', '  ', 'Two\nlines', 7] }),
+        edge('r3', { requestData: [], responseData: { odd: true } }),
+      ]),
+    );
+    expect(relationshipPropertyValues(graph).get('responseData')).toEqual([
+      'Orders',
+      '7',
+      'Invoices',
+    ]);
+  });
 });
 
 describe('suggestedValues', () => {

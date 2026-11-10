@@ -16,7 +16,7 @@ import {
   type NodeType,
   type OefMappingReport,
 } from '@simplearchitecture/shared';
-import { retiredInformationFlowKey } from '../jgf/older-types.js';
+import { convertedDataLists, retiredInformationFlowKey } from '../jgf/older-types.js';
 import { newRelationshipId } from '../jgf/relationship-ids.js';
 import { maxEchoLength, reservedKey } from '../jgf/validate.js';
 import { ImportTooLargeError, maxImportEdges, maxImportNodes } from '../limits.js';
@@ -635,15 +635,18 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
     const [source, target] = rule.reverse
       ? [relationship.target, relationship.source]
       : [relationship.source, relationship.target];
-    edges.push({
-      id: relationship.id,
-      source,
-      target,
-      relation: rule.relation,
-      directed: !(relationship.undirected && canBeTwoWay(rule.relation)),
-      ...(relationship.name === '' ? {} : { label: relationship.name }),
-      metadata: meta,
-    });
+    // Request Data and Response Data are lists: a text mapped or set above becomes one value.
+    edges.push(
+      convertedDataLists({
+        id: relationship.id,
+        source,
+        target,
+        relation: rule.relation,
+        directed: !(relationship.undirected && canBeTwoWay(rule.relation)),
+        ...(relationship.name === '' ? {} : { label: relationship.name }),
+        metadata: meta,
+      }) as JgfEdge,
+    );
     edgeIds.add(relationship.id);
     report.relationships.mapped[rule.relation] += 1;
   }
