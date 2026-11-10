@@ -1,5 +1,7 @@
 import {
+  maxViewCardCoordinate,
   maxViewElements,
+  maxViewLineBends,
   maxViewNameLength,
   maxViewRelationships,
   maxViewsPerModel,
@@ -139,6 +141,7 @@ describe('creating and reading views', () => {
     delete summary.elementIds;
     delete summary.relationshipIds;
     delete summary.layout;
+    delete summary.routes;
     expect(views).toEqual([summary]);
   });
 
@@ -1134,9 +1137,456 @@ describe('layouts', () => {
       view_id: view.id,
       element_id: null,
       relationship_id: null,
-      details: { fields: ['layout'], cards: 2 },
+      details: { fields: ['layout'], cards: 2, routes: 0 },
     });
     expect(JSON.stringify(rows.at(-1)?.details)).not.toMatch(/17|23|211|baker|oven/);
+  });
+});
+
+describe('line routes', () => {
+  const create = async () =>
+    (
+      await service.createView(
+        modelId,
+        {
+          name: 'Baking',
+          elementIds: ['baker', 'kitchen', 'oven', 'orders', 'till'],
+          relationshipIds: ['r1', 'r2', 'r3'],
+        },
+        modeller,
+      )
+    ).view;
+  const cards = [
+    { elementId: 'baker', x: 0, y: 0 },
+    { elementId: 'orders', x: 400, y: 200 },
+  ];
+  // Baker's right side, across, down, across to the left side of Orders.
+  const bakerToOrders = [
+    { x: 168, y: 22 },
+    { x: 290.5, y: 22 },
+    { x: 290.5, y: 222 },
+    { x: 400, y: 222 },
+  ];
+  const ordersToTill = [
+    { x: 484, y: 244 },
+    { x: 484, y: 300 },
+  ];
+  const laidOut = (version: number, routes: unknown) => ({ version, cards, routes });
+
+  it('starts with none, and stores each route with the cards, read back in model order', async () => {
+    const view = await create();
+    expect(view.routes).toEqual([]);
+    const { view: laid } = await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(1, [
+        { relationshipId: 'r3', points: ordersToTill },
+        { relationshipId: 'r1', points: bakerToOrders },
+      ]),
+      other,
+    );
+    expect(laid).toMatchObject({
+      version: 2,
+      updatedBy: other,
+      layout: [
+        { elementId: 'baker', x: 0, y: 0 },
+        { elementId: 'orders', x: 400, y: 200 },
+      ],
+      routes: [
+        { relationshipId: 'r1', points: bakerToOrders },
+        { relationshipId: 'r3', points: ordersToTill },
+      ],
+    });
+    expect((await service.getView(modelId, view.id)).view).toEqual(laid);
+  });
+
+  it('keeps points exactly as sent, up to the most bends a line may have', async () => {
+    const view = await create();
+    const x = 0.1 + 0.2;
+    // A staircase: across and down in turn.
+    const points = Array.from({ length: maxViewLineBends + 2 }, (_, index) => ({
+      x: x + Math.ceil(index / 2) * 10,
+      y: -maxViewCardCoordinate + Math.floor(index / 2) * 10,
+    }));
+    const { view: laid } = await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(1, [{ relationshipId: 'r1', points }]),
+      modeller,
+    );
+    expect(laid.routes).toEqual([{ relationshipId: 'r1', points }]);
+  });
+
+  it('replaces every route: a line not sent has none afterwards, and no routes at all clears them', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(1, [
+        { relationshipId: 'r1', points: bakerToOrders },
+        { relationshipId: 'r3', points: ordersToTill },
+      ]),
+      modeller,
+    );
+    const { view: fewer } = await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(2, [{ relationshipId: 'r3', points: ordersToTill }]),
+      modeller,
+    );
+    expect(fewer).toMatchObject({
+      version: 3,
+      routes: [{ relationshipId: 'r3', points: ordersToTill }],
+    });
+    const { view: none } = await service.replaceLayout(
+      modelId,
+      view.id,
+      { version: 3, cards },
+      modeller,
+    );
+    expect(none).toMatchObject({ version: 4, routes: [], layout: fewer.layout });
+  });
+
+  it('changes nothing, and keeps the version, when the routes and cards are the same', async () => {
+    const view = await create();
+    const routes = [
+      { relationshipId: 'r1', points: bakerToOrders },
+      { relationshipId: 'r3', points: ordersToTill },
+    ];
+    await service.replaceLayout(modelId, view.id, laidOut(1, routes), modeller);
+    const before = await audits();
+    const { view: same } = await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(2, [...routes].reverse()),
+      other,
+    );
+    expect(same).toMatchObject({ version: 2, updatedBy: modeller });
+    expect(await audits()).toEqual(before);
+    // One point moved is a change.
+    const moved = bakerToOrders.map((point, index) =>
+      index === 1 || index === 2 ? { ...point, x: point.x + 0.5 } : point,
+    );
+    const { view: changed } = await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(2, [{ relationshipId: 'r1', points: moved }, routes[1]]),
+      other,
+    );
+    expect(changed.version).toBe(3);
+  });
+
+  it('refuses a line not in the view, a line twice, a slanted stretch, and points out of bounds', async () => {
+    const view = await create();
+    const narrow = (
+      await service.createView(
+        modelId,
+        { name: 'Narrow', elementIds: ['baker', 'orders'], relationshipIds: [] },
+        modeller,
+      )
+    ).view;
+    expect(
+      await fieldsOf(
+        service.replaceLayout(
+          modelId,
+          narrow.id,
+          laidOut(1, [{ relationshipId: 'r1', points: bakerToOrders }]),
+          modeller,
+        ),
+      ),
+    ).toEqual([
+      {
+        field: 'routes',
+        message:
+          'These relationships are not in the view (they may have been removed, or deleted from the model): "r1".',
+      },
+    ]);
+    expect(
+      await fieldsOf(
+        service.replaceLayout(
+          modelId,
+          view.id,
+          laidOut(1, [
+            { relationshipId: 'r1', points: bakerToOrders },
+            { relationshipId: 'r1', points: bakerToOrders },
+          ]),
+          modeller,
+        ),
+      ),
+    ).toEqual([
+      {
+        field: 'routes',
+        message: 'Each line can have one route. These have more than one: "r1".',
+      },
+    ]);
+    expect(
+      await fieldsOf(
+        service.replaceLayout(
+          modelId,
+          view.id,
+          laidOut(1, [
+            {
+              relationshipId: 'r1',
+              points: [
+                { x: 0, y: 0 },
+                { x: 10, y: 10 },
+              ],
+            },
+          ]),
+          modeller,
+        ),
+      ),
+    ).toEqual([
+      {
+        field: 'routes',
+        message:
+          'A line\'s route can only run straight across or straight up and down. These don\'t: "r1".',
+      },
+    ]);
+    const pointsMessage = `Must be a list of 2 to ${maxViewLineBends + 2} points.`;
+    const coordinateMessage = `Must be a number from -${maxViewCardCoordinate} to ${maxViewCardCoordinate}.`;
+    for (const [points, message] of [
+      [[{ x: 0, y: 0 }], pointsMessage],
+      [
+        Array.from({ length: maxViewLineBends + 3 }, (_, index) => ({
+          x: Math.ceil(index / 2),
+          y: Math.floor(index / 2),
+        })),
+        pointsMessage,
+      ],
+      [
+        [
+          { x: 0, y: 0 },
+          { x: maxViewCardCoordinate + 1, y: 0 },
+        ],
+        coordinateMessage,
+      ],
+      [
+        [
+          { x: 0, y: 0 },
+          { x: 0, y: Number.NaN },
+        ],
+        coordinateMessage,
+      ],
+    ] as const) {
+      expect(
+        await fieldsOf(
+          service.replaceLayout(
+            modelId,
+            view.id,
+            laidOut(1, [{ relationshipId: 'r1', points }]),
+            modeller,
+          ),
+        ),
+      ).toEqual([{ field: 'routes', message }]);
+    }
+    for (const routes of [
+      'r1',
+      [{ relationshipId: 'r1' }],
+      [{ relationshipId: 'r1', points: bakerToOrders, colour: 'red' }],
+      [
+        {
+          relationshipId: 'r1',
+          points: [
+            { x: 0, y: 0, z: 1 },
+            { x: 1, y: 0 },
+          ],
+        },
+      ],
+    ]) {
+      const fields = await fieldsOf(
+        service.replaceLayout(modelId, view.id, laidOut(1, routes), modeller),
+      );
+      expect(fields.map((issue) => issue.field)).toEqual(['routes']);
+    }
+    expect((await service.getView(modelId, view.id)).view).toMatchObject({
+      version: 1,
+      routes: [],
+      layout: [],
+    });
+  });
+
+  it('keeps a route while the contents change, and drops it when its line leaves the view', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(1, [
+        { relationshipId: 'r1', points: bakerToOrders },
+        { relationshipId: 'r3', points: ordersToTill },
+      ]),
+      modeller,
+    );
+    const { view: fewer } = await service.replaceContents(
+      modelId,
+      view.id,
+      {
+        version: 2,
+        elementIds: ['baker', 'kitchen', 'oven', 'orders', 'till'],
+        relationshipIds: ['r1', 'r2'],
+      },
+      modeller,
+    );
+    expect(fewer.routes).toEqual([{ relationshipId: 'r1', points: bakerToOrders }]);
+    // Back in the view: drawn automatically, with no route.
+    const { view: back } = await service.replaceContents(
+      modelId,
+      view.id,
+      {
+        version: 3,
+        elementIds: ['baker', 'kitchen', 'oven', 'orders', 'till'],
+        relationshipIds: ['r1', 'r2', 'r3'],
+      },
+      modeller,
+    );
+    expect(back.routes).toEqual([{ relationshipId: 'r1', points: bakerToOrders }]);
+    // Taking out an end takes the line, and its route, out too.
+    const { view: noBaker } = await service.replaceContents(
+      modelId,
+      view.id,
+      { version: 4, elementIds: ['kitchen', 'oven', 'orders', 'till'] },
+      modeller,
+    );
+    expect(noBaker.routes).toEqual([]);
+  });
+
+  it('drops the route of a relationship deleted from the model, or of an end deleted', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(1, [
+        { relationshipId: 'r1', points: bakerToOrders },
+        { relationshipId: 'r3', points: ordersToTill },
+      ]),
+      modeller,
+    );
+    await new RelationshipService(store).deleteRelationship(
+      modelId,
+      'r3',
+      { version: '1' },
+      modeller,
+    );
+    expect((await service.getView(modelId, view.id)).view.routes).toEqual([
+      { relationshipId: 'r1', points: bakerToOrders },
+    ]);
+    await new ElementService(store).deleteElement(modelId, 'baker', { version: '1' }, modeller);
+    expect((await service.getView(modelId, view.id)).view.routes).toEqual([]);
+  });
+
+  it('drops the route when the relationship gets other ends or is reversed, as a new version of the view', async () => {
+    const view = await create();
+    const other1 = (
+      await service.createView(
+        modelId,
+        {
+          name: 'Selling',
+          elementIds: ['baker', 'orders', 'till'],
+          relationshipIds: ['r1', 'r3'],
+        },
+        modeller,
+      )
+    ).view;
+    for (const [id, version] of [
+      [view.id, 1],
+      [other1.id, 1],
+    ] as const) {
+      await service.replaceLayout(
+        modelId,
+        id,
+        laidOut(version, [
+          { relationshipId: 'r1', points: bakerToOrders },
+          { relationshipId: 'r3', points: ordersToTill },
+        ]),
+        modeller,
+      );
+    }
+    const relationships = new RelationshipService(store);
+    // A change that keeps the ends keeps the routes, and the views' versions.
+    const labelled = await relationships.updateRelationship(
+      modelId,
+      'r1',
+      { version: 1, label: 'Takes' },
+      other,
+    );
+    expect(labelled).not.toHaveProperty('viewsChanged');
+    // Reversed: the route ran the other way, so it goes, in both views, each with a new version.
+    const reversed = await relationships.updateRelationship(
+      modelId,
+      'r1',
+      { version: 2, reverse: true },
+      other,
+    );
+    expect(reversed.viewsChanged).toEqual(
+      [
+        { id: view.id, version: 3 },
+        { id: other1.id, version: 3 },
+      ].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    );
+    for (const id of [view.id, other1.id]) {
+      expect((await service.getView(modelId, id)).view).toMatchObject({
+        version: 3,
+        updatedBy: other,
+        routes: [{ relationshipId: 'r3', points: ordersToTill }],
+      });
+    }
+    // A new end that the view holds already: the route goes, and the version goes up once.
+    const moved = await relationships.updateRelationship(
+      modelId,
+      'r3',
+      { version: 1, target: 'baker' },
+      other,
+    );
+    expect(moved.viewsChanged).toEqual(
+      [
+        { id: view.id, version: 4 },
+        { id: other1.id, version: 4 },
+      ].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    );
+    // A new end the view lacks: added, and still one new version.
+    await service.replaceLayout(
+      modelId,
+      other1.id,
+      laidOut(4, [
+        {
+          relationshipId: 'r3',
+          points: [
+            { x: 400, y: 222 },
+            { x: 168, y: 222 },
+          ],
+        },
+      ]),
+      modeller,
+    );
+    const again = await relationships.updateRelationship(
+      modelId,
+      'r3',
+      { version: 2, target: 'oven' },
+      other,
+    );
+    expect(again.viewsChanged).toEqual([{ id: other1.id, version: 6 }]);
+    expect((await service.getView(modelId, other1.id)).view).toMatchObject({
+      version: 6,
+      elementIds: ['baker', 'oven', 'orders', 'till'],
+      routes: [],
+    });
+  });
+
+  it('audits a new layout with its counts only, never a point', async () => {
+    const view = await create();
+    await service.replaceLayout(
+      modelId,
+      view.id,
+      laidOut(1, [{ relationshipId: 'r1', points: bakerToOrders }]),
+      other,
+    );
+    const rows = await audits();
+    expect(rows.at(-1)).toMatchObject({
+      action: 'view-changed',
+      view_id: view.id,
+      details: { fields: ['layout'], cards: 2, routes: 1 },
+    });
+    expect(JSON.stringify(rows.at(-1)?.details)).not.toMatch(/290|222|r1/);
   });
 });
 

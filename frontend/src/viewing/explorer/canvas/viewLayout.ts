@@ -3,6 +3,7 @@ import {
   maxViewCardWidth,
   minViewCardWidth,
   type ViewCardLayout,
+  type ViewLineRoute,
 } from '@simplearchitecture/shared';
 import { absoluteBoxes, containerBox, type PlacedCard } from './elkLayout';
 import type { Point } from './positions';
@@ -12,6 +13,12 @@ import type { Point } from './positions';
  * canvas, also for a card drawn inside a container, so a layout still reads when nesting is
  * switched. Pure, so it is tested without a browser.
  */
+
+/** What a view saves of its canvas: where its cards are, and the lines moved by hand. */
+export interface CanvasLayout {
+  cards: ViewCardLayout[];
+  routes: ViewLineRoute[];
+}
 
 interface Size {
   width: number;

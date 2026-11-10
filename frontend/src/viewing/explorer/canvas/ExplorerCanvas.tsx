@@ -15,6 +15,7 @@ import {
   type RelationshipChangeResult,
   type RelationshipViewField,
   type ViewCardLayout,
+  type ViewLineRoute,
 } from '@simplearchitecture/shared';
 import {
   Background,
@@ -84,13 +85,25 @@ import {
   type Point,
 } from './positions';
 import { LineProperties } from './LineProperties';
+import {
+  endPlace,
+  followCards,
+  heldFromStored,
+  moveStretch,
+  nearestMiddleStretch,
+  routesToSave,
+  squared,
+  stretchAt,
+  type HeldRoute,
+} from './lineRoutes';
 import { keepCards, relinkHandles, samePlacement, type PlaceHint } from './placeCards';
 import { RelatedPopup } from './RelatedPopup';
-import { layoutOfCanvas, storedPlacement, storedPositions } from './viewLayout';
+import { layoutOfCanvas, storedPlacement, storedPositions, type CanvasLayout } from './viewLayout';
 import {
   EdgeMarkers,
   litArrowMarkerId,
   RelationshipEdge,
+  type LinePress,
   type RelationshipFlowEdge,
 } from './RelationshipEdge';
 import {
@@ -229,15 +242,21 @@ interface ExplorerCanvasProps {
    */
   storedLayout?: readonly ViewCardLayout[] | undefined;
   /**
+   * An open view's stored line routes: read with `storedLayout`, when the canvas opens from it.
+   * Tidy up gives every line its automatic route instead.
+   */
+  storedRoutes?: readonly ViewLineRoute[] | undefined;
+  /**
    * Goes up by one when the person added or took off cards, or chose Tidy up: once the canvas
    * shows it, it reports where its cards are (`onArranged`).
    */
   arrangeRequest?: number;
   /**
-   * Where every card is, after the person moved or resized a card, or after `arrangeRequest`.
-   * Never for a layout or a placement the canvas made on its own.
+   * Where every card is, and the route of every line moved by hand, after the person moved or
+   * resized a card, moved a line, or after `arrangeRequest`. Never for a layout, a placement or a
+   * route the canvas made on its own. Given, in a view, the lines' middle stretches can be dragged.
    */
-  onArranged?: (cards: ViewCardLayout[]) => void;
+  onArranged?: (layout: CanvasLayout) => void;
 }
 
 /** A popover on the canvas: New relationship, or New element (at a point on the canvas). */
@@ -310,10 +329,19 @@ interface Laid {
   layoutSizes: ReadonlyMap<string, { width: number; height: number }>;
   /** The widths set by hand it was made with. */
   widths: ReadonlyMap<string, number>;
+  /** The new canvas it belongs to (one for each new canvas; kept as cards come and go). */
+  canvas: number;
+  /** The routes given by hand that its lines start with, by relationship id. */
+  routes: ReadonlyMap<string, HeldRoute>;
 }
+
+const noRoutes: ReadonlyMap<string, HeldRoute> = new Map();
 
 /** Stacking (React Flow's manual z-index): containers by depth, then edges, then cards. */
 const zIndexes = { nestedEdge: 500, card: 1000, lifted: 3000 } as const;
+
+/** How soon after a line is dropped a click on it still counts as the end of the drag (ms). */
+const clickAfterDrag = 300;
 
 /** "Show relationships" off: React Flow gets no edges at all, so no line, label or mark is drawn. */
 const noEdges: RelationshipFlowEdge[] = [];
@@ -472,10 +500,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   /** Where new cards should go (a drop point, or next to a card), until they are placed. */
   const hints = useRef(new Map<string, PlaceHint>());
   // Read only when the canvas is a new one, so a layout saved meanwhile moves nothing.
-  const storedRef = useRef(props.storedLayout);
+  const storedRef = useRef({ cards: props.storedLayout, routes: props.storedRoutes });
   useEffect(() => {
-    storedRef.current = props.storedLayout;
+    storedRef.current = { cards: props.storedLayout, routes: props.storedRoutes };
   });
+  /** How many new canvases there have been: each one's routes given by hand start afresh. */
+  const canvasCount = useRef(0);
 
   const { layoutKey, tidyCount, widths } = props;
   // A new canvas is measured (after the fonts load) and laid out in ELK's worker. Any other change
@@ -514,6 +544,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       containers: ReadonlySet<string>,
       fresh: boolean,
       layoutSizes: Laid['layoutSizes'],
+      routes: Pick<Laid, 'canvas' | 'routes'>,
     ): Laid => ({
       key: layoutKey,
       tidyCount,
@@ -526,6 +557,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       placed,
       parents,
       containers,
+      ...routes,
     });
 
     const previous = laidRef.current;
@@ -559,7 +591,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
       );
       setLayoutError(null);
-      setLaid(made(placed, parents, kept.containers, false, previous.layoutSizes));
+      setLaid(
+        made(placed, parents, kept.containers, false, previous.layoutSizes, {
+          canvas: previous.canvas,
+          routes: previous.routes,
+        }),
+      );
       for (const id of placed.keys()) hints.current.delete(id);
       // A moved card taken out of its container keeps its place on the canvas.
       for (const [id, point] of movedRef.current) {
@@ -575,7 +612,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     // A view with a stored layout: its cards where they were left, the others at a free spot.
     // Tidy up lays it out with ELK instead.
     const tidied = previous !== null && previous.tidyCount !== tidyCount;
-    const stored = tidied ? undefined : storedPositions(storedRef.current ?? []);
+    const stored = tidied ? undefined : storedPositions(storedRef.current.cards ?? []);
     if (stored !== undefined && ids.some((id) => stored.has(id))) {
       const cards = ids.map((id) => ({ id, parent: wanted.get(id) }));
       const start = storedPlacement({ cards, stored, sizeOf });
@@ -606,9 +643,32 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         new Map(),
         layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
       );
+      // The lines moved by hand, where their two cards are as the canvas first shows them.
+      const boxes = absoluteBoxes(arrangeCards(placed, movedRef.current));
+      const ends = new Map(
+        hood.relationships.map((relationship) => [relationship.id, relationship]),
+      );
+      const routes = new Map<string, HeldRoute>();
+      for (const route of storedRef.current.routes ?? []) {
+        const relationship = ends.get(route.relationshipId);
+        if (!relationship) continue;
+        const { source, target } = relationship;
+        const held = heldFromStored(
+          route.points,
+          { source, target },
+          boxes.get(source),
+          boxes.get(target),
+        );
+        if (held) routes.set(route.relationshipId, held);
+      }
       hints.current.clear();
       setLayoutError(null);
-      setLaid(made(placed, parents, kept.containers, true, new Map()));
+      setLaid(
+        made(placed, parents, kept.containers, true, new Map(), {
+          canvas: ++canvasCount.current,
+          routes,
+        }),
+      );
       // Not ELK's layout: Tidy up has something to do.
       latest.current.onKept?.(layoutKey);
       return;
@@ -643,7 +703,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         const sizes = new Map(
           [...placed.values()].map((card) => [card.id, { width: card.width, height: card.height }]),
         );
-        const next = made(placed, wanted, containers, true, sizes);
+        const next = made(placed, wanted, containers, true, sizes, {
+          canvas: ++canvasCount.current,
+          routes: noRoutes,
+        });
         setLaid(next);
         if (previous && previous.tidyCount !== tidyCount) {
           setNote({ laid: next, text: 'Layout tidied up.' });
@@ -712,29 +775,28 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   // Positions on the canvas (cards inside containers are placed relative to them).
   const absolute = useMemo(() => absoluteBoxes(shown), [shown]);
 
-  // Where every card is, once the canvas shows the person's change: the layout made for this
-  // canvas, its cards and its widths.
-  const { onArranged, arrangeRequest } = props;
-  useEffect(() => {
-    if (arrangeSeen.current !== arrangeRequest) {
-      arrangeSeen.current = arrangeRequest;
-      arrangeWanted.current = true;
-    }
-    if (!arrangeWanted.current || !laid) return;
-    if (laid.key !== layoutKey || laid.hood !== hood || laid.widths !== widths) return;
-    arrangeWanted.current = false;
-    onArranged?.(
-      layoutOfCanvas(shown, (id) => {
-        const element = graph.elements.get(id);
-        return (
-          widths.has(id) &&
-          !laid.containers.has(id) &&
-          element !== undefined &&
-          cardShape(element.type) === 'card'
-        );
-      }),
-    );
-  }, [arrangeTick, arrangeRequest, laid, layoutKey, hood, widths, shown, graph, onArranged]);
+  // Lines moved by hand (in a view): the routes this canvas started with, or as last dragged.
+  const [heldState, setHeldState] = useState<{
+    canvas: number;
+    routes: ReadonlyMap<string, HeldRoute>;
+  } | null>(null);
+  const held = laid
+    ? heldState?.canvas === laid.canvas
+      ? heldState.routes
+      : laid.routes
+    : noRoutes;
+
+  // A line taken out of the view, or given other ends, loses its route for good, as on the server
+  // (set while rendering, as React recommends for state that follows a prop).
+  if (laid && held.size > 0) {
+    const ends = new Map(hood.relationships.map((relationship) => [relationship.id, relationship]));
+    const kept = [...held].filter(([id, route]) => {
+      const now = ends.get(id);
+      return now?.source === route.source && now.target === route.target;
+    });
+    if (kept.length !== held.size) setHeldState({ canvas: laid.canvas, routes: new Map(kept) });
+  }
+
   // Move mode ends by itself when the focus changes or the card leaves the canvas.
   const moving = movingState?.focusId === focusId && shown.has(movingState.id) ? movingState : null;
   const movingId = moving?.id;
@@ -921,6 +983,138 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     () => undefined,
   );
 
+  // Lines moved by hand, with their cards where they are now: the stretches the person moved stay,
+  // and the stretches at a moved card's end follow it. A merged line takes its first
+  // relationship's route.
+  const handRoutes = useMemo(() => {
+    const result = new Map<string, Point[]>();
+    for (const link of laid?.drawn ?? []) {
+      const source = absolute.get(link.source);
+      const target = absolute.get(link.target);
+      if (!source || !target) continue;
+      for (const id of link.relationshipIds) {
+        const route = held.get(id);
+        if (route?.source !== link.source || route.target !== link.target) continue;
+        const points = followCards(route, source, target);
+        if (points) {
+          result.set(link.id, points);
+          break;
+        }
+      }
+    }
+    return result;
+  }, [laid, absolute, held]);
+
+  // In a view that saves its layout, a line's middle stretches can be dragged.
+  const linesMovable = inView && editable && props.onArranged !== undefined;
+  /** A line dropped where the person dragged it: held for every relationship on it, and saved. */
+  const latestRouteMoved = useRef<(linkId: string, line: Point[]) => void>(() => undefined);
+  /** When a line was last dropped: the click that ends the drag opens nothing. */
+  const routeMovedAt = useRef(-Infinity);
+  useEffect(() => {
+    latestRouteMoved.current = (linkId, line) => {
+      routeMovedAt.current = performance.now();
+      const link = laid?.drawn.find((each) => each.id === linkId);
+      const sourceBox = link && absolute.get(link.source);
+      const targetBox = link && absolute.get(link.target);
+      if (!laid || !link || !sourceBox || !targetBox) return;
+      const points = squared(line);
+      const next = new Map(held);
+      for (const id of link.relationshipIds) {
+        next.set(id, { source: link.source, target: link.target, points, sourceBox, targetBox });
+      }
+      setHeldState({ canvas: laid.canvas, routes: next });
+      setEdgeMenu(null);
+      wantArranged();
+    };
+  });
+  // Every line as drawn now (reported by the lines), to find the line nearest a press.
+  const drawnLines = useRef(new Map<string, readonly Point[]>());
+  const lineDrawn = useCallback((linkId: string, line: readonly Point[] | undefined) => {
+    if (line) drawnLines.current.set(linkId, line);
+    else drawnLines.current.delete(linkId);
+  }, []);
+  /** A stretch being dragged: the line as it would be if dropped now. */
+  const [lineDrag, setLineDrag] = useState<{ linkId: string; points: Point[] } | null>(null);
+  const stretchDrag = useRef<{
+    pointer: number;
+    linkId: string;
+    index: number;
+    line: readonly Point[];
+    from: Point;
+    screen: { x: number; y: number };
+    moved: boolean;
+    stop: () => void;
+  } | null>(null);
+  useEffect(
+    () => () => {
+      stretchDrag.current?.stop();
+    },
+    [],
+  );
+  /**
+   * A press on a line's grip or label. On a grip, the line nearest the pointer is the one moved,
+   * as a click there opens it, even where another line's grip lies on top; on a label, that line's
+   * nearest middle stretch. True when the press grabbed a stretch: from 4px on it is dragged, and
+   * the drop saves the line.
+   */
+  const linePress = useCallback(
+    (linkId: string, press: LinePress, on: 'grip' | 'label'): boolean => {
+      stretchDrag.current?.stop();
+      const from = flow.screenToFlowPosition({ x: press.clientX, y: press.clientY });
+      let grabbed: { id: string; index: number } | undefined;
+      if (on === 'grip') {
+        grabbed = stretchAt(drawnLines.current, from);
+      } else {
+        const own = drawnLines.current.get(linkId);
+        const index = own && nearestMiddleStretch(own, from);
+        grabbed = index === undefined ? undefined : { id: linkId, index };
+      }
+      const line = grabbed && drawnLines.current.get(grabbed.id);
+      if (!grabbed || !line) return false;
+      const to = (event: PointerEvent) => {
+        const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        return moveStretch(line, drag.index, { x: at.x - from.x, y: at.y - from.y });
+      };
+      const onMove = (event: PointerEvent) => {
+        if (event.pointerId !== drag.pointer) return;
+        const distance = Math.hypot(event.clientX - drag.screen.x, event.clientY - drag.screen.y);
+        if (!drag.moved && distance <= dragThreshold) return;
+        drag.moved = true;
+        setLineDrag({ linkId: drag.linkId, points: to(event) });
+      };
+      const onUp = (event: PointerEvent) => {
+        if (event.pointerId !== drag.pointer) return;
+        drag.stop();
+        // A drag: the line is held where it was dropped, and saved.
+        if (drag.moved) latestRouteMoved.current(drag.linkId, to(event));
+      };
+      const stop = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', stop);
+        if (stretchDrag.current === drag) stretchDrag.current = null;
+        setLineDrag(null);
+      };
+      const drag = {
+        pointer: press.pointerId,
+        linkId: grabbed.id,
+        index: grabbed.index,
+        line,
+        from,
+        screen: { x: press.clientX, y: press.clientY },
+        moved: false,
+        stop,
+      };
+      stretchDrag.current = drag;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', stop);
+      return true;
+    },
+    [flow],
+  );
+
   // ELK's routes that still hold. Worked out apart from the edges, so a hover keeps the same bends
   // and doesn't place the labels again.
   const routes = useMemo(() => {
@@ -933,6 +1127,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       return before !== undefined && now?.width === before.width && now.height === before.height;
     };
     for (const link of laid?.drawn ?? []) {
+      if (handRoutes.has(link.id)) continue;
       if (!sameSize(link.source) || !sameSize(link.target)) continue;
       const handle = shown
         .get(link.source)
@@ -945,8 +1140,43 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       if (bends) result.set(link.id, bends);
     }
     return result;
-  }, [laid, shown, absolute]);
+  }, [laid, shown, absolute, handRoutes]);
 
+  // Where every card is, and the route of every line moved by hand, once the canvas shows the
+  // person's change: the layout made for this canvas, its cards and its widths.
+  const { onArranged, arrangeRequest } = props;
+  useEffect(() => {
+    if (arrangeSeen.current !== arrangeRequest) {
+      arrangeSeen.current = arrangeRequest;
+      arrangeWanted.current = true;
+    }
+    if (!arrangeWanted.current || !laid) return;
+    if (laid.key !== layoutKey || laid.hood !== hood || laid.widths !== widths) return;
+    arrangeWanted.current = false;
+    const cards = layoutOfCanvas(shown, (id) => {
+      const element = graph.elements.get(id);
+      return (
+        widths.has(id) &&
+        !laid.containers.has(id) &&
+        element !== undefined &&
+        cardShape(element.type) === 'card'
+      );
+    });
+    const ends = new Map(hood.relationships.map((relationship) => [relationship.id, relationship]));
+    onArranged?.({ cards, routes: routesToSave(held, ends, absolute) });
+  }, [
+    arrangeTick,
+    arrangeRequest,
+    laid,
+    layoutKey,
+    hood,
+    widths,
+    shown,
+    graph,
+    onArranged,
+    held,
+    absolute,
+  ]);
   // Lines without a route: their ends on the sides where their cards face each other now, so
   // they follow a moved card (live, while it is dragged) and take the shortest way.
   const floating = useMemo(() => {
@@ -975,12 +1205,25 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         if (handle) taken.set(card, [...(taken.get(card) ?? []), handle]);
       }
     }
+    // So do the ends of lines moved by hand.
+    for (const link of laid.drawn) {
+      const points = handRoutes.get(link.id);
+      if (!points) continue;
+      for (const [card, point] of [
+        [link.source, points[0]],
+        [link.target, points[points.length - 1]],
+      ] as const) {
+        const box = absolute.get(card);
+        const place = point && box && endPlace(point, box);
+        if (place) taken.set(card, [...(taken.get(card) ?? []), place]);
+      }
+    }
     return floatingEnds(
-      laid.drawn.filter((link) => !routes.has(link.id)),
+      laid.drawn.filter((link) => !routes.has(link.id) && !handRoutes.has(link.id)),
       boxes,
       taken,
     );
-  }, [laid, absolute, shown, routes, graph]);
+  }, [laid, absolute, shown, routes, handRoutes, graph]);
 
   const { selectedRelationshipId: chosen, litRelationshipId: fresh, shownProperties } = props;
   const edges = useMemo<RelationshipFlowEdge[]>(() => {
@@ -996,6 +1239,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const grayed = isGrayed(link, shownProperties);
       const bends = routes.get(link.id);
       const ends = floating.get(link.id);
+      const route = lineDrag?.linkId === link.id ? lineDrag.points : handRoutes.get(link.id);
       return {
         id: link.id,
         type: 'relationship' as const,
@@ -1028,6 +1272,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           ...(link.twoWay ? { twoWay: true } : {}),
           ...(bends ? { bends } : {}),
           ...(ends ? { ends } : {}),
+          ...(route ? { route } : {}),
+          ...(linesMovable ? { onLinePress: linePress, onLineDrawn: lineDrawn } : {}),
           ...(highlight && !lit ? { dim: true } : {}),
           ...(grayed && !lit ? { grayed: true } : {}),
           ...(resting ? { resting: true } : {}),
@@ -1036,6 +1282,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
             : {}),
           // The label is part of the line: hovering keeps it lit, a click opens it.
           onLabelClick: (clientX: number, clientY: number) => {
+            if (performance.now() - routeMovedAt.current < clickAfterDrag) return;
             latestOpenLink.current(link.id, clientX, clientY);
           },
           onLabelHover: (over: boolean) => {
@@ -1055,6 +1302,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     fresh,
     routes,
     floating,
+    handRoutes,
+    lineDrag,
+    linesMovable,
+    linePress,
+    lineDrawn,
     shownProperties,
   ]);
 
@@ -1664,6 +1916,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           setHover(null);
         }}
         onEdgeClick={(event, edge) => {
+          // The line's own grip keeps a drag's click from the line; this is in case a browser
+          // sends it to the line instead.
+          if (performance.now() - routeMovedAt.current < clickAfterDrag) return;
           openLink(
             nearestLineAt(event.clientX, event.clientY, edge.id),
             event.clientX,

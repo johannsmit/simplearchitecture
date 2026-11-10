@@ -6,6 +6,7 @@ import type {
   ModelAuthor,
   ModelSummary,
   ViewCardLayout,
+  ViewLineRoute,
   ViewSummary,
 } from '@simplearchitecture/shared';
 
@@ -66,7 +67,9 @@ export interface EditableModel {
  * one relationship (by id) written (added last, or replaced in place) or deleted. A relationship
  * whose ends moved (`endsIntoViews`) stays in every view that holds it: each of those views gets
  * the ends it lacks, without a position, in the same transaction (ViewFullError when one has no
- * room), and a view that gains one gets a new version, as for any other change to it.
+ * room). A relationship written with other ends than before (a new end, or reversed) loses the
+ * route its line was given in every view. A view that gains an end or loses a route gets a new
+ * version, as for any other change to it.
  */
 export type ElementWrite =
   | { kind: 'put'; elementId: string; node: JgfNode }
@@ -101,7 +104,10 @@ export interface AppliedElementChange {
   version: number | undefined;
   /** The relationships deleted with the element, in model order (`id` null when it has none). */
   deletedRelationships: { id: string | null }[];
-  /** The views a relationship's new end was added to (`endsIntoViews`), with their new versions. */
+  /**
+   * The views a relationship's new end was added to (`endsIntoViews`), or whose route for it was
+   * dropped, with their new versions.
+   */
   viewsChanged?: { id: string; version: number }[];
 }
 
@@ -121,14 +127,16 @@ export interface ElementStore {
 }
 
 /**
- * A view as stored: its summary and contents, element and relationship ids in model order, and
- * the layout of its cards that have a position (in model order too).
+ * A view as stored: its summary and contents, element and relationship ids in model order, the
+ * layout of its cards that have a position, and the routes of its lines that have one (both in
+ * model order too).
  */
 export interface ViewRecord {
   summary: ViewSummary;
   elementIds: string[];
   relationshipIds: string[];
   layout: ViewCardLayout[];
+  routes: ViewLineRoute[];
 }
 
 /** The two ends of a relationship as stored (null when the edge has none). */
@@ -165,7 +173,12 @@ export type ViewWrite =
       relationshipIds: readonly string[];
     }
   | { kind: 'rename'; viewId: string; name: string }
-  | { kind: 'layout'; viewId: string; cards: readonly ViewCardLayout[] }
+  | {
+      kind: 'layout';
+      viewId: string;
+      cards: readonly ViewCardLayout[];
+      routes: readonly ViewLineRoute[];
+    }
   | {
       kind: 'replace';
       viewId: string;

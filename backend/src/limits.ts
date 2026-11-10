@@ -70,12 +70,14 @@ export const maxElementIdLength = 1_000;
 export const relationshipBodyLimit = 64 * 1024;
 
 /**
- * Caps on views: names, contents, layouts and how many a model may have (shared with the web app).
+ * Caps on views: names, contents, layouts (cards and line routes) and how many a model may have
+ * (shared with the web app).
  */
 export {
   maxViewCardCoordinate,
   maxViewCardWidth,
   maxViewElements,
+  maxViewLineBends,
   maxViewNameLength,
   maxViewRelationships,
   maxViewsPerModel,

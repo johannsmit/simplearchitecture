@@ -886,6 +886,24 @@
   opacity: 0.15;
 }
 
+/* A line's middle stretch in a view that can change: an invisible, wider stroke over it, dragged
+ * sideways to move the stretch. The cursor shows the way it moves. */
+.line-grip {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  touch-action: none;
+}
+
+.line-grip.is-upright {
+  cursor: ew-resize;
+}
+
+.line-grip.is-across {
+  cursor: ns-resize;
+}
+
 .smark {
   pointer-events: none;
 }

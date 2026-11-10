@@ -400,6 +400,7 @@ function reading(): StoredView {
     elementIds: ['reader', 'catalogue', 'loans', 'server'],
     relationshipIds: ['r1', 'r2', 'r5'],
     layout: [],
+    routes: [],
   };
 }
 

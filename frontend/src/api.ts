@@ -39,6 +39,7 @@ import type {
   ReplaceViewLayoutRequest,
   StoredView,
   ViewCardLayout,
+  ViewLineRoute,
   ViewSummary,
 } from '@simplearchitecture/shared';
 
@@ -507,6 +508,22 @@ function isCardLayout(value: unknown): value is ViewCardLayout {
   );
 }
 
+const isPoint = (value: unknown): boolean =>
+  isObject(value) &&
+  typeof value.x === 'number' &&
+  Number.isFinite(value.x) &&
+  typeof value.y === 'number' &&
+  Number.isFinite(value.y);
+
+function isLineRoute(value: unknown): value is ViewLineRoute {
+  return (
+    isObject(value) &&
+    typeof value.relationshipId === 'string' &&
+    Array.isArray(value.points) &&
+    value.points.every(isPoint)
+  );
+}
+
 function isStoredView(value: unknown): value is StoredView {
   if (!isViewSummary(value)) return false;
   const fields = value as unknown as Record<string, unknown>;
@@ -514,7 +531,9 @@ function isStoredView(value: unknown): value is StoredView {
     isIdList(fields.elementIds) &&
     isIdList(fields.relationshipIds) &&
     Array.isArray(fields.layout) &&
-    fields.layout.every(isCardLayout)
+    fields.layout.every(isCardLayout) &&
+    Array.isArray(fields.routes) &&
+    fields.routes.every(isLineRoute)
   );
 }
 

@@ -706,6 +706,8 @@ function Explorer({
   // An open view's stored layout: a new canvas opens with it (cards where they were left, with
   // their widths). A focus canvas has none.
   const storedLayout = inView ? openView.view?.layout : undefined;
+  // And its lines' routes given by hand, read with it.
+  const storedRoutes = inView ? openView.view?.routes : undefined;
   const baseWidths = useMemo(
     () => (storedLayout === undefined ? noWidths : storedWidths(storedLayout)),
     [storedLayout],
@@ -1080,8 +1082,9 @@ function Explorer({
   };
   /**
    * A relationship's ends changed: a new end not on the canvas joins it at a free spot, and the
-   * old ends stay. In a view the server has added the new ends already, with a new version for the
-   * view; the view's layout is then saved as for any added card. Returns the elements added.
+   * old ends stay. In a view the server has added the new ends already, and dropped the route the
+   * line was given there (also after a reverse), with a new version for the view; the view's
+   * layout is then saved as for any added card. Returns the elements added.
    */
   function followNewEnds(
     before: ModelRelationship,
@@ -1090,7 +1093,8 @@ function Explorer({
   ): string[] {
     const ends = [edge.source, edge.target];
     const fresh = ends.filter((end) => end !== before.source && end !== before.target);
-    if (fresh.length === 0 || !graph || !document_) return [];
+    const moved = edge.source !== before.source || edge.target !== before.target;
+    if (!moved || !graph || !document_) return [];
     if (inView) {
       const { contents } = openView;
       const changed = viewsChanged.find((changedView) => changedView.id === viewId);
@@ -1107,11 +1111,12 @@ function Explorer({
           ],
         }),
         changed?.version,
+        [before.id],
       );
       if (missing.length > 0) requestArrange();
       return missing;
     }
-    if (element === undefined) return [];
+    if (fresh.length === 0 || element === undefined) return [];
     // An end the focus doesn't reach after the change is kept on the canvas as an added card: an
     // old end that was there, and a new end.
     const after = buildModelGraph(withEdge(document_, edge));
@@ -1713,7 +1718,7 @@ function Explorer({
               type="button"
               className="btn tidy"
               aria-label="Tidy up"
-              title="Put every card back in the automatic layout"
+              title="Put every card and line back in the automatic layout"
               disabled={!canTidy}
               onClick={tidyUp}
             >
@@ -1895,6 +1900,7 @@ function Explorer({
                 removable={removableIds}
                 onRemoveCard={removeCard}
                 storedLayout={storedLayout}
+                storedRoutes={storedRoutes}
                 arrangeRequest={arrangeRequest}
                 {...(viewEditable && !viewBlocked ? { onArranged: saveViewLayout } : {})}
               />

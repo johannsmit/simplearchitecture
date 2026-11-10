@@ -10,6 +10,7 @@ import {
   type RenamedViewResult,
   type StoredView,
   type ViewCardLayout,
+  type ViewLineRoute,
   type ViewListResponse,
   type ViewResult,
   type ViewSummary,
@@ -31,6 +32,7 @@ import {
   maxViewCardCoordinate,
   maxViewCardWidth,
   maxViewElements,
+  maxViewLineBends,
   maxViewNameLength,
   maxViewRelationships,
   maxViewsPerModel,
@@ -59,6 +61,10 @@ import { unstorable } from '../storage/stored-model.js';
  * - A layout names cards of the view only, each once: where each was left on the canvas, and a
  *   width set by hand. Cards not named have no position afterwards. Taking a card out of the view
  *   (or deleting its element) drops its position.
+ * - A layout's routes name relationships of the view only, each once: the points of the line as
+ *   the person left it, with right angles only (each stretch shares x or y) and at most
+ *   `maxViewLineBends` bends. Lines not named have no route afterwards. Taking the relationship
+ *   out of the view, deleting it, or giving it other ends drops its route.
  * - Rename, new contents, a new layout and delete carry the view's version as read; another one
  *   is a conflict. A change that changes nothing stores nothing and keeps the version.
  * - Nothing is stored for a refused change, and every stored change has one audit row with field
@@ -119,6 +125,19 @@ const coordinateSchema = z
   .max(maxViewCardCoordinate, { error: coordinateMessage });
 const widthMessage = `Must be a whole number from ${minViewCardWidth} to ${maxViewCardWidth}.`;
 
+const pointsMessage = `Must be a list of 2 to ${maxViewLineBends + 2} points.`;
+
+const routeSchema = z.strictObject({
+  relationshipId: z
+    .string({ error: idMessage })
+    .min(1, { error: idMessage })
+    .max(maxElementIdLength, { error: idMessage }),
+  points: z
+    .array(z.strictObject({ x: coordinateSchema, y: coordinateSchema }), { error: pointsMessage })
+    .min(2, { error: pointsMessage })
+    .max(maxViewLineBends + 2, { error: pointsMessage }),
+});
+
 const layoutSchema = z.strictObject({
   version: versionSchema,
   cards: z
@@ -140,6 +159,12 @@ const layoutSchema = z.strictObject({
       { error: 'Must be a list of cards.' },
     )
     .max(maxViewElements, { error: `A view can hold at most ${maxViewElements} elements.` }),
+  routes: z
+    .array(routeSchema, { error: 'Must be a list of routes.' })
+    .max(maxViewRelationships, {
+      error: `A view can hold at most ${maxViewRelationships} relationships.`,
+    })
+    .optional(),
 });
 
 /** Parses a request; a list's own index (and a card's field) isn't a field of it, so it goes. */
@@ -150,7 +175,10 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
     if (!(error instanceof RejectedError)) throw error;
     const seen = new Set<string>();
     const fields = error.fields.flatMap((issue): ElementFieldIssue[] => {
-      const field = issue.field.replace(/^(elementIds|relationshipIds|cards)\.\d+(\..*)?$/, '$1');
+      const field = issue.field.replace(
+        /^(elementIds|relationshipIds|cards|routes)\.\d+(\..*)?$/,
+        '$1',
+      );
       const key = `${field}\n${issue.message}`;
       if (seen.has(key)) return [];
       seen.add(key);
@@ -185,6 +213,7 @@ function storedView(record: ViewRecord): StoredView {
     elementIds: record.elementIds,
     relationshipIds: record.relationshipIds,
     layout: record.layout,
+    routes: record.routes,
   };
 }
 
@@ -192,9 +221,68 @@ function storedView(record: ViewRecord): StoredView {
 const cardKey = (card: ViewCardLayout): string =>
   `${card.elementId}\n${card.x}\n${card.y}\n${card.width ?? ''}`;
 
-/** Both name each card once, so the same keys are the same layout. */
-const sameLayout = (a: readonly ViewCardLayout[], b: readonly ViewCardLayout[]): boolean =>
-  sameSet(a.map(cardKey), b.map(cardKey));
+/** A line's route as a comparable key. */
+const routeKey = (route: ViewLineRoute): string =>
+  `${route.relationshipId}\n${route.points.map((point) => `${point.x} ${point.y}`).join('\n')}`;
+
+/** Both name each card and each line once, so the same keys are the same layout. */
+const sameLayout = (
+  view: ViewRecord,
+  cards: readonly ViewCardLayout[],
+  routes: readonly ViewLineRoute[],
+): boolean =>
+  sameSet(view.layout.map(cardKey), cards.map(cardKey)) &&
+  sameSet(view.routes.map(routeKey), routes.map(routeKey));
+
+/** True when every stretch of the line runs straight across or straight up and down. */
+const rightAngled = (points: readonly { x: number; y: number }[]): boolean =>
+  points.every((point, index) => {
+    const before = points[index - 1];
+    return before === undefined || before.x === point.x || before.y === point.y;
+  });
+
+/**
+ * The routes of a new layout, or RejectedError: lines of the view only, each once, each with right
+ * angles only.
+ */
+function checkedRoutes(
+  view: ViewRecord,
+  routes: readonly { relationshipId: string; points: { x: number; y: number }[] }[],
+): ViewLineRoute[] {
+  const inView = new Set(view.relationshipIds);
+  const issues: ElementFieldIssue[] = [];
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const route of routes) {
+    if (seen.has(route.relationshipId)) twice.add(route.relationshipId);
+    seen.add(route.relationshipId);
+  }
+  if (twice.size > 0) {
+    issues.push({
+      field: 'routes',
+      message: `Each line can have one route. These have more than one: ${listed([...twice])}.`,
+    });
+  }
+  const outside = [...seen].filter((id) => !inView.has(id));
+  if (outside.length > 0) {
+    issues.push({
+      field: 'routes',
+      message: `These relationships are not in the view (they may have been removed, or deleted from the model): ${listed(outside)}.`,
+    });
+  }
+  const slanted = routes.filter((route) => !rightAngled(route.points));
+  if (slanted.length > 0) {
+    issues.push({
+      field: 'routes',
+      message: `A line's route can only run straight across or straight up and down. These don't: ${listed(slanted.map((route) => route.relationshipId))}.`,
+    });
+  }
+  if (issues.length > 0) throw new RejectedError(issues);
+  return routes.map(({ relationshipId, points }) => ({
+    relationshipId,
+    points: points.map(({ x, y }) => ({ x, y })),
+  }));
+}
 
 /** The cards of a new layout, or RejectedError: cards of the view only, each once. */
 function checkedLayout(
@@ -454,9 +542,9 @@ export class ViewService {
   }
 
   /**
-   * A new layout in place of the old: where each card named is, and its width when set by hand.
-   * Saved only on what the person did on the canvas (the caller's rule); a layout the canvas made
-   * on its own is never sent.
+   * A new layout in place of the old: where each card named is, and its width when set by hand,
+   * and the route of each line named. Saved only on what the person did on the canvas (the
+   * caller's rule); a layout or a route the canvas made on its own is never sent by itself.
    */
   async replaceLayout(
     modelId: string,
@@ -473,8 +561,9 @@ export class ViewService {
         (state) => {
           const view = currentView(state, request.version);
           const cards = checkedLayout(view, request.cards);
-          if (sameLayout(view.layout, cards)) throw new Unchanged(view);
-          return plan({ kind: 'layout', viewId, cards }, 'view-changed', actor, ['layout']);
+          const routes = checkedRoutes(view, request.routes ?? []);
+          if (sameLayout(view, cards, routes)) throw new Unchanged(view);
+          return plan({ kind: 'layout', viewId, cards, routes }, 'view-changed', actor, ['layout']);
         },
       );
       if (changed?.view === undefined) throw new NotFoundError('model');

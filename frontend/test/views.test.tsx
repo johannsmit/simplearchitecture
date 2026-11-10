@@ -68,6 +68,7 @@ function stored(id: string, name: string, elementIds: string[], relationshipIds:
     elementIds,
     relationshipIds,
     layout: [],
+    routes: [],
   };
   return view;
 }

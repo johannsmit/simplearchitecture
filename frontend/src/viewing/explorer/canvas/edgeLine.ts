@@ -43,7 +43,7 @@ export function currentBends(
 }
 
 /** Without repeated points, and without points in the middle of a straight stretch. */
-function simplified(line: readonly Point[]): Point[] {
+export function simplified(line: readonly Point[]): Point[] {
   const result: Point[] = [];
   for (const point of line) {
     const last = result[result.length - 1];

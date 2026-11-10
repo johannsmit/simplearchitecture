@@ -1,6 +1,7 @@
-import type { StoredView, ViewCardLayout, ViewSummary } from '@simplearchitecture/shared';
+import type { StoredView, ViewSummary } from '@simplearchitecture/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiRequestError, getView, replaceViewContents, replaceViewLayout } from '../../api';
+import type { CanvasLayout } from './canvas/viewLayout';
 import type { ViewContents } from './views';
 
 /** Why the last change to the view wasn't saved. */
@@ -29,19 +30,25 @@ export interface OpenView {
    */
   change: (next: (current: ViewContents) => ViewContents | undefined) => boolean;
   /**
-   * Saves where the view's cards are, after a change of contents on its way. Only for what the
-   * person did on the canvas: a layout the canvas made on its own is never saved. Refused (false)
-   * as `change` is. Cards no longer in the view are left out.
+   * Saves where the view's cards are, and its lines' routes given by hand, after a change of
+   * contents on its way. Only for what the person did on the canvas: a layout the canvas made on
+   * its own is never saved. Refused (false) as `change` is. Cards and lines no longer in the view
+   * are left out.
    */
-  saveLayout: (cards: readonly ViewCardLayout[]) => boolean;
+  saveLayout: (layout: CanvasLayout) => boolean;
   /**
    * The server has changed the view already, with a change to the model: something deleted from
-   * the model is out of every view, and a relationship's new end is in every view that holds it.
-   * The view takes the change without saving. `version`: the view's version after the server's
-   * change, taken only when it follows the one read (else someone else changed the view too, and
-   * the next save reports the conflict).
+   * the model is out of every view, a relationship's new end is in every view that holds it, and
+   * a relationship with other ends has lost its route (`droppedRoutes`). The view takes the
+   * change without saving. `version`: the view's version after the server's change, taken only
+   * when it follows the one read (else someone else changed the view too, and the next save
+   * reports the conflict).
    */
-  adopt: (next: (current: ViewContents) => ViewContents, version?: number) => void;
+  adopt: (
+    next: (current: ViewContents) => ViewContents,
+    version?: number,
+    droppedRoutes?: readonly string[],
+  ) => void;
   /** Reads the view again (Reload view) and drops a problem. */
   reload: () => void;
   /** A rename was saved: the new name and version. */
@@ -56,7 +63,7 @@ interface Queue {
   /** The contents changed since the last save. */
   contents: boolean;
   /** The layout to save after the contents. */
-  layout: readonly ViewCardLayout[] | undefined;
+  layout: CanvasLayout | undefined;
 }
 
 const idleQueue = (): Queue => ({ running: false, contents: false, layout: undefined });
@@ -159,9 +166,17 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
             });
           } else {
             const inView = new Set(saved.elementIds);
-            const cards = (q.layout ?? []).filter((card) => inView.has(card.elementId));
+            const linesInView = new Set(saved.relationshipIds);
+            const cards = (q.layout?.cards ?? []).filter((card) => inView.has(card.elementId));
+            const routes = (q.layout?.routes ?? []).filter((route) =>
+              linesInView.has(route.relationshipId),
+            );
             q.layout = undefined;
-            view = await replaceViewLayout(modelId, viewId, { version: saved.version, cards });
+            view = await replaceViewLayout(modelId, viewId, {
+              version: saved.version,
+              cards,
+              routes,
+            });
           }
           if (stale()) return;
           live.current.saved = view;
@@ -224,9 +239,9 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
   );
 
   const saveLayout = useCallback(
-    (cards: readonly ViewCardLayout[]): boolean => {
+    (layout: CanvasLayout): boolean => {
       if (live.current.saved === undefined || blocked) return false;
-      queue.current.layout = cards;
+      queue.current.layout = layout;
       const layoutKey = live.current.key;
       setState((previous) =>
         previous.key === layoutKey && previous.problem !== undefined
@@ -239,33 +254,53 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
     [blocked, run],
   );
 
-  const adopt = useCallback((next: (contents: ViewContents) => ViewContents, version?: number) => {
-    const { saved } = live.current;
-    if (saved === undefined) return;
-    const kept = next(contentsOf(saved));
-    const follows = version !== undefined && version === saved.version + 1;
-    const view = {
-      ...saved,
-      elementIds: [...kept.elementIds],
-      relationshipIds: [...kept.relationshipIds],
-      ...(follows ? { version } : {}),
-    };
-    live.current.saved = view;
-    live.current.shown = next(live.current.shown);
-    const shown = live.current.shown;
-    const adoptKey = live.current.key;
-    setState((previous) =>
-      previous.key === adoptKey
-        ? {
-            ...previous,
-            contents: shown,
-            ...(follows && previous.view
-              ? { view: { ...previous.view, version: view.version } }
-              : {}),
-          }
-        : previous,
-    );
-  }, []);
+  const adopt = useCallback(
+    (
+      next: (contents: ViewContents) => ViewContents,
+      version?: number,
+      droppedRoutes: readonly string[] = [],
+    ) => {
+      const { saved } = live.current;
+      if (saved === undefined) return;
+      const kept = next(contentsOf(saved));
+      const follows = version !== undefined && version === saved.version + 1;
+      // A route goes with its line, and with the line's old ends.
+      const linesKept = new Set(kept.relationshipIds);
+      const keepsRoute = (route: { relationshipId: string }) =>
+        linesKept.has(route.relationshipId) && !droppedRoutes.includes(route.relationshipId);
+      const view = {
+        ...saved,
+        elementIds: [...kept.elementIds],
+        relationshipIds: [...kept.relationshipIds],
+        routes: saved.routes.filter(keepsRoute),
+        ...(follows ? { version } : {}),
+      };
+      live.current.saved = view;
+      live.current.shown = next(live.current.shown);
+      const shown = live.current.shown;
+      const adoptKey = live.current.key;
+      setState((previous) => {
+        if (previous.key !== adoptKey) return previous;
+        const before = previous.view;
+        const routes = before?.routes.filter(keepsRoute);
+        const changed = before && (follows || routes?.length !== before.routes.length);
+        return {
+          ...previous,
+          contents: shown,
+          ...(changed
+            ? {
+                view: {
+                  ...before,
+                  routes: routes ?? [],
+                  ...(follows ? { version: view.version } : {}),
+                },
+              }
+            : {}),
+        };
+      });
+    },
+    [],
+  );
 
   const reload = useCallback(() => {
     setAttempt((n) => n + 1);

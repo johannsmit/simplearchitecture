@@ -5,8 +5,9 @@ import type { ModelAuthor } from './models.js';
 
 /**
  * Views: a named, stored set of elements and relationships of one model, by id. A view never
- * changes the model. Each card can keep where it was left (its layout); a card without one is
- * placed by the canvas when the view opens. Viewer and higher list and open views; Modeller and
+ * changes the model. Each card can keep where it was left (its layout), and each line the route it
+ * was given by hand; a card without a position is placed, and a line without a route is drawn, by
+ * the canvas when the view opens. Viewer and higher list and open views; Modeller and
  * higher create, rename, change, lay out and delete them. Every view is visible to everyone who can see the model. Views need PostgreSQL: without a
  * database the routes answer 501 with `editingUnavailableMessage`.
  *
@@ -33,6 +34,11 @@ export const minViewCardWidth = 168;
 export const maxViewCardWidth = 480;
 /** How far from the canvas's origin a card in a view's layout may be, either way, in pixels. */
 export const maxViewCardCoordinate = 1_000_000;
+/**
+ * Most bends a line's stored route may have (its points are two more: the ends). The points of a
+ * route are within `maxViewCardCoordinate` of the canvas's origin, as cards are.
+ */
+export const maxViewLineBends = 30;
 
 /** The key two view names are compared by: the same key is the same name. */
 export function viewNameKey(name: string): string {
@@ -80,14 +86,33 @@ export interface ViewCardLayout {
   width?: number;
 }
 
+/** A point on the canvas, in canvas pixels. */
+export interface ViewPoint {
+  x: number;
+  y: number;
+}
+
 /**
- * A view with its contents: element ids and relationship ids, each in the model's order, and the
- * layout of those of its cards that have one (in the model's order too).
+ * The route a relationship's line in a view was given by hand: its points on the canvas, from the
+ * end at the source to the end at the target. Each stretch between two points runs straight
+ * across or straight up and down (they share x or y), so the line keeps its right angles. From 2
+ * points to `maxViewLineBends` + 2.
+ */
+export interface ViewLineRoute {
+  relationshipId: string;
+  points: ViewPoint[];
+}
+
+/**
+ * A view with its contents: element ids and relationship ids, each in the model's order, the
+ * layout of those of its cards that have one, and the routes of those of its lines that have one
+ * (both in the model's order too).
  */
 export interface StoredView extends ViewSummary {
   elementIds: string[];
   relationshipIds: string[];
   layout: ViewCardLayout[];
+  routes: ViewLineRoute[];
 }
 
 /** Response body of `GET /api/models/:id/views`: by name. */
@@ -141,14 +166,19 @@ export interface ReplaceViewContentsRequest {
 }
 
 /**
- * Body of `PUT /api/models/:id/views/:viewId/layout`: where the view's cards are, in place of the
- * old layout. Each card at most once, and only cards in the view; a card of the view that isn't
- * listed has no position afterwards. The same layout as stored changes nothing (no new version).
+ * Body of `PUT /api/models/:id/views/:viewId/layout`: where the view's cards are, and the routes of
+ * its lines, in place of the old layout. Each card at most once, and only cards in the view; a
+ * card of the view that isn't listed has no position afterwards. The same for routes: each
+ * relationship at most once, only relationships in the view, and a line not listed has no route
+ * afterwards (it is drawn automatically). The same layout as stored changes nothing (no new
+ * version).
  */
 export interface ReplaceViewLayoutRequest {
   /** The view's version as read. An older one gets 409. */
   version: number;
   cards: ViewCardLayout[];
+  /** Absent: none. */
+  routes?: ViewLineRoute[];
 }
 
 /** Query of the delete route, as sent: `?version=N`. */
@@ -168,7 +198,7 @@ export interface ViewNotFound extends ApiError {
 
 /**
  * Response body (422) when a request is refused. Nothing was stored. `field`: `name`,
- * `elementIds`, `relationshipIds`, `cards`, `version`, or '' (a general message).
+ * `elementIds`, `relationshipIds`, `cards`, `routes`, `version`, or '' (a general message).
  */
 export interface ViewRejected extends ApiError {
   fields: ElementFieldIssue[];

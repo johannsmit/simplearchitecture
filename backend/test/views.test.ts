@@ -424,6 +424,95 @@ describe('layouts', () => {
   });
 });
 
+describe('line routes', () => {
+  const route = [
+    { x: 200, y: 22 },
+    { x: 250, y: 22 },
+    { x: 250, y: 90 },
+    { x: 320, y: 90 },
+  ];
+
+  it('a Modeller saves a line moved by hand with the cards, and it opens again so', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const logs = captureLogs(target);
+    const view = await created(target, cookie);
+    const url = `${views()}/${view.id}/layout`;
+    const cards = [
+      { elementId: 'clerk', x: 32, y: 0 },
+      { elementId: 'ledger', x: 320, y: 68 },
+    ];
+    const res = await call(target, 'PUT', url, {
+      cookie,
+      body: { version: 1, cards, routes: [{ relationshipId: 'h1', points: route }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const { view: laid } = res.json<ViewResult>();
+    expect(laid).toMatchObject({
+      version: 2,
+      layout: cards,
+      routes: [{ relationshipId: 'h1', points: route }],
+    });
+    const opened = await call(target, 'GET', `${views()}/${view.id}`, { cookie });
+    expect(opened.json<ViewResult>().view).toEqual(laid);
+    // Tidy up: the cards without the route, which goes.
+    const tidied = await call(target, 'PUT', url, {
+      cookie,
+      body: { version: 2, cards, routes: [] },
+    });
+    expect(tidied.json<ViewResult>().view).toMatchObject({ version: 3, routes: [] });
+    const audit = logs.filter((line) => line.includes('"audit":"view-laid-out"'));
+    expect(audit).toHaveLength(2);
+    expect(audit.join('\n')).not.toMatch(/250|h1|clerk/);
+  });
+
+  it('gets 422 on routes for a line not in the view, a slanted stretch, or too many points', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    const url = `${views()}/${view.id}/layout`;
+    for (const routes of [
+      [{ relationshipId: 'h2', points: route }],
+      [
+        {
+          relationshipId: 'h1',
+          points: [
+            { x: 0, y: 0 },
+            { x: 5, y: 5 },
+          ],
+        },
+      ],
+      [{ relationshipId: 'h1', points: Array.from({ length: 40 }, (_, x) => ({ x, y: 0 })) }],
+      [
+        { relationshipId: 'h1', points: route },
+        { relationshipId: 'h1', points: route },
+      ],
+    ]) {
+      const res = await call(target, 'PUT', url, {
+        cookie,
+        body: { version: 1, cards: [], routes },
+      });
+      expect(res.statusCode).toBe(422);
+      expect(res.json<ViewRejected>().fields.map((issue) => issue.field)).toEqual(['routes']);
+    }
+    const opened = await call(target, 'GET', `${views()}/${view.id}`, { cookie });
+    expect(opened.json<ViewResult>().view).toMatchObject({ version: 1, routes: [] });
+  });
+
+  it('a Viewer gets 403 and nothing is stored', async () => {
+    const modeller = await signedInAs(['Modeller']);
+    const view = await created(modeller.target, modeller.cookie);
+    await app?.close();
+    const { target, cookie } = await signedInAs(['Viewer']);
+    const url = `${views()}/${view.id}`;
+    const res = await call(target, 'PUT', `${url}/layout`, {
+      cookie,
+      body: { version: 1, cards: [], routes: [{ relationshipId: 'h1', points: route }] },
+    });
+    expect(res.statusCode).toBe(403);
+    const opened = await call(target, 'GET', url, { cookie });
+    expect(opened.json<ViewResult>().view).toMatchObject({ version: 1, routes: [] });
+  });
+});
+
 describe('a Viewer', () => {
   it('lists and opens views, and can change none', async () => {
     const modeller = await signedInAs(['Modeller']);

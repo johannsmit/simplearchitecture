@@ -1,4 +1,4 @@
-import type { ViewCardLayout, ViewSummary } from '@simplearchitecture/shared';
+import type { ViewCardLayout, ViewLineRoute, ViewSummary } from '@simplearchitecture/shared';
 import type { Db, Queryable } from '../db/db.js';
 import {
   isModelId,
@@ -11,10 +11,11 @@ import {
 } from './model-store.js';
 
 /**
- * Views in PostgreSQL (migrations 010 and 011): one row per view, plus one per element and per
- * relationship in it; a card's position is on its element's row. The foreign keys keep views consistent with the model: deleting an element, a
- * relationship or the model removes it from every view in the same transaction. Ids travel as one
- * JSON parameter, whatever their number.
+ * Views in PostgreSQL (migrations 010, 011 and 014): one row per view, plus one per element and
+ * per relationship in it; a card's position is on its element's row, and a line's route on its
+ * relationship's row. The foreign keys keep views consistent with the model: deleting an element,
+ * a relationship or the model removes it from every view in the same transaction. Ids travel as
+ * one JSON parameter, whatever their number.
  */
 
 interface ViewRow {
@@ -38,10 +39,17 @@ interface StoredCard {
   width: number | null;
 }
 
+interface StoredRoute {
+  relationshipId: string;
+  xs: number[];
+  ys: number[];
+}
+
 interface FullViewRow extends ViewRow {
   element_ids: string[];
   relationship_ids: string[];
   layout: StoredCard[];
+  routes: StoredRoute[];
 }
 
 /** A row of the model joined with its views: without a view, every view column is null. */
@@ -68,7 +76,13 @@ const contentColumns = `
                                'width', ve.width) order by e.ordinal)
             from view_elements ve
             join elements e on e.model_id = ve.model_id and e.id = ve.element_id
-            where ve.view_id = v.id and ve.x is not null), '[]'::jsonb) as layout`;
+            where ve.view_id = v.id and ve.x is not null), '[]'::jsonb) as layout,
+  coalesce((select jsonb_agg(jsonb_build_object('relationshipId', r.id, 'xs', to_jsonb(vr.route_x),
+                               'ys', to_jsonb(vr.route_y)) order by r.ordinal)
+            from view_relationships vr
+            join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
+            where vr.view_id = v.id and r.id is not null and vr.route_x is not null), '[]'::jsonb)
+    as routes`;
 
 // One statement, so the view and its contents are read as one. No row: no model; a row without a
 // view id: no such view in the model.
@@ -131,6 +145,18 @@ const setLayout = `update view_elements ve set x = c.x, y = c.y, width = c.width
     as c(element_id text, x double precision, y double precision, width integer)
   where ve.view_id = $1::uuid and ve.element_id = c.element_id`;
 
+// The same for the lines: every route goes, then the lines sent get theirs (by the relationship's
+// id, the first relationship with it, as in the contents).
+const clearRoutes = `update view_relationships set route_x = null, route_y = null
+  where view_id = $1::uuid and route_x is not null`;
+
+const setRoutes = `update view_relationships vr set route_x = c.xs, route_y = c.ys
+  from jsonb_to_recordset($2::text::jsonb)
+    as c(relationship_id text, xs double precision[], ys double precision[])
+  where vr.view_id = $1::uuid
+    and vr.relationship_ordinal = (select min(r.ordinal) from relationships r
+      where r.model_id = vr.model_id and r.id = c.relationship_id)`;
+
 const touchView = `update views set version = version + 1, updated_at = $3, updated_by_id = $4,
   updated_by_name = $5 where id = $1::uuid and model_id = $2::uuid`;
 
@@ -163,6 +189,10 @@ function recordOf(row: FullViewRow): ViewRecord {
       x,
       y,
       ...(width === null ? {} : { width }),
+    })),
+    routes: row.routes.map(({ relationshipId, xs, ys }): ViewLineRoute => ({
+      relationshipId,
+      points: xs.map((x, index) => ({ x, y: ys[index] as number })),
     })),
   };
 }
@@ -266,7 +296,20 @@ export class PostgresViewStore implements ViewStore {
             ),
           ]);
         }
-        details = { ...details, cards: write.cards.length };
+        await tx.query(clearRoutes, [write.viewId]);
+        if (write.routes.length > 0) {
+          await tx.query(setRoutes, [
+            write.viewId,
+            JSON.stringify(
+              write.routes.map((route) => ({
+                relationship_id: route.relationshipId,
+                xs: route.points.map((point) => point.x),
+                ys: route.points.map((point) => point.y),
+              })),
+            ),
+          ]);
+        }
+        details = { ...details, cards: write.cards.length, routes: write.routes.length };
         await tx.query(touchView, [write.viewId, modelId, at, actor.id, actor.name]);
       } else if (write.kind === 'replace') {
         await tx.query(deleteOtherElements, [write.viewId, JSON.stringify(write.elementIds)]);

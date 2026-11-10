@@ -196,20 +196,31 @@ const viewsWithoutRoom = `select count(*)::int as count from (
   where v.held > $4`;
 
 // Gives every view holding the relationship the ends it lacks, without a position (the canvas
-// places them when the view opens), and a new version to each view that gained one, so someone
-// with it open gets a conflict and reloads it.
-const addEndsToViews = `with added as (
-    insert into view_elements (view_id, model_id, element_id)
-    select vr.view_id, vr.model_id, x.id
-    from view_relationships vr
-    join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
-    cross join jsonb_array_elements_text($3::text::jsonb) as x(id)
-    where vr.model_id = $1::uuid and r.id = $2
-    on conflict do nothing
-    returning view_id)
-  update views set version = version + 1, updated_at = $4, updated_by_id = $5,
-    updated_by_name = $6
-  where model_id = $1::uuid and id in (select view_id from added)
+// places them when the view opens). Returns the views that gained one.
+const addEndsToViews = `insert into view_elements (view_id, model_id, element_id)
+  select vr.view_id, vr.model_id, x.id
+  from view_relationships vr
+  join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
+  cross join jsonb_array_elements_text($3::text::jsonb) as x(id)
+  where vr.model_id = $1::uuid and r.id = $2
+  on conflict do nothing
+  returning view_id`;
+
+// Before a relationship is written with other ends ($3 source, $4 target) than it has: its line
+// loses the route it was given in every view, as the route ran between the old ends. Returns the
+// views that lost one.
+const dropRoutesOfMovedEnds = `update view_relationships vr set route_x = null, route_y = null
+  from relationships r
+  where r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
+    and vr.model_id = $1::uuid and r.id = $2 and vr.route_x is not null
+    and (r.source is distinct from $3 or r.target is distinct from $4)
+  returning vr.view_id`;
+
+// A new version to each view that a change of ends changed, once, so someone with it open gets a
+// conflict and reloads it.
+const touchViews = `update views set version = version + 1, updated_at = $3, updated_by_id = $4,
+    updated_by_name = $5
+  where model_id = $1::uuid and id in (select jsonb_array_elements_text($2::text::jsonb)::uuid)
   returning id, version`;
 
 const deleteRelationshipsOf = `delete from relationships
@@ -523,6 +534,19 @@ export class PostgresModelStore implements ModelStore {
         }
         const row = relationshipRow({ ...write.edge, id: write.relationshipId }, 0);
         const exists = model.relationshipVersionOf(write.relationshipId) !== undefined;
+        const touchedViews = new Set<string>();
+        const before = exists
+          ? model.document.graph.edges?.find((edge) => edge.id === write.relationshipId)
+          : undefined;
+        if (before && (before.source !== row.source || before.target !== row.target)) {
+          const dropped = await tx.query<{ view_id: string }>(dropRoutesOfMovedEnds, [
+            modelId,
+            write.relationshipId,
+            row.source ?? null,
+            row.target ?? null,
+          ]);
+          for (const { view_id } of dropped) touchedViews.add(view_id);
+        }
         const [written] = await tx.query<{ version: number }>(
           exists ? updateRelationship : addRelationship,
           [
@@ -546,13 +570,21 @@ export class PostgresModelStore implements ModelStore {
             maxViewElements,
           ]);
           if ((crowded?.count ?? 0) > 0) throw new ViewFullError(maxViewElements);
+          const added = await tx.query<{ view_id: string }>(addEndsToViews, params);
+          for (const { view_id } of added) touchedViews.add(view_id);
+        }
+        if (touchedViews.size > 0 || write.endsIntoViews === true) {
           const { actor } = audit;
-          const touched = await tx.query<{ id: string; version: number }>(addEndsToViews, [
-            ...params,
-            new Date(this.#now()),
-            actor.id,
-            actor.name,
-          ]);
+          const touched =
+            touchedViews.size === 0
+              ? []
+              : await tx.query<{ id: string; version: number }>(touchViews, [
+                  modelId,
+                  JSON.stringify([...touchedViews]),
+                  new Date(this.#now()),
+                  actor.id,
+                  actor.name,
+                ]);
           viewsChanged = touched
             .map(({ id, version }) => ({ id, version }))
             .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

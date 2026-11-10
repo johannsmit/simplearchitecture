@@ -1,9 +1,10 @@
 import type { ArchitectureState, EdgeType } from '@simplearchitecture/shared';
 import { BaseEdge, EdgeLabelRenderer, type Edge, type EdgeProps } from '@xyflow/react';
-import { memo, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, type PointerEvent } from 'react';
 import { edgeEnds } from '../../../metamodel-ui';
 import { directLine, edgeLine, linePath, type LineEnd } from './edgeLine';
 import { labelLines, placeRestingLabel, placeStateMark } from './labels';
+import { isLevel, middleStretches } from './lineRoutes';
 import { dragThreshold } from './positions';
 import type { Box, Point } from './positions';
 
@@ -29,6 +30,16 @@ export interface RelationshipData extends Record<string, unknown> {
    * other now (`floatingEnds`), in place of its handles.
    */
   ends?: { start: LineEnd; end: LineEnd; points?: readonly Point[] };
+  /** A route given by hand (in a view), as it runs with its cards where they are now. */
+  route?: readonly Point[];
+  /**
+   * Its middle stretches can be dragged sideways (Modelling, in a view). A press on a stretch's
+   * grip (`on: 'grip'`) or on the label (`on: 'label'`): the canvas decides which line and stretch
+   * it grabs, and true when the press may become a drag (the pointer is then captured).
+   */
+  onLinePress?: (linkId: string, press: LinePress, on: 'grip' | 'label') => boolean;
+  /** Where the line is drawn now, so the canvas can find the line nearest a press. */
+  onLineDrawn?: (linkId: string, line: readonly Point[] | undefined) => void;
   /**
    * While lit, with a resting label, or with a state mark: every card on the canvas, so the label
    * and the mark are placed where they cover none.
@@ -43,6 +54,13 @@ export interface RelationshipData extends Record<string, unknown> {
 }
 
 export type RelationshipFlowEdge = Edge<RelationshipData, 'relationship'>;
+
+/** A press of the main pointer button, where it was on the screen. */
+export interface LinePress {
+  clientX: number;
+  clientY: number;
+  pointerId: number;
+}
 
 export const arrowMarkerId = 'sa-arrow';
 export const litArrowMarkerId = 'sa-arrow-lit';
@@ -61,17 +79,41 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const { data, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition } = props;
   const bends = data?.bends;
   const floatingEnds = data?.ends;
-  const line = useMemo(
+  const route = data?.route;
+  const automatic = useMemo(
     () =>
-      floatingEnds && !bends
-        ? (floatingEnds.points ?? directLine(floatingEnds.start, floatingEnds.end))
-        : edgeLine(
-            { x: sourceX, y: sourceY, side: sourcePosition },
-            { x: targetX, y: targetY, side: targetPosition },
-            bends,
-          ),
-    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, bends, floatingEnds],
+      route
+        ? [...route]
+        : floatingEnds && !bends
+          ? (floatingEnds.points ?? directLine(floatingEnds.start, floatingEnds.end))
+          : edgeLine(
+              { x: sourceX, y: sourceY, side: sourcePosition },
+              { x: targetX, y: targetY, side: targetPosition },
+              bends,
+            ),
+    [
+      route,
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+      bends,
+      floatingEnds,
+    ],
   );
+  // While a stretch is dragged, the canvas gives the line as it would be if dropped (`route`).
+  const line = automatic;
+  const onLinePress = data?.onLinePress;
+  const onLineDrawn = data?.onLineDrawn;
+  useEffect(() => {
+    if (!onLineDrawn) return;
+    onLineDrawn(props.id, line);
+    return () => {
+      onLineDrawn(props.id, undefined);
+    };
+  }, [onLineDrawn, props.id, line]);
   const path = useMemo(() => linePath(line), [line]);
   const lit = data?.lit === true;
   const ends = data === undefined ? edgeEnds('Relation') : edgeEnds(data.type);
@@ -95,6 +137,17 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   );
   // Where a press on the label started: a press that moved (a pan) opens nothing.
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  /** Presses the pointer for a drag of a stretch: true when the canvas took it. */
+  const press = (event: PointerEvent, on: 'grip' | 'label'): boolean => {
+    // The main button only.
+    if (!onLinePress || event.button > 0) return false;
+    const { clientX, clientY, pointerId } = event;
+    if (!onLinePress(props.id, { clientX, clientY, pointerId }, on)) return false;
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(pointerId);
+    }
+    return true;
+  };
   return (
     <>
       <BaseEdge
@@ -112,6 +165,23 @@ export const RelationshipEdge = memo(function RelationshipEdge(
         // About 20px to click on, so a thin line is easy to hit.
         interactionWidth={20}
       />
+      {onLinePress &&
+        middleStretches(line).map((index) => {
+          const a = line[index] as Point;
+          const b = line[index + 1] as Point;
+          return (
+            <path
+              key={index}
+              // Not a pan of the canvas, nor a drag of a card.
+              className={`line-grip nopan nodrag ${isLevel(a, b) ? 'is-across' : 'is-upright'}`}
+              d={`M${a.x} ${a.y}L${b.x} ${b.y}`}
+              onPointerDown={(event) => {
+                // No text selection while dragging.
+                if (press(event, 'grip')) event.preventDefault();
+              }}
+            />
+          );
+        })}
       {mark && (
         <g
           className={`smark ${state.toLowerCase()}`}
@@ -127,7 +197,10 @@ export const RelationshipEdge = memo(function RelationshipEdge(
           <div
             className={`edge-label${marked ? ' has-mark' : ''}${lit ? ' is-lit' : ''}${
               data?.grayed === true ? ' is-grayed' : ''
-            }${data?.dim === true ? ' is-dim' : ''}`}
+            }${data?.dim === true ? ' is-dim' : ''}${
+              // Dragging the label moves the line, not the canvas.
+              onLinePress && middleStretches(line).length > 0 ? ' nopan' : ''
+            }`}
             style={{
               maxWidth: label.width,
               transform: `translate(-50%, -50%) translate(${label.x}px, ${label.y}px)`,
@@ -135,6 +208,9 @@ export const RelationshipEdge = memo(function RelationshipEdge(
             title={text}
             onPointerDown={(event) => {
               pressedAt.current = { x: event.clientX, y: event.clientY };
+              // A drag from the label moves the line's nearest middle stretch: the label may
+              // cover a short one whole. A click without a move still opens the relationship.
+              press(event, 'label');
             }}
             onClick={(event) => {
               // React passes events up from the label to its line (the label is a portal inside

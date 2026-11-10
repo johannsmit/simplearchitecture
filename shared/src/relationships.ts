@@ -113,9 +113,10 @@ export interface RelationshipChangeResult {
   warnings: ValidationIssue[];
   nestingChanges: NestingChange[];
   /**
-   * The views a new end was added to, each with its new version: a view holding the relationship
-   * gets the new end, which changes the view (others with it open get a conflict). Only after a
-   * change of ends that added an element to a view.
+   * The views a new end was added to, or whose route for the line was dropped, each with its new
+   * version: a view holding the relationship gets the new end, and the line loses the route it was
+   * given there, which changes the view (others with it open get a conflict). Only after a change
+   * of ends (a new end, or a reverse) that changed a view.
    */
   viewsChanged?: ChangedView[];
 }
