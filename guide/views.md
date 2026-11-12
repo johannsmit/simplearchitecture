@@ -67,14 +67,14 @@ Taking a card out of a view, or deleting its element from the model, drops its s
 In Modelling, in a view, you can move a line to where you want it. Lines run in straight stretches with right angles; the first and the last stretch are attached to the cards, and every stretch in between can be moved:
 
 1. Point at a middle stretch of the line. The pointer shows the way it moves: left and right for an upright stretch, up and down for a stretch across.
-2. Drag it sideways. The stretches beside it grow or shrink, so the line keeps its right angles, and its ends stay on their cards.
+2. Drag it sideways. The stretches beside it grow or shrink, so the line keeps its right angles, and its ends stay on their cards. Each end leaves its card straight out, at least a short way (on a Stakeholder, its circle), so its arrowhead (or diamond) shows: a stretch dragged over the card at an end stops just beside it, and once dragged past that card, the line's end moves to the card's side it now comes from.
 3. Let go. The new route is saved at once, with the cards, as a card move is.
 
 Where two lines run close together, the line nearest the pointer is the one that moves: the one a click there would open. A line's label (or its "×N") can sit on a stretch: drag the label to move the line's middle stretch nearest the pointer, so even a short stretch under the label can be moved.
 
 A click on a line or its label without moving it still opens its relationship, as before; a drag never does. A line with no middle stretch (straight, or with one corner) has nothing to move.
 
-The view keeps the route. When you move a card at one end of the line later, the stretches you moved stay where you put them, and only the stretch at that end follows the card, keeping the right angles. Lines without a saved route still follow their cards as before.
+The view keeps the route. When you move a card at one end of the line later, the stretches you moved stay where you put them, and only the stretch at that end follows the card, keeping the right angles. If the card moves under a stretch next to its end, that stretch is pushed out beside the card (or the end moves to the card's side the line comes from), so the arrowhead still shows. A line that can't keep its ends that way (with too few corners, or cards too close together) is drawn automatically again. Lines without a saved route still follow their cards as before.
 
 **Tidy up** gives every line in the view its automatic route again and saves the cards, dropping every route you gave a line. Only lines you drag keep a route: the others go on following their cards round the other cards, so after a reload a line may take another way than the one Tidy up drew. There is no reset for a single line, and you can't add or remove a line's corners. A line also loses its route, and is drawn automatically again, when its relationship is taken out of the view, deleted from the model, or given another source or target, or reversed (in every view that holds it).
 

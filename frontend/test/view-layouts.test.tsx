@@ -811,16 +811,17 @@ describe('moving a line', () => {
         (each) => each.textContent === 'Plans',
       ) as HTMLElement;
     expect(label().className).toContain('nopan');
-    // Pressed beside the stretch across (y 250), wherever the label sits: that stretch moves.
+    // Pressed beside the stretch across (y 250), wherever the label sits: that stretch moves. Up,
+    // so it stays above Sensors whatever the zoom, and the line still comes into Sensors' top.
     const at = onScreen({ x: 150, y: 262 });
     pointer(label(), 'pointerDown', at.x, at.y);
-    pointer(label(), 'pointerMove', at.x, at.y + 20);
-    pointer(label(), 'pointerUp', at.x, at.y + 30);
-    fireEvent.click(label(), { clientX: at.x, clientY: at.y + 30 });
+    pointer(label(), 'pointerMove', at.x, at.y - 20);
+    pointer(label(), 'pointerUp', at.x, at.y - 30);
+    fireEvent.click(label(), { clientX: at.x, clientY: at.y - 30 });
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });
-    const y = Math.round((250 + 30 / zoom()) * 10) / 10;
+    const y = Math.round((250 - 30 / zoom()) * 10) / 10;
     expect(savedRoutes(layoutSaves(fake.calls)[0])).toEqual([
       {
         relationshipId: 'g2',

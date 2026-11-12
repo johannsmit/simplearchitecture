@@ -87,6 +87,7 @@ import {
 import { LineProperties } from './LineProperties';
 import {
   endPlace,
+  fitEnds,
   followCards,
   heldFromStored,
   moveStretch,
@@ -774,6 +775,24 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   );
   // Positions on the canvas (cards inside containers are placed relative to them).
   const absolute = useMemo(() => absoluteBoxes(shown), [shown]);
+  // The cards as a line's ends see them: a Stakeholder's lines end on its circle, not its box.
+  const endBoxes = useMemo(() => {
+    const boxes = new Map<string, EndBox>();
+    for (const [id, box] of absolute) {
+      const element = graph.elements.get(id);
+      const circle =
+        laid?.containers.has(id) !== true &&
+        element !== undefined &&
+        cardShape(element.type) === 'circle';
+      const parent = shown.get(id)?.parent;
+      boxes.set(id, {
+        ...box,
+        ...(circle ? { circle } : {}),
+        ...(parent === undefined ? {} : { parent }),
+      });
+    }
+    return boxes;
+  }, [absolute, graph, laid, shown]);
 
   // Lines moved by hand (in a view): the routes this canvas started with, or as last dragged.
   const [heldState, setHeldState] = useState<{
@@ -989,8 +1008,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const handRoutes = useMemo(() => {
     const result = new Map<string, Point[]>();
     for (const link of laid?.drawn ?? []) {
-      const source = absolute.get(link.source);
-      const target = absolute.get(link.target);
+      const source = endBoxes.get(link.source);
+      const target = endBoxes.get(link.target);
       if (!source || !target) continue;
       for (const id of link.relationshipIds) {
         const route = held.get(id);
@@ -1003,7 +1022,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
     }
     return result;
-  }, [laid, absolute, held]);
+  }, [laid, endBoxes, held]);
 
   // In a view that saves its layout, a line's middle stretches can be dragged.
   const linesMovable = inView && editable && props.onArranged !== undefined;
@@ -1011,14 +1030,25 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const latestRouteMoved = useRef<(linkId: string, line: Point[]) => void>(() => undefined);
   /** When a line was last dropped: the click that ends the drag opens nothing. */
   const routeMovedAt = useRef(-Infinity);
+  /** A line as dragged, with each end leaving its card outward; undefined when it can't be. */
+  const latestFitted = useRef<(linkId: string, line: readonly Point[]) => Point[] | undefined>(
+    () => undefined,
+  );
   useEffect(() => {
+    latestFitted.current = (linkId, line) => {
+      const link = laid?.drawn.find((each) => each.id === linkId);
+      const sourceBox = link && endBoxes.get(link.source);
+      const targetBox = link && endBoxes.get(link.target);
+      return sourceBox && targetBox ? fitEnds(squared(line), sourceBox, targetBox) : undefined;
+    };
     latestRouteMoved.current = (linkId, line) => {
       routeMovedAt.current = performance.now();
       const link = laid?.drawn.find((each) => each.id === linkId);
-      const sourceBox = link && absolute.get(link.source);
-      const targetBox = link && absolute.get(link.target);
+      const sourceBox = link && endBoxes.get(link.source);
+      const targetBox = link && endBoxes.get(link.target);
       if (!laid || !link || !sourceBox || !targetBox) return;
-      const points = squared(line);
+      const points = fitEnds(squared(line), sourceBox, targetBox);
+      if (!points) return;
       const next = new Map(held);
       for (const id of link.relationshipIds) {
         next.set(id, { source: link.source, target: link.target, points, sourceBox, targetBox });
@@ -1072,22 +1102,29 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
       const line = grabbed && drawnLines.current.get(grabbed.id);
       if (!grabbed || !line) return false;
+      // The line as it would be if dropped here: each end still leaves its card outward, so a
+      // stretch dragged over a card stops beside it. Undefined where no such line fits.
       const to = (event: PointerEvent) => {
         const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        return moveStretch(line, drag.index, { x: at.x - from.x, y: at.y - from.y });
+        const moved = moveStretch(line, drag.index, { x: at.x - from.x, y: at.y - from.y });
+        return latestFitted.current(drag.linkId, moved);
       };
       const onMove = (event: PointerEvent) => {
         if (event.pointerId !== drag.pointer) return;
         const distance = Math.hypot(event.clientX - drag.screen.x, event.clientY - drag.screen.y);
         if (!drag.moved && distance <= dragThreshold) return;
         drag.moved = true;
-        setLineDrag({ linkId: drag.linkId, points: to(event) });
+        setLineDrag({ linkId: drag.linkId, points: to(event) ?? [...line] });
       };
       const onUp = (event: PointerEvent) => {
         if (event.pointerId !== drag.pointer) return;
         drag.stop();
-        // A drag: the line is held where it was dropped, and saved.
-        if (drag.moved) latestRouteMoved.current(drag.linkId, to(event));
+        if (!drag.moved) return;
+        // A drag: the line is held where it was dropped, and saved; the click ending it opens
+        // nothing, also where no line fits and nothing changes.
+        routeMovedAt.current = performance.now();
+        const dropped = to(event);
+        if (dropped) latestRouteMoved.current(drag.linkId, dropped);
       };
       const stop = () => {
         window.removeEventListener('pointermove', onMove);
@@ -1163,7 +1200,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       );
     });
     const ends = new Map(hood.relationships.map((relationship) => [relationship.id, relationship]));
-    onArranged?.({ cards, routes: routesToSave(held, ends, absolute) });
+    onArranged?.({ cards, routes: routesToSave(held, ends, endBoxes) });
   }, [
     arrangeTick,
     arrangeRequest,
@@ -1175,24 +1212,13 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     graph,
     onArranged,
     held,
-    absolute,
+    endBoxes,
   ]);
   // Lines without a route: their ends on the sides where their cards face each other now, so
   // they follow a moved card (live, while it is dragged) and take the shortest way.
   const floating = useMemo(() => {
     if (!laid) return new Map<string, FloatingLine>();
-    const boxes = new Map<string, EndBox>();
-    for (const [id, box] of absolute) {
-      const element = graph.elements.get(id);
-      const circle =
-        !laid.containers.has(id) && element !== undefined && cardShape(element.type) === 'circle';
-      const parent = shown.get(id)?.parent;
-      boxes.set(id, {
-        ...box,
-        ...(circle ? { circle } : {}),
-        ...(parent === undefined ? {} : { parent }),
-      });
-    }
+    const boxes = endBoxes;
     // The ends of routed lines keep their places: the others keep clear of them.
     const taken = new Map<string, { side: Side; offset: number }[]>();
     for (const link of laid.drawn) {
@@ -1223,7 +1249,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       boxes,
       taken,
     );
-  }, [laid, absolute, shown, routes, handRoutes, graph]);
+  }, [laid, absolute, endBoxes, shown, routes, handRoutes]);
 
   const { selectedRelationshipId: chosen, litRelationshipId: fresh, shownProperties } = props;
   const edges = useMemo<RelationshipFlowEdge[]>(() => {

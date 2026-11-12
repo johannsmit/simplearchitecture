@@ -2,6 +2,7 @@ import { maxViewLineBends } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
 import {
   endPlace,
+  fitEnds,
   followCards,
   heldFromStored,
   nearestMiddleStretch,
@@ -149,6 +150,176 @@ describe('a held route as its cards move', () => {
       { x: 500, y: 22 },
     ]);
     expect(followCards(straight, source, { ...target, y: 40 })).toBeUndefined();
+  });
+});
+
+describe("a line's ends leave their cards outward, so the arrowheads show", () => {
+  it('pushes a stretch dragged over the target out beside it, where the end comes in', () => {
+    // The upright stretch was dragged over the target: the line came down into its top and ran
+    // back out of its left side, with the arrowhead under the card.
+    const over: HeldRoute = {
+      ...held,
+      points: [
+        { x: 168, y: 22 },
+        { x: 480, y: 22 },
+        { x: 480, y: 222 },
+        { x: 400, y: 222 },
+      ],
+    };
+    expect(followCards(over, source, target)).toEqual([
+      { x: 168, y: 22 },
+      { x: 392, y: 22 },
+      { x: 392, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+  });
+
+  it('puts the end on the far side when the stretch was dragged past the card', () => {
+    expect(
+      fitEnds(
+        [
+          { x: 168, y: 22 },
+          { x: 600, y: 22 },
+          { x: 600, y: 222 },
+          { x: 400, y: 222 },
+        ],
+        source,
+        target,
+      ),
+    ).toEqual([
+      { x: 168, y: 22 },
+      { x: 600, y: 22 },
+      { x: 600, y: 222 },
+      { x: 568, y: 222 },
+    ]);
+  });
+
+  it('keeps the ends outward when either card moves under a bend', () => {
+    // The target moves left, under the upright stretch.
+    expect(followCards(held, source, { ...target, x: 200 })).toEqual([
+      { x: 168, y: 22 },
+      { x: 192, y: 22 },
+      { x: 192, y: 222 },
+      { x: 200, y: 222 },
+    ]);
+    // The source moves right, under it.
+    expect(followCards(held, { ...source, x: 200 }, target)).toEqual([
+      { x: 368, y: 22 },
+      { x: 376, y: 22 },
+      { x: 376, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+  });
+
+  it('keeps the source end outward too, for a two-way arrow or a Contains diamond', () => {
+    expect(
+      fitEnds(
+        [
+          { x: 168, y: 22 },
+          { x: 100, y: 22 },
+          { x: 100, y: 222 },
+          { x: 400, y: 222 },
+        ],
+        source,
+        target,
+      ),
+    ).toEqual([
+      { x: 168, y: 22 },
+      { x: 176, y: 22 },
+      { x: 176, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+  });
+
+  it('gives an end at least 8px straight out of its card', () => {
+    const short = [
+      { x: 84, y: 44 },
+      { x: 84, y: 47 },
+      { x: 484, y: 47 },
+      { x: 484, y: 200 },
+    ];
+    expect(fitEnds(short, source, target)).toEqual([
+      { x: 84, y: 44 },
+      { x: 84, y: 52 },
+      { x: 484, y: 52 },
+      { x: 484, y: 200 },
+    ]);
+  });
+
+  it('leaves a line that already fits as it is, and a straight one between facing cards', () => {
+    expect(fitEnds(zigzag, source, target)).toEqual(zigzag);
+    const facing = { ...target, y: 0 };
+    const straight = [
+      { x: 168, y: 22 },
+      { x: 400, y: 22 },
+    ];
+    expect(fitEnds(straight, source, facing)).toEqual(straight);
+  });
+
+  it('fits an end on a Stakeholder against its circle, not its box', () => {
+    // A circle 48 across at the top middle of a 120 by 70 box: centre 60, 24; right edge at x 84.
+    const person = { x: 0, y: 0, width: 120, height: 70, circle: true };
+    const out = [
+      { x: 84, y: 24 },
+      { x: 100, y: 24 },
+      { x: 100, y: 222 },
+      { x: 400, y: 222 },
+    ];
+    // Inside the box but clear of the circle: as it is.
+    expect(fitEnds(out, person, target)).toEqual(out);
+    // A bend over the circle: pushed 8px beside it, the end stays on the circle.
+    const over = out.map((point, index) =>
+      index === 1 || index === 2 ? { ...point, x: 70 } : point,
+    );
+    expect(fitEnds(over, person, target)?.slice(0, 2)).toEqual([
+      { x: 84, y: 24 },
+      { x: 92, y: 24 },
+    ]);
+    // Past the circle's far side: the end goes round to that side of the circle.
+    const past = out.map((point, index) =>
+      index === 1 || index === 2 ? { ...point, x: 20 } : point,
+    );
+    expect(fitEnds(past, person, target)?.[0]).toEqual({ x: 36, y: 24 });
+    // Off the middle, where the circle is narrower: still on the circle.
+    const low = { x: 60 + Math.sqrt(24 * 24 - 12 * 12), y: 36 };
+    const offMiddle = [low, { x: 100, y: 36 }, { x: 100, y: 222 }, { x: 400, y: 222 }];
+    expect(fitEnds(offMiddle, person, target)).toEqual(offMiddle);
+    // An end up or down from the circle (no automatic line does that): left where it is.
+    const down = [
+      { x: 60, y: 48 },
+      { x: 60, y: 120 },
+      { x: 400, y: 120 },
+      { x: 400, y: 200 },
+    ];
+    expect(fitEnds(down, person, target)).toEqual(down);
+  });
+
+  it('gives up on a line it cannot fit: drawn automatically', () => {
+    // One bend, over the target, coming out of its bottom: it is the source's bend too.
+    expect(
+      fitEnds(
+        [
+          { x: 168, y: 22 },
+          { x: 480, y: 22 },
+          { x: 480, y: 44 },
+        ],
+        source,
+        { ...target, x: 440, y: 0 },
+      ),
+    ).toBeUndefined();
+    // One stretch between two cards too close for it to clear both.
+    expect(
+      fitEnds(
+        [
+          { x: 168, y: 22 },
+          { x: 180, y: 22 },
+          { x: 180, y: 222 },
+          { x: 100, y: 222 },
+        ],
+        source,
+        { ...target, x: 100 },
+      ),
+    ).toBeUndefined();
   });
 });
 

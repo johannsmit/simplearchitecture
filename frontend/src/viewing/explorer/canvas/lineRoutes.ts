@@ -3,6 +3,7 @@ import {
   maxViewLineBends,
   type ViewLineRoute,
 } from '@simplearchitecture/shared';
+import { circleDiameter, circleNodeWidth } from './circle';
 import { simplified } from './edgeLine';
 import type { Side } from './elkLayout';
 import type { Box, Point } from './positions';
@@ -24,8 +25,18 @@ export interface HeldRoute {
   targetBox: Box;
 }
 
+/** A card as a line's end sees it: a Stakeholder's lines end on its circle, not its box. */
+export type EndCard = Box & { circle?: boolean };
+
 /** How far a stored end may be from its card's box and still count as on it. */
 const endTolerance = 2;
+/**
+ * How far a line runs out of a card before it turns, at the least (as an automatic line does), so
+ * the arrowhead or diamond at that end is drawn outside the card. Checked with half a pixel to
+ * spare, as stored points are rounded.
+ */
+const endRoom = 8;
+const roomSpare = 0.5;
 
 /** A stretch that runs across (rather than up and down). */
 export const isLevel = (a: Point, b: Point): boolean => Math.abs(a.y - b.y) <= Math.abs(a.x - b.x);
@@ -99,24 +110,130 @@ const sameBox = (a: Box, b: Box) =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
 /**
+ * The two places a line's end stretch can come in at a card, along x (across) or y (upright): a
+ * box's sides; on a circle, where the circle meets the stretch across at the end's height.
+ * Undefined for an end a circle has no such places for (up and down, or above or below it): it is
+ * left where it is.
+ */
+function sidesOf(
+  card: EndCard,
+  across: boolean,
+  end: Point,
+): { low: number; high: number } | undefined {
+  if (card.circle === true) {
+    const radius = circleDiameter / 2;
+    const centre = { x: card.x + circleNodeWidth / 2, y: card.y + radius };
+    const dy = end.y - centre.y;
+    if (!across || Math.abs(dy) >= radius) return undefined;
+    const half = Math.sqrt(radius * radius - dy * dy);
+    return { low: centre.x - half, high: centre.x + half };
+  }
+  return across
+    ? { low: card.x, high: card.x + card.width }
+    : { low: card.y, high: card.y + card.height };
+}
+
+/** True when a line leaves its card at `end` outward, on a side, `endRoom` before it turns. */
+function leavesOutward(end: Point, next: Point, card: EndCard): boolean {
+  const across = isLevel(end, next);
+  const sides = sidesOf(card, across, end);
+  if (!sides) return true;
+  const { low, high } = sides;
+  const at = across ? end.x : end.y;
+  const to = across ? next.x : next.y;
+  const room = endRoom - roomSpare;
+  return (
+    (Math.abs(at - low) <= endTolerance && to <= low - room) ||
+    (Math.abs(at - high) <= endTolerance && to >= high + room)
+  );
+}
+
+/**
+ * Puts the end at `line[0]` on the side of its card the line comes from, and pushes the stretch
+ * after its first bend out to `endRoom` beside the card when that bend lies over the card. Changes
+ * `line`; false when the bend can't move (it is the other end's too).
+ */
+function fitEnd(line: Point[], card: EndCard): boolean {
+  const end = line[0] as Point;
+  const next = line[1] as Point;
+  const across = isLevel(end, next);
+  const key = across ? 'x' : 'y';
+  const sides = sidesOf(card, across, end);
+  if (!sides) return true;
+  const { low, high } = sides;
+  const room = endRoom - roomSpare;
+  let side: number;
+  if (next[key] <= low - room) side = low;
+  else if (next[key] >= high + room) side = high;
+  else {
+    // The bend is over the card: out beside the side the end is nearer, with the stretch after it.
+    const after = line[2];
+    if (!after || line.length < 4) return false;
+    side = Math.abs(end[key] - low) <= Math.abs(end[key] - high) ? low : high;
+    next[key] = side === low ? low - endRoom : high + endRoom;
+    after[key] = next[key];
+  }
+  if (Math.abs(end[key] - side) > endTolerance) end[key] = side;
+  return true;
+}
+
+/**
+ * A line moved by hand with each end leaving its card outward, so the arrowhead at the target (and
+ * at the source when two-way, or the diamond of a Contains) is drawn outside the card, pointing
+ * into it. Where a bend next to an end lies over that end's card (a stretch dragged over it, or
+ * the card moved under it), the end goes to the side the line comes from, or the stretch after
+ * the bend is pushed out beside the card. Undefined when the line can't be fitted so (too few
+ * bends, or cards too close for the one stretch between them): it is drawn automatically.
+ */
+export function fitEnds(
+  line: readonly Point[],
+  source: EndCard,
+  target: EndCard,
+): Point[] | undefined {
+  const points = simplified(line.map((point) => ({ ...point })));
+  if (points.length < 2) return undefined;
+  if (!fitEnd(points, source)) return undefined;
+  points.reverse();
+  const fitted = fitEnd(points, target);
+  points.reverse();
+  if (!fitted) return undefined;
+  const result = simplified(points);
+  const [first, second] = result;
+  const [last, beforeLast] = [result.at(-1), result.at(-2)];
+  if (!first || !second || !last || !beforeLast) return undefined;
+  return leavesOutward(first, second, source) && leavesOutward(last, beforeLast, target)
+    ? result
+    : undefined;
+}
+
+/**
  * A held route with its cards where they are now. The stretches the person moved stay; at an end
  * whose card moved, the end goes with the card, and so does the stretch out of it (sideways for a
  * stretch across, up or down for one up and down), the next stretch growing or shrinking to meet
- * it. So the line keeps its right angles. Undefined for a straight line whose cards no longer
- * line up: it has no bend to give.
+ * it. So the line keeps its right angles. Each end then leaves its card outward (`fitEnds`).
+ * Undefined for a straight line whose cards no longer line up (it has no bend to give), or a line
+ * that can't be fitted to its cards.
  */
-export function followCards(held: HeldRoute, source: Box, target: Box): Point[] | undefined {
-  const points = held.points.map((point) => ({ ...point }));
+export function followCards(
+  held: HeldRoute,
+  source: EndCard,
+  target: EndCard,
+): Point[] | undefined {
+  const points = simplified(held.points.map((point) => ({ ...point })));
   const count = points.length;
   if (count < 2) return undefined;
-  if (sameBox(held.sourceBox, source) && sameBox(held.targetBox, target)) return points;
+  if (sameBox(held.sourceBox, source) && sameBox(held.targetBox, target)) {
+    return fitEnds(points, source, target);
+  }
   const first = points[0] as Point;
   const last = points[count - 1] as Point;
   const start = carried(first, held.sourceBox, source);
   const end = carried(last, held.targetBox, target);
   if (count === 2) {
     const level = first.y === last.y;
-    return (level ? start.y === end.y : start.x === end.x) ? [start, end] : undefined;
+    return (level ? start.y === end.y : start.x === end.x)
+      ? fitEnds([start, end], source, target)
+      : undefined;
   }
   const startLevel = isLevel(first, points[1] as Point);
   const endLevel = isLevel(points[count - 2] as Point, last);
@@ -128,7 +245,7 @@ export function followCards(held: HeldRoute, source: Box, target: Box): Point[] 
   const beforeEnd = points[count - 2] as Point;
   if (endLevel) beforeEnd.y = end.y;
   else beforeEnd.x = end.x;
-  return points;
+  return fitEnds(points, source, target);
 }
 
 /** True when a point lies on a box or within `endTolerance` of it. */
@@ -190,7 +307,7 @@ export function storedPoints(line: readonly Point[]): Point[] | undefined {
 export function routesToSave(
   held: ReadonlyMap<string, HeldRoute>,
   relationships: ReadonlyMap<string, { source: string; target: string }>,
-  boxes: ReadonlyMap<string, Box>,
+  boxes: ReadonlyMap<string, EndCard>,
 ): ViewLineRoute[] {
   const result: ViewLineRoute[] = [];
   for (const [relationshipId, route] of held) {
