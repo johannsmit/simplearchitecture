@@ -50,9 +50,9 @@ const summary: ModelSummary = {
 };
 
 // On the canvas: Scheduler inside North wing, top right; Meters and Valves side by side inside
-// South wing, below on the left. Cards are 168 by 44.
+// South wing, below on the left. Cards are 168 by 44, and the containers fit them.
 const layout: ViewCardLayout[] = [
-  { elementId: 'north', x: 400, y: 0 },
+  { elementId: 'north', x: 484, y: 0 },
   { elementId: 'scheduler', x: 500, y: 56 },
   { elementId: 'south', x: 0, y: 300 },
   { elementId: 'meters', x: 16, y: 356 },

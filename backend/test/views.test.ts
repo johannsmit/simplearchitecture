@@ -34,6 +34,16 @@ const user = { oid: '9f0c4f8e-0000-4000-8000-00000000f1f1', name: 'Made-up View 
 const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
 const unknownId = '0b6f8d55-1c1e-4b7e-9a51-6c1c2f4f2d10';
 
+/** Random or machine values (ids, time, host), which may hold any digits or letters. */
+const randomFields = new Set(['time', 'pid', 'hostname', 'reqId', 'userId', 'modelId', 'viewId']);
+/** A log line's other fields, to check that no position, route or element is logged. */
+const loggedFields = (line: string): string =>
+  JSON.stringify(
+    Object.entries(JSON.parse(line) as Record<string, unknown>).filter(
+      ([key]) => !randomFields.has(key),
+    ),
+  );
+
 const harbour: JgfDocument = {
   graph: {
     label: 'Made-up harbour',
@@ -382,7 +392,7 @@ describe('layouts', () => {
       const audit = logs.filter((line) => line.includes('"audit":"view-laid-out"'));
       expect(audit).toHaveLength(1);
       expect(audit[0]).toContain(view.id);
-      expect(audit[0]).not.toMatch(/314|256|ledger|clerk/);
+      expect(loggedFields(audit[0] ?? '')).not.toMatch(/314|256|ledger|clerk/);
       await app?.close();
       app = undefined;
       await resetTestDb(db);
@@ -462,7 +472,7 @@ describe('line routes', () => {
     expect(tidied.json<ViewResult>().view).toMatchObject({ version: 3, routes: [] });
     const audit = logs.filter((line) => line.includes('"audit":"view-laid-out"'));
     expect(audit).toHaveLength(2);
-    expect(audit.join('\n')).not.toMatch(/250|h1|clerk/);
+    expect(audit.map(loggedFields).join('\n')).not.toMatch(/250|h1|clerk/);
   });
 
   it('gets 422 on routes for a line not in the view, a slanted stretch, or too many points', async () => {

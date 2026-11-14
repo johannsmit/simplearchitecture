@@ -297,23 +297,20 @@ describe('moving cards inside a container', () => {
     parent: 'box',
   };
 
-  it('keeps a card within the content area, under the header', () => {
-    expect(clampToContainer({ x: -50, y: 0 }, child, parent)).toEqual({ x: 16, y: 56 });
-    expect(clampToContainer({ x: 900, y: 900 }, child, parent)).toEqual({
-      x: 400 - 16 - 168,
-      y: 200 - 16 - 44,
-    });
-    expect(clampToContainer({ x: 50, y: 70 }, child, parent)).toEqual({ x: 50, y: 70 });
+  it('keeps a card right of and below the padding, under the header', () => {
+    expect(clampToContainer({ x: -50, y: 0 })).toEqual({ x: 16, y: 56 });
+    expect(clampToContainer({ x: 50, y: 70 })).toEqual({ x: 50, y: 70 });
   });
 
-  it('moves a nested card relative to its container, clamped; the container stays put', () => {
+  it('moves a nested card relative to its container; the container grows, its corner stays', () => {
     const placed = new Map([
       ['box', parent],
       ['a', child],
     ]);
     const shown = arrangeCards(placed, new Map([['a', { x: 1000, y: 60 }]]));
-    expect(shown.get('a')).toMatchObject({ x: 216, y: 60, parent: 'box' });
-    expect(shown.get('box')).toBe(parent);
+    // Dropped there: its only card goes back to the padding, and the container fits it.
+    expect(shown.get('a')).toMatchObject({ x: 16, y: 56, parent: 'box' });
+    expect(shown.get('box')).toMatchObject({ x: 100, y: 100, width: 200, height: 116 });
     // Dragging the container moves it only: its cards stay where they are inside it.
     const moved = arrangeCards(placed, new Map([['box', { x: 300, y: 300 }]]));
     expect(moved.get('a')).toBe(child);

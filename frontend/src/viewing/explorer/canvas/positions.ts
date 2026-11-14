@@ -128,45 +128,123 @@ function overlaps(a: Box, b: Box): boolean {
 }
 
 /**
- * A position for a card inside its container: within the content area (16px from the sides and
- * the bottom, 56px from the top, so it never covers the header). The container doesn't change
- * size.
+ * A position for a card inside its container: left and up, it stops at the content area (16px
+ * from the side, 56px from the top, so it never covers the header), as the container's corner
+ * stays where it is; right and down, the container grows to hold it (`fitContainers`).
  */
-export function clampToContainer(
-  point: Point,
-  size: { width: number; height: number },
-  container: { width: number; height: number },
-): Point {
+export function clampToContainer(point: Point): Point {
   const { padding } = containerBox;
-  const clamp = (value: number, min: number, max: number) =>
-    Math.max(min, Math.min(Math.max(min, max), value));
-  return {
-    x: clamp(point.x, padding.left, container.width - padding.right - size.width),
-    y: clamp(point.y, padding.top, container.height - padding.bottom - size.height),
+  return { x: Math.max(padding.left, point.x), y: Math.max(padding.top, point.y) };
+}
+
+interface Size {
+  width: number;
+  height: number;
+}
+
+/** The card being dragged (or moved with the keyboard), and every card's size when that started. */
+export interface Holding {
+  id: string;
+  sizes: ReadonlyMap<string, Size>;
+}
+
+export interface FitOptions {
+  /** A container's smallest size (room for its name); default: the smallest container. */
+  minSizeOf?: (id: string) => Size;
+  /** Until the drop, the containers the held card is in only grow: nothing else moves in them. */
+  holding?: Holding | undefined;
+}
+
+const smallestContainer: Size = { width: containerBox.minWidth, height: containerBox.minHeight };
+
+/** Less than this is no shift: so a fitted container stays put, whatever the rounding. */
+const tolerance = 1e-6;
+
+/**
+ * Cards with the containers in `which` fitted to what they hold, the innermost first: each
+ * container's cards move up and left together until the topmost and leftmost reach its padding,
+ * and the container is just big enough for them (and its name). The container's own corner stays
+ * where it is, and nothing outside it moves. A container the held card is in keeps its cards
+ * where they are and only grows, from its size when the hold started.
+ */
+export function fitContainers(
+  cards: ReadonlyMap<string, PlacedCard>,
+  which: Iterable<string>,
+  options: FitOptions = {},
+): Map<string, PlacedCard> {
+  const result = new Map(cards);
+  const { padding } = containerBox;
+  const chainOf = (id: string): string[] => {
+    const chain: string[] = [];
+    for (let up = cards.get(id)?.parent; up !== undefined && !chain.includes(up);) {
+      chain.push(up);
+      up = cards.get(up)?.parent;
+    }
+    return chain;
   };
+  const held = new Set(options.holding ? chainOf(options.holding.id) : []);
+  const depth = new Map([...new Set(which)].map((id) => [id, chainOf(id).length]));
+  const innermostFirst = [...depth.keys()]
+    .filter((id) => cards.has(id))
+    .sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0));
+  for (const id of innermostFirst) {
+    const box = result.get(id) as PlacedCard;
+    const members = [...result.values()].filter((card) => card.parent === id);
+    const holds = held.has(id);
+    const shift = (lowest: number, edge: number) =>
+      holds || Math.abs(edge - lowest) < tolerance ? 0 : edge - lowest;
+    // A container left with no cards is just big enough for its name.
+    const dx = members.length === 0 ? 0 : shift(Math.min(...members.map((c) => c.x)), padding.left);
+    const dy = members.length === 0 ? 0 : shift(Math.min(...members.map((c) => c.y)), padding.top);
+    let [right, bottom] = [0, 0];
+    for (const card of members) {
+      const x = card.x + dx;
+      const y = card.y + dy;
+      if (dx !== 0 || dy !== 0) result.set(card.id, { ...card, x, y });
+      right = Math.max(right, x + card.width);
+      bottom = Math.max(bottom, y + card.height);
+    }
+    const least = holds
+      ? (options.holding?.sizes.get(id) ?? box)
+      : (options.minSizeOf?.(id) ?? smallestContainer);
+    const width = members.length === 0 ? least.width : Math.max(least.width, right + padding.right);
+    const height =
+      members.length === 0 ? least.height : Math.max(least.height, bottom + padding.bottom);
+    if (width !== box.width || height !== box.height) result.set(id, { ...box, width, height });
+  }
+  return result;
 }
 
 /**
  * Where each card is drawn. Moved cards are where the user put them (a card inside a container,
- * relative to it, kept within its content area). The other top-level cards are where the layout
- * put them, except that a card a moved card would cover is pushed straight down, just below it;
- * cards further down that way move along with it, so nothing ends up covered. Returns
- * `placed` itself when no shown card has moved.
+ * relative to it, never left of or above its content area); the containers they are in fit what
+ * they hold (`fitContainers`), and while a card is held, those only grow. The other top-level
+ * cards are where the layout put them, except that a card a moved card would cover is pushed
+ * straight down, just below it; cards further down that way move along with it, so nothing ends
+ * up covered. A container that grows pushes nothing. Returns `placed` itself when no shown card
+ * has moved.
  */
 export function arrangeCards(
   placed: ReadonlyMap<string, PlacedCard>,
   moved: MovedPositions,
+  options: FitOptions = {},
 ): ReadonlyMap<string, PlacedCard> {
   if (!hasMovedCards(moved, placed)) return placed;
   const result = new Map<string, PlacedCard>();
   const taken: Box[] = [];
+  // The containers a moved card is in, at any depth: they fit again.
+  const touched = new Set<string>();
   for (const card of placed.values()) {
     const point = moved.get(card.id);
     if (!point) continue;
     const parent = card.parent === undefined ? undefined : placed.get(card.parent);
-    const at = { ...card, ...(parent ? clampToContainer(point, card, parent) : point) };
+    const at = { ...card, ...(parent ? clampToContainer(point) : point) };
     result.set(card.id, at);
     if (!parent) taken.push(at);
+    for (let up = parent; up && !touched.has(up.id);) {
+      touched.add(up.id);
+      up = up.parent === undefined ? undefined : placed.get(up.parent);
+    }
   }
   for (const card of placed.values()) {
     if (card.parent !== undefined && !result.has(card.id)) result.set(card.id, card);
@@ -185,7 +263,56 @@ export function arrangeCards(
     result.set(card.id, box.y === card.y ? card : { ...card, y: box.y });
   }
   // Keep the layout's order, so React Flow's node order doesn't change.
-  return new Map([...placed.keys()].map((id) => [id, result.get(id) as PlacedCard]));
+  const ordered = new Map([...placed.keys()].map((id) => [id, result.get(id) as PlacedCard]));
+  return touched.size === 0 ? ordered : fitContainers(ordered, touched, options);
+}
+
+/**
+ * After a drop inside a container: the cards beside the outermost container it is in that the
+ * container, grown, now covers (and didn't at its size when the hold started), pushed straight
+ * down just below it, with the cards further down that way along with them, as a dropped card
+ * pushes the cards it lands on. Their new top left corners, by id; none for a top-level card.
+ * Nothing moves up.
+ */
+export function pushedByContainer(
+  shown: ReadonlyMap<string, PlacedCard>,
+  id: string,
+  sizesBefore: ReadonlyMap<string, Size>,
+): Map<string, Point> {
+  const pushed = new Map<string, Point>();
+  let top = shown.get(id);
+  if (top?.parent === undefined) return pushed;
+  for (const seen = new Set<string>(); top.parent !== undefined && !seen.has(top.id);) {
+    seen.add(top.id);
+    const up = shown.get(top.parent);
+    if (!up) return pushed;
+    top = up;
+  }
+  const grown: Box = { x: top.x, y: top.y, width: top.width, height: top.height };
+  const was: Box = { ...grown, ...sizesBefore.get(top.id) };
+  const pushers: Box[] = [grown];
+  const stay: Box[] = [];
+  const others = [...shown.values()]
+    .filter((card) => card.parent === undefined && card.id !== top.id)
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  for (const card of others) {
+    const box = { x: card.x, y: card.y, width: card.width, height: card.height };
+    const hit = pushers.some(
+      (pusher) => overlaps(box, pusher) && (pusher !== grown || !overlaps(box, was)),
+    );
+    if (!hit) {
+      stay.push(box);
+      continue;
+    }
+    // Each step moves the card below one box, and never up again, so this ends.
+    for (let blocker = pushers.find((t) => overlaps(box, t)); blocker;) {
+      box.y = blocker.y + blocker.height + spacing.cards;
+      blocker = [...pushers, ...stay].find((t) => overlaps(box, t));
+    }
+    pushers.push(box);
+    pushed.set(card.id, { x: box.x, y: box.y });
+  }
+  return pushed;
 }
 
 /**

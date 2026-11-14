@@ -6,7 +6,7 @@ import {
   type ViewLineRoute,
 } from '@simplearchitecture/shared';
 import { absoluteBoxes, containerBox, type PlacedCard } from './elkLayout';
-import type { Point } from './positions';
+import { fitContainers, type Point } from './positions';
 
 /**
  * A view's stored layout on the canvas: where its cards were left. Positions are stored on the
@@ -36,13 +36,19 @@ export interface StoredPlacementInput {
 
 /**
  * The cards with a stored position, where they were left, parents first: a card inside its
- * container when the container has a stored position too (relative to it, kept within its
- * content area), and each container just big enough for what it holds. Cards without a stored
- * position aren't in it: `keepCards` places them at a free spot, as new cards.
+ * container when the container has a stored position too (relative to it), and each container
+ * fitted to what it holds, the innermost first (`fitContainers`): its cards moved up and left
+ * together to its padding, its corner where it was left. Cards without a stored position aren't
+ * in it: `keepCards` places them at a free spot, as new cards.
  */
 export function storedPlacement(input: StoredPlacementInput): {
   placed: Map<string, PlacedCard>;
   containers: Set<string>;
+  /**
+   * The same cards before the fit, as the layout was left: a line's stored route is read against
+   * these, so its ends follow the cards the fit moved.
+   */
+  asLeft: Map<string, PlacedCard>;
 } {
   const { stored, sizeOf } = input;
   const order = new Map(input.cards.map((card, index) => [card.id, index]));
@@ -81,14 +87,9 @@ export function storedPlacement(input: StoredPlacementInput): {
     const at = stored.get(id) as Point;
     const parent = wanted.get(id);
     const from = parent === undefined ? undefined : stored.get(parent);
-    relative.set(
-      id,
-      from
-        ? { x: Math.max(padding.left, at.x - from.x), y: Math.max(padding.top, at.y - from.y) }
-        : at,
-    );
+    relative.set(id, from ? { x: at.x - from.x, y: at.y - from.y } : at);
   }
-  // Sizes from the deepest card up, so a container holds what is inside it.
+  // Sizes from the deepest card up, as the layout was left: a container holds what is inside it.
   const sizes = new Map<string, Size>();
   const byDepth = [...ids].sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0));
   for (const id of byDepth) {
@@ -122,7 +123,8 @@ export function storedPlacement(input: StoredPlacementInput): {
       handles: [],
     });
   }
-  return { placed, containers };
+  const fitted = fitContainers(placed, containers, { minSizeOf: (id) => sizeOf(id, true) });
+  return { placed: fitted, containers, asLeft: placed };
 }
 
 /** Stored positions by element id, from a view's layout. */

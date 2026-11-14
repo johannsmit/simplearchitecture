@@ -75,12 +75,15 @@ import {
 import {
   arrangeCards,
   clampToContainer,
+  fitContainers,
   dragThreshold,
   draggedPositions,
   isMoveKey,
   movedBy,
   moveStep,
   panToKeepInView,
+  pushedByContainer,
+  type Holding,
   type MovedPositions,
   type Point,
 } from './positions';
@@ -421,6 +424,17 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const dragging = draggingId !== null;
   /** The card being dragged moved: its drop is the person's change to the arrangement. */
   const dragMoved = useRef(false);
+  /**
+   * The card held (dragged, or in keyboard move mode) and every card's size when that started:
+   * until the drop, the containers it is in only grow.
+   */
+  const [hold, setHold] = useState<Holding | null>(null);
+  /** The hold, for the layout effect: a card resized in move mode keeps the hold's picture. */
+  const holdingRef = useRef<Holding | undefined>(undefined);
+  /** A hold just dropped: once the canvas shows the drop, a grown container pushes cards aside. */
+  const dropped = useRef<Holding | null>(null);
+  /** Cards were just given new places after a drop: the layout is reported once they show. */
+  const settling = useRef(false);
   // The person changed the arrangement (a move, a resize, or `arrangeRequest`): reported once
   // the canvas shows it. The tick only makes the report's effect run.
   const arrangeWanted = useRef(false);
@@ -564,7 +578,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     const previous = laidRef.current;
     if (previous?.key === layoutKey) {
       // The cards as drawn now, moved ones included, become the canvas's own places.
-      const before = arrangeCards(previous.placed, movedRef.current);
+      const before = arrangeCards(previous.placed, movedRef.current, {
+        minSizeOf: (id) => sizeOf(id, true),
+        holding: holdingRef.current,
+      });
       const box = section.current?.getBoundingClientRect();
       const kept = keepCards({
         previous: before,
@@ -582,12 +599,25 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
             })
           : { x: 0, y: 0 },
       });
+      // A container whose card was taken off fits what it still holds, and so do its containers.
+      const lostIn = new Set<string>();
+      for (const card of before.values()) {
+        if (card.parent === undefined || kept.placed.has(card.id)) continue;
+        for (let up: string | undefined = card.parent; up !== undefined && !lostIn.has(up);) {
+          lostIn.add(up);
+          up = before.get(up)?.parent;
+        }
+      }
+      const fitted =
+        lostIn.size === 0
+          ? kept.placed
+          : fitContainers(kept.placed, lostIn, { minSizeOf: (id) => sizeOf(id, true) });
       const parents = new Map<string, string>();
-      for (const card of kept.placed.values()) {
+      for (const card of fitted.values()) {
         if (card.parent !== undefined) parents.set(card.id, card.parent);
       }
       const placed = relinkHandles(
-        kept.placed,
+        fitted,
         layoutLinkRelationships(previous.hood.relationships),
         layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
       );
@@ -644,8 +674,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         new Map(),
         layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
       );
-      // The lines moved by hand, where their two cards are as the canvas first shows them.
+      // The lines moved by hand, read against their cards as the layout was left; their ends then
+      // follow the cards the containers' fit moved.
       const boxes = absoluteBoxes(arrangeCards(placed, movedRef.current));
+      const left = absoluteBoxes(start.asLeft);
       const ends = new Map(
         hood.relationships.map((relationship) => [relationship.id, relationship]),
       );
@@ -657,8 +689,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         const held = heldFromStored(
           route.points,
           { source, target },
-          boxes.get(source),
-          boxes.get(target),
+          left.get(source) ?? boxes.get(source),
+          left.get(target) ?? boxes.get(target),
         );
         if (held) routes.set(route.relationshipId, held);
       }
@@ -698,12 +730,15 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       (relationship) => !nested(wanted)(relationship),
     );
     layoutCards(getElk(), cards, laidOut)
-      .then((placed) => {
+      .then((byElk) => {
         if (!live) return;
         setLayoutError(null);
+        // ELK's sizes: a line keeps ELK's route only while its cards keep them.
         const sizes = new Map(
-          [...placed.values()].map((card) => [card.id, { width: card.width, height: card.height }]),
+          [...byElk.values()].map((card) => [card.id, { width: card.width, height: card.height }]),
         );
+        // Every container fits what it holds, as after a move.
+        const placed = fitContainers(byElk, containers, { minSizeOf: (id) => sizeOf(id, true) });
         const next = made(placed, wanted, containers, true, sizes, {
           canvas: ++canvasCount.current,
           routes: noRoutes,
@@ -736,12 +771,65 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   }, [laid]);
   const flowId = useCallback((id: string) => flowIds.get(id) ?? '', [flowIds]);
 
-  // Where the cards are drawn: the layout, with the moved cards where the user put them.
+  // Where the cards are drawn: the layout, with the moved cards where the user put them, and the
+  // containers they are in fitted to what they hold (while a card is held, only growing).
   const { moved } = props;
-  const shown = useMemo(
-    () => (laid ? arrangeCards(laid.placed, moved) : new Map<string, PlacedCard>()),
-    [laid, moved],
+  const holding =
+    hold && (hold.id === draggingId || hold.id === movingState?.id) ? hold : undefined;
+  useEffect(() => {
+    holdingRef.current = holding;
+  });
+  const hoodFocusId = hood.focusId;
+  const minContainerSize = useCallback(
+    (id: string) => {
+      const element = graph.elements.get(id);
+      return containerMinSize({
+        name: element?.name ?? '',
+        focused: id === hoodFocusId,
+        userIcon: element !== undefined && nodeTypeDefinitions[element.type].icon === 'user',
+      });
+    },
+    [graph, hoodFocusId],
   );
+  const shown = useMemo(
+    () =>
+      laid
+        ? arrangeCards(laid.placed, moved, { minSizeOf: minContainerSize, holding })
+        : new Map<string, PlacedCard>(),
+    [laid, moved, minContainerSize, holding],
+  );
+  // After a drop, the places the fit gave the cards inside a container become theirs, so the next
+  // hold starts from the picture as drawn; and a container that grew over cards beside it pushes
+  // them down, for good. Then the drop is reported.
+  const { onMove } = props;
+  useEffect(() => {
+    if (!laid || holding) return;
+    let changed = false;
+    for (const card of shown.values()) {
+      if (card.parent === undefined) continue;
+      const was = moved.get(card.id) ?? laid.placed.get(card.id);
+      if (!was || (Math.abs(was.x - card.x) < 0.001 && Math.abs(was.y - card.y) < 0.001)) continue;
+      onMove(card.id, { x: card.x, y: card.y });
+      changed = true;
+    }
+    const drop = dropped.current;
+    if (drop) {
+      dropped.current = null;
+      for (const [id, point] of pushedByContainer(shown, drop.id, drop.sizes)) {
+        onMove(id, point);
+        changed = true;
+      }
+      wantArranged();
+    }
+    settling.current = changed;
+  }, [laid, shown, moved, holding, onMove, wantArranged]);
+  /** Every card's size as drawn now: where a hold starts from. */
+  const holdFrom = (id: string): Holding => ({
+    id,
+    sizes: new Map(
+      [...shown].map(([key, card]) => [key, { width: card.width, height: card.height }]),
+    ),
+  });
   const shownRef = useRef(shown);
   useEffect(() => {
     shownRef.current = shown;
@@ -948,10 +1036,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
             ...(parent
               ? {
                   parentId: flowId(parent.id),
-                  // A card stays within its container's content area.
+                  // Left and up, a card stops at its container's content area (the container's
+                  // corner stays); right and down, the container grows to hold it.
                   extent: [
                     [padding.left, padding.top],
-                    [parent.width - padding.right, parent.height - padding.bottom],
+                    [Infinity, Infinity],
                   ] as [[number, number], [number, number]],
                 }
               : {}),
@@ -1187,7 +1276,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       arrangeSeen.current = arrangeRequest;
       arrangeWanted.current = true;
     }
-    if (!arrangeWanted.current || !laid) return;
+    if (!arrangeWanted.current || !laid || settling.current) return;
     if (laid.key !== layoutKey || laid.hood !== hood || laid.widths !== widths) return;
     arrangeWanted.current = false;
     const cards = layoutOfCanvas(shown, (id) => {
@@ -1520,6 +1609,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   /** Keyboard move mode (the keyboard way to drag, WCAG 2.5.7): M on a card starts it. */
   const startMove = (id: string) => {
     setRelated(null);
+    setHold(holdFrom(id));
     setMoving({
       focusId,
       id,
@@ -1539,7 +1629,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       how === 'drop' &&
       (moved.get(moving.id) !== moving.before || props.widths.get(moving.id) !== moving.widthBefore)
     ) {
-      wantArranged();
+      dropped.current = hold ?? { id: moving.id, sizes: new Map() };
     }
     if (how === 'cancel') {
       props.onMove(moving.id, moving.before);
@@ -1548,6 +1638,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
     }
     setMoving(null);
+    setHold(null);
     setNote({ laid, text: how === 'drop' ? `${nameOf(moving.id)} moved.` : 'Move cancelled.' });
   };
 
@@ -1573,7 +1664,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (direction && card && !event.altKey && !event.ctrlKey && !event.metaKey) {
       const parent = card.parent === undefined ? undefined : shown.get(card.parent);
       const step = movedBy(card, direction, moveStep(event));
-      const next = parent ? clampToContainer(step, card, parent) : step;
+      const next = parent ? clampToContainer(step) : step;
       props.onMove(card.id, next);
       // Keep the card in view: pan just enough.
       const box = section.current?.getBoundingClientRect();
@@ -1911,12 +2002,15 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         onNodesChange={onNodesChange}
         onNodeDragStart={(_event, node) => {
           setRelated(null);
+          setHold(holdFrom(node.data.element.id));
           setDraggingId(node.data.element.id);
           dragMoved.current = false;
         }}
         onNodeDragStop={() => {
           setDraggingId(null);
-          if (dragMoved.current) wantArranged();
+          setHold(null);
+          if (dragMoved.current && hold) dropped.current = hold;
+          else if (dragMoved.current) wantArranged();
           dragMoved.current = false;
         }}
         onNodeClick={(event, node) => {

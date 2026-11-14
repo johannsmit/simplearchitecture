@@ -1128,7 +1128,20 @@ describe('Contains: nesting on the canvas', () => {
     expect(path?.getAttribute('marker-end')).toBeNull();
   });
 
-  it('moves a nested card with M and arrows only within its container', async () => {
+  it('opens with every container just big enough for what it holds', async () => {
+    open(elementUrl('server'), api(withContains));
+
+    await cards();
+    await waitFor(() => {
+      expect(cardOf('Back Office Server')?.classList.contains('is-container')).toBe(true);
+    });
+    const outer = box('Back Office Server');
+    const till = box('Till');
+    expect(till).toMatchObject({ x: outer.x + 16, y: outer.y + 56 });
+    expect(outer.height).toBe(56 + till.height + 16);
+  });
+
+  it('moves a nested card with M and arrows: up and left it stops inside its container', async () => {
     open(elementUrl('server'), api(withContains));
 
     await cards();
@@ -1141,11 +1154,45 @@ describe('Contains: nesting on the canvas', () => {
     till.focus();
     fireEvent.keyDown(till, { key: 'm' });
     for (let i = 0; i < 20; i++) fireEvent.keyDown(till, { key: 'ArrowUp', shiftKey: true });
+    for (let i = 0; i < 20; i++) fireEvent.keyDown(till, { key: 'ArrowLeft', shiftKey: true });
     fireEvent.keyDown(till, { key: 'Enter' });
     await waitFor(() => {
-      expect(box('Till').y).toBe(outer.y + 56);
+      expect(box('Till')).toMatchObject({ x: outer.x + 16, y: outer.y + 56 });
     });
-    expect(box('Back Office Server')).toEqual(outer);
+    // The container's corner stays, and it fits what it holds.
+    expect(box('Back Office Server')).toMatchObject({
+      x: outer.x,
+      y: outer.y,
+      height: 56 + box('Till').height + 16,
+    });
+  });
+
+  it('moves a nested card right past its container’s edge: the container grows', async () => {
+    open(elementUrl('server'), api(withContains));
+
+    await cards();
+    await waitFor(() => {
+      expect(cardOf('Back Office Server')?.classList.contains('is-container')).toBe(true);
+    });
+    const outer = box('Back Office Server');
+    const till = cardOf('Till')?.querySelector<HTMLElement>('.card-main');
+    if (!till) throw new Error('no till');
+    till.focus();
+    fireEvent.keyDown(till, { key: 'm' });
+    for (let i = 0; i < 10; i++) fireEvent.keyDown(till, { key: 'ArrowRight', shiftKey: true });
+    const moved = box('Till');
+    expect(moved.x).toBeGreaterThan(outer.x + outer.width);
+    expect(box('Back Office Server')).toMatchObject({
+      x: outer.x,
+      y: outer.y,
+      width: moved.x + moved.width + 16 - outer.x,
+    });
+    fireEvent.keyDown(till, { key: 'Enter' });
+    // Dropped: its only card goes back to the left padding, and the container fits it.
+    await waitFor(() => {
+      expect(box('Till').x).toBe(outer.x + 16);
+    });
+    expect(box('Back Office Server')).toMatchObject({ x: outer.x, y: outer.y });
   });
 
   it('nests, with the switch always available', async () => {

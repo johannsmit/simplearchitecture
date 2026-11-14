@@ -50,7 +50,7 @@ describe('a stored layout', () => {
     const { placed, containers } = storedPlacement({
       cards: [{ id: 'inner', parent: 'box' }, { id: 'box' }, { id: 'loose', parent: 'gone' }],
       stored: new Map([
-        ['inner', { x: 130, y: 180 }],
+        ['inner', { x: 116, y: 156 }],
         ['box', { x: 100, y: 100 }],
         ['loose', { x: 500, y: 0 }],
       ]),
@@ -58,12 +58,12 @@ describe('a stored layout', () => {
     });
     // Parents first; the container holds what is inside it.
     expect([...placed.keys()]).toEqual(['box', 'loose', 'inner']);
-    expect(placed.get('inner')).toEqual(card('inner', 30, 80, { parent: 'box' }));
+    expect(placed.get('inner')).toEqual(card('inner', 16, 56, { parent: 'box' }));
     const { padding } = containerBox;
     expect(placed.get('box')).toEqual(
       card('box', 100, 100, {
-        width: Math.max(200, 30 + 168 + padding.right),
-        height: Math.max(116, 80 + 44 + padding.bottom),
+        width: Math.max(200, 16 + 168 + padding.right),
+        height: Math.max(116, 56 + 44 + padding.bottom),
       }),
     );
     // Its container isn't on the canvas: on the canvas where it was.
