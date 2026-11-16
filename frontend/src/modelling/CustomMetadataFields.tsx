@@ -6,8 +6,16 @@ import { ValueField } from './ValueField';
 interface CustomMetadataFieldsProps {
   rows: readonly CustomRow[];
   saving: boolean;
-  /** The "Add field" button's id: focus goes there when the last row is removed. */
+  /**
+   * The "Add field" button's id: focus goes there when the last row is removed. Without Add field
+   * (`canAdd` false), the id of what takes focus then.
+   */
   addId: string;
+  /**
+   * Whether new keys can be added (Add field) and keys renamed: elements, yes. On a relationship
+   * the keys are fixed: an Admin defines properties, and a row's value can only change or go.
+   */
+  canAdd?: boolean;
   /** The key input's id for a row's slot (`row:<id>`), so errors and new rows can focus it. */
   slotId: (slot: string) => string;
   errorId: (slot: string) => string;
@@ -30,6 +38,7 @@ const noValues: readonly string[] = [];
 /** The rows of custom metadata on an editing form: keys and values, for elements and relationships. */
 export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
   const { rows, saving, slotId, errorId } = props;
+  const canAdd = props.canAdd ?? true;
   const keyCounts = new Map<string, number>();
   for (const row of rows) {
     const key = row.key.trim();
@@ -65,32 +74,43 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
           );
         };
         const valueName = key === '' ? 'the new field' : key;
+        // With fixed keys, the value field takes the slot's id, so errors and focus find it.
+        const valueId = canAdd ? undefined : slotId(slot);
         return (
           <div className="meta-row" key={row.id}>
             <div className="meta-key">
-              <ValueField
-                id={slotId(slot)}
-                aria-label="Key"
-                spellCheck={false}
-                aria-invalid={invalid || undefined}
-                aria-describedby={invalid ? errorId(slot) : undefined}
-                value={row.key}
-                // A name another row already has would only be refused as used twice.
-                values={props.names.filter(
-                  (name) => name === key || (keyCounts.get(name) ?? 0) === 0,
-                )}
-                label="Key"
-                readOnly={saving}
-                onValue={(text) => {
-                  setRow({ key: text });
-                }}
-              />
+              {!canAdd ? (
+                <span className="meta-key-text" title={row.key}>
+                  {row.key}
+                </span>
+              ) : (
+                <ValueField
+                  id={slotId(slot)}
+                  aria-label="Key"
+                  spellCheck={false}
+                  aria-invalid={invalid || undefined}
+                  aria-describedby={invalid ? errorId(slot) : undefined}
+                  value={row.key}
+                  // A name another row already has would only be refused as used twice.
+                  values={props.names.filter(
+                    (name) => name === key || (keyCounts.get(name) ?? 0) === 0,
+                  )}
+                  label="Key"
+                  readOnly={saving}
+                  onValue={(text) => {
+                    setRow({ key: text });
+                  }}
+                />
+              )}
               {row.wasProperty && <span className="tag">Was a property</span>}
             </div>
             {row.editable ? (
               row.text.includes('\n') ? (
                 <textarea
+                  id={valueId}
                   aria-label={`Value of ${valueName}`}
+                  aria-invalid={(!canAdd && invalid) || undefined}
+                  aria-describedby={!canAdd && invalid ? errorId(slot) : undefined}
                   value={row.text}
                   readOnly={saving}
                   onChange={(event) => {
@@ -99,7 +119,10 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
                 />
               ) : (
                 <ValueField
+                  {...(valueId === undefined ? {} : { id: valueId })}
                   aria-label={`Value of ${valueName}`}
+                  aria-invalid={(!canAdd && invalid) || undefined}
+                  aria-describedby={!canAdd && invalid ? errorId(slot) : undefined}
                   value={row.text}
                   values={key === '' ? noValues : props.valuesOf(key)}
                   label={key}
@@ -111,6 +134,7 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
               )
             ) : (
               <div
+                id={valueId}
                 className="kept-value"
                 tabIndex={0}
                 role="group"
@@ -138,19 +162,21 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
           </div>
         );
       })}
-      <button
-        type="button"
-        id={props.addId}
-        className="linkbtn add-field"
-        disabled={saving}
-        onClick={() => {
-          const row = customRow('', '');
-          props.onAdd([...rows, row], slotId(`row:${row.id}`));
-        }}
-      >
-        <Icon name="plus" size="sm" />
-        Add field
-      </button>
+      {canAdd && (
+        <button
+          type="button"
+          id={props.addId}
+          className="linkbtn add-field"
+          disabled={saving}
+          onClick={() => {
+            const row = customRow('', '');
+            props.onAdd([...rows, row], slotId(`row:${row.id}`));
+          }}
+        >
+          <Icon name="plus" size="sm" />
+          Add field
+        </button>
+      )}
     </fieldset>
   );
 }

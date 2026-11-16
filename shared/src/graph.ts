@@ -6,6 +6,7 @@
  * The data says node and edge; these helpers (like the UI) say element and relationship.
  */
 import type { JgfDocument, JgfEdge } from './jgf.js';
+import type { RelationshipPropertyDefinition } from './relationship-properties.js';
 import {
   architectureStates,
   canBeTwoWay,
@@ -63,12 +64,23 @@ export interface ModelGraph {
    * are validated on save, so this is normally 0.
    */
   skippedRelationships: number;
+  /**
+   * The properties an Admin defined for relationships (Relation only), as the graph was built
+   * with them: labels, Show Viewpoints and the form read them from here.
+   */
+  relationshipProperties: readonly RelationshipPropertyDefinition[];
 }
 
 const noRelationships: readonly ModelRelationship[] = [];
 
-/** Builds the index of a JGF model. Nodes with a type outside the metamodel count as Other. */
-export function buildModelGraph(document: JgfDocument): ModelGraph {
+/**
+ * Builds the index of a JGF model. Nodes with a type outside the metamodel count as Other.
+ * `relationshipProperties`: the defined properties, which the graph carries for its readers.
+ */
+export function buildModelGraph(
+  document: JgfDocument,
+  relationshipProperties: readonly RelationshipPropertyDefinition[] = [],
+): ModelGraph {
   const graph = document.graph;
   const elements = new Map<string, ModelElement>();
   for (const [id, node] of Object.entries(graph.nodes ?? {})) {
@@ -108,6 +120,7 @@ export function buildModelGraph(document: JgfDocument): ModelGraph {
     relationships,
     relationshipsByElement,
     skippedRelationships,
+    relationshipProperties,
   };
 }
 

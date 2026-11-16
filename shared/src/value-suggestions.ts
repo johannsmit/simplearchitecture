@@ -101,9 +101,11 @@ const relationshipValues = (item: Item, key: string): readonly string[] =>
 export function relationshipPropertyValues(graph: ModelGraph): PropertyValues {
   let values = relationshipCache.get(graph);
   if (values === undefined) {
+    // A defined property's values are offered whatever its key (`archimateType` too).
+    const defined = new Set(graph.relationshipProperties.map((definition) => definition.key));
     const found = valuesOf(
       graph.relationships,
-      (key) => isRelationshipViewKey(key) && key !== 'architectureState',
+      (key) => defined.has(key) || (isRelationshipViewKey(key) && key !== 'architectureState'),
       (key) => (isRelationDataProperty(key) ? dataPool : key),
       relationshipValues,
     );
@@ -155,11 +157,15 @@ export function elementMetadataNames(graph: ModelGraph): readonly string[] {
   return names;
 }
 
-/** The custom metadata names relationships have, apart from elements, worked out once per graph. */
+/**
+ * The custom metadata names relationships have, apart from elements, worked out once per graph.
+ * Keys of defined properties aren't custom: they go by their names.
+ */
 export function relationshipMetadataNames(graph: ModelGraph): readonly string[] {
   let names = relationshipNameCache.get(graph);
   if (names === undefined) {
-    names = namesOf(graph.relationships, isRelationshipName);
+    const defined = new Set(graph.relationshipProperties.map((definition) => definition.key));
+    names = namesOf(graph.relationships, (key) => !defined.has(key) && isRelationshipName(key));
     relationshipNameCache.set(graph, names);
   }
   return names;

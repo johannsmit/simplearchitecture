@@ -996,14 +996,11 @@ describe('Relation properties on the forms', () => {
     fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
       target: { value: 'Made-up label' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
     const fields = [
       within(form).getByRole('combobox', { name: 'Label' }),
       within(form).getByLabelText('Identity'),
       within(form).getByLabelText('Request Data'),
       within(form).getByLabelText('Response Data'),
-      within(form).getByLabelText('Key'),
-      within(form).getByRole('textbox', { name: 'Value of the new field' }),
       within(form).getByRole('radio', { name: 'Relation' }),
     ];
     for (const field of fields) {
@@ -1061,17 +1058,11 @@ describe('Relation properties on the forms', () => {
     });
   });
 
-  it('never lists the old key as a custom row, and refuses it as a new one', async () => {
-    const { sent } = await openShop();
+  it('never lists the old key as a custom row, and has no Add field to type it in', async () => {
+    await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
     expect(within(form).queryByRole('textbox', { name: 'Value of informationFlow' })).toBeNull();
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByLabelText('Key'), {
-      target: { value: 'informationFlow' },
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(await within(form).findByText('“informationFlow” is reserved.')).toBeDefined();
-    expect(sent.filter((request) => request.method === 'PATCH')).toHaveLength(0);
+    expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
   });
 
   it('shows the server’s refusal of Response Data under its field', async () => {
@@ -1107,86 +1098,224 @@ describe('Relation properties on the forms', () => {
   });
 });
 
-describe('the relationship’s custom metadata', () => {
+describe('properties defined by an Admin on the form', () => {
   const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const save = (form: HTMLElement) => {
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
   };
+  const definitions = [
+    { key: 'protocol', name: 'Protocol', kind: 'text', fromModels: false, version: 1 },
+    {
+      key: 'criticality',
+      name: 'Criticality',
+      kind: 'choice',
+      options: ['Low', 'High'],
+      fromModels: false,
+      version: 1,
+    },
+  ];
+  const defined =
+    (more?: Parameters<typeof api>[0]): Parameters<typeof api>[0] =>
+    (method, url, body) =>
+      method === 'GET' && url === '/api/properties'
+        ? Response.json({ properties: definitions })
+        : more?.(method, url, body);
 
-  it('adds a row, saves only that change, and removes it again', async () => {
-    const { sent } = await openShop();
+  it('shows them after Response Data, in name order, always, with no Add field', async () => {
+    await openShop(defined());
     const form = await open();
-    expect(within(form).getByText('No custom metadata.')).toBeDefined();
-    expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
+    const protocol = await within(form).findByLabelText('Protocol');
+    const criticality = within(form).getByRole<HTMLSelectElement>('combobox', {
+      name: 'Criticality',
+    });
+    const response = within(form).getByLabelText('Response Data');
+    // After Response Data and before Type, Criticality before Protocol.
+    expect(
+      response.compareDocumentPosition(criticality) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      criticality.compareDocumentPosition(protocol) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect([...criticality.options].map((option) => option.text)).toEqual([
+      'Not set',
+      'Low',
+      'High',
+    ]);
+    expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
+    expect(
+      within(form).getByText('New properties are added by an Admin, in Admin → Properties.'),
+    ).toBeDefined();
+    expect(within(form).queryByRole('group', { name: 'Custom metadata' })).toBeNull();
+  });
 
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    // Focus goes to the new row's key.
-    await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByLabelText('Key'));
+  it('saves a trimmed text and a choice as metadata, and Not set or empty removes them', async () => {
+    const { sent } = await openShop(defined());
+    const form = await open();
+    fireEvent.change(await within(form).findByLabelText('Protocol'), {
+      target: { value: ' REST ' },
     });
-    fireEvent.change(within(form).getByLabelText('Key'), {
-      target: { value: ' protocol ' },
-    });
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Value of protocol' }), {
-      target: { value: 'REST' },
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Criticality' }), {
+      target: { value: 'High' },
     });
     save(form);
     await waitFor(() => {
       expect(sent.at(-1)).toMatchObject({
         method: 'PATCH',
-        body: { version: 1, metadata: { protocol: 'REST' } },
+        body: { version: 1, metadata: { protocol: 'REST', criticality: 'High' } },
       });
     });
     await waitFor(() => {
       expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
     });
-
-    fireEvent.click(within(form).getByRole('button', { name: 'Remove protocol' }));
+    fireEvent.change(within(form).getByLabelText('Protocol'), {
+      target: { value: '  ' },
+    });
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Criticality' }), {
+      target: { value: '' },
+    });
     save(form);
     await waitFor(() => {
       expect(sent.at(-1)).toMatchObject({
         method: 'PATCH',
-        body: { version: 2, metadata: { protocol: null } },
+        body: { version: 2, metadata: { protocol: null, criticality: null } },
       });
     });
   });
 
-  it('checks the rows before anything is sent', async () => {
-    const { sent } = await openShop();
-    const form = await open();
-    const add = (key: string) => {
-      fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-      const keys = within(form).getAllByLabelText('Key');
-      fireEvent.change(keys[keys.length - 1] as HTMLElement, { target: { value: key } });
-    };
-    add('architectureState');
-    save(form);
-    expect(await within(form).findByText(/has its own field above/)).toBeDefined();
-    fireEvent.click(within(form).getByRole('button', { name: 'Remove architectureState' }));
-    add('protocol');
-    add('protocol');
-    save(form);
-    expect(await within(form).findByText('This key is used twice.')).toBeDefined();
-    expect(sent.filter((r) => r.method === 'PATCH')).toHaveLength(0);
-  });
-
-  it('puts the server’s message under the row', async () => {
-    const { sent } = await openShop((method) =>
-      method === 'PATCH'
-        ? apiError(422, 'The change is not valid.', {
-            fields: [{ field: 'metadata.protocol', message: 'Must be at most 2000 characters.' }],
-          })
-        : undefined,
+  it('puts the server’s message under the field', async () => {
+    await openShop(
+      defined((method) =>
+        method === 'PATCH'
+          ? apiError(422, 'The change is not valid.', {
+              fields: [{ field: 'metadata.protocol', message: 'Must be at most 2000 characters.' }],
+            })
+          : undefined,
+      ),
     );
     const form = await open();
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByLabelText('Key'), {
-      target: { value: 'protocol' },
-    });
+    const protocol = await within(form).findByLabelText('Protocol');
+    fireEvent.change(protocol, { target: { value: 'x' } });
     save(form);
     const message = await within(form).findByText('Must be at most 2000 characters.');
-    expect(message.closest('.meta-row')).not.toBeNull();
-    expect(sent.some((r) => r.method === 'PATCH')).toBe(true);
+    expect(document.getElementById(protocol.getAttribute('aria-describedby') ?? '')).toBe(
+      message.closest('.field-error'),
+    );
+  });
+
+  it('says so when an Admin deleted a property meanwhile, reads them again, and saves the rest', async () => {
+    let gone = false;
+    const { sent } = await openShop((method, url, body) => {
+      if (method === 'GET' && url === '/api/properties') {
+        return Response.json({ properties: gone ? definitions.slice(1) : definitions });
+      }
+      if (method === 'PATCH' && !gone) {
+        gone = true;
+        return apiError(422, 'The change is not valid.', {
+          fields: [
+            {
+              field: 'metadata.protocol',
+              message:
+                "“protocol” isn't a property here. An Admin can add it in Admin → Properties.",
+            },
+          ],
+        });
+      }
+      return method === 'PATCH' && body !== undefined ? undefined : undefined;
+    });
+    const form = await open();
+    fireEvent.change(await within(form).findByLabelText('Protocol'), {
+      target: { value: 'REST' },
+    });
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
+      target: { value: 'Made-up label' },
+    });
+    save(form);
+    expect(
+      await within(form).findByText(
+        /An Admin deleted Protocol, so its value wasn.t saved\. Save again to keep your other changes\./,
+      ),
+    ).toBeDefined();
+    await waitFor(() => {
+      expect(within(form).queryByLabelText('Protocol')).toBeNull();
+    });
+    save(form);
+    await waitFor(() => {
+      expect(sent.at(-1)).toMatchObject({
+        method: 'PATCH',
+        body: { version: 1, label: 'Made-up label' },
+      });
+    });
+    expect((sent.at(-1)?.body as Record<string, unknown>).metadata).toBeUndefined();
+  });
+
+  it('keeps a choice value outside the list until it is changed', async () => {
+    const { sent } = await openShop(
+      defined((method, url) => {
+        if (url === `/api/models/${bakeryId}`) {
+          return Response.json({
+            graph: {
+              ...bakeryModel.graph,
+              edges: (bakeryModel.graph.edges ?? []).map((edge) =>
+                edge.id === 'e9' ? { ...edge, metadata: { criticality: 'Gold' } } : edge,
+              ),
+            },
+          });
+        }
+        if (method === 'GET' && url === `${relationshipsUrl}/e9`) {
+          const edge = bakeryModel.graph.edges?.find((each) => each.id === 'e9');
+          return Response.json({
+            relationship: {
+              id: 'e9',
+              version: 1,
+              edge: { ...edge, metadata: { criticality: 'Gold' } },
+            },
+            warnings: [],
+            nestingChanges: [],
+          });
+        }
+        return undefined;
+      }),
+    );
+    const form = await open();
+    const select = await within(form).findByRole<HTMLSelectElement>('combobox', {
+      name: 'Criticality',
+    });
+    expect(select.value).toBe('Gold');
+    expect([...select.options].map((option) => option.text)).toEqual([
+      '“Gold” (not in the list)',
+      'Not set',
+      'Low',
+      'High',
+    ]);
+    // Saving another field keeps it.
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
+      target: { value: 'Made-up label' },
+    });
+    save(form);
+    await waitFor(() => {
+      expect(sent.at(-1)?.body).toEqual({ version: 1, label: 'Made-up label' });
+    });
+  });
+
+  it('keeps defined values as custom metadata on a change to Contains, and says so', async () => {
+    const { sent } = await openShop(defined());
+    const form = await open();
+    fireEvent.change(await within(form).findByLabelText('Protocol'), {
+      target: { value: 'REST' },
+    });
+    save(form);
+    await within(form).findByText('Saved');
+    fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
+    expect(within(form).queryByLabelText('Protocol')).toBeNull();
+    expect(within(form).getByText('Protocol is kept as custom metadata.')).toBeDefined();
+    expect(within(form).getByLabelText('Value of protocol')).toBeDefined();
+    fireEvent.click(within(form).getByRole('radio', { name: 'Relation' }));
+    expect(within(form).getByLabelText<HTMLInputElement>('Protocol').value).toBe('REST');
+    fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
+    save(form);
+    await waitFor(() => {
+      expect(sent.at(-1)?.body).toEqual({ version: 2, type: 'Contains' });
+    });
   });
 });
 
@@ -1247,33 +1376,40 @@ describe('the form and what is stored', () => {
     expect(Object.keys(body.metadata).sort()).toEqual(['constructor', 'owner']);
   });
 
-  it('moves focus to the next row, or to Add field, when a row is removed', async () => {
+  it('moves focus to the next row, or to the note on new properties, when a row is removed', async () => {
     await openShop(stored({ alpha: 'x', beta: 'y' }));
     const form = await open();
+    // Stored keys can't be renamed: they show as text.
+    expect(within(form).queryByLabelText('Key')).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Remove alpha' }));
     await waitFor(() => {
-      expect((document.activeElement as HTMLInputElement).value).toBe('beta');
+      expect((document.activeElement as HTMLInputElement).value).toBe('y');
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Remove beta' }));
     await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByRole('button', { name: 'Add field' }));
+      expect(document.activeElement).toBe(
+        within(form).getByText('New properties are added by an Admin, in Admin → Properties.'),
+      );
     });
   });
 
-  it('has a working error link from a refused row', async () => {
-    await openShop();
-    const form = await open();
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const key = within(form).getByLabelText('Key');
-    fireEvent.change(key, { target: { value: 'description' } });
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Value of description' }), {
-      target: { value: 'x' },
+  it('has a working error link from a row the server refused', async () => {
+    await openShop((method, url) => {
+      const own = stored({ alpha: 'x' })?.(method, url, undefined);
+      if (own) return own;
+      return method === 'PATCH'
+        ? apiError(422, 'The change is not valid.', {
+            fields: [{ field: 'metadata.alpha', message: 'Must be at most 2000 characters.' }],
+          })
+        : undefined;
     });
+    const form = await open();
+    const value = await within(form).findByLabelText('Value of alpha');
+    fireEvent.change(value, { target: { value: 'changed' } });
     save(form);
-    const message = await within(form).findByText(/has its own field above/);
-    const described = key.getAttribute('aria-describedby') ?? '';
-    expect(document.getElementById(described)?.contains(message)).toBe(true);
-    expect(document.activeElement).toBe(key);
+    const message = await within(form).findByText('Must be at most 2000 characters.');
+    const described = (value.getAttribute('aria-describedby') ?? '').split(' ');
+    expect(described.some((id) => document.getElementById(id)?.contains(message))).toBe(true);
   });
 
   // The form's draft wasn't reset when the server's copy arrived, so a key added elsewhere read
@@ -1425,18 +1561,6 @@ describe('the form and what is stored', () => {
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({ version: 1, label: 'Made-up label' });
     });
-  });
-
-  it('still refuses a reserved key typed as a new row', async () => {
-    const { sent } = await openShop(stored({}));
-    const form = await open();
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByLabelText('Key'), {
-      target: { value: 'type' },
-    });
-    save(form);
-    expect(await within(form).findByText('“type” is reserved.')).toBeDefined();
-    expect(sent.filter((request) => request.method === 'PATCH')).toHaveLength(0);
   });
 
   // The read-only section looked the metadata up on `edge`, which a relationship with no id

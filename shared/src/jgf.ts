@@ -137,10 +137,14 @@ export interface OefMappingReport {
     valuesNotTranslated: Record<string, number>;
     /** Defaults filled in where the value was empty or missing, by key (nodes and edges). */
     defaultsApplied: Record<string, number>;
-    /** The part of `mapped` and `defaultsApplied` that is on relationships (edges), by key. */
+    /**
+     * The part of `mapped`, `defaultsApplied` and `keptAsCustom` that is on relationships (edges),
+     * by key. On relationships, custom keys become defined properties when the model is saved.
+     */
     onRelationships: {
       mapped: Record<string, number>;
       defaultsApplied: Record<string, number>;
+      keptAsCustom: Record<string, number>;
     };
     /** Keys renamed because the plain name was taken (e.g. by a standard property). */
     renamedKeys: number;

@@ -68,7 +68,7 @@ const report: OefMappingReport = {
     valuesTranslated: 3,
     valuesNotTranslated: { architectureState: 1 },
     defaultsApplied: {},
-    onRelationships: { mapped: {}, defaultsApplied: {} },
+    onRelationships: { mapped: {}, defaultsApplied: {}, keptAsCustom: {} },
     renamedKeys: 0,
     unknownDefinitions: 0,
   },

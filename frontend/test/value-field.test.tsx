@@ -433,15 +433,25 @@ describe('custom rows', () => {
     expect(offered()).toEqual(['Element only']);
   });
 
-  it('offers a relationship only what relationships hold', async () => {
-    await openShop();
+  it('offers a relationship’s defined property only what relationships hold', async () => {
+    const server = api(withData());
+    const defined: Handler = ({ url, method }) =>
+      url === '/api/properties' && method === 'GET'
+        ? Response.json({
+            properties: [
+              { key: 'protocol', name: 'Protocol', kind: 'text', fromModels: false, version: 1 },
+            ],
+          })
+        : undefined;
+    stubApi(modeller, defined, server.handler);
+    renderAt(shopAt);
+    await screen.findByRole('form', { name: /^Edit / });
     fireEvent.click(
       within(details()).getAllByRole('button', { name: /^Open relationship: / })[0] as HTMLElement,
     );
     const relationship = await screen.findByRole('form', { name: /^Relationship / });
-    newRow(relationship, 'protocol');
-    const fields = within(relationship).getAllByRole('combobox', { name: 'Value of protocol' });
-    fireEvent.click(fields.at(-1) as HTMLElement);
+    const protocol = await within(relationship).findByRole('combobox', { name: 'Protocol' });
+    fireEvent.click(protocol);
     expect(offered()).toEqual(['REST']);
   });
 });
@@ -474,20 +484,14 @@ describe('metadata names', () => {
     expect(within(form).getByRole('textbox', { name: 'Value of brand new' })).toBeDefined();
   });
 
-  it('offers a relationship only the names relationships have', async () => {
+  it('has no names to offer on a relationship: it takes no new keys', async () => {
     await openShop();
     fireEvent.click(
       within(details()).getAllByRole('button', { name: /^Open relationship: / })[0] as HTMLElement,
     );
     const relationship = await screen.findByRole('form', { name: /^Relationship / });
-    fireEvent.click(within(relationship).getByRole('button', { name: 'Add field' }));
-    const key = within(relationship).getAllByLabelText('Key').at(-1) as HTMLElement;
-    fireEvent.click(key);
-    for (const name of offeredNow()) expect(['protocol']).toContain(name);
-    fireEvent.change(key, { target: { value: 'o' } });
-    for (const name of ['zone', 'hostingModel', 'informationFlow', 'architectureState']) {
-      expect(offeredNow()).not.toContain(name);
-    }
+    expect(within(relationship).queryByRole('button', { name: 'Add field' })).toBeNull();
+    expect(within(relationship).queryByLabelText('Key')).toBeNull();
   });
 });
 

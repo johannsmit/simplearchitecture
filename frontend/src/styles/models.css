@@ -754,3 +754,99 @@ th[aria-sort] .sort {
 .info-notice p {
   margin: 0;
 }
+
+/* Admin → Properties */
+.properties-table .name-cell .tag {
+  margin-left: 8px;
+}
+
+.properties-table .cut {
+  display: inline-block;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.from-models-note,
+.standard-properties {
+  margin: 12px 0;
+}
+
+.standard-properties summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.property-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.property-dialog form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px - 40px);
+}
+
+.property-dialog-body {
+  overflow: auto;
+  min-height: 0;
+}
+
+.property-dialog .field + .field {
+  margin-top: 12px;
+}
+
+/* Kind: the 20px below it that the fields have, before Options or the buttons. */
+.property-dialog .state-segs {
+  margin: 12px 0 20px;
+}
+
+.property-dialog .key-wrap {
+  position: relative;
+}
+
+.property-dialog .key-wrap > .ico {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+}
+
+.property-options ol {
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.property-options li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto 32px 32px 32px;
+  gap: 4px;
+  align-items: center;
+}
+
+.property-options li + li {
+  margin-top: 6px;
+}
+
+.property-options li > .field-error {
+  grid-column: 2 / -1;
+}
+
+.property-options .option-n {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.property-options .unlisted {
+  margin-top: 10px;
+}
+
+.property-options .unlisted .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

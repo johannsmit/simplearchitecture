@@ -1,5 +1,6 @@
 import type { ApiError } from './api.js';
 import type { JgfValidationResult, OefMappingReport } from './jgf.js';
+import type { AddedRelationshipProperty } from './relationship-properties.js';
 
 /**
  * The `graph.metadata` key that holds the server-owned data of a stored model. The server sets
@@ -56,6 +57,12 @@ export interface DamagedModelListResponse {
 export interface SaveModelResult {
   model: ModelSummary;
   validation: JgfValidationResult;
+  /**
+   * Custom keys on the model's relationships that weren't defined properties: each was added to
+   * Admin → Properties as a text property, with the number of values the model holds. Only when
+   * there were any.
+   */
+  newProperties?: AddedRelationshipProperty[];
 }
 
 /** Response body (201) of `POST /api/models/import/oef`. */

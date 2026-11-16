@@ -174,7 +174,7 @@ function emptyReport(): OefMappingReport {
       valuesTranslated: 0,
       valuesNotTranslated: counter(),
       defaultsApplied: counter(),
-      onRelationships: { mapped: counter(), defaultsApplied: counter() },
+      onRelationships: { mapped: counter(), defaultsApplied: counter(), keptAsCustom: counter() },
       renamedKeys: 0,
       unknownDefinitions: 0,
     },
@@ -408,10 +408,12 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
     meta: Record<string, unknown>,
     property: OefProperty,
     reserved: Set<string>,
+    onRelationship = false,
   ): void => {
     const key = freeKey(meta, customKeyOf(property.name), reserved);
     meta[key] = property.value;
     increment(props.keptAsCustom, key);
+    if (onRelationship) increment(props.onRelationships.keptAsCustom, key);
   };
 
   /** Maps the configured properties (with value translations); the rest become custom metadata. */
@@ -425,7 +427,7 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
       const rule = mappingsByName.get(property.name);
       if (!rule || Object.hasOwn(meta, rule.key)) {
         // Unmapped, or a repeat of a mapped property: kept as custom metadata.
-        addCustom(meta, property, reserved);
+        addCustom(meta, property, reserved, onRelationship);
         continue;
       }
       let value = property.value;

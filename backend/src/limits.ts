@@ -93,3 +93,6 @@ export const viewBodyLimit = 1024 * 1024;
 
 /** Largest body of a folder change (a move, or a folder's rename), well above two names. */
 export const viewFolderBodyLimit = 16 * 1024;
+
+/** Largest body of a property create or change: a name, a key and up to 50 options. */
+export const propertyBodyLimit = 32 * 1024;

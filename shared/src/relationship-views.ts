@@ -17,7 +17,7 @@ import {
 export interface RelationshipViewField {
   /** The metadata key, e.g. `architectureState` or a custom key. */
   key: string;
-  /** The standard property's label (e.g. Architecture state), else the key itself. */
+  /** The standard or defined property's name (e.g. Architecture state), else the key itself. */
   label: string;
 }
 
@@ -99,20 +99,21 @@ export function relationshipViewText(
 
 /**
  * The properties a viewpoint can show: those found on this model's relationships, plus the standard
- * ones whenever the model has a Relation (Request Data and Response Data as one choice, Data),
- * sorted by name. Contains isn't part of a viewpoint. A key
+ * ones and the defined ones (by name) whenever the model has a Relation (Request Data and Response
+ * Data as one choice, Data), sorted by name. Contains isn't part of a viewpoint. A custom key
  * holding a list or an object on any relationship is left out, as in the element filter, because
  * every value differs.
  */
 export function relationshipViewFields(graph: ModelGraph): RelationshipViewField[] {
   const found = new Set<string>();
   const structured = new Set<string>();
+  const defined = new Set(graph.relationshipProperties.map((definition) => definition.key));
   let any = false;
   for (const relationship of graph.relationships) {
     if (relationship.type === containsType) continue;
     any = true;
     for (const [key, value] of Object.entries(relationship.metadata)) {
-      if (!isRelationshipViewKey(key) || key === stateKey) continue;
+      if (!isRelationshipViewKey(key) || key === stateKey || defined.has(key)) continue;
       // Leftover Data (kept where Request Data had a value) has no choice: "Data" is the viewpoint.
       if (isRelationProperty(key) || key === retiredDataKey) continue;
       if (typeof value === 'object' && value !== null) structured.add(key);
@@ -128,6 +129,9 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
       if (!dataViewKeys.has(key)) fields.push({ key, label: standardProperties[key].label });
     }
     fields.push({ key: dataViewKey, label: 'Data' });
+    for (const definition of graph.relationshipProperties) {
+      fields.push({ key: definition.key, label: definition.name });
+    }
   }
   return fields.sort((a, b) => compareNames(a.label, b.label) || (a.key < b.key ? -1 : 1));
 }

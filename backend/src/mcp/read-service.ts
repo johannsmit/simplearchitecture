@@ -5,6 +5,7 @@ import {
   containerOf,
   dataValuesOf,
   defaultNeighbourhoodCap,
+  definedPropertiesOf,
   displayLabel,
   edgeTypes,
   findElements,
@@ -22,6 +23,7 @@ import {
   type ModelRelationship,
   type NodeType,
   type RelationProperty,
+  type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
 import { isModelId, ModelUnreadableError, type ModelStore } from '../storage/model-store.js';
 
@@ -85,7 +87,26 @@ function relationshipFields(graph: ModelGraph, relationship: ModelRelationship) 
     architectureState: relationship.architectureState,
     ...(relationship.twoWay === true ? { twoWay: true } : {}),
     ...relationTexts(relationship),
+    ...definedValues(graph, relationship),
   };
+}
+
+/**
+ * A Relation's defined properties that have a value, by name in name order, as `definedProperties`
+ * (after the standard ones). Values as stored: a choice's value may be outside its list.
+ */
+function definedValues(
+  graph: ModelGraph,
+  relationship: ModelRelationship,
+): { definedProperties?: Record<string, unknown> } {
+  const entries = definedPropertiesOf(relationship.type, graph.relationshipProperties).flatMap(
+    (definition): [string, unknown][] => {
+      if (!Object.hasOwn(relationship.metadata, definition.key)) return [];
+      const value = relationship.metadata[definition.key];
+      return value === null || value === '' ? [] : [[definition.name, value]];
+    },
+  );
+  return entries.length === 0 ? {} : { definedProperties: Object.fromEntries(entries) };
 }
 
 /**
@@ -136,8 +157,18 @@ export interface SearchInput {
   cursor?: string | undefined;
 }
 
+/** Where the defined properties come from (PropertyService). */
+export interface PropertySource {
+  list(): Promise<RelationshipPropertyDefinition[]>;
+}
+
+const noProperties: PropertySource = { list: async () => [] };
+
 export class McpReadService {
-  constructor(private readonly store: ModelStore) {}
+  constructor(
+    private readonly store: ModelStore,
+    private readonly properties: PropertySource = noProperties,
+  ) {}
 
   /** Every model Viewing lists, newest first. Damaged models are left out, as there. */
   async listModels() {
@@ -275,7 +306,7 @@ export class McpReadService {
     if (document === undefined) {
       throw new ToolError('Model not found. Use list_models for the ids.');
     }
-    return buildModelGraph(document);
+    return buildModelGraph(document, await this.properties.list());
   }
 
   #element(graph: ModelGraph, elementId: string): ModelElement {

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
+import { definitionsForKeys, type JgfDocument, type ModelAuthor } from '@simplearchitecture/shared';
 import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -8,6 +8,7 @@ import { DatabaseService } from '../src/db/service.js';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
 import { RelationshipService } from '../src/editing/relationship-service.js';
 import { convertOlderTypes } from '../src/jgf/older-types.js';
+import { insertDefinitions } from '../src/properties/property-store.js';
 import { validateJgf } from '../src/jgf/validate.js';
 import { convertOef } from '../src/oef/mapper.js';
 import { loadOefMapping } from '../src/oef/mapping-config.js';
@@ -639,6 +640,7 @@ describe('through the routes', () => {
         .statusCode,
     ).toBe(422);
 
+    await insertDefinitions(db, definitionsForKeys(['secretish'], []));
     const saved = await call(target, 'PATCH', patch, cookie, {
       version: 1,
       requestData: ['made-up-data'],

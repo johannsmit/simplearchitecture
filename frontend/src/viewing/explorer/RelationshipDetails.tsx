@@ -1,6 +1,7 @@
 import {
   canBeTwoWay,
   dataValuesOf,
+  definedPropertiesOf,
   displayLabel,
   hasStandardEdgeProperty,
   isRelationDataProperty,
@@ -8,6 +9,7 @@ import {
   standardProperties,
   type ModelGraph,
   type ModelRelationship,
+  type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
@@ -54,8 +56,14 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   // A Relation's own properties (Identity to Response Data); elsewhere such keys stay custom
   // metadata.
   const texts = relationProperties.filter((key) => hasStandardEdgeProperty(key, relationship.type));
+  // A Relation's defined properties, by name, always; on a Contains such values are custom.
+  const defined = definedPropertiesOf(relationship.type, graph.relationshipProperties);
+  const definedKeys = new Set(defined.map((definition) => definition.key));
   const other = Object.entries(metadata)
-    .filter(([key]) => !ownRows.has(key) && !(texts as readonly string[]).includes(key))
+    .filter(
+      ([key]) =>
+        !ownRows.has(key) && !(texts as readonly string[]).includes(key) && !definedKeys.has(key),
+    )
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   // A two-way relationship has no from and to: its ends are only in the order stored.
   const twoWay = relationship.twoWay === true;
@@ -166,6 +174,19 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
               </dd>
             </div>
           ))}
+          {defined.map((definition) => (
+            <div key={definition.key}>
+              <dt>{definition.name}</dt>
+              <dd>
+                <DefinedValue
+                  definition={definition}
+                  value={
+                    Object.hasOwn(metadata, definition.key) ? metadata[definition.key] : undefined
+                  }
+                />
+              </dd>
+            </div>
+          ))}
         </dl>
       </section>
 
@@ -246,4 +267,33 @@ function DataValues({ label, value }: { label: string; value: unknown }) {
       ))}
     </ul>
   );
+}
+
+/**
+ * A defined property's value: as stored, or "Not set". A choice value outside the list is marked;
+ * a list or an object shows as it is stored.
+ */
+function DefinedValue({
+  definition,
+  value,
+}: {
+  definition: RelationshipPropertyDefinition;
+  value: unknown;
+}) {
+  if (value === undefined || value === null || value === '') {
+    return <span className="muted">Not set</span>;
+  }
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    return <MetadataValue name={definition.name} value={value} />;
+  }
+  const text = String(value);
+  if (definition.kind === 'choice' && !(definition.options ?? []).includes(text)) {
+    return (
+      <span className="not-iso" title="Not in the list">
+        {text} <Icon name="alert" size="sm" />
+        <span className="vh"> (not in the list)</span>
+      </span>
+    );
+  }
+  return <span className="pre-wrap">{text}</span>;
 }

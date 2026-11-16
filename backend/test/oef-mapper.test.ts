@@ -265,6 +265,8 @@ describe('convertOef: the made-up bakery sample', () => {
       onRelationships: {
         mapped: { architectureState: 1 },
         defaultsApplied: { architectureState: 2 },
+        // Kept on a relationship: it becomes a defined property when the model is saved.
+        keptAsCustom: { integrationType: 1 },
       },
       renamedKeys: 1,
       unknownDefinitions: 1,
@@ -1119,6 +1121,7 @@ describe('convertOef: Architecture State on relationships', () => {
     expect(report.properties.onRelationships).toEqual({
       mapped: { architectureState: 3 },
       defaultsApplied: { architectureState: 2 },
+      keptAsCustom: {},
     });
     expect(report.properties.valuesTranslated).toBe(2);
     expect(validateJgf(jgf).valid).toBe(true);

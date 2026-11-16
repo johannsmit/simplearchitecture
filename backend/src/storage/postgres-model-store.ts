@@ -8,12 +8,19 @@ import {
 } from '@simplearchitecture/shared';
 import type { Db, Queryable } from '../db/db.js';
 import { convertOlderTypes } from '../jgf/older-types.js';
+import {
+  defineKeysOf,
+  hasDefinitions,
+  lockDefinitions,
+  readDefinitions,
+} from '../properties/property-store.js';
 import { validateJgf } from '../jgf/validate.js';
 import { maxModelFileBytes, maxStoredModels, modelReadConcurrency } from '../limits.js';
 import {
   isModelId,
   ModelNotStorableError,
   type AppliedElementChange,
+  type ChangeOptions,
   type EditableModel,
   type ElementStore,
   type PlannedElementChange,
@@ -23,6 +30,7 @@ import {
   ViewFullError,
   type DeletedModel,
   type ModelStore,
+  type SaveOptions,
   type ViewStore,
 } from './model-store.js';
 import { PostgresViewStore } from './postgres-view-store.js';
@@ -407,9 +415,11 @@ export class PostgresModelStore implements ModelStore {
   readonly #maxModels: number;
   readonly #maxBytes: number;
   readonly #cache = new Map<string, CacheEntry>();
+  /** Seen the definitions table (migration 016): it never goes away again. */
+  #definitions = false;
   readonly elements: ElementStore = {
     read: (modelId) => this.#readEditable(modelId),
-    change: (modelId, plan) => this.#change(modelId, plan),
+    change: (modelId, plan, options) => this.#change(modelId, plan, options),
   };
   readonly views: ViewStore;
 
@@ -447,7 +457,11 @@ export class PostgresModelStore implements ModelStore {
     return result.document;
   }
 
-  async save(document: JgfDocument, createdBy: ModelAuthor): Promise<ModelSummary> {
+  async save(
+    document: JgfDocument,
+    createdBy: ModelAuthor,
+    options: SaveOptions = {},
+  ): Promise<ModelSummary> {
     const summary = newSummary(randomUUID(), document, createdBy, this.#now());
     const stored = storedDocument(document, summary);
     // The same limit as a model file, so a model fits whichever store holds it.
@@ -455,12 +469,16 @@ export class PostgresModelStore implements ModelStore {
       throw new ModelTooLargeError(this.#maxBytes);
     }
     if (!isStorable(stored)) throw new ModelNotStorableError();
-    await this.#db.transaction(async (tx) => {
+    const added = await this.#db.transaction(async (tx) => {
       await tx.query('select pg_advisory_xact_lock($1::bigint)', [saveLock]);
       await this.#checkRoom(tx);
-      await this.#insert(tx, summary, toRows(stored));
+      const rows = toRows(stored);
+      await this.#insert(tx, summary, rows);
+      // Custom keys on its relationships become defined properties, with the model.
+      return defineKeysOf(tx, rows.relationships, createdBy);
     });
     this.#cache.set(summary.id, { version: 1, summary });
+    if (added.length > 0) options.onNewProperties?.(added);
     return summary;
   }
 
@@ -482,7 +500,9 @@ export class PostgresModelStore implements ModelStore {
       const [present] = await tx.query('select 1 from models where id = $1::uuid', [id]);
       if (present) return 'exists';
       await this.#checkRoom(tx);
-      await this.#insert(tx, summary, toRows(stored));
+      const rows = toRows(stored);
+      await this.#insert(tx, summary, rows);
+      await defineKeysOf(tx, rows.relationships);
       return 'imported';
     });
   }
@@ -516,10 +536,16 @@ export class PostgresModelStore implements ModelStore {
   async #change(
     modelId: string,
     plan: (model: EditableModel) => PlannedElementChange,
+    options: ChangeOptions = {},
   ): Promise<AppliedElementChange | undefined> {
     if (!isModelId(modelId)) return undefined;
     const outcome = await this.#db.transaction(async (tx) => {
-      const model = await this.#loadEditable(tx, modelId, lockModelForChange);
+      const model = await this.#loadEditable(
+        tx,
+        modelId,
+        lockModelForChange,
+        options.propertyKeys ?? [],
+      );
       if (model === undefined) return undefined;
       const { write, document, audit } = plan(model);
       if (Buffer.byteLength(JSON.stringify(document), 'utf8') > this.#maxBytes) {
@@ -653,10 +679,24 @@ export class PostgresModelStore implements ModelStore {
     return outcome.applied;
   }
 
-  /** The model under `lock`, fully validated. Throws ModelUnreadableError when it is damaged. */
-  async #loadEditable(tx: Queryable, id: string, lock: string): Promise<EditableModel | undefined> {
+  /**
+   * The model under `lock`, fully validated, and the property definitions (those of
+   * `propertyKeys` share-locked first). Throws ModelUnreadableError when it is damaged.
+   */
+  async #loadEditable(
+    tx: Queryable,
+    id: string,
+    lock: string,
+    propertyKeys: readonly string[] = [],
+  ): Promise<EditableModel | undefined> {
     const [locked] = await tx.query(lock, [id]);
     if (!locked) return undefined;
+    this.#definitions ||= await hasDefinitions(tx);
+    let relationshipProperties: Awaited<ReturnType<typeof readDefinitions>> = [];
+    if (this.#definitions) {
+      await lockDefinitions(tx, propertyKeys);
+      relationshipProperties = await readDefinitions(tx);
+    }
     const [row] = await tx.query<FullModelRow>(loadModel, [id]);
     if (!row) return undefined;
     let document: JgfDocument;
@@ -684,6 +724,7 @@ export class PostgresModelStore implements ModelStore {
     return {
       document,
       validation,
+      relationshipProperties,
       versionOf: (elementId) => versions.get(elementId),
       relationshipVersionOf: (relationshipId) => relationshipVersions.get(relationshipId),
     };

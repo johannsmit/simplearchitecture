@@ -1,4 +1,5 @@
 import type {
+  AddedRelationshipProperty,
   ApiError,
   DamagedModelListResponse,
   ImportOefModelResult,
@@ -108,7 +109,8 @@ function storeRefused(
 
 /**
  * Saves a validated model and writes the audit line (ids and counts only, never names or
- * content). Answers 409 itself when the store is full and returns undefined.
+ * content). Answers 409 itself when the store is full and returns undefined. With it, the
+ * properties the save added from the custom keys on its relationships (only when there were any).
  */
 async function saveModel(
   request: FastifyRequest,
@@ -116,11 +118,16 @@ async function saveModel(
   store: ModelStore,
   document: JgfDocument,
   audit: 'model-saved' | 'model-imported',
-): Promise<ModelSummary | undefined> {
+): Promise<{ model: ModelSummary; newProperties?: AddedRelationshipProperty[] } | undefined> {
   const user = author(request);
   let model: ModelSummary;
+  let newProperties: AddedRelationshipProperty[] | undefined;
   try {
-    model = await store.save(document, user);
+    model = await store.save(document, user, {
+      onNewProperties: (added) => {
+        newProperties = added;
+      },
+    });
   } catch (error) {
     if (storeRefused(request, reply, error) !== undefined) return undefined;
     throw error;
@@ -132,11 +139,12 @@ async function saveModel(
       modelId: model.id,
       nodes: model.nodeCount,
       edges: model.edgeCount,
+      ...(newProperties === undefined ? {} : { newProperties: newProperties.length }),
     },
     audit === 'model-saved' ? 'model saved' : 'model imported and saved',
   );
   void reply.code(201).header('location', `/api/models/${model.id}`);
-  return model;
+  return newProperties === undefined ? { model } : { model, newProperties };
 }
 
 export interface ModelRouteOptions {
@@ -224,14 +232,14 @@ export function modelRoutes({
           return rejected(reply, validation);
         }
         // Valid, so the body has the JGF shape.
-        const model = await saveModel(
+        const saved = await saveModel(
           request,
           reply,
           store,
           document as JgfDocument,
           'model-saved',
         );
-        return model === undefined ? reply : { model, validation };
+        return saved === undefined ? reply : { ...saved, validation };
       },
     );
 
@@ -290,8 +298,8 @@ export function modelRoutes({
           );
           return rejected(reply, validation, report);
         }
-        const model = await saveModel(request, reply, store, jgf, 'model-imported');
-        return model === undefined ? reply : { model, report, validation };
+        const saved = await saveModel(request, reply, store, jgf, 'model-imported');
+        return saved === undefined ? reply : { ...saved, report, validation };
       },
     );
 

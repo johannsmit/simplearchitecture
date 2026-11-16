@@ -5,6 +5,7 @@ import { onSessionEnded } from './api';
 import { BrandingPage } from './admin/BrandingPage';
 import { ConnectedAppsAdminPage } from './admin/ConnectedAppsAdminPage';
 import { DatabasePage } from './admin/DatabasePage';
+import { PropertiesPage } from './admin/PropertiesPage';
 import { ConnectedAppsPage } from './agents/ConnectedAppsPage';
 import { ConsentPage } from './agents/ConsentPage';
 import { MeContext, useAuth, useMe } from './auth';
@@ -58,6 +59,7 @@ function SignedInRoutes() {
           {/* Users, roles and the metamodel follow. */}
           <Route index element={<Navigate to="models" replace />} />
           <Route path="models" element={<ModelsPage mode="manage" />} />
+          <Route path="properties" element={<PropertiesPage />} />
           <Route path="database" element={<DatabasePage />} />
           <Route path="branding" element={<BrandingPage />} />
           <Route path="apps" element={<ConnectedAppsAdminPage />} />

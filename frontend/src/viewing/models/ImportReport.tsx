@@ -1,4 +1,5 @@
 import {
+  type AddedRelationshipProperty,
   edgeTypes,
   nodeTypes,
   type CountsByReasonAndType,
@@ -22,6 +23,7 @@ export type SectionKey =
   | 'skipped'
   | 'folded'
   | 'properties'
+  | 'new-properties'
   | 'not-imported'
   | 'warnings';
 
@@ -70,7 +72,11 @@ interface Chip {
 }
 
 /** Summary chips for the non-zero parts of the report; each opens its section. */
-export function summaryChips(report: OefMappingReport | undefined, warningCount: number): Chip[] {
+export function summaryChips(
+  report: OefMappingReport | undefined,
+  warningCount: number,
+  newProperties: readonly AddedRelationshipProperty[] = [],
+): Chip[] {
   const chips: Chip[] = [];
   if (warningCount > 0) {
     chips.push({
@@ -78,6 +84,13 @@ export function summaryChips(report: OefMappingReport | undefined, warningCount:
       icon: 'alert',
       text: counted(warningCount, 'warning'),
       warn: true,
+    });
+  }
+  if (newProperties.length > 0) {
+    chips.push({
+      key: 'new-properties',
+      icon: 'plus',
+      text: counted(newProperties.length, 'new property', 'new properties'),
     });
   }
   if (!report) return chips;
@@ -270,6 +283,8 @@ const foldedEndWords = { source: 'Source', target: 'Target', both: 'Both' } as c
 export function ReportSections(props: {
   report?: OefMappingReport;
   validation: JgfValidationResult;
+  /** Custom keys on the model's relationships, added as defined properties by the save. */
+  newProperties?: readonly AddedRelationshipProperty[];
   modelId?: string;
   /** Rejected import: the Errors section comes first and is open. */
   rejected?: boolean;
@@ -306,7 +321,15 @@ export function ReportSections(props: {
     const byArchimateType = nonZeroDescending(report.elements.mappedByElementType);
     const foldedByType = nonZeroDescending(report.elements.folded);
     const mappedProperties = sum(Object.values(properties.mapped));
-    const keptAsCustom = sum(Object.values(properties.keptAsCustom));
+    // On relationships, custom keys become defined properties (New properties): elements only here.
+    const onRelationships = properties.onRelationships.keptAsCustom;
+    const keptOnElements = Object.fromEntries(
+      Object.entries(properties.keptAsCustom).map(([key, count]) => [
+        key,
+        count - (onRelationships[key] ?? 0),
+      ]),
+    );
+    const keptAsCustom = sum(Object.values(keptOnElements));
     const notTranslated = sum(Object.values(properties.valuesNotTranslated));
 
     sections.push(
@@ -506,7 +529,7 @@ export function ReportSections(props: {
         />
         <CountTable
           caption="Kept as custom metadata"
-          rows={nonZeroDescending(properties.keptAsCustom).map(([key, count]) => [key, count, key])}
+          rows={nonZeroDescending(keptOnElements).map(([key, count]) => [key, count, key])}
         />
         <CountTable
           caption="Other"
@@ -541,6 +564,30 @@ export function ReportSections(props: {
         <p>
           Diagrams and folders aren&apos;t imported yet: {counted(report.viewsSkipped, 'diagram')}{' '}
           and {counted(report.organizationItemsSkipped, 'folder')} were left out.
+        </p>
+      </Section>,
+    );
+  }
+
+  const added = props.newProperties ?? [];
+  if (added.length > 0) {
+    sections.push(
+      <Section
+        key="new-properties"
+        id="new-properties"
+        title="New properties"
+        summary={`${formatNumber(added.length)} added from relationships`}
+      >
+        <CountTable
+          caption="Added to Admin → Properties"
+          rows={added.map((property): [ReactNode, number, string] => [
+            property.key,
+            property.values,
+            property.key,
+          ])}
+        />
+        <p>
+          Check their names and kinds in <Link to="/admin/properties">Admin → Properties</Link>.
         </p>
       </Section>,
     );

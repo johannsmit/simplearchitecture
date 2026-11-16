@@ -373,18 +373,19 @@ describe('Admin → Branding', () => {
     return fetchMock;
   }
 
-  it('is the third Admin page and shows what is saved', async () => {
+  it('is the fourth Admin page and shows what is saved', async () => {
     const server = brandingServer(sample);
     await openPage(server);
     const nav = screen.getByRole('navigation', { name: 'Admin pages' });
     const links = within(nav).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([
       'Models',
+      'Properties',
       'Database',
       'Branding',
       'Connected apps',
     ]);
-    expect(links[2]?.getAttribute('aria-current')).toBe('page');
+    expect(links[3]?.getAttribute('aria-current')).toBe('page');
 
     await waitFor(() => {
       expect(primaryField()).toHaveProperty('value', '#1d6b5f');

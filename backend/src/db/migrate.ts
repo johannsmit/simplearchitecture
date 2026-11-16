@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveFromRepoRoot } from '../paths.js';
 import type { Db, Queryable } from './db.js';
+import { upgradeSteps, type UpgradeStep } from './upgrades.js';
 
 export interface Migration {
   /** The file's number, e.g. `001`. */
@@ -61,10 +62,15 @@ async function appliedMigrations(tx: Queryable): Promise<Map<string, string>> {
 
 /**
  * Applies the migrations that haven't run yet, in order, all in one transaction, and records each
- * in `schema_migrations`. Running it again changes nothing. Refuses a database that has a
- * migration this API doesn't know (it is newer), or whose applied file has since changed.
+ * in `schema_migrations`. A migration with an upgrade step in code (`steps`, by file name) runs it
+ * right after its SQL. Running it again changes nothing. Refuses a database that has a migration
+ * this API doesn't know (it is newer), or whose applied file has since changed.
  */
-export async function migrate(db: Db, migrations: readonly Migration[]): Promise<number> {
+export async function migrate(
+  db: Db,
+  migrations: readonly Migration[],
+  steps: ReadonlyMap<string, UpgradeStep> = upgradeSteps,
+): Promise<number> {
   return db.transaction(async (tx) => {
     await tx.query('select pg_advisory_xact_lock($1::bigint)', [migrationLock]);
     await tx.exec(trackingTable);
@@ -88,6 +94,7 @@ export async function migrate(db: Db, migrations: readonly Migration[]): Promise
         continue;
       }
       await tx.exec(migration.sql);
+      await steps.get(`${migration.version}_${migration.name}`)?.(tx);
       await tx.query(
         'insert into schema_migrations (version, name, checksum) values ($1, $2, $3)',
         [migration.version, migration.name, migration.checksum],

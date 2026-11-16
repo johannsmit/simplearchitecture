@@ -4,6 +4,7 @@ import {
   labelNameAt,
   labelPropertyNames,
   type LabelSubject,
+  type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '../icons';
@@ -16,12 +17,16 @@ interface LabelFieldProps {
   subject: LabelSubject;
   /** Custom metadata names the model's relationships use. */
   names: readonly string[];
+  /** The properties an Admin defined: a Relation's labels use them by name. */
+  definitions?: readonly RelationshipPropertyDefinition[];
   readOnly: boolean;
   invalid: boolean;
   /** The id of the field's error message, when it has one. */
   errorId?: string | undefined;
   onValue: (text: string) => void;
 }
+
+const noDefinitions: readonly RelationshipPropertyDefinition[] = [];
 
 /** "No property called “A”." or "… “A” or “B”." */
 const unknownWords = (names: readonly string[]): string =>
@@ -34,13 +39,14 @@ const unknownWords = (names: readonly string[]): string =>
  */
 export function LabelField(props: LabelFieldProps) {
   const { id, value, subject, names, onValue } = props;
+  const definitions = props.definitions ?? noDefinitions;
   const input = useRef<HTMLInputElement>(null);
   const [caret, setCaret] = useState<number | null>(null);
   // Where the caret goes after a name is put in, once the new text is drawn.
   const placeCaret = useRef<number | null>(null);
 
   const at = caret === null ? undefined : labelNameAt(value, caret);
-  const choices = labelPropertyNames(subject, names);
+  const choices = labelPropertyNames(subject, names, definitions);
   const field = useValueSuggestions({
     value: at?.partial ?? '',
     values: choices,
@@ -62,7 +68,7 @@ export function LabelField(props: LabelFieldProps) {
   });
 
   const expression = value.includes('{');
-  const filled = expression ? fillLabel(value, subject, names) : undefined;
+  const filled = expression ? fillLabel(value, subject, names, definitions) : undefined;
   const hintId = `${id}-names-hint`;
   const showsId = `${id}-shows`;
   const warnId = `${id}-unknown`;

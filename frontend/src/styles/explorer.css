@@ -1496,61 +1496,68 @@
   font-size: 12.5px;
 }
 
-/* The sections may shrink below their content (a flex item's default minimum is its whole
- * content), so their lists scroll inside. Each keeps its header and 3 rows (or all of them): only
- * below that does the panel scroll. */
-.tree-panel > .psec {
+/* Views and the legend share what the element list leaves (it gives way first). Each keeps its
+ * floor, then they grow alike, each only up to its content: a short section takes what it needs
+ * and the other one the rest, and two long ones split the space evenly. Views stays right under
+ * the element list and the legend at the bottom; a list scrolls inside only when it doesn't fit. */
+.tree-panel > .psecs {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: space-between;
+  row-gap: 8px;
   min-height: 0;
 }
 
-.tree-panel > .views-sec {
+/* A section's floor: its header and 3 rows (or all of them). Only below that does the panel
+ * scroll. Rows count across folders: a folder's header, and the views of an open folder. */
+.psecs > .views-sec {
   --vs-list: 0px;
   --vs-filter: 0px;
   --vs-save: 0px;
   --vs-new: 0px;
   --vs-pad: 0px;
-  flex: 0 1 auto;
   min-height: calc(
     34px + var(--vs-list) + var(--vs-filter) + var(--vs-save) + var(--vs-new) + var(--vs-pad)
   );
 }
 
-.tree-panel > .views-sec:has(> .psec-body) {
+.psecs > .views-sec:has(> .psec-body) {
   --vs-pad: 8px;
 }
 
-.tree-panel > .views-sec:has(.vp-list > li) {
+.psecs > .views-sec:has(.vp-list > li) {
   --vs-list: 32px;
 }
 
-.tree-panel > .views-sec:has(.vp-list > li:nth-child(2)) {
+.psecs > .views-sec:has(.vp-list > li:nth-child(2)),
+.psecs > .views-sec:has(.vp-list li li) {
   --vs-list: 64px;
 }
 
-.tree-panel > .views-sec:has(.vp-list > li:nth-child(3)) {
+.psecs > .views-sec:has(.vp-list > li:nth-child(3)),
+.psecs > .views-sec:has(.vp-list li li:nth-child(2)),
+.psecs > .views-sec:has(.vp-list > li:nth-child(2)):has(.vp-list li li) {
   --vs-list: 96px;
 }
 
-.tree-panel > .views-sec:has(.vp-filter) {
+.psecs > .views-sec:has(.vp-filter) {
   --vs-filter: 38px;
 }
 
-.tree-panel > .views-sec:has(.save-view) {
+.psecs > .views-sec:has(.save-view) {
   --vs-save: 38px;
 }
 
-.tree-panel > .views-sec:has(.vf-new) {
+.psecs > .views-sec:has(.vf-new) {
   --vs-new: 38px;
 }
 
-/* The legend stays at the bottom, and gives way before Views. Open, it keeps its header and
- * 96px of its body. */
-.tree-panel > .psec.legend {
-  flex: 0 2 auto;
-  margin-top: auto;
+/* Open, the legend keeps its header and 96px of its body. */
+.psecs > .psec.legend {
+  min-height: 34px;
 }
 
-.tree-panel > .psec.legend:has(> .psec-body) {
+.psecs > .psec.legend:has(> .psec-body) {
   min-height: calc(34px + 96px);
 }
 
@@ -3978,11 +3985,11 @@ li.is-new {
   color: var(--text-muted);
 }
 
-/* Views in the left panel: up to 6 rows, then the list scrolls; down to 3 on a short window. */
+/* Views in the left panel: as tall as its rows, scrolling only when they don't fit; down to 3 rows
+ * on a short window. */
 .psec-body > .vp-list {
   flex: 0 1 auto;
   min-height: min(96px, calc(var(--vp-rows, 3) * 32px));
-  max-height: 192px;
   margin: 0 -4px;
   padding: 0;
   overflow-y: auto;
@@ -4576,4 +4583,31 @@ li.is-new {
 /* Download CSV (Modelling), at the end of the catalog's search row. */
 .cat-search .cat-csv {
   flex: none;
+}
+
+/* A relationship's stored custom key: it can't be renamed, so it shows as text. */
+.meta-key-text {
+  max-width: 100%;
+  padding-top: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A defined property holding a list or an object: kept as is, with Remove. */
+.kept-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 6px;
+  align-items: start;
+}
+
+/* A field's name where it isn't a <label> (a group, a list of options). */
+.field .field-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 16px;
 }

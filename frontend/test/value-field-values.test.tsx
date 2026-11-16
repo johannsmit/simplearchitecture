@@ -122,12 +122,14 @@ describe.each(['element', 'relationship'] as const)('on the %s form', (kind) => 
     // Nothing differs from what is stored, so there is nothing to save.
     expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
 
-    addRow(form, 'zone', 'North');
+    // Only the row that changes is sent. A relationship takes no new keys: its stored row changes.
+    if (kind === 'element') addRow(form, 'zone', 'North');
+    else fireEvent.change(valueOf(form, 'flag'), { target: { value: 'North' } });
     save(form);
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
-    expect(sent[0]?.metadata).toEqual({ zone: 'North' });
+    expect(sent[0]?.metadata).toEqual(kind === 'element' ? { zone: 'North' } : { flag: 'North' });
   });
 
   it('stores another row as text, exactly as typing it would', async () => {

@@ -18,6 +18,7 @@ import {
   retiredDataKey,
   standardProperties,
   relationshipConflictMessage,
+  relationshipKeyRole,
   relationshipProblems,
   type DeletedRelationshipResult,
   type JgfDocument,
@@ -27,6 +28,7 @@ import {
   type NestingChange,
   type RelationshipChangeResult,
   type RelationshipFieldIssue,
+  type RelationshipPropertyDefinition,
   type StoredRelationship,
   type ValidationIssue,
 } from '@simplearchitecture/shared';
@@ -79,6 +81,9 @@ import {
  *   can't come with a new end: the client sends a reversed relationship with a new end as its new
  *   `source` and `target`, so there is one way to read the request.
  * - Update and delete carry the relationship's version as read; another one is a conflict.
+ * - Metadata takes a Relation's defined properties and keys the relationship holds already; no new
+ *   key, for anyone (`metadataKeyProblem`). The definitions are read, and the ones set share-locked,
+ *   in the change's transaction, so a property deleted meanwhile is never set.
  */
 
 type IdEdge = JgfEdge & { id: string };
@@ -174,6 +179,36 @@ function customValueProblem(value: unknown, stored: Entries, key: string): strin
   }
   if (typeof value !== 'string') return 'Must be text.';
   return value.length > maxPropertyValueLength ? valueTooLong : undefined;
+}
+
+/**
+ * Why a metadata value can't be set on a relationship of `type`, or undefined. Removing one
+ * (`null`) is always fine. A key is set when it is a Relation's defined property (a choice takes
+ * one of its options, checked only when the value changes) or already on the relationship (kept as
+ * custom metadata, on a Contains). No other key can be added: an Admin defines properties.
+ */
+function metadataKeyProblem(
+  key: string,
+  value: unknown,
+  type: string | undefined,
+  stored: Entries,
+  definitions: readonly RelationshipPropertyDefinition[],
+): string | undefined {
+  if (value === null) return undefined;
+  const role = isEdgeType(type) ? relationshipKeyRole(type, key, definitions) : undefined;
+  if (role?.role === 'defined') {
+    const { definition } = role;
+    const unchanged = Object.hasOwn(stored, key) && sameValue(stored[key], value);
+    if (definition.kind === 'choice' && !unchanged) {
+      const options = definition.options ?? [];
+      if (typeof value !== 'string' || !options.includes(value)) {
+        return `Pick one of ${options.join(', ')}.`;
+      }
+    }
+    return customValueProblem(value, stored, key);
+  }
+  if (Object.hasOwn(stored, key)) return customValueProblem(value, stored, key);
+  return `“${key}” isn't a property here. An Admin can add it in Admin → Properties.`;
 }
 
 const newRelationshipSchema = z.strictObject({
@@ -387,147 +422,152 @@ export class RelationshipService {
     let warnings: ValidationIssue[] = [];
     let nesting: NestingChange[] = [];
     try {
-      const applied = await elements.change(modelId, (model) => {
-        const current = currentRelationship(model, relationshipId);
-        if (current.version !== request.version) {
-          throw new ConflictError(current.version, relationshipConflictMessage);
-        }
-        const before = current.edge.metadata;
-        const metadata: Entries = isEntries(before) ? { ...before } : {};
-        const changed: string[] = [];
-        const issues: RelationshipFieldIssue[] = [];
-        let { source, target, relation } = current.edge;
-        // A new end: an element of this model, as for a new relationship.
-        const moved: ('source' | 'target')[] = [];
-        const nodes = model.document.graph.nodes ?? {};
-        for (const end of ['source', 'target'] as const) {
-          const wanted = request[end];
-          if (wanted === undefined || wanted === current.edge[end]) continue;
-          if (!Object.hasOwn(nodes, wanted)) throw new NotFoundError(end);
-          if (end === 'source') source = wanted;
-          else target = wanted;
-          moved.push(end);
-          changed.push(end);
-        }
-        if (request.type !== undefined && request.type !== relation) {
-          relation = request.type;
-          changed.push('type');
-        }
-        if (request.architectureState !== undefined) {
-          const state = request.architectureState;
-          apply(metadata, 'architectureState', state, 'architectureState', changed);
-        }
-        if (request.description !== undefined) {
-          const { description } = request;
-          if (
-            description !== null &&
-            description.length > maxRelationshipDescriptionLength &&
-            !sameValue(before?.description, description)
-          ) {
-            issues.push({ field: 'description', message: tooLong });
+      const applied = await elements.change(
+        modelId,
+        (model) => {
+          const current = currentRelationship(model, relationshipId);
+          if (current.version !== request.version) {
+            throw new ConflictError(current.version, relationshipConflictMessage);
           }
-          apply(metadata, 'description', description, 'description', changed);
-        }
-        for (const [key, value] of Object.entries(request.metadata ?? {})) {
-          const problem = customValueProblem(value, metadata, key);
-          if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
-          apply(metadata, key, value, `metadata.${key}`, changed);
-        }
-        // Identity and Identity Context: trimmed text, and blank removes the key. Request Data and
-        // Response Data: the whole list, and an empty one removes the key. A change to a type
-        // without them removes them.
-        const fits = (key: (typeof relationProperties)[number]) =>
-          !isEdgeType(relation) || hasStandardEdgeProperty(key, relation);
-        for (const key of relationProperties) {
-          const sent = request[key];
-          if (sent === undefined) {
-            if (!fits(key) && changed.includes('type')) {
-              apply(metadata, key, null, key, changed);
+          const before = current.edge.metadata;
+          const metadata: Entries = isEntries(before) ? { ...before } : {};
+          const changed: string[] = [];
+          const issues: RelationshipFieldIssue[] = [];
+          let { source, target, relation } = current.edge;
+          // A new end: an element of this model, as for a new relationship.
+          const moved: ('source' | 'target')[] = [];
+          const nodes = model.document.graph.nodes ?? {};
+          for (const end of ['source', 'target'] as const) {
+            const wanted = request[end];
+            if (wanted === undefined || wanted === current.edge[end]) continue;
+            if (!Object.hasOwn(nodes, wanted)) throw new NotFoundError(end);
+            if (end === 'source') source = wanted;
+            else target = wanted;
+            moved.push(end);
+            changed.push(end);
+          }
+          if (request.type !== undefined && request.type !== relation) {
+            relation = request.type;
+            changed.push('type');
+          }
+          if (request.architectureState !== undefined) {
+            const state = request.architectureState;
+            apply(metadata, 'architectureState', state, 'architectureState', changed);
+          }
+          if (request.description !== undefined) {
+            const { description } = request;
+            if (
+              description !== null &&
+              description.length > maxRelationshipDescriptionLength &&
+              !sameValue(before?.description, description)
+            ) {
+              issues.push({ field: 'description', message: tooLong });
             }
-            continue;
+            apply(metadata, 'description', description, 'description', changed);
           }
-          const value: string | readonly string[] | null =
-            sent === null ? null : typeof sent === 'string' ? sent.trim() : sent;
-          const empty = value === null || value.length === 0;
-          if (!empty && !fits(key)) {
-            const label = standardProperties[key].label;
-            issues.push({ field: key, message: `A ${String(relation)} can't have ${label}.` });
-          } else if (typeof value === 'string') {
-            if (value.length > maxPropertyValueLength && !sameValue(before?.[key], value)) {
-              issues.push({ field: key, message: valueTooLong });
+          for (const [key, value] of Object.entries(request.metadata ?? {})) {
+            const definitions = model.relationshipProperties;
+            const problem = metadataKeyProblem(key, value, relation, metadata, definitions);
+            if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
+            apply(metadata, key, value, `metadata.${key}`, changed);
+          }
+          // Identity and Identity Context: trimmed text, and blank removes the key. Request Data and
+          // Response Data: the whole list, and an empty one removes the key. A change to a type
+          // without them removes them.
+          const fits = (key: (typeof relationProperties)[number]) =>
+            !isEdgeType(relation) || hasStandardEdgeProperty(key, relation);
+          for (const key of relationProperties) {
+            const sent = request[key];
+            if (sent === undefined) {
+              if (!fits(key) && changed.includes('type')) {
+                apply(metadata, key, null, key, changed);
+              }
+              continue;
             }
-          } else if (value !== null && isRelationDataProperty(key)) {
-            const problem = dataValueProblem(value, before?.[key]);
-            if (problem !== undefined) issues.push({ field: key, message: problem });
+            const value: string | readonly string[] | null =
+              sent === null ? null : typeof sent === 'string' ? sent.trim() : sent;
+            const empty = value === null || value.length === 0;
+            if (!empty && !fits(key)) {
+              const label = standardProperties[key].label;
+              issues.push({ field: key, message: `A ${String(relation)} can't have ${label}.` });
+            } else if (typeof value === 'string') {
+              if (value.length > maxPropertyValueLength && !sameValue(before?.[key], value)) {
+                issues.push({ field: key, message: valueTooLong });
+              }
+            } else if (value !== null && isRelationDataProperty(key)) {
+              const problem = dataValueProblem(value, before?.[key]);
+              if (problem !== undefined) issues.push({ field: key, message: problem });
+            }
+            apply(metadata, key, empty ? null : value, key, changed);
           }
-          apply(metadata, key, empty ? null : value, key, changed);
-        }
-        // Blank removes the label from the edge.
-        const label = request.label === undefined ? undefined : (request.label ?? '').trim();
-        if (label !== undefined && label !== (current.edge.label ?? '')) {
-          if (label.length > maxRelationshipLabelLength) {
-            issues.push({ field: 'label', message: labelTooLong });
+          // Blank removes the label from the edge.
+          const label = request.label === undefined ? undefined : (request.label ?? '').trim();
+          if (label !== undefined && label !== (current.edge.label ?? '')) {
+            if (label.length > maxRelationshipLabelLength) {
+              issues.push({ field: 'label', message: labelTooLong });
+            }
+            changed.push('label');
           }
-          changed.push('label');
-        }
-        // Two-way is stored as `"directed": false`. A type that can't be two-way
-        // (Contains) is always one-way: a change to it sets one way.
-        const wasTwoWay = current.edge.directed === false;
-        let twoWay = request.twoWay ?? wasTwoWay;
-        if (isEdgeType(relation) && !canBeTwoWay(relation)) {
-          if (request.twoWay === true) {
-            issues.push({ field: 'twoWay', message: `${relation} is always one way.` });
+          // Two-way is stored as `"directed": false`. A type that can't be two-way
+          // (Contains) is always one-way: a change to it sets one way.
+          const wasTwoWay = current.edge.directed === false;
+          let twoWay = request.twoWay ?? wasTwoWay;
+          if (isEdgeType(relation) && !canBeTwoWay(relation)) {
+            if (request.twoWay === true) {
+              issues.push({ field: 'twoWay', message: `${relation} is always one way.` });
+            }
+            twoWay = false;
           }
-          twoWay = false;
-        }
-        if (twoWay !== wasTwoWay) changed.push('directed');
-        // A relationship from an element to itself has nothing to reverse.
-        const reversed = request.reverse === true && source !== target;
-        if (reversed) {
-          [source, target] = [target, source];
-          changed.push('source', 'target');
-        }
-        if (issues.length > 0) throw new RejectedError(issues);
-        if (changed.length === 0) {
-          throw new Unchanged<RelationshipChangeResult>({
-            relationship: { id: relationshipId, version: current.version, edge: current.edge },
-            warnings: warningsFor(model.validation, current.edge),
-            nestingChanges: [],
-          });
-        }
+          if (twoWay !== wasTwoWay) changed.push('directed');
+          // A relationship from an element to itself has nothing to reverse.
+          const reversed = request.reverse === true && source !== target;
+          if (reversed) {
+            [source, target] = [target, source];
+            changed.push('source', 'target');
+          }
+          if (issues.length > 0) throw new RejectedError(issues);
+          if (changed.length === 0) {
+            throw new Unchanged<RelationshipChangeResult>({
+              relationship: { id: relationshipId, version: current.version, edge: current.edge },
+              warnings: warningsFor(model.validation, current.edge),
+              nestingChanges: [],
+            });
+          }
 
-        const keepsNoMetadata = before === undefined && Object.keys(metadata).length === 0;
-        const edge: IdEdge = {
-          ...current.edge,
-          source,
-          target,
-          ...(relation === undefined ? {} : { relation }),
-          ...(twoWay === wasTwoWay ? {} : { directed: !twoWay }),
-          ...(keepsNoMetadata ? {} : { metadata }),
-        };
-        if (changed.includes('label')) {
-          if (label) edge.label = label;
-          else delete edge.label;
-        }
-        const document = withEdge(model.document, edge, current.index);
-        const validation = validateJgf(document);
-        refuseErrors(validation, { kind: 'edge', id: relationshipId }, requestField);
-        if (reversed || moved.length > 0 || changed.includes('type')) {
-          const field = reversed ? 'reverse' : (moved.at(-1) ?? 'type');
-          refuseModellingProblems(model.document, edge, field, relationshipId);
-        }
-        warnings = warningsFor(validation, edge);
-        nesting = nestingChanges(model.document, document);
-        stored = { id: relationshipId, version: current.version, edge };
-        const action = reversed ? 'relationship-reversed' : 'relationship-updated';
-        const write = {
-          kind: 'put-relationship',
-          relationshipId,
-          edge,
-          ...(moved.length > 0 ? { endsIntoViews: true } : {}),
-        } as const;
-        return plan(write, document, action, actor, changed);
-      });
+          const keepsNoMetadata = before === undefined && Object.keys(metadata).length === 0;
+          const edge: IdEdge = {
+            ...current.edge,
+            source,
+            target,
+            ...(relation === undefined ? {} : { relation }),
+            ...(twoWay === wasTwoWay ? {} : { directed: !twoWay }),
+            ...(keepsNoMetadata ? {} : { metadata }),
+          };
+          if (changed.includes('label')) {
+            if (label) edge.label = label;
+            else delete edge.label;
+          }
+          const document = withEdge(model.document, edge, current.index);
+          const validation = validateJgf(document);
+          refuseErrors(validation, { kind: 'edge', id: relationshipId }, requestField);
+          if (reversed || moved.length > 0 || changed.includes('type')) {
+            const field = reversed ? 'reverse' : (moved.at(-1) ?? 'type');
+            refuseModellingProblems(model.document, edge, field, relationshipId);
+          }
+          warnings = warningsFor(validation, edge);
+          nesting = nestingChanges(model.document, document);
+          stored = { id: relationshipId, version: current.version, edge };
+          const action = reversed ? 'relationship-reversed' : 'relationship-updated';
+          const write = {
+            kind: 'put-relationship',
+            relationshipId,
+            edge,
+            ...(moved.length > 0 ? { endsIntoViews: true } : {}),
+          } as const;
+          return plan(write, document, action, actor, changed);
+        },
+        { propertyKeys: Object.keys(request.metadata ?? {}) },
+      );
       if (applied === undefined) throw new NotFoundError('model');
       if (stored === undefined || applied.version === undefined) {
         throw new Error('no relationship written');

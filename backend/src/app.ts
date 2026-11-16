@@ -31,6 +31,8 @@ import { brandingRoutes } from './routes/branding.js';
 import { databaseRoutes } from './routes/database.js';
 import { elementRoutes } from './routes/elements.js';
 import { relationshipRoutes } from './routes/relationships.js';
+import { propertyRoutes } from './routes/properties.js';
+import { PropertyService } from './properties/property-service.js';
 import { viewRoutes } from './routes/views.js';
 import { modelRoutes } from './routes/models.js';
 import { spaceRoutes } from './routes/spaces.js';
@@ -351,6 +353,8 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
       newModelLimit: newModelLimit(now),
     }),
   );
+  const properties = new PropertyService(db);
+  await app.register(propertyRoutes(properties));
   await app.register(elementRoutes(new ElementService(modelStore)));
   await app.register(relationshipRoutes(new RelationshipService(modelStore)));
   await app.register(viewRoutes(new ViewService(modelStore)));
@@ -367,7 +371,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
     await app.register(agentRoutes(oauth));
     await app.register(
       mcpRoutes({
-        service: new McpReadService(modelStore),
+        service: new McpReadService(modelStore, properties),
         resource: oauth.addresses.resource,
         now,
       }),

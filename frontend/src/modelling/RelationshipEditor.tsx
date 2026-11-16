@@ -3,6 +3,7 @@ import {
   containerOf,
   containsType,
   dataValuesOf,
+  definedPropertiesOf,
   displayLabel,
   edgeTypes,
   hasStandardEdgeProperty,
@@ -23,6 +24,7 @@ import {
   type ModelRelationship,
   type RelationshipChangeResult,
   type RelationshipProblem,
+  type RelationshipPropertyDefinition,
   type RelationDataProperty,
   type RelationProperty,
   standardProperties,
@@ -35,6 +37,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
 } from 'react';
 import { ApiRequestError, deleteRelationship, getRelationship, updateRelationship } from '../api';
@@ -44,7 +47,7 @@ import { MetadataValue } from '../viewing/explorer/DetailsPanel';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { Modal, UnsavedDialog } from './dialogs';
 import { EndPicker } from './EndPicker';
-import { customRow, customRowErrors, customValues, metadataChanges, type CustomRow } from './draft';
+import { customRow, customRowErrors, metadataChanges, type CustomRow } from './draft';
 import type { EditorHandle, EditorState } from './ElementEditor';
 import { savedNoteMillis } from './ElementEditor';
 import { LabelField } from './LabelField';
@@ -82,6 +85,13 @@ interface RelationshipEditorProps {
   onAnnounce: (text: string) => void;
   focusHeading: boolean;
   onHeadingFocused: () => void;
+  /**
+   * The defined properties couldn't be read: a Relation's metadata can't be edited or saved until
+   * they are (the form says so at the top).
+   */
+  propertiesFailed?: boolean;
+  /** A save was refused for a defined property that is gone: read the definitions again. */
+  onPropertiesStale?: () => void;
 }
 
 /** A relationship's two ends: the element ids. */
@@ -180,6 +190,49 @@ function draftOf(relationship: ModelRelationship): Draft {
 
 const rowInputId = (slot: string): string => `rf-${slot.replace(/[^A-Za-z0-9_-]/g, '-')}-key`;
 
+/** A metadata value as the field shows it. */
+function asText(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
+/**
+ * The metadata (beyond the fields of its own) the draft stands for, as a PATCH compares it: the
+ * rows of keys the relationship had (`stored`) and of the type's defined properties. A defined
+ * property's typed text is trimmed, and an empty one has no value. A row for any other key (one
+ * whose definition an Admin deleted meanwhile) counts for nothing: it can't be added.
+ */
+function metadataValues(
+  rows: readonly CustomRow[],
+  defined: ReadonlySet<string>,
+  stored: ReadonlySet<string>,
+): Map<string, unknown> {
+  const values = new Map<string, unknown>();
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (key === '' || (!defined.has(key) && !stored.has(key))) continue;
+    const changed = row.editable && row.text !== asText(row.original);
+    if (!changed) {
+      values.set(key, row.original);
+    } else if (!defined.has(key)) {
+      values.set(key, row.text);
+    } else if (row.text.trim() !== '') {
+      values.set(key, row.text.trim());
+    }
+  }
+  return values;
+}
+
+/** "A", "A and B", "A, B and C". */
+function andList(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1] ?? ''}`;
+}
+
+const noDefinitions: readonly RelationshipPropertyDefinition[] = [];
+
 /** Why a key can't be a custom row here, if so. */
 function reservedKeyWord(key: string): string | undefined {
   if (key === 'type' || key === 'informationFlow') return `“${key}” is reserved.`;
@@ -192,6 +245,8 @@ function reservedKeyWord(key: string): string | undefined {
 /** The relationship in the details panel: always the form. */
 export function RelationshipEditor(props: RelationshipEditorProps) {
   const { graph, relationship, modelId } = props;
+  const propertiesFailed = props.propertiesFailed === true;
+  const definitions = propertiesFailed ? noDefinitions : graph.relationshipProperties;
   // The copy the draft started from: what the user's changes are measured against.
   const [startedFrom, setStartedFrom] = useState(relationship);
   const [base, setBase] = useState(() => draftOf(relationship));
@@ -213,6 +268,21 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const editable = !relationship.id.startsWith('edges[');
   // Where keyboard focus goes after the next render: a new or neighbouring custom row.
   const focusTarget = useRef<string | null>(null);
+  // A defined property a save was refused for, because an Admin deleted it meanwhile.
+  const [deletedProperty, setDeletedProperty] = useState<string | null>(null);
+  // A Relation's defined properties, by name: each has a field of its own, always.
+  const defined = definedPropertiesOf(draft.type, definitions);
+  const definedKeys = new Set(defined.map((definition) => definition.key));
+  const baseDefinedKeys = new Set(
+    definedPropertiesOf(base.type, definitions).map((definition) => definition.key),
+  );
+  // The keys the relationship has: their values can change or go, but no other key can be added.
+  const storedKeys = new Set(base.custom.map((row) => row.key.trim()));
+  const customRows = draft.custom.filter(
+    (row) => !definedKeys.has(row.key.trim()) && storedKeys.has(row.key.trim()),
+  );
+  const rowOf = (key: string): CustomRow | undefined =>
+    draft.custom.find((row) => row.key.trim() === key);
 
   // The ends as they will be saved: Reverse swaps the ends picked.
   const source = draft.reversed ? draft.ends.target : draft.ends.source;
@@ -238,7 +308,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     type: draft.type,
     architectureState: draft.state,
     metadata: {
-      ...Object.fromEntries(customValues(draft.custom)),
+      ...Object.fromEntries(metadataValues(draft.custom, definedKeys, storedKeys)),
       description: draft.description,
       ...Object.fromEntries(
         relationProperties
@@ -247,7 +317,10 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       ),
     },
   };
-  const customChange = metadataChanges(customValues(base.custom), customValues(draft.custom));
+  const customChange = metadataChanges(
+    metadataValues(base.custom, baseDefinedKeys, storedKeys),
+    metadataValues(draft.custom, definedKeys, storedKeys),
+  );
   const dirty =
     draft.type !== base.type ||
     draft.state !== base.state ||
@@ -269,6 +342,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     setErrors(new Map());
     setDuplicateOf(undefined);
     setPicking(null);
+    setDeletedProperty(null);
   };
 
   // The explorer's copy changed (e.g. read again from the server): follow it unless the user has
@@ -382,11 +456,10 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       return false;
     }
     // A key already stored can't block the form: the server has the last word if it is changed.
-    const storedKeys = new Set(base.custom.map((row) => row.key.trim()));
-    const rowErrors = customRowErrors(draft.custom, (key) =>
+    const rowErrors = customRowErrors(customRows, (key) =>
       storedKeys.has(key) ? undefined : reservedKeyWord(key),
     );
-    const firstBad = draft.custom.find((row) => rowErrors.has(`row:${row.id}`));
+    const firstBad = customRows.find((row) => rowErrors.has(`row:${row.id}`));
     if (firstBad) {
       setErrors(rowErrors);
       document.getElementById(rowInputId(`row:${firstBad.id}`))?.focus();
@@ -395,6 +468,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     setSaving(true);
     setErrors(new Map());
     setDuplicateOf(undefined);
+    setDeletedProperty(null);
     try {
       const current = await relationshipVersionToSave(modelId, startedFrom, version);
       const change: UpdateRelationshipRequest = { version: current };
@@ -424,7 +498,10 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           change[key] = values.length === 0 ? null : [...values];
         }
       }
-      if (Object.keys(customChange).length > 0) change.metadata = customChange;
+      // Without the definitions, metadata isn't sent: the form can't tell what it may hold.
+      if (Object.keys(customChange).length > 0 && !propertiesFailed) {
+        change.metadata = customChange;
+      }
       const result = await updateRelationship(modelId, relationship.id, change);
       setSaving(false);
       setVersion(result.relationship.version);
@@ -448,12 +525,30 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       } else {
         const refusal = refusalOf(failure);
         const next = new Map<string, string>();
-        // A message about a custom key goes under its row, or at the top if the row is gone.
+        // A message about a defined property goes under its field; about a custom key under its
+        // row, or at the top if the row is gone.
         const customSlot = (field: string): string => {
           const key = field.startsWith('metadata.') ? field.slice('metadata.'.length) : undefined;
+          if (key !== undefined && definedKeys.has(key)) return `prop:${key}`;
           const row = draft.custom.find((candidate) => candidate.key.trim() === key);
           return row ? `row:${row.id}` : '';
         };
+        // An Admin deleted a property filled in here: its value can't be saved. The definitions
+        // are read again, so its field goes, and saving again keeps the other changes.
+        const gone = refusal.fields.find((issue) => {
+          const key = issue.field.startsWith('metadata.')
+            ? issue.field.slice('metadata.'.length)
+            : undefined;
+          return (
+            key !== undefined && definedKeys.has(key) && issue.message.includes("isn't a property")
+          );
+        });
+        if (gone !== undefined) {
+          const key = gone.field.slice('metadata.'.length);
+          setDeletedProperty(defined.find((definition) => definition.key === key)?.name ?? key);
+          props.onPropertiesStale?.();
+          return false;
+        }
         for (const issue of refusal.fields) {
           const slot = ['source', 'target', 'reverse'].includes(issue.field)
             ? 'ends'
@@ -534,6 +629,16 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     }
   };
 
+  // A Relation's defined values stay as custom metadata on a Contains.
+  const keptDefined =
+    draft.type === containsType && base.type !== containsType
+      ? definedPropertiesOf(base.type, definitions)
+          .filter((definition) => {
+            const row = rowOf(definition.key);
+            return row !== undefined && (!row.editable || row.text.trim() !== '');
+          })
+          .map((definition) => definition.name)
+      : [];
   const typeNote =
     draft.type === containsType && touchesEnds && !self
       ? containsNote(graph, source, target, props.nest)
@@ -821,6 +926,25 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               </div>
             </div>
           )}
+          {deletedProperty !== null && (
+            <div className="form-alert" role="alert">
+              <Icon name="alert" />
+              <div>
+                <p>
+                  An Admin deleted {deletedProperty}, so its value wasn&apos;t saved. Save again to
+                  keep your other changes.
+                </p>
+              </div>
+            </div>
+          )}
+          {propertiesFailed && (
+            <div className="form-alert" role="alert">
+              <Icon name="alert" />
+              <div>
+                <p>Couldn&apos;t load the defined properties. Reload to try again.</p>
+              </div>
+            </div>
+          )}
           <section className="form-block">
             <div className="field">
               <label htmlFor="rf-label">Label</label>
@@ -829,6 +953,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 value={draft.label}
                 subject={labelSubject}
                 names={relationshipMetadataNames(graph)}
+                definitions={definitions}
                 readOnly={saving}
                 invalid={errors.has('label')}
                 errorId={errors.has('label') ? 'rf-label-error' : undefined}
@@ -880,6 +1005,32 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                   </div>
                 ),
               )}
+            {defined.map((definition, index) => (
+              <DefinedField
+                key={definition.key}
+                id={`rf-prop-${String(index)}`}
+                definition={definition}
+                row={rowOf(definition.key)}
+                stored={base.custom.find((row) => row.key.trim() === definition.key)}
+                suggestions={relationshipPropertyValues(graph).get(definition.key) ?? noValues}
+                readOnly={saving}
+                error={fieldError(`prop:${definition.key}`)}
+                invalid={errors.has(`prop:${definition.key}`)}
+                onText={(text) => {
+                  const row = rowOf(definition.key);
+                  const custom = row
+                    ? draft.custom.map((other) => (other === row ? { ...row, text } : other))
+                    : [...draft.custom, { ...customRow(definition.key, ''), text }];
+                  setDraft({ ...draft, custom });
+                }}
+                onRemove={() => {
+                  setDraft({
+                    ...draft,
+                    custom: draft.custom.filter((row) => row.key.trim() !== definition.key),
+                  });
+                }}
+              />
+            ))}
             <div className="field" id="rf-type" tabIndex={-1}>
               <TypeSegments
                 name="rf-type"
@@ -913,6 +1064,14 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                         }}
                       />
                     )}
+                  {draft.type !== base.type && keptDefined.length > 0 && (
+                    <TypeNote
+                      note={{
+                        kind: 'info',
+                        text: `${andList(keptDefined)} ${keptDefined.length === 1 ? 'is' : 'are'} kept as custom metadata.`,
+                      }}
+                    />
+                  )}
                 </div>
               </TypeSegments>
               {fieldError('type')}
@@ -957,34 +1116,46 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               {fieldError('description')}
             </div>
           </section>
-          <section className="form-block">
-            <CustomMetadataFields
-              rows={draft.custom}
-              saving={saving}
-              addId="rf-add-field"
-              slotId={rowInputId}
-              errorId={(slot) => `rf-${slot || 'alert'}-error`}
-              renderError={fieldError}
-              invalid={(slot) => errors.has(slot)}
-              valuesOf={(key) => relationshipPropertyValues(graph).get(key) ?? []}
-              names={relationshipMetadataNames(graph)}
-              onEdit={(slot, rows) => {
-                setDraft({ ...draft, custom: rows });
-                if (errors.has(slot)) {
-                  const rest = new Map(errors);
-                  rest.delete(slot);
-                  setErrors(rest);
-                }
-              }}
-              onAdd={(rows, focusId) => {
-                focusTarget.current = focusId;
-                setDraft({ ...draft, custom: rows });
-              }}
-              onRemoved={(focusId) => {
-                focusTarget.current = focusId;
-              }}
-            />
-          </section>
+          {customRows.length > 0 && (
+            <section className="form-block">
+              <CustomMetadataFields
+                rows={customRows}
+                canAdd={false}
+                saving={saving || propertiesFailed}
+                addId="rf-new-properties"
+                slotId={rowInputId}
+                errorId={(slot) => `rf-${slot || 'alert'}-error`}
+                renderError={fieldError}
+                invalid={(slot) => errors.has(slot)}
+                valuesOf={(key) => relationshipPropertyValues(graph).get(key) ?? []}
+                names={noValues}
+                onEdit={(slot, rows) => {
+                  // The rows shown are the custom ones: the others (defined, or not stored) stay.
+                  const shown = new Set(customRows);
+                  setDraft({
+                    ...draft,
+                    custom: [...draft.custom.filter((row) => !shown.has(row)), ...rows],
+                  });
+                  if (errors.has(slot)) {
+                    const rest = new Map(errors);
+                    rest.delete(slot);
+                    setErrors(rest);
+                  }
+                }}
+                onAdd={(rows, focusId) => {
+                  focusTarget.current = focusId;
+                  setDraft({ ...draft, custom: rows });
+                }}
+                onRemoved={(focusId) => {
+                  focusTarget.current = focusId;
+                }}
+              />
+            </section>
+          )}
+          <p className="hint" id="rf-new-properties" tabIndex={-1}>
+            <Icon name="info" size="sm" />
+            New properties are added by an Admin, in Admin → Properties.
+          </p>
           {dirty || saving ? (
             <div className="d-form-foot">
               <p className="foot-status" role="status">
@@ -1167,5 +1338,129 @@ function DeleteRelationshipDialog(props: {
         )}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * One defined property on a Relation's form: text (pick or type a value; a stored value with a line
+ * break in a text area) or a choice ("Not set", then the options in their order). A choice value
+ * outside the list, as stored, shows first as "not in the list" and stays until it is changed. A
+ * list or an object under the key is kept as it is, and can only be removed.
+ */
+function DefinedField(props: {
+  id: string;
+  definition: RelationshipPropertyDefinition;
+  /** The draft's row for the key, if it has one. */
+  row: CustomRow | undefined;
+  /** The row as the relationship was read, if it had the key. */
+  stored: CustomRow | undefined;
+  suggestions: readonly string[];
+  readOnly: boolean;
+  error: ReactNode;
+  invalid: boolean;
+  onText: (text: string) => void;
+  onRemove: () => void;
+}) {
+  const { id, definition, row } = props;
+  const text = row?.text ?? '';
+  const errorId = props.invalid ? `rf-prop:${definition.key}-error` : undefined;
+  if (row !== undefined && !row.editable) {
+    return (
+      <div className="field">
+        <span className="field-label" id={`${id}-label`}>
+          {definition.name}
+        </span>
+        <div className="kept-row">
+          <div
+            id={id}
+            className="kept-value"
+            tabIndex={0}
+            role="group"
+            aria-labelledby={`${id}-label`}
+            aria-describedby={`${id}-kept`}
+          >
+            <small id={`${id}-kept`}>
+              {Array.isArray(row.original) ? 'List, kept as is' : 'Object, kept as is'}
+            </small>
+            <pre>{JSON.stringify(row.original, null, 2)}</pre>
+          </div>
+          <button
+            type="button"
+            className="icon-btn danger-hover"
+            aria-label={`Remove ${definition.name}`}
+            title="Remove"
+            disabled={props.readOnly}
+            onClick={props.onRemove}
+          >
+            <Icon name="trash" />
+          </button>
+        </div>
+        {props.error}
+      </div>
+    );
+  }
+  if (definition.kind === 'choice') {
+    const options = definition.options ?? [];
+    const storedText = props.stored?.editable === true ? asText(props.stored.original) : '';
+    // Kept while the value is still the stored one: once changed, only the list or Not set.
+    const unlisted = text !== '' && !options.includes(text) && text === storedText;
+    return (
+      <div className="field">
+        <label htmlFor={id}>{definition.name}</label>
+        <div className="select-wrap">
+          <select
+            id={id}
+            value={text}
+            disabled={props.readOnly}
+            aria-invalid={props.invalid || undefined}
+            aria-describedby={errorId}
+            onChange={(event) => {
+              props.onText(event.target.value);
+            }}
+          >
+            {unlisted && <option value={text}>{`“${text}” (not in the list)`}</option>}
+            <option value="">Not set</option>
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <Icon name="chev-down" size="sm" />
+        </div>
+        {props.error}
+      </div>
+    );
+  }
+  return (
+    <div className="field">
+      <label htmlFor={id}>{definition.name}</label>
+      {text.includes('\n') ? (
+        <textarea
+          id={id}
+          value={text}
+          readOnly={props.readOnly}
+          aria-invalid={props.invalid || undefined}
+          aria-describedby={errorId}
+          onChange={(event) => {
+            props.onText(event.target.value);
+          }}
+        />
+      ) : (
+        <div className="value-anchor">
+          <ValueField
+            id={id}
+            value={text}
+            values={props.suggestions}
+            label={definition.name}
+            readOnly={props.readOnly}
+            aria-invalid={props.invalid || undefined}
+            aria-describedby={errorId}
+            onValue={props.onText}
+          />
+        </div>
+      )}
+      {props.error}
+    </div>
   );
 }

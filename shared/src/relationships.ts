@@ -74,8 +74,10 @@ export interface UpdateRelationshipRequest {
   requestData?: string[] | null;
   responseData?: string[] | null;
   /**
-   * Custom metadata: text. `null` removes a key, and keys not sent stay as they are. A custom list
-   * or object read from the model may be sent back unchanged. Architecture state, description,
+   * A Relation's defined properties (relationship-properties.ts), and keys the relationship already
+   * holds (custom metadata kept on a Contains): text, or one of a choice's options. No other key can
+   * be added: an Admin defines properties. `null` removes a key, and keys not sent stay as they
+   * are. A list or object read from the model may be sent back unchanged. Architecture state, description,
    * Identity, Identity Context, Request Data and Response Data have their own fields. `data` is
    * reserved: it was Data, now Request Data.
    */

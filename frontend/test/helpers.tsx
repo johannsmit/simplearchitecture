@@ -38,7 +38,8 @@ export function apiError(status: number, message: string, extra: object = {}): R
 
 /**
  * Stubs fetch. /api/me answers as `me` (a body, or a Response for errors); other requests go to
- * the handlers in order (first answer wins). Anything unhandled fails the request.
+ * the handlers in order (first answer wins). The defined properties are none unless a handler
+ * answers them. Anything else unhandled fails the request.
  */
 export function stubApi(
   me: MeResponse | (() => Response | Promise<Response>),
@@ -59,6 +60,7 @@ export function stubApi(
       });
       if (answer) return answer;
     }
+    if (url === '/api/properties' && method === 'GET') return Response.json({ properties: [] });
     throw new Error(`unexpected fetch: ${method} ${url}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -129,3 +131,37 @@ export const cpuMs = (): number => {
   const { user, system } = process.cpuUsage();
   return (user + system) / 1000;
 };
+
+/**
+ * Makes `<dialog>` modal as in a browser, for one test: jsdom has neither `showModal` nor inertness.
+ * While a dialog is open as modal, `focus()` on anything outside it does nothing, so a test catches
+ * focus moved to the page before the dialog is gone. Returns the function that undoes it.
+ */
+export function modalDialogs(): () => void {
+  const modal = new Set<HTMLDialogElement>();
+  const proto = HTMLDialogElement.prototype as HTMLDialogElement & {
+    showModal: () => void;
+    close: () => void;
+  };
+  proto.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+    modal.add(this);
+  };
+  proto.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    modal.delete(this);
+  };
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- called with .call(this) below
+  const focus = HTMLElement.prototype.focus;
+  const spy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const inert = [...modal].some((dialog) => dialog.isConnected && !dialog.contains(this));
+    if (!inert) focus.call(this);
+  });
+  return () => {
+    spy.mockRestore();
+    delete (proto as Partial<typeof proto>).showModal;
+    delete (proto as Partial<typeof proto>).close;
+  };
+}

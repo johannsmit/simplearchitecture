@@ -127,21 +127,14 @@ describe('on the relationship form', () => {
     ).toBeTruthy();
   });
 
-  it.each([
-    ['identityContext', '“identityContext” is a standard property of a Relation.'],
-    ['requestData', '“requestData” is a standard property of a Relation.'],
-    ['responseData', '“responseData” is a standard property of a Relation.'],
-    ['data', '“data” is reserved: Data is now Request Data and Response Data.'],
-  ])('refuses a custom row with the key %s', async (key, message) => {
-    const { sent } = await openHostedOn('modelling');
+  it('has no Add field, and says new properties come from an Admin', async () => {
+    await openHostedOn('modelling');
     const form = await screen.findByRole('form', { name: /^Relationship / });
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getAllByLabelText('Key').at(-1) as HTMLElement, {
-      target: { value: key },
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(await within(form).findByText(message)).toBeTruthy();
-    expect(sent).toEqual([]);
+    expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
+    expect(within(form).queryByLabelText('Key')).toBeNull();
+    expect(
+      within(form).getByText('New properties are added by an Admin, in Admin → Properties.'),
+    ).toBeTruthy();
   });
 });
 

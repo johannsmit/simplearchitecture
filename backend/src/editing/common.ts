@@ -32,7 +32,7 @@ export class EditingUnavailableError extends Error {
 }
 
 export type Missing =
-  'model' | 'element' | 'relationship' | 'source' | 'target' | 'view' | 'folder';
+  'model' | 'element' | 'relationship' | 'source' | 'target' | 'view' | 'folder' | 'property';
 
 const missingMessages: Record<Missing, string> = {
   model: 'Model not found',
@@ -42,6 +42,7 @@ const missingMessages: Record<Missing, string> = {
   target: 'The target element is not in the model',
   view: 'View not found',
   folder: 'No view is in this folder',
+  property: 'Property not found',
 };
 
 /** There is no such model, or no such element or relationship in it. */

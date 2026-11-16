@@ -1,10 +1,12 @@
 import type {
+  AddedRelationshipProperty,
   JgfDocument,
   JgfEdge,
   JgfNode,
   JgfValidationResult,
   ModelAuthor,
   ModelSummary,
+  RelationshipPropertyDefinition,
   ViewCardLayout,
   ViewLineRoute,
   ViewSummary,
@@ -32,8 +34,11 @@ export interface ModelStore {
    * Stores a validated model under a new id. The server-owned data (id, name, creation, counts)
    * replaces anything the document says about them; the document's own `graph.id` is kept as
    * `sourceId`. Throws ModelStoreFullError, ModelTooLargeError or ModelNotStorableError.
+   *
+   * A store with property definitions (PostgreSQL) defines every custom key on the model's
+   * relationships that isn't defined yet, in the same transaction (`SaveOptions`).
    */
-  save(document: JgfDocument, createdBy: ModelAuthor): Promise<ModelSummary>;
+  save(document: JgfDocument, createdBy: ModelAuthor, options?: SaveOptions): Promise<ModelSummary>;
   /**
    * Removes a model, or an entry with a model's name that isn't a model file. Undefined when there
    * is none. Throws ModelNotDeletableError when such an entry can't be removed.
@@ -52,10 +57,20 @@ export interface ModelStore {
   readonly views?: ViewStore;
 }
 
+export interface SaveOptions {
+  /**
+   * Told which properties the save added, with the number of values the model holds for each
+   * (none: not called). Called before the save returns.
+   */
+  onNewProperties?: (added: AddedRelationshipProperty[]) => void;
+}
+
 /** The model as stored now, read under the model's lock, and fully validated. */
 export interface EditableModel {
   document: JgfDocument;
   validation: JgfValidationResult;
+  /** The relationship properties an Admin defined, as they are now (by name). */
+  relationshipProperties: readonly RelationshipPropertyDefinition[];
   /** The element's version, or undefined when the model has no such element. */
   versionOf(elementId: string): number | undefined;
   /** The relationship's version, or undefined when the model has no relationship with this id. */
@@ -123,7 +138,17 @@ export interface ElementStore {
   change(
     modelId: string,
     plan: (model: EditableModel) => PlannedElementChange,
+    options?: ChangeOptions,
   ): Promise<AppliedElementChange | undefined>;
+}
+
+export interface ChangeOptions {
+  /**
+   * Metadata keys the change may set as defined properties: their definitions are share-locked
+   * before they are read, so a key change or a delete of one waits for this change, and a change
+   * after it sees it gone.
+   */
+  propertyKeys?: readonly string[];
 }
 
 /**

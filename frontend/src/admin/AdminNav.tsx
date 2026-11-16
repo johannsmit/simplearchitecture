@@ -9,6 +9,9 @@ export function AdminNav() {
           <NavLink to="/admin/models">Models</NavLink>
         </li>
         <li>
+          <NavLink to="/admin/properties">Properties</NavLink>
+        </li>
+        <li>
           <NavLink to="/admin/database">Database</NavLink>
         </li>
         <li>

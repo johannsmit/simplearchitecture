@@ -1,4 +1,5 @@
 import {
+  definitionsForKeys,
   editingUnavailableMessage,
   maxViewElements,
   type DeletedRelationshipResult,
@@ -12,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DatabaseService } from '../src/db/service.js';
+import { insertDefinitions } from '../src/properties/property-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import {
   buildTestApp,
@@ -544,6 +546,7 @@ describe('custom metadata through the route', () => {
   });
 
   it('saves for a Modeller and keeps the value out of the log and the audit row', async () => {
+    await insertDefinitions(db, definitionsForKeys(['protocol'], []));
     const { target, cookie } = await signedInAs(['Modeller']);
     const logs = captureLogs(target);
     const body = { version: 1, metadata: { protocol: secret } };

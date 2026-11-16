@@ -1,4 +1,4 @@
-import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
+import { definitionsForKeys, type JgfDocument, type ModelAuthor } from '@simplearchitecture/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   ConflictError,
@@ -9,6 +9,7 @@ import {
 import { ElementService } from '../src/editing/element-service.js';
 import { RelationshipService } from '../src/editing/relationship-service.js';
 import { validateJgf } from '../src/jgf/validate.js';
+import { insertDefinitions } from '../src/properties/property-store.js';
 import { FileModelStore } from '../src/storage/file-model-store.js';
 import { ModelNotStorableError, ModelTooLargeError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
@@ -78,6 +79,9 @@ async function setup(options: { maxModelBytes?: number; model?: JgfDocument } = 
   const summary = await store.save(model, other);
   return { store, service: new RelationshipService(store), modelId: summary.id };
 }
+
+/** Defines text properties for these keys, as an Admin would before Modellers set them. */
+const define = (...keys: string[]) => insertDefinitions(db, definitionsForKeys(keys, []));
 
 const audit = () =>
   db.query<AuditRow>(
@@ -867,6 +871,7 @@ describe('a label on a stored model', () => {
 describe('RelationshipService: custom metadata', () => {
   it('adds, changes and removes values, and audits the field names, never the values', async () => {
     const { service, modelId } = await setup();
+    await define('protocol', 'auth');
     const added = await service.updateRelationship(
       modelId,
       'r3',
@@ -903,6 +908,7 @@ describe('RelationshipService: custom metadata', () => {
 
   it('refuses keys with their own field, reserved keys and values that are not text', async () => {
     const { service, modelId } = await setup();
+    await define('protocol');
     const refusal = async (metadata: unknown) =>
       (
         await rejection(
@@ -939,6 +945,7 @@ describe('RelationshipService: custom metadata', () => {
         : edge,
     );
     const { service, modelId } = await setup({ model: { graph: { ...farm.graph, edges } } });
+    await define('auth');
     const same = await service.updateRelationship(
       modelId,
       'r3',
@@ -959,6 +966,7 @@ describe('RelationshipService: custom metadata', () => {
 describe('custom metadata at the edges of the rules', () => {
   it('stores odd keys as plain data, touching no prototype', async () => {
     const { service, store, modelId } = await setup();
+    await define('constructor', 'toString', 'hasOwnProperty', 'prototype', 'a.b');
     const metadata = {
       constructor: 'a',
       toString: 'b',
@@ -996,6 +1004,7 @@ describe('custom metadata at the edges of the rules', () => {
 
   it('refuses __proto__ at any level, and values that are not text, with nothing stored', async () => {
     const { service, store, modelId } = await setup();
+    await define('a');
     const before = await edgesOf(store, modelId);
     const refused = async (json: string) =>
       (
@@ -1026,6 +1035,7 @@ describe('custom metadata at the edges of the rules', () => {
 
   it('holds the limits exactly, and refuses reserved keys for removal as well', async () => {
     const { service, modelId } = await setup();
+    await define('k'.repeat(100), ...Array.from({ length: 100 }, (_, i) => `k${i}`));
     const key = 'k'.repeat(100);
     const many = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`k${i}`, 'x']));
     const ok = await service
@@ -1070,6 +1080,7 @@ describe('custom metadata at the edges of the rules', () => {
       edge.id === 'r3' ? { ...edge, metadata: { description: 'Made-up' } } : edge,
     );
     const { service, modelId } = await setup({ model: { graph: { ...farm.graph, edges } } });
+    await define(' description ');
     const { relationship } = await service.updateRelationship(
       modelId,
       'r3',
@@ -1081,18 +1092,29 @@ describe('custom metadata at the edges of the rules', () => {
 
   it('refuses a NUL or half a character in a value or a key, without touching the model', async () => {
     const { service, store, modelId } = await setup();
+    await define('a');
     const before = await edgesOf(store, modelId);
-    for (const metadata of [{ a: 'x\u0000y' }, { 'x\u0000y': 'a' }, { a: 'x\ud83dy' }]) {
+    for (const metadata of [{ a: 'x\u0000y' }, { a: 'x\ud83dy' }]) {
       await expect(
         service.updateRelationship(modelId, 'r3', { version: 1, metadata }, modeller),
       ).rejects.toBeInstanceOf(ModelNotStorableError);
     }
+    // A key that can't be stored can't be a property either.
+    await expect(
+      service.updateRelationship(
+        modelId,
+        'r3',
+        { version: 1, metadata: { 'x\u0000y': 'a' } },
+        modeller,
+      ),
+    ).rejects.toBeInstanceOf(RejectedError);
     expect(await edgesOf(store, modelId)).toEqual(before);
     expect(await audit()).toEqual([]);
   });
 
   it('checks the version before anything else, and an unchanged value makes no version or row', async () => {
     const { service, modelId } = await setup();
+    await define('a');
     await service.updateRelationship(modelId, 'r3', { version: 1, metadata: { a: 'x' } }, modeller);
     const rows = (await audit()).length;
     await expect(
@@ -1115,6 +1137,7 @@ describe('custom metadata at the edges of the rules', () => {
         : edge,
     );
     const { service, modelId } = await setup({ model: { graph: { ...farm.graph, edges } } });
+    await define('extra');
     const { relationship } = await service.updateRelationship(
       modelId,
       'r3',

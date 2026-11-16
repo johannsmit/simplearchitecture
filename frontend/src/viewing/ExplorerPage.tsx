@@ -19,6 +19,7 @@ import {
   type StoredView,
   type ElementChangeResult,
   type JgfDocument,
+  type RelationshipPropertyDefinition,
   type ChangedView,
   type JgfEdge,
   type ModelRelationship,
@@ -39,7 +40,7 @@ import {
   type RefObject,
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
-import { ApiRequestError, getElement, getModel } from '../api';
+import { ApiRequestError, getElement, getModel, listProperties } from '../api';
 import { useMe } from '../auth';
 import { UnsavedDialog } from '../modelling/dialogs';
 import { withEdge, withNode, withoutEdge, withoutElement } from '../modelling/document';
@@ -226,6 +227,36 @@ function useModelDocument(
     );
   }, []);
   return [load.modelId === modelId ? load.value : { status: 'loading' }, retry, update];
+}
+
+type PropertiesLoad = 'loading' | 'failed' | readonly RelationshipPropertyDefinition[];
+
+const noProperties: readonly RelationshipPropertyDefinition[] = [];
+
+/**
+ * The properties an Admin defined for relationships, read with the model (and again on `reload`,
+ * after a save refused a property that is gone).
+ */
+function useRelationshipProperties(modelId: string): [PropertiesLoad, () => void] {
+  const [load, setLoad] = useState<PropertiesLoad>('loading');
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    listProperties(controller.signal)
+      .then((properties) => {
+        setLoad(properties);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoad('failed');
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [modelId, attempt]);
+  const reload = useCallback(() => {
+    setAttempt((n) => n + 1);
+  }, []);
+  return [load, reload];
 }
 
 /**
@@ -568,6 +599,8 @@ function Explorer({
   const [shownPath = '', shownSearch = ''] = url.split('?');
   const params = useMemo(() => new URLSearchParams(shownSearch), [shownSearch]);
   const [load, retry, updateDocument] = useModelDocument(modelId);
+  const [propertiesLoad, reloadProperties] = useRelationshipProperties(modelId);
+  const definitions = typeof propertiesLoad === 'string' ? noProperties : propertiesLoad;
   const { list, editable: canEdit, reload: reloadModels } = useModels();
   const editable = space === 'modelling' && canEdit === true;
   const readOnlyModelling = space === 'modelling' && canEdit === false;
@@ -613,7 +646,10 @@ function Explorer({
   const summaryName =
     list.status === 'ready' ? list.models.find((m) => m.id === modelId)?.name : undefined;
   const document_ = load.status === 'ready' ? load.document : undefined;
-  const graph = useMemo(() => (document_ ? buildModelGraph(document_) : undefined), [document_]);
+  const graph = useMemo(
+    () => (document_ ? buildModelGraph(document_, definitions) : undefined),
+    [document_, definitions],
+  );
   const lineFields = useMemo(() => (graph ? relationshipViewFields(graph) : []), [graph]);
   // What the address asks for and this model has, in the list's order: others are ignored.
   const shownProperties = useMemo(
@@ -1610,45 +1646,48 @@ function Explorer({
                 </ul>
               </>
             )}
-            <ViewsSection
-              modelId={modelId}
-              space={space}
-              shown={shownAsked}
-              currentViewId={viewId}
-              emptyText={viewsEmptyText}
-              onSaveAsView={
-                canSaveAsView
-                  ? () => {
-                      setViewDialog('save');
-                    }
-                  : undefined
-              }
-              open={viewsOpen}
-              onToggle={toggleViews}
-              refresh={viewsRefresh}
-              headerRef={viewsHeader}
-              saveRef={saveViewButton}
-              onOpenView={() => {
-                setViewHeadingFocus(true);
-              }}
-              editable={editable}
-              onAnnounce={setAnnouncement}
-              onFolderChanged={(changed) => {
-                const open = changed.find((one) => one.id === viewId);
-                if (open !== undefined) openView.refiled(open.folder);
-              }}
-            />
-            {legendShown && (
-              <Legend
-                types={typesOnCanvas}
-                nest={nest}
-                onToggleNest={toggleNest}
-                lines={lines}
-                onToggleLines={() => {
-                  showLines(!lines);
+            {/* Views and the legend share the space the element list leaves. */}
+            <div className="psecs">
+              <ViewsSection
+                modelId={modelId}
+                space={space}
+                shown={shownAsked}
+                currentViewId={viewId}
+                emptyText={viewsEmptyText}
+                onSaveAsView={
+                  canSaveAsView
+                    ? () => {
+                        setViewDialog('save');
+                      }
+                    : undefined
+                }
+                open={viewsOpen}
+                onToggle={toggleViews}
+                refresh={viewsRefresh}
+                headerRef={viewsHeader}
+                saveRef={saveViewButton}
+                onOpenView={() => {
+                  setViewHeadingFocus(true);
+                }}
+                editable={editable}
+                onAnnounce={setAnnouncement}
+                onFolderChanged={(changed) => {
+                  const open = changed.find((one) => one.id === viewId);
+                  if (open !== undefined) openView.refiled(open.folder);
                 }}
               />
-            )}
+              {legendShown && (
+                <Legend
+                  types={typesOnCanvas}
+                  nest={nest}
+                  onToggleNest={toggleNest}
+                  lines={lines}
+                  onToggleLines={() => {
+                    showLines(!lines);
+                  }}
+                />
+              )}
+            </div>
           </aside>
         </>
       )}
@@ -2143,6 +2182,8 @@ function Explorer({
                 onAnnounce={setAnnouncement}
                 focusHeading={relHeadingFocus}
                 onHeadingFocused={clearRelHeadingFocus}
+                propertiesFailed={propertiesLoad === 'failed'}
+                onPropertiesStale={reloadProperties}
               />
             ) : selectedRelationship ? (
               <RelationshipDetails
