@@ -307,8 +307,12 @@ describe('importing blank and long relationship keys', () => {
       size: 'S',
     });
     expect(stored?.graph.edges?.[1]?.metadata).toEqual({ [cut]: 'again' });
-    // Elements keep their custom metadata as it is.
-    expect(stored?.graph.nodes?.jar?.metadata).toMatchObject({ [longOne]: 'element keys stay' });
+    // An element's name follows the same rules, listed apart, and is no property.
+    expect(stored?.graph.nodes?.jar?.metadata).toEqual({
+      type: 'Other',
+      [cut]: 'element keys stay',
+    });
+    expect(body.changedElementKeys).toEqual([{ key: `${cut}…`, storedAs: cut, values: 1 }]);
     for (const property of await readDefinitions(db)) {
       expect(property.key.trim()).not.toBe('');
       expect(property.key.length).toBeLessThanOrEqual(maxPropertyKeyLength);

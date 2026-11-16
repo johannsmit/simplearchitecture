@@ -55,6 +55,7 @@ import {
   cardNameCut,
   cardSize,
   containerMinSize,
+  containerNameWidth,
   maxSetCardWidth,
   minCardWidth,
   isCircleNameCut,
@@ -536,11 +537,25 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   });
   /** How many new canvases there have been: each one's routes given by hand start afresh. */
   const canvasCount = useRef(0);
+  /**
+   * The last Tidy up, and the canvas it was chosen for (`layoutKey` then). Once the canvas is
+   * another one (a view, focus, depth or the Nest switch), a Tidy up that hasn't finished is
+   * dropped (`key` null): the new canvas opens as it normally would.
+   */
+  const tidyAsked = useRef<{ count: number; key: string | null }>({
+    count: props.tidyCount,
+    key: null,
+  });
 
   const { layoutKey, tidyCount, widths } = props;
   // A new canvas is measured (after the fonts load) and laid out in ELK's worker. Any other change
   // (cards or lines added or taken off, an element edited) keeps every card where it is.
   useEffect(() => {
+    if (tidyAsked.current.count !== tidyCount) {
+      tidyAsked.current = { count: tidyCount, key: layoutKey };
+    } else if (tidyAsked.current.key !== layoutKey) {
+      tidyAsked.current.key = null;
+    }
     if (!fontsReady) return;
     let live = true;
     // Nesting: each element inside its container, when that and their Contains are shown.
@@ -744,8 +759,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     };
 
     // A view with a stored layout: its cards where they were left, the others at a free spot.
-    // Tidy up lays it out with ELK instead.
-    const tidied = previous !== null && previous.tidyCount !== tidyCount;
+    // Tidy up lays it out with ELK instead, but only on the canvas it was chosen for.
+    const tidied =
+      previous !== null && previous.tidyCount !== tidyCount && tidyAsked.current.key === layoutKey;
+    // Another canvas: a report asked for on the previous one (Tidy up's save) is never made for it.
+    if (!tidied) arrangeWanted.current = false;
     const stored = tidied ? undefined : storedPositions(storedRef.current.cards ?? []);
     if (stored !== undefined && ids.some((id) => stored.has(id))) {
       placeWithoutElk(stored, storedRef.current.routes ?? [], null);
@@ -768,6 +786,16 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         partition: element ? nodeTypes.indexOf(element.type) : 0,
         shape,
         ...(parent === undefined ? {} : { parent }),
+        // Lines into a container come in beside its name, however long.
+        ...(container && element
+          ? {
+              nameWidth: containerNameWidth({
+                name: element.name,
+                focused: id === hood.focusId,
+                userIcon: nodeTypeDefinitions[element.type].icon === 'user',
+              }),
+            }
+          : {}),
       };
     });
     const laidOut = layoutLinks(
@@ -793,7 +821,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           routes: noRoutes,
         });
         setLaid(next);
-        if (previous && previous.tidyCount !== tidyCount) {
+        if (tidied) {
           setNote({ laid: next, text: 'Layout tidied up.' });
         }
       })

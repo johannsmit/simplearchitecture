@@ -133,6 +133,100 @@ describe('a custom key __proto__ on the element form', () => {
   });
 });
 
+/** The bakery, with the till holding `metadata` besides its type; the PATCH bodies sent. */
+function elementApi(metadata: Record<string, unknown>) {
+  const nodes = bakeryModel.graph.nodes ?? {};
+  const till = nodes.till;
+  const document: JgfDocument = {
+    graph: {
+      ...bakeryModel.graph,
+      nodes: {
+        ...nodes,
+        till: { ...till, metadata: { ...till?.metadata, ...metadata } },
+      },
+    },
+  };
+  const sent: Record<string, unknown>[] = [];
+  const handler: Handler = (request) => {
+    if (request.url === '/api/models') {
+      return Response.json({ models: [bakerySummary], editable: true });
+    }
+    if (request.url === '/api/properties') return Response.json({ properties: [] });
+    if (request.url === `/api/models/${bakeryId}`) return Response.json(document);
+    const element = /\/elements\/([^/?]+)/.exec(request.url);
+    if (element) {
+      const id = decodeURIComponent(element[1] ?? '');
+      if (request.method === 'PATCH' && typeof request.body === 'string') {
+        sent.push(JSON.parse(request.body) as Record<string, unknown>);
+      }
+      return Response.json({
+        element: { id, version: 1, node: document.graph.nodes?.[id] },
+        warnings: [],
+      });
+    }
+    return undefined;
+  };
+  return { handler, sent };
+}
+
+async function openElement(metadata: Record<string, unknown>) {
+  const { handler, sent } = elementApi(metadata);
+  stubApi(modeller, handler);
+  renderAt(`/modelling/models/${bakeryId}/elements/till`);
+  const form = await screen.findByRole('form', { name: /^Edit / });
+  return { form, sent };
+}
+
+describe('a blank or long custom name on the element form', () => {
+  it('changes and removes their values, sent under the names exactly as stored', async () => {
+    const { form, sent } = await openElement({
+      [longKey]: 'Long value',
+      '   ': 'Blank value',
+      ' padded ': 'Padded value',
+    });
+    const long = within(form).getByRole<HTMLInputElement>('combobox', {
+      name: `Value of ${longKey}`,
+    });
+    expect(long.value).toBe('Long value');
+    fireEvent.change(long, { target: { value: 'Changed' } });
+    fireEvent.change(within(form).getByLabelText('Value of padded'), {
+      target: { value: 'Changed padded' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Remove the blank key' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(sent).toHaveLength(1);
+    });
+    expect(sent[0]).toEqual({
+      version: 1,
+      metadata: { [longKey]: 'Changed', ' padded ': 'Changed padded', '   ': null },
+    });
+  });
+
+  it('never lets a blank name an import left block a save', async () => {
+    const { form, sent } = await openElement({ '': 'Empty name value' });
+    fireEvent.change(within(form).getByLabelText(/^Name/), { target: { value: 'Made-up till' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(sent).toHaveLength(1);
+    });
+    expect(sent[0]).toEqual({ version: 1, name: 'Made-up till' });
+  });
+
+  it('renames one: the stored name is removed and the typed one set', async () => {
+    const { form, sent } = await openElement({ [longKey]: 'Long value' });
+    const key = within(form)
+      .getAllByLabelText('Key')
+      .find((input) => (input as HTMLInputElement).value === longKey) as HTMLInputElement;
+    fireEvent.change(key, { target: { value: ' warranty ' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(sent).toHaveLength(1);
+    });
+    expect(sent[0]).toEqual({ version: 1, metadata: { warranty: 'Long value', [longKey]: null } });
+  });
+});
+
 describe('the import result', () => {
   it('lists the keys it shortened or left out', () => {
     render(
@@ -173,6 +267,55 @@ describe('the import result', () => {
       'KeyWhat happenedValues',
       'BlankLeft out, with its values3',
       `${longKey.slice(0, 100)}…Shortened to ${longKey.slice(0, 100)}2`,
+    ]);
+  });
+
+  it('lists the element names apart from the relationship keys', () => {
+    render(
+      <MemoryRouter>
+        <ImportPanel
+          state={{
+            kind: 'done',
+            fileName: 'made-up.json',
+            result: {
+              model: bakerySummary,
+              validation: {
+                valid: true,
+                errorCount: 0,
+                warningCount: 0,
+                errors: [],
+                warnings: [],
+                truncated: false,
+                summary: {},
+              },
+              changedKeys: [{ key: '  ', values: 3 }],
+              changedElementKeys: [
+                { key: '', values: 1 },
+                { key: `${longKey.slice(0, 100)}…`, storedAs: longKey.slice(0, 100), values: 4 },
+              ],
+            } as never,
+          }}
+          onDismiss={() => undefined}
+          onChooseFile={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '3 property keys changed' }));
+    const section = document.getElementById('import-section-changed-keys') as HTMLElement;
+    expect(section.hasAttribute('open')).toBe(true);
+    const table = (caption: string) =>
+      Array.from(
+        within(section).getByRole('table', { name: caption }).querySelectorAll('tr'),
+        (row) => row.textContent,
+      );
+    expect(table('On elements')).toEqual([
+      'KeyWhat happenedValues',
+      'BlankLeft out, with its values1',
+      `${longKey.slice(0, 100)}…Shortened to ${longKey.slice(0, 100)}4`,
+    ]);
+    expect(table('On relationships')).toEqual([
+      'KeyWhat happenedValues',
+      'BlankLeft out, with its values3',
     ]);
   });
 });

@@ -1,5 +1,6 @@
 import type { NodeChange } from '@xyflow/react';
-import { containerBox, spacing, type PlacedCard } from './elkLayout';
+import type { PlacedCard } from './elkLayout';
+import { containerBox, smallestContainer, spacing } from './layoutGeometry';
 import type { Direction } from './view';
 
 /**
@@ -154,8 +155,6 @@ export interface FitOptions {
   /** Until the drop, the containers the held card is in only grow: nothing else moves in them. */
   holding?: Holding | undefined;
 }
-
-const smallestContainer: Size = { width: containerBox.minWidth, height: containerBox.minHeight };
 
 /** Less than this is no shift: so a fitted container stays put, whatever the rounding. */
 const tolerance = 1e-6;

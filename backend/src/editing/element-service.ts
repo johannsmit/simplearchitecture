@@ -41,6 +41,7 @@ import {
   refuseErrors as refuse,
   RejectedError,
   rejectedMessage,
+  reservedKeyProblem,
   sameValue,
   Unchanged,
   versionSchema,
@@ -95,7 +96,11 @@ function propertyValueProblem(value: unknown): string | undefined {
   return 'Must be text, or a list of text for Functions.';
 }
 
-/** Metadata entries: the count and the keys here; the values need the type (see valueProblem). */
+/**
+ * Metadata entries: the count and the reserved keys here. A key's length and a blank key are
+ * checked with the element (`metadataProblem`): a key the element holds can always be set or
+ * removed, as an import may once have brought a blank or very long one. The values need the type.
+ */
 const metadataSchema = z
   .record(z.string(), z.unknown(), { error: 'Must be an object.' })
   .superRefine((record, ctx) => {
@@ -109,7 +114,7 @@ const metadataSchema = z
     }
     for (const key of keys) {
       const problem =
-        key === 'description' ? 'Set the description in its own field.' : keyProblem(key);
+        key === 'description' ? 'Set the description in its own field.' : reservedKeyProblem(key);
       if (problem !== undefined) ctx.addIssue({ code: 'custom', message: problem, path: [key] });
     }
   });
@@ -189,6 +194,21 @@ function valueProblem(
   return value.length > maxPropertyValueLength ? tooLong : undefined;
 }
 
+/**
+ * Why a metadata entry of a change can't be stored, or undefined: a key the element doesn't hold
+ * yet must be a name a person can type, and a value (not `null`, which removes it) must fit.
+ */
+function metadataProblem(
+  type: NodeType,
+  key: string,
+  value: unknown,
+  current: Entries,
+): string | undefined {
+  const problem = Object.hasOwn(current, key) ? undefined : keyProblem(key);
+  if (problem !== undefined || value === null) return problem;
+  return valueProblem(type, key, value, current);
+}
+
 /** Refuses a change that gives the model an error, naming the fields of this element. */
 function refuseErrors(validation: JgfValidationResult, elementId: string): void {
   refuse(validation, { kind: 'node', id: elementId }, requestField);
@@ -239,7 +259,7 @@ export class ElementService {
       fields.push('description');
     }
     for (const [key, value] of Object.entries(request.metadata ?? {})) {
-      const problem = valueProblem(type, key, value, {});
+      const problem = metadataProblem(type, key, value, {});
       if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
       metadata[key] = value;
       fields.push(`metadata.${key}`);
@@ -315,7 +335,7 @@ export class ElementService {
           apply(metadata, 'description', description, 'description', changed);
         }
         for (const [key, value] of Object.entries(request.metadata ?? {})) {
-          const problem = value === null ? undefined : valueProblem(type, key, value, stored);
+          const problem = metadataProblem(type, key, value, stored);
           if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
           apply(metadata, key, value, `metadata.${key}`, changed);
         }

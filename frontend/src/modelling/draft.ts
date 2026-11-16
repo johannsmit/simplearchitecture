@@ -38,6 +38,11 @@ export interface CustomRow {
   editable: boolean;
   /** Moved here from a standard field by a type change. */
   wasProperty?: boolean;
+  /**
+   * The key exactly as the element holds it, for a row read from it. While the key isn't typed
+   * over, it is sent as it is: an import may once have left one blank, padded or very long.
+   */
+  storedKey?: string;
 }
 
 export interface Draft {
@@ -78,12 +83,22 @@ export function customRow(key: string, value: unknown, wasProperty = false): Cus
   };
 }
 
-/** The values of custom rows: what they stand for, as stored (rows with no key don't count). */
+/** Whether a row's key is the one the element holds, not typed over. */
+export const isStoredKey = (row: CustomRow): boolean =>
+  row.storedKey !== undefined && row.key === row.storedKey;
+
+/** The key a row stands for: as the element holds it, or as typed (trimmed). */
+export const rowKey = (row: CustomRow): string => (isStoredKey(row) ? row.key : row.key.trim());
+
+/**
+ * The values of custom rows: what they stand for, as stored. A typed row with no key doesn't
+ * count; a key the element holds does, even blank.
+ */
 export function customValues(rows: readonly CustomRow[]): Map<string, unknown> {
   const values = new Map<string, unknown>();
   for (const row of rows) {
-    const key = row.key.trim();
-    if (key === '') continue;
+    const key = rowKey(row);
+    if (key.trim() === '' && !isStoredKey(row)) continue;
     const changed = row.editable && row.text !== asText(row.original);
     values.set(key, changed ? row.text : row.original);
   }
@@ -118,9 +133,14 @@ export function customRowErrors(
   const errors = new Map<string, string>();
   const seen = new Set<string>();
   for (const row of rows) {
-    const key = row.key.trim();
+    const key = rowKey(row);
     const slot = `row:${row.id}`;
     const hasValue = row.editable ? row.text !== '' : true;
+    // A key the element holds is never refused here: it can always be changed or removed.
+    if (isStoredKey(row)) {
+      seen.add(key);
+      continue;
+    }
     if (key === '') {
       if (hasValue) errors.set(slot, 'Enter a key.');
       continue;
@@ -155,7 +175,10 @@ export function draftOf(element: ModelElement): Draft {
     type: element.type,
     description: asText(element.metadata.description),
     fields,
-    custom: customMetadata(element).map(([key, value]) => customRow(key, value)),
+    custom: customMetadata(element).map(([key, value]) => ({
+      ...customRow(key, value),
+      storedKey: key,
+    })),
   };
 }
 
@@ -293,7 +316,7 @@ export function serverErrors(
       add('description', message);
       continue;
     }
-    const row = key === undefined ? undefined : draft.custom.find((r) => r.key.trim() === key);
+    const row = key === undefined ? undefined : draft.custom.find((r) => rowKey(r) === key);
     add(row ? `row:${row.id}` : '', message);
   }
   return errors;

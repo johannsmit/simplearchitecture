@@ -96,7 +96,9 @@ describe('on any model', () => {
       }
     }
 
-    // Every line has a route, and no routed line runs over a card it isn't attached to.
+    // Nearly every line has a route (one that can't be carried through the containers' fit is
+    // drawn by the canvas on its own), and no routed line runs over a card it isn't attached to.
+    let unrouted = 0;
     for (const link of links) {
       if (link.source === link.target) continue;
       const handle = placed
@@ -104,7 +106,11 @@ describe('on any model', () => {
         ?.handles.find((h) => h.id === portId(link.id, 'source'));
       const end = placed.get(link.target)?.handles.find((h) => h.id === portId(link.id, 'target'));
       const [from, to] = [boxes.get(link.source), boxes.get(link.target)];
-      if (!handle?.route || !end || !from || !to) throw new Error(`no route for ${link.id}`);
+      if (!handle || !end || !from || !to) throw new Error(`no handles for ${link.id}`);
+      if (!handle.route) {
+        unrouted += 1;
+        continue;
+      }
       const line = [
         point(from, handle),
         ...handle.route.bends.map((bend) => [bend.x + from.x, bend.y + from.y] as const),
@@ -135,6 +141,7 @@ describe('on any model', () => {
         }
       }
     }
+    expect(unrouted).toBeLessThanOrEqual(Math.ceil(links.length / 50));
   });
 
   it('fails rather than hangs when both tries throw, and tries exactly twice', async () => {

@@ -73,8 +73,9 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
             rows.map((r) => (r.id === row.id ? { ...r, ...next } : r)),
           );
         };
-        // A fixed key is blank only when an earlier import left it so: it is named, not typed.
-        const valueName = key !== '' ? key : canAdd ? 'the new field' : 'the blank key';
+        // A stored key is blank only when an earlier import left it so: it is named, not typed.
+        const blankStored = !canAdd || (row.storedKey !== undefined && row.key === row.storedKey);
+        const valueName = key !== '' ? key : blankStored ? 'the blank key' : 'the new field';
         // With fixed keys, the value field takes the slot's id, so errors and focus find it.
         const valueId = canAdd ? undefined : slotId(slot);
         return (

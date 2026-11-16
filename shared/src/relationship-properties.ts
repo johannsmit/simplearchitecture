@@ -12,6 +12,12 @@ import type { ApiError } from './api.js';
 import { isPrototypeKey, prototypeKeyMessage, type ElementFieldIssue } from './elements.js';
 import { compareNames } from './graph.js';
 import {
+  isImportableKey,
+  maxPropertyKeyLength,
+  withImportableKeys,
+  type ChangedPropertyKey,
+} from './imported-keys.js';
+import {
   relationProperties,
   retiredDataKey,
   standardProperties,
@@ -119,7 +125,7 @@ export interface AddedRelationshipProperty {
 
 export const maxPropertyNameLength = 60;
 /** The longest key an Admin can type, as for any metadata key. */
-export const maxPropertyKeyLength = 100;
+export { maxPropertyKeyLength };
 export const maxPropertyOptionLength = 100;
 export const minPropertyOptions = 2;
 export const maxPropertyOptions = 50;
@@ -388,83 +394,23 @@ export function definitionsForKeys(
  * Whether an import keeps a key on a relationship as it is: not blank (empty, or only spaces) and
  * at most `maxPropertyKeyLength` characters, like a key an Admin types.
  */
-export function isImportableRelationshipKey(key: string): boolean {
-  return key.trim() !== '' && key.length <= maxPropertyKeyLength;
-}
+export const isImportableRelationshipKey = isImportableKey;
 
 /**
  * A key on a model's relationships that an import changed, as no property can have it: a key over
  * `maxPropertyKeyLength` characters is shortened, and a blank one is left out with its values.
  */
-export interface ChangedRelationshipKey {
-  /** The key in the file, cut to `maxPropertyKeyLength` characters (with "…") when longer. */
-  key: string;
-  /** The key its values are stored under now; absent when they were left out (a blank key). */
-  storedAs?: string;
-  /** Relationships that held a value under it. */
-  values: number;
-}
-
-const cutKey = (key: string): string =>
-  key.length > maxPropertyKeyLength ? `${key.slice(0, maxPropertyKeyLength)}…` : key;
+export type ChangedRelationshipKey = ChangedPropertyKey;
 
 /**
  * The key rules of an import, for the relationships (JGF edges) of a model about to be stored, so
- * no property gets a blank or overlong key. A blank key is left out with its values. A key over
- * `maxPropertyKeyLength` characters is trimmed and cut to that length; when that is a key the
- * model's relationships use already, or one that can't be a property (such as `description`), it
- * gets " (2)", " (3)" … within the length. Every other key stays exactly as it is. A shortened key
- * that is a property already (an earlier import of the same file, say) holds that property's
- * values, as any key does. Returns the edges, each changed one a copy, and the changes by key.
+ * no property gets a blank or overlong key (`withImportableKeys`). A shortened key never becomes
+ * one that can't be a property (such as `description`). A shortened key that is a property already
+ * (an earlier import of the same file, say) holds that property's values, as any key does.
  */
 export function withImportableRelationshipKeys<E extends { metadata?: unknown }>(
   edges: readonly E[],
 ): { edges: E[]; changes: ChangedRelationshipKey[] } {
-  const kept = new Set<string>();
-  const odd = new Map<string, number>();
-  for (const edge of edges) {
-    const metadata = edge.metadata;
-    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) continue;
-    for (const key of Object.keys(metadata)) {
-      if (isImportableRelationshipKey(key)) kept.add(key);
-      else odd.set(key, (odd.get(key) ?? 0) + 1);
-    }
-  }
-  if (odd.size === 0) return { edges: [...edges], changes: [] };
-
-  const renamed = new Map<string, string>();
-  const changes: ChangedRelationshipKey[] = [];
-  for (const key of [...odd.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
-    const values = odd.get(key) ?? 0;
-    if (key.trim() === '') {
-      changes.push({ key: cutKey(key), values });
-      continue;
-    }
-    const base = key.trim().slice(0, maxPropertyKeyLength).trimEnd();
-    let storedAs = base;
-    for (let n = 2; kept.has(storedAs) || !isDefinableRelationshipKey(storedAs); n++) {
-      const suffix = ` (${String(n)})`;
-      storedAs = `${base.slice(0, maxPropertyKeyLength - suffix.length).trimEnd()}${suffix}`;
-    }
-    kept.add(storedAs);
-    renamed.set(key, storedAs);
-    changes.push({ key: cutKey(key), storedAs, values });
-  }
-
-  const changedEdges = edges.map((edge) => {
-    const metadata = edge.metadata;
-    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) return edge;
-    const entries = Object.entries(metadata);
-    if (entries.every(([key]) => !odd.has(key))) return edge;
-    // fromEntries defines own properties, in the order they were.
-    const next = Object.fromEntries(
-      entries.flatMap(([key, value]): [string, unknown][] => {
-        if (!odd.has(key)) return [[key, value]];
-        const storedAs = renamed.get(key);
-        return storedAs === undefined ? [] : [[storedAs, value]];
-      }),
-    );
-    return { ...edge, metadata: next };
-  });
-  return { edges: changedEdges, changes };
+  const { items, changes } = withImportableKeys(edges, isDefinableRelationshipKey);
+  return { edges: items, changes };
 }

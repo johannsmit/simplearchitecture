@@ -1,4 +1,8 @@
 import type { ELK, ElkExtendedEdge, ElkNode, ElkPort } from 'elkjs/lib/elk-api';
+import { laidForCanvas } from './laidRoutes';
+import { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
+
+export { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
 
 /**
  * Canvas layout with ELK's layered algorithm (React Flow's "Elkjs" and "multiple handles"
@@ -15,6 +19,8 @@ import type { ELK, ElkExtendedEdge, ElkNode, ElkPort } from 'elkjs/lib/elk-api';
  *   a route too.
  * - Cards in a container with no line at them or inside them are packed into a compact block first,
  *   and ELK sees the block as one card (`packedBlock`), so they don't become one long row.
+ * - Containers come out fitted to what they hold, as the canvas fits them, with the routes kept,
+ *   and a line into a container comes in beside or under its name (laidRoutes.ts).
  */
 
 /** Top to bottom. Use 'RIGHT' for left to right: nothing else needs to change. */
@@ -35,6 +41,12 @@ export interface LayoutCard {
   shape?: 'card' | 'circle' | 'container';
   /** The container this card is drawn inside (an id of another card), if any. */
   parent?: string;
+  /**
+   * A container's name as its header draws it (type mark and name on one line, uncut): lines into
+   * the container come in beside it. Without it, the name is taken to be as wide as the smallest
+   * width allows.
+   */
+  nameWidth?: number;
 }
 
 export interface LayoutLink {
@@ -78,33 +90,6 @@ export interface PlacedCard {
   width: number;
   height: number;
   handles: PlacedHandle[];
-}
-
-export const spacing = {
-  /** Between cards in the same row. */
-  cards: 28,
-  /** Between rows: room for the lines. */
-  columns: 96,
-  /** Between ports on one side of a card. */
-  ports: 12,
-} as const;
-
-/**
- * A container: the 40px header, the padding around its cards, and
- * the smallest size. The numbers match .card.is-container in styles/explorer.css.
- */
-export const containerBox = {
-  header: 40,
-  padding: { top: 56, left: 16, bottom: 16, right: 16 },
-  minWidth: 200,
-  minHeight: 116,
-  /** Between rows inside a container. */
-  columns: 64,
-} as const;
-
-/** Port (and React Flow handle) id of one end of a link. */
-export function portId(linkId: string, end: 'source' | 'target'): string {
-  return `${linkId}:${end === 'source' ? 's' : 't'}`;
 }
 
 /** The options of one level of the graph: the top, or inside a container with lines in it. */
@@ -537,7 +522,12 @@ export async function layoutCards(
       }),
     });
   }
-  return ordered;
+  // Containers fitted as the canvas fits them, with the routes kept and clear of their names.
+  return laidForCanvas(ordered, {
+    nameWidthOf: (id) => byId.get(id)?.nameWidth,
+    minSizeOf: (id) =>
+      byId.get(id) ?? { width: containerBox.minWidth, height: containerBox.minHeight },
+  });
 }
 
 /** How long the canvas waits for a layout before it gives up on it: 30 seconds. */
@@ -586,21 +576,4 @@ export function layoutFailureMessage(error: unknown, { kept = false } = {}): str
   return error instanceof LayoutTimeoutError
     ? `The diagram took longer than ${String(Math.round(error.limit / 1000))} seconds to lay out, so ${cards}. Choose Tidy up to try again, or show fewer elements.`
     : `The diagram couldn't be laid out automatically, so ${cards}. Choose Tidy up to try again.`;
-}
-
-/** Positions on the canvas (not relative to a container), parents first in `placed`. */
-export function absoluteBoxes(
-  placed: ReadonlyMap<string, Omit<PlacedCard, 'handles'>>,
-): Map<string, { x: number; y: number; width: number; height: number }> {
-  const result = new Map<string, { x: number; y: number; width: number; height: number }>();
-  for (const card of placed.values()) {
-    const parent = card.parent === undefined ? undefined : result.get(card.parent);
-    result.set(card.id, {
-      x: card.x + (parent?.x ?? 0),
-      y: card.y + (parent?.y ?? 0),
-      width: card.width,
-      height: card.height,
-    });
-  }
-  return result;
 }

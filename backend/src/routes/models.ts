@@ -1,7 +1,9 @@
 import {
+  withImportableElementKeys,
   withImportableRelationshipKeys,
   type AddedRelationshipProperty,
   type ApiError,
+  type ChangedPropertyKey,
   type ChangedRelationshipKey,
   type DamagedModelListResponse,
   type ImportOefModelResult,
@@ -112,8 +114,9 @@ function storeRefused(
 /**
  * Saves a validated model and writes the audit line (ids and counts only, never names or
  * content). Answers 409 itself when the store is full and returns undefined. With it, the
- * properties the save added from the custom keys on its relationships, and the keys it shortened or
- * left out first because no property can have them (each only when there were any).
+ * properties the save added from the custom keys on its relationships, and the keys on its
+ * relationships and elements it shortened or left out first because no key can be blank or that
+ * long (each only when there were any).
  */
 async function saveModel(
   request: FastifyRequest,
@@ -126,15 +129,24 @@ async function saveModel(
       model: ModelSummary;
       newProperties?: AddedRelationshipProperty[];
       changedKeys?: ChangedRelationshipKey[];
+      changedElementKeys?: ChangedPropertyKey[];
     }
   | undefined
 > {
   const user = author(request);
   const keys = withImportableRelationshipKeys(imported.graph.edges ?? []);
+  const elementKeys = withImportableElementKeys(imported.graph.nodes ?? {});
   const document: JgfDocument =
-    keys.changes.length === 0
+    keys.changes.length === 0 && elementKeys.changes.length === 0
       ? imported
-      : { ...imported, graph: { ...imported.graph, edges: keys.edges } };
+      : {
+          ...imported,
+          graph: {
+            ...imported.graph,
+            ...(keys.changes.length === 0 ? {} : { edges: keys.edges }),
+            ...(elementKeys.changes.length === 0 ? {} : { nodes: elementKeys.nodes }),
+          },
+        };
   let model: ModelSummary;
   let newProperties: AddedRelationshipProperty[] | undefined;
   try {
@@ -156,6 +168,9 @@ async function saveModel(
       edges: model.edgeCount,
       ...(newProperties === undefined ? {} : { newProperties: newProperties.length }),
       ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes.length }),
+      ...(elementKeys.changes.length === 0
+        ? {}
+        : { changedElementKeys: elementKeys.changes.length }),
     },
     audit === 'model-saved' ? 'model saved' : 'model imported and saved',
   );
@@ -164,6 +179,7 @@ async function saveModel(
     model,
     ...(newProperties === undefined ? {} : { newProperties }),
     ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes }),
+    ...(elementKeys.changes.length === 0 ? {} : { changedElementKeys: elementKeys.changes }),
   };
 }
 

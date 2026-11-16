@@ -246,6 +246,11 @@ export {
   type RelationshipPropertyUsageResponse,
   type UpdateRelationshipPropertyRequest,
 } from './relationship-properties.js';
+export {
+  withImportableElementKeys,
+  withImportableKeys,
+  type ChangedPropertyKey,
+} from './imported-keys.js';
 export type { DatabaseStatus, DatabaseTestResult } from './database.js';
 export {
   editingUnavailableMessage,

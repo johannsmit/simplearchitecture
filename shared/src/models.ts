@@ -1,4 +1,5 @@
 import type { ApiError } from './api.js';
+import type { ChangedPropertyKey } from './imported-keys.js';
 import type { JgfValidationResult, OefMappingReport } from './jgf.js';
 import type {
   AddedRelationshipProperty,
@@ -72,6 +73,12 @@ export interface SaveModelResult {
    * Sorted by key. Only when there were any.
    */
   changedKeys?: ChangedRelationshipKey[];
+  /**
+   * The same for the custom metadata names on the model's elements: a name over 100 characters
+   * was shortened (`storedAs`), and a blank one was left out with its values. Sorted by key. Only
+   * when there were any.
+   */
+  changedElementKeys?: ChangedPropertyKey[];
 }
 
 /** Response body (201) of `POST /api/models/import/oef`. */

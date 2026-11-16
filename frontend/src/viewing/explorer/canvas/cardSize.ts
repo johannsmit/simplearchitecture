@@ -1,5 +1,5 @@
 import { circleDiameter, circleLabelGap, circleNodeWidth } from './circle';
-import { containerBox } from './elkLayout';
+import { containerBox } from './layoutGeometry';
 
 /**
  * Card sizes for the layout.
@@ -193,7 +193,15 @@ export function containerMinSize({
   };
 }
 
-function containerNameRoom({
+function containerNameRoom(input: { name: string; focused: boolean; userIcon: boolean }): number {
+  return 2 * 1 + 2 * 12 + containerNameWidth(input) + slack;
+}
+
+/**
+ * How wide a container's header draws its name: the type mark (10px, or the 18px user icon), a
+ * 6px gap and the name on one line, whole (the header cuts it when it is narrower).
+ */
+export function containerNameWidth({
   name,
   focused,
   userIcon,
@@ -203,7 +211,7 @@ function containerNameRoom({
   userIcon: boolean;
 }): number {
   const font = focused ? focusedNameFont : containerNameFont;
-  return 2 * 1 + 2 * 12 + (userIcon ? 18 : 10) + 6 + measure(name || '(unnamed)', font) + slack;
+  return (userIcon ? 18 : 10) + 6 + measure(name || '(unnamed)', font);
 }
 
 /** A container's name is wider than its header allows: it ends in an ellipsis. */

@@ -1,5 +1,6 @@
 import {
   type AddedRelationshipProperty,
+  type ChangedPropertyKey,
   type ChangedRelationshipKey,
   edgeTypes,
   nodeTypes,
@@ -79,6 +80,7 @@ export function summaryChips(
   warningCount: number,
   newProperties: readonly AddedRelationshipProperty[] = [],
   changedKeys: readonly ChangedRelationshipKey[] = [],
+  changedElementKeys: readonly ChangedPropertyKey[] = [],
 ): Chip[] {
   const chips: Chip[] = [];
   if (warningCount > 0) {
@@ -96,11 +98,12 @@ export function summaryChips(
       text: counted(newProperties.length, 'new property', 'new properties'),
     });
   }
-  if (changedKeys.length > 0) {
+  const changedCount = changedKeys.length + changedElementKeys.length;
+  if (changedCount > 0) {
     chips.push({
       key: 'changed-keys',
       icon: 'alert',
-      text: `${counted(changedKeys.length, 'property key')} changed`,
+      text: `${counted(changedCount, 'property key')} changed`,
       warn: true,
     });
   }
@@ -290,6 +293,41 @@ export function IssueGroups(props: {
 
 const foldedEndWords = { source: 'Source', target: 'Target', both: 'Both' } as const;
 
+/** The keys an import shortened or left out, on elements or on relationships. */
+function ChangedKeyTable(props: { caption: string; changes: readonly ChangedPropertyKey[] }) {
+  return (
+    <table className="mini-table">
+      <caption>{props.caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Key</th>
+          <th scope="col">What happened</th>
+          <th scope="col" className="n">
+            Values
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.changes.map((change, index) => (
+          <tr key={`${String(index)}:${change.key}`}>
+            <td>{change.key.trim() === '' ? <em>Blank</em> : <code>{change.key}</code>}</td>
+            <td>
+              {change.storedAs === undefined ? (
+                'Left out, with its values'
+              ) : (
+                <>
+                  Shortened to <code>{change.storedAs}</code>
+                </>
+              )}
+            </td>
+            <td className="n">{formatNumber(change.values)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 /** The sections of an OEF import report and the validation warnings. */
 export function ReportSections(props: {
   report?: OefMappingReport;
@@ -298,6 +336,8 @@ export function ReportSections(props: {
   newProperties?: readonly AddedRelationshipProperty[];
   /** Keys on the model's relationships that were too long (shortened) or blank (left out). */
   changedKeys?: readonly ChangedRelationshipKey[];
+  /** The same for the custom metadata on the model's elements. */
+  changedElementKeys?: readonly ChangedPropertyKey[];
   modelId?: string;
   /** Rejected import: the Errors section comes first and is open. */
   rejected?: boolean;
@@ -607,48 +647,27 @@ export function ReportSections(props: {
   }
 
   const changedKeys = props.changedKeys ?? [];
-  if (changedKeys.length > 0) {
+  const changedElementKeys = props.changedElementKeys ?? [];
+  const changedCount = changedKeys.length + changedElementKeys.length;
+  if (changedCount > 0) {
     sections.push(
       <Section
         key="changed-keys"
         id="changed-keys"
         title="Property keys changed"
-        summary={`${counted(changedKeys.length, 'key')} too long or blank`}
+        summary={`${counted(changedCount, 'key')} too long or blank`}
         open
       >
         <p>
-          A property key on a relationship can&apos;t be blank or longer than 100 characters, so
-          these were changed on import.
+          A property key on an element or a relationship can&apos;t be blank or longer than 100
+          characters, so these were changed on import.
         </p>
-        <table className="mini-table">
-          <caption>Keys in the file</caption>
-          <thead>
-            <tr>
-              <th scope="col">Key</th>
-              <th scope="col">What happened</th>
-              <th scope="col" className="n">
-                Values
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {changedKeys.map((change, index) => (
-              <tr key={`${String(index)}:${change.key}`}>
-                <td>{change.key.trim() === '' ? <em>Blank</em> : <code>{change.key}</code>}</td>
-                <td>
-                  {change.storedAs === undefined ? (
-                    'Left out, with its values'
-                  ) : (
-                    <>
-                      Shortened to <code>{change.storedAs}</code>
-                    </>
-                  )}
-                </td>
-                <td className="n">{formatNumber(change.values)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {changedElementKeys.length > 0 && (
+          <ChangedKeyTable caption="On elements" changes={changedElementKeys} />
+        )}
+        {changedKeys.length > 0 && (
+          <ChangedKeyTable caption="On relationships" changes={changedKeys} />
+        )}
       </Section>,
     );
   }
