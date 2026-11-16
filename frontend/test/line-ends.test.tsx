@@ -75,6 +75,7 @@ function plantView(routes: ViewLineRoute[]): StoredView {
   return {
     id: 'v-plant',
     name: 'Irrigation',
+    folder: null,
     version: 1,
     elementCount: 6,
     relationshipCount: 6,

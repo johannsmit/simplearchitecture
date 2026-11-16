@@ -161,6 +161,8 @@ interface DetailsPanelProps {
   relationships?: RelationshipTools;
   /** After Copy link: Show on canvas while the catalog shows. */
   headExtra?: ReactNode;
+  /** The "Used in views" section, after Relationships. */
+  usedIn?: ReactNode;
 }
 
 export interface RelationshipTools {
@@ -185,6 +187,7 @@ export function DetailsPanel({
   headingId,
   relationships,
   headExtra,
+  usedIn,
 }: DetailsPanelProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -407,6 +410,8 @@ export function DetailsPanel({
           </div>
         ))}
       </section>
+
+      {usedIn}
 
       {!edit && custom.length > 0 && (
         <section>

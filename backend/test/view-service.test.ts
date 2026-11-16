@@ -1,6 +1,7 @@
 import {
   maxViewCardCoordinate,
   maxViewElements,
+  maxViewFolderLength,
   maxViewLineBends,
   maxViewNameLength,
   maxViewRelationships,
@@ -853,6 +854,430 @@ describe('deletes in the model keep views consistent', () => {
   });
 });
 
+describe('the views an element is used in', () => {
+  const holding = async (elementId: string, model = modelId) =>
+    (await service.listViewsHolding(model, elementId)).views.map((view) => view.name);
+
+  it('lists every view holding the element, by name, and no other', async () => {
+    for (const [name, elementIds] of [
+      ['oven work', ['kitchen', 'oven']],
+      ['Selling', ['orders', 'till']],
+      ['All of it', ['baker', 'kitchen', 'oven', 'orders', 'till']],
+      ['Baking', ['baker', 'oven']],
+    ] as const) {
+      await service.createView(modelId, { name, elementIds: [...elementIds] }, modeller);
+    }
+    expect(await holding('oven')).toEqual(['All of it', 'Baking', 'oven work']);
+    expect(await holding('till')).toEqual(['All of it', 'Selling']);
+    const [first] = (await service.listViewsHolding(modelId, 'till')).views;
+    // The same summary as the list of views gives.
+    expect(first).toEqual(
+      (await service.listViews(modelId)).views.find((view) => view.name === 'All of it'),
+    );
+  });
+
+  it('is empty when no view holds the element, or the model has no such element', async () => {
+    expect(await holding('baker')).toEqual([]);
+    await service.createView(modelId, { name: 'Selling', elementIds: ['orders'] }, modeller);
+    expect(await holding('baker')).toEqual([]);
+    expect(await holding('no-such-element')).toEqual([]);
+    // Ids no element can have.
+    expect(await holding('\u0000')).toEqual([]);
+    expect(await holding('x'.repeat(5_000))).toEqual([]);
+  });
+
+  it('is current after the element is added to a view, taken out, or deleted', async () => {
+    const { view } = await service.createView(
+      modelId,
+      { name: 'Selling', elementIds: ['orders'] },
+      modeller,
+    );
+    expect(await holding('till')).toEqual([]);
+    await service.replaceContents(
+      modelId,
+      view.id,
+      { version: 1, elementIds: ['orders', 'till'] },
+      modeller,
+    );
+    expect(await holding('till')).toEqual(['Selling']);
+    await service.renameView(modelId, view.id, { version: 2, name: 'Shop' }, modeller);
+    expect(await holding('till')).toEqual(['Shop']);
+    await service.replaceContents(modelId, view.id, { version: 3, elementIds: ['orders'] }, other);
+    expect(await holding('till')).toEqual([]);
+    await service.replaceContents(
+      modelId,
+      view.id,
+      { version: 4, elementIds: ['orders', 'till'] },
+      modeller,
+    );
+    await new ElementService(store).deleteElement(modelId, 'till', { version: '1' }, modeller);
+    expect(await holding('till')).toEqual([]);
+    await service.deleteView(modelId, view.id, { version: '5' }, modeller);
+    expect(await holding('orders')).toEqual([]);
+  });
+
+  it("keeps each model to its own views, and says when the model doesn't exist", async () => {
+    const second = (await store.save(bakery, modeller)).id;
+    await service.createView(second, { name: 'Elsewhere', elementIds: ['oven'] }, modeller);
+    expect(await holding('oven')).toEqual([]);
+    expect(await holding('oven', second)).toEqual(['Elsewhere']);
+    for (const model of ['0b6f8d55-1c1e-4b7e-9a51-6c1c2f4f2d10', 'not-a-uuid']) {
+      for (const elementId of ['oven', '\u0000']) {
+        const error = await refusal(service.listViewsHolding(model, elementId));
+        expect(error).toBeInstanceOf(NotFoundError);
+        expect((error as NotFoundError).what).toBe('model');
+      }
+    }
+  });
+});
+
+describe('folders', () => {
+  /** Saves a view, in a folder when one is given; its id. */
+  const saved = async (name: string, folder?: string | null) =>
+    (
+      await service.createView(
+        modelId,
+        { name, elementIds: ['baker'], ...(folder === undefined ? {} : { folder }) },
+        modeller,
+      )
+    ).view.id;
+  const folders = async () =>
+    Object.fromEntries(
+      (await service.listViews(modelId)).views.map((view) => [view.name, view.folder]),
+    );
+  const folderAudits = async () =>
+    (await audits()).filter((row) => row.details.fields.includes('folder'));
+
+  it('puts a new view in a folder, trimmed, or in none', async () => {
+    await saved('Proving', '  Mornings  ');
+    await saved('Shaping', null);
+    await saved('Glazing', '   ');
+    await saved('Selling');
+    expect(await folders()).toEqual({
+      Glazing: null,
+      Proving: 'Mornings',
+      Selling: null,
+      Shaping: null,
+    });
+    const { view } = await service.getView(
+      modelId,
+      (await service.listViews(modelId)).views[1]?.id ?? '',
+    );
+    expect(view).toMatchObject({ name: 'Proving', folder: 'Mornings', version: 1 });
+  });
+
+  it('joins an existing folder ignoring case and spaces at the ends, keeping its spelling', async () => {
+    await saved('Proving', 'Mornings');
+    await saved('Shaping', ' mornINGS ');
+    const id = await saved('Glazing');
+    await service.moveView(modelId, id, { folder: 'MORNINGS' }, modeller);
+    expect(await folders()).toEqual({
+      Glazing: 'Mornings',
+      Proving: 'Mornings',
+      Shaping: 'Mornings',
+    });
+  });
+
+  it('keeps view names unique within the model across folders', async () => {
+    await saved('Proving', 'Mornings');
+    const fields = await fieldsOf(
+      service.createView(
+        modelId,
+        { name: 'proving', folder: 'Evenings', elementIds: ['baker'] },
+        modeller,
+      ),
+    );
+    expect(fields.map((issue) => issue.field)).toEqual(['name']);
+  });
+
+  it(`refuses a folder name over ${maxViewFolderLength} characters, or with a line break`, async () => {
+    const longest = 'f'.repeat(maxViewFolderLength);
+    const id = await saved('Proving', ` ${longest} `);
+    expect((await folders()).Proving).toBe(longest);
+    for (const folder of [`${longest}f`, 'Early\nmornings', 'Bad\u0000name']) {
+      for (const promise of [
+        service.createView(modelId, { name: 'Another', folder, elementIds: [] }, modeller),
+        service.moveView(modelId, id, { folder }, modeller),
+        service.moveView(modelId, id, { folder, newFolder: true }, modeller),
+        service.renameFolder(modelId, { from: longest, to: folder }, modeller),
+      ]) {
+        expect((await fieldsOf(promise)).map((issue) => issue.field)).toEqual(['folder']);
+      }
+    }
+    const [issue] = await fieldsOf(
+      service.moveView(modelId, id, { folder: `${longest}ff` }, modeller),
+    );
+    expect(issue?.message).toBe(
+      `The folder name has ${maxViewFolderLength + 2} characters. Use ${maxViewFolderLength} or fewer.`,
+    );
+    expect((await folders()).Proving).toBe(longest);
+  });
+
+  it('moves a view to a folder, another one and out, without raising its version', async () => {
+    const id = await saved('Proving');
+    await saved('Shaping', 'Evenings');
+    let { view } = await service.moveView(modelId, id, { folder: 'Mornings' }, modeller);
+    expect(view).toMatchObject({ id, folder: 'Mornings', version: 1 });
+    ({ view } = await service.moveView(modelId, id, { folder: 'evenings' }, other));
+    expect(view).toMatchObject({ folder: 'Evenings', version: 1 });
+    // The last change of the view stays as it was: a folder isn't a change to the view.
+    expect(view.updatedBy).toEqual({ id: modeller.id, name: modeller.name });
+    ({ view } = await service.moveView(modelId, id, { folder: null }, modeller));
+    expect(view).toMatchObject({ folder: null, version: 1 });
+    // A save of the view with the version read before the moves still works.
+    const { view: renamed } = await service.renameView(
+      modelId,
+      id,
+      { version: 1, name: 'Proving dough' },
+      modeller,
+    );
+    expect(renamed).toMatchObject({ version: 2, folder: null });
+    await service.moveView(modelId, id, { folder: 'Mornings' }, modeller);
+    const { view: laidOut } = await service.replaceLayout(
+      modelId,
+      id,
+      { version: 2, cards: [{ elementId: 'baker', x: 10, y: 20 }] },
+      modeller,
+    );
+    expect(laidOut).toMatchObject({ version: 3, folder: 'Mornings' });
+  });
+
+  it('stores nothing for a move to where the view already is', async () => {
+    const id = await saved('Proving', 'Mornings');
+    const loose = await saved('Shaping');
+    const before = await audits();
+    expect(
+      (await service.moveView(modelId, id, { folder: ' mornings' }, modeller)).changed,
+    ).toEqual([]);
+    expect((await service.moveView(modelId, loose, { folder: null }, modeller)).changed).toEqual(
+      [],
+    );
+    expect((await service.moveView(modelId, loose, { folder: '  ' }, modeller)).changed).toEqual(
+      [],
+    );
+    expect(await audits()).toEqual(before);
+    expect(
+      (await service.moveView(modelId, loose, { folder: 'Mornings' }, modeller)).changed,
+    ).toEqual([loose]);
+  });
+
+  it('makes a new folder, and never merges into one that exists (any case, its own too)', async () => {
+    const id = await saved('Proving', 'Mornings');
+    const other2 = await saved('Shaping', 'Evenings');
+    for (const folder of ['evenings', ' MORNINGS ']) {
+      const [issue] = await fieldsOf(
+        service.moveView(modelId, id, { folder, newFolder: true }, modeller),
+      );
+      expect(issue).toEqual({
+        field: 'folder',
+        message: `There's already a folder called “${folder.trim().toLowerCase() === 'evenings' ? 'Evenings' : 'Mornings'}”.`,
+      });
+    }
+    for (const folder of [null, '', '   ']) {
+      const [issue] = await fieldsOf(
+        service.moveView(modelId, id, { folder, newFolder: true }, modeller),
+      );
+      expect(issue).toEqual({ field: 'folder', message: 'Enter a name.' });
+    }
+    const { view } = await service.moveView(
+      modelId,
+      other2,
+      { folder: ' Night shift ', newFolder: true },
+      modeller,
+    );
+    expect(view.folder).toBe('Night shift');
+    expect(await folders()).toEqual({ Proving: 'Mornings', Shaping: 'Night shift' });
+  });
+
+  it('keeps one spelling per folder when changes arrive at the same time, never merging', async () => {
+    const ids = await Promise.all(['Proving', 'Shaping', 'Glazing'].map((name) => saved(name)));
+    const [proving, shaping, glazing] = ids as [string, string, string];
+    // Two moves into the same new folder, in two spellings: both end in one folder.
+    await Promise.all([
+      service.moveView(modelId, proving, { folder: 'Night shift' }, modeller),
+      service.moveView(modelId, shaping, { folder: ' NIGHT SHIFT ' }, modeller),
+    ]);
+    const after = await folders();
+    expect(after.Proving).toBe(after.Shaping);
+    expect(['Night shift', 'NIGHT SHIFT']).toContain(after.Proving);
+    // Two new folders of the same name at once: one is made, the other refused.
+    const results = await Promise.allSettled([
+      service.moveView(modelId, proving, { folder: 'Bakers', newFolder: true }, modeller),
+      service.moveView(modelId, glazing, { folder: 'bakers', newFolder: true }, modeller),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+    const refused = results.find((result) => result.status === 'rejected');
+    expect(refused?.reason).toBeInstanceOf(RejectedError);
+    const made = Object.values(await folders()).filter(
+      (folder) => folder?.toLowerCase() === 'bakers',
+    );
+    expect(made).toHaveLength(1);
+  });
+
+  it('renames a folder on every view in it, in one step, keeping each version', async () => {
+    const a = await saved('Proving', 'Mornings');
+    const b = await saved('Shaping', 'Mornings');
+    await saved('Selling', 'Shop');
+    await saved('Cleaning');
+    const result = await service.renameFolder(
+      modelId,
+      { from: ' mornings ', to: '  Early shift ' },
+      other,
+    );
+    expect(result.folder).toBe('Early shift');
+    expect(result.views.map((view) => [view.name, view.folder, view.version])).toEqual([
+      ['Proving', 'Early shift', 1],
+      ['Shaping', 'Early shift', 1],
+    ]);
+    expect([...result.changed].sort()).toEqual([a, b].sort());
+    expect(await folders()).toEqual({
+      Cleaning: null,
+      Proving: 'Early shift',
+      Selling: 'Shop',
+      Shaping: 'Early shift',
+    });
+    // Only the case: allowed.
+    await service.renameFolder(modelId, { from: 'Early shift', to: 'EARLY SHIFT' }, modeller);
+    expect((await folders()).Proving).toBe('EARLY SHIFT');
+    // The same name: nothing stored.
+    const before = await audits();
+    expect(
+      (await service.renameFolder(modelId, { from: 'early shift', to: 'EARLY SHIFT' }, modeller))
+        .changed,
+    ).toEqual([]);
+    expect(await audits()).toEqual(before);
+  });
+
+  it("refuses to rename a folder to another folder's name, in any case: never merged", async () => {
+    await saved('Proving', 'Mornings');
+    await saved('Selling', 'Shop');
+    for (const to of ['Shop', ' shop ', 'SHOP']) {
+      const [issue] = await fieldsOf(
+        service.renameFolder(modelId, { from: 'Mornings', to }, modeller),
+      );
+      expect(issue).toEqual({
+        field: 'folder',
+        message: "There's already a folder called “Shop”.",
+      });
+    }
+    for (const to of ['', '  ']) {
+      const [issue] = await fieldsOf(
+        service.renameFolder(modelId, { from: 'Mornings', to }, modeller),
+      );
+      expect(issue).toEqual({ field: 'folder', message: 'Enter a name.' });
+    }
+    expect(await folders()).toEqual({ Proving: 'Mornings', Selling: 'Shop' });
+    expect((await folderAudits()).map((row) => row.action)).toEqual(['view-added', 'view-added']);
+  });
+
+  it('says when no view is in the folder, or the model is missing', async () => {
+    await saved('Proving', 'Mornings');
+    for (const from of ['Evenings', '', '   ']) {
+      const error = await refusal(service.renameFolder(modelId, { from, to: 'Late' }, modeller));
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect((error as NotFoundError).what).toBe('folder');
+    }
+    const unknown = '0b6f8d55-1c1e-4b7e-9a51-6c1c2f4f2d10';
+    for (const [promise, what] of [
+      [service.renameFolder(unknown, { from: 'Mornings', to: 'Late' }, modeller), 'model'],
+      [service.moveView(unknown, unknown, { folder: 'Late' }, modeller), 'model'],
+      [service.moveView(modelId, unknown, { folder: 'Late' }, modeller), 'view'],
+      [service.moveView(modelId, 'not-an-id', { folder: 'Late' }, modeller), 'view'],
+    ] as const) {
+      const error = await refusal(promise);
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect((error as NotFoundError).what).toBe(what);
+    }
+  });
+
+  it("doesn't move a view through another model", async () => {
+    const id = await saved('Proving', 'Mornings');
+    const second = (await store.save(bakery, modeller)).id;
+    const error = await refusal(service.moveView(second, id, { folder: 'Taken' }, other));
+    expect((error as NotFoundError).what).toBe('view');
+    const missing = await refusal(
+      service.renameFolder(second, { from: 'Mornings', to: 'Taken' }, other),
+    );
+    expect((missing as NotFoundError).what).toBe('folder');
+    expect(await folders()).toEqual({ Proving: 'Mornings' });
+  });
+
+  it('refuses requests that are not folder changes', async () => {
+    const id = await saved('Proving');
+    for (const input of [
+      {},
+      { folder: 3 },
+      { folder: 'A', newFolder: 'yes' },
+      { folder: 'A', version: 1 },
+    ]) {
+      await fieldsOf(service.moveView(modelId, id, input, modeller));
+    }
+    for (const input of [
+      {},
+      { from: 'A' },
+      { from: 'A', to: null },
+      { from: 'A', to: 'B', x: 1 },
+    ]) {
+      await fieldsOf(service.renameFolder(modelId, input, modeller));
+    }
+    await fieldsOf(service.createView(modelId, { name: 'X', folder: 7, elementIds: [] }, modeller));
+  });
+
+  it('audits each view changed with the field name folder only, never a name', async () => {
+    const a = await saved('Proving', 'Secret mornings');
+    const b = await saved('Shaping', 'Secret mornings');
+    const c = await saved('Selling');
+    await service.moveView(modelId, c, { folder: 'Secret shop' }, other);
+    await service.renameFolder(modelId, { from: 'Secret mornings', to: 'Secret dawn' }, modeller);
+    const rows = await folderAudits();
+    expect(
+      rows.map(({ action, user_id, view_id, details }) => ({ action, user_id, view_id, details })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          action: 'view-added',
+          user_id: modeller.id,
+          view_id: a,
+          details: {
+            fields: ['name', 'folder', 'elementIds', 'relationshipIds'],
+            elements: 1,
+            relationships: 0,
+          },
+        },
+        { action: 'view-changed', user_id: other.id, view_id: c, details: { fields: ['folder'] } },
+        {
+          action: 'view-changed',
+          user_id: modeller.id,
+          view_id: a,
+          details: { fields: ['folder'] },
+        },
+        {
+          action: 'view-changed',
+          user_id: modeller.id,
+          view_id: b,
+          details: { fields: ['folder'] },
+        },
+      ]),
+    );
+    expect(rows).toHaveLength(5);
+    expect(JSON.stringify(await audits())).not.toContain('Secret');
+  });
+
+  it('gives every view its folder in the list and in where an element is used', async () => {
+    await saved('Proving', 'Mornings');
+    await saved('Selling');
+    expect(
+      (await service.listViewsHolding(modelId, 'baker')).views.map((view) => [
+        view.name,
+        view.folder,
+      ]),
+    ).toEqual([
+      ['Proving', 'Mornings'],
+      ['Selling', null],
+    ]);
+  });
+});
+
 describe('layouts', () => {
   const create = async () =>
     (
@@ -1598,12 +2023,15 @@ describe('without a database', () => {
     expect(withoutDb.available).toBe(false);
     for (const promise of [
       withoutDb.listViews(id),
+      withoutDb.listViewsHolding(id, 'baker'),
       withoutDb.getView(id, id),
       withoutDb.createView(id, { name: 'X', elementIds: [] }, modeller),
       withoutDb.renameView(id, id, { version: 1, name: 'X' }, modeller),
       withoutDb.replaceContents(id, id, { version: 1, elementIds: [] }, modeller),
       withoutDb.replaceLayout(id, id, { version: 1, cards: [] }, modeller),
       withoutDb.deleteView(id, id, { version: '1' }, modeller),
+      withoutDb.moveView(id, id, { folder: 'X' }, modeller),
+      withoutDb.renameFolder(id, { from: 'X', to: 'Y' }, modeller),
     ]) {
       expect(await refusal(promise)).toBeInstanceOf(EditingUnavailableError);
     }

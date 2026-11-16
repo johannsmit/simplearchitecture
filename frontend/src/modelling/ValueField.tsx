@@ -6,6 +6,7 @@ import {
   type InputHTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from 'react';
 import { suggestedValues } from '@simplearchitecture/shared';
 import { pickLimit } from './relationships';
@@ -241,6 +242,7 @@ interface ValueFieldProps extends Omit<
   onValue: (text: string) => void;
   /** What the field makes of typed text (Supplier HQ Country: upper case). */
   normalise?: (text: string) => string;
+  ref?: Ref<HTMLInputElement>;
 }
 
 /**
@@ -255,6 +257,7 @@ export function ValueField({
   normalise,
   readOnly,
   onKeyDown,
+  ref,
   ...input
 }: ValueFieldProps) {
   const field = useValueSuggestions({
@@ -269,6 +272,7 @@ export function ValueField({
   return (
     <>
       <input
+        ref={ref}
         {...input}
         {...field.inputProps}
         aria-describedby={describedBy}

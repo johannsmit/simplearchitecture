@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import {
   compareNames,
+  sameViewFolder,
   sameViewName,
   viewConflictMessage,
+  viewFolderProblem,
+  viewFolderTakenMessage,
   viewNameTakenMessage,
   type DeletedViewResult,
   type ElementFieldIssue,
   type ModelAuthor,
+  type MovedViewResult,
+  type RenamedViewFolderResult,
   type RenamedViewResult,
   type StoredView,
   type ViewCardLayout,
@@ -39,9 +44,11 @@ import {
   minViewCardWidth,
 } from '../limits.js';
 import type {
+  PlannedFolderChange,
   PlannedViewChange,
   ViewAuditAction,
   ViewChangeState,
+  ViewName,
   ViewRecord,
   ViewStore,
   ViewWrite,
@@ -67,6 +74,12 @@ import { unstorable } from '../storage/stored-model.js';
  *   out of the view, deleting it, or giving it other ends drops its route.
  * - Rename, new contents, a new layout and delete carry the view's version as read; another one
  *   is a conflict. A change that changes nothing stores nothing and keeps the version.
+ * - A view can be in one folder: a name on the view, so a folder exists while a view is in it.
+ *   Folder names are compared ignoring case and spaces at the ends, and an existing folder's
+ *   spelling wins. Folders are never merged: a new folder, or a folder renamed, can't take the
+ *   name of another. Putting a view in a folder, taking it out and renaming a folder aren't
+ *   changes to the view: no version is sent or raised, so they never make a save of the view
+ *   fail.
  * - Nothing is stored for a refused change, and every stored change has one audit row with field
  *   names and counts only (the store writes it in the same transaction): never the view's name.
  */
@@ -104,13 +117,27 @@ const idsSchema = (max: number, what: string) =>
 const elementIdsSchema = idsSchema(maxViewElements, 'elements');
 const relationshipIdsSchema = idsSchema(maxViewRelationships, 'relationships');
 
+const folderMessage = 'Must be a folder name, or null for none.';
+
 const newViewSchema = z.strictObject({
   name: nameSchema,
+  folder: z.string({ error: folderMessage }).nullable().optional(),
   elementIds: elementIdsSchema,
   relationshipIds: relationshipIdsSchema.optional(),
 });
 
 const renameSchema = z.strictObject({ version: versionSchema, name: nameSchema });
+
+const moveSchema = z.strictObject({
+  folder: z.string({ error: folderMessage }).nullable(),
+  newFolder: z.boolean({ error: 'Must be true or false.' }).optional(),
+});
+
+const folderNameMessage = 'Must be a folder name.';
+const renameFolderSchema = z.strictObject({
+  from: z.string({ error: folderNameMessage }),
+  to: z.string({ error: folderNameMessage }),
+});
 
 const contentsSchema = z.strictObject({
   version: versionSchema,
@@ -216,6 +243,15 @@ function storedView(record: ViewRecord): StoredView {
     routes: record.routes,
   };
 }
+
+/** Views by name; the same name (in another case) by age, then id, so the order never varies. */
+const byName = (views: ViewSummary[]): ViewSummary[] =>
+  views.sort(
+    (a, b) =>
+      compareNames(a.name, b.name) ||
+      a.createdAt.localeCompare(b.createdAt) ||
+      a.id.localeCompare(b.id),
+  );
 
 /** A card's layout as a comparable key. */
 const cardKey = (card: ViewCardLayout): string =>
@@ -383,6 +419,13 @@ function checkName(state: ViewChangeState, name: string, viewId: string): void {
   }
 }
 
+function folderPlan(
+  folders: { viewId: string; folder: string | null }[],
+  actor: ModelAuthor,
+): PlannedFolderChange {
+  return { folders, actor: { id: actor.id, name: actor.name } };
+}
+
 function plan(
   write: ViewWrite,
   action: ViewAuditAction,
@@ -391,6 +434,33 @@ function plan(
 ): PlannedViewChange {
   return { write, audit: { action, actor: { id: actor.id, name: actor.name }, fields } };
 }
+
+/**
+ * A folder name as sent, trimmed, or RejectedError on `folder`. Without `required`, empty (or only
+ * spaces) and null mean no folder.
+ */
+function checkedFolder(folder: string | null | undefined, required: boolean): string | null {
+  const trimmed = (folder ?? '').trim();
+  if (trimmed === '' && !required) return null;
+  const problem =
+    viewFolderProblem(trimmed) ??
+    (unstorable.test(trimmed)
+      ? "The folder name contains a character that can't be stored. Remove it and try again."
+      : null);
+  if (problem !== null) throw new RejectedError([{ field: 'folder', message: problem }]);
+  return trimmed;
+}
+
+/** The folder of the model's views that matches the name, in its spelling, or undefined. */
+function existingFolder(views: readonly ViewName[], folder: string): string | undefined {
+  return (
+    views.find((view) => view.folder !== null && sameViewFolder(view.folder, folder))?.folder ??
+    undefined
+  );
+}
+
+const folderTaken = (existing: string): RejectedError =>
+  new RejectedError([{ field: 'folder', message: viewFolderTakenMessage(existing) }]);
 
 /** The view a change is about, at the version sent, or NotFoundError or ConflictError. */
 function currentView(state: ViewChangeState, version: number): ViewRecord {
@@ -424,13 +494,19 @@ export class ViewService {
   async listViews(modelId: string): Promise<ViewListResponse> {
     const views = await this.#views().list(modelId);
     if (views === undefined) throw new NotFoundError('model');
-    views.sort(
-      (a, b) =>
-        compareNames(a.name, b.name) ||
-        a.createdAt.localeCompare(b.createdAt) ||
-        a.id.localeCompare(b.id),
-    );
-    return { views };
+    return { views: byName(views) };
+  }
+
+  /**
+   * The model's views that hold the element, by name: none when no view does, or the model has
+   * no such element. An id no element can have is held by no view.
+   */
+  async listViewsHolding(modelId: string, elementId: string): Promise<ViewListResponse> {
+    const store = this.#views();
+    const possible = elementId.length <= maxElementIdLength && !unstorable.test(elementId);
+    const views = await (possible ? store.listHolding(modelId, elementId) : store.list(modelId));
+    if (views === undefined) throw new NotFoundError('model');
+    return { views: possible ? byName(views) : [] };
   }
 
   async getView(modelId: string, viewId: string): Promise<ViewResult> {
@@ -445,6 +521,7 @@ export class ViewService {
     const request = parse(newViewSchema, input);
     const elementIds = unique(request.elementIds);
     const requested = request.relationshipIds === undefined ? [] : unique(request.relationshipIds);
+    const asked = checkedFolder(request.folder, false);
     const viewId = randomUUID();
     const changed = await views.change(
       modelId,
@@ -453,11 +530,13 @@ export class ViewService {
         if (state.views.length >= maxViewsPerModel) throw new ViewLimitError();
         checkName(state, request.name, viewId);
         const relationshipIds = checkedContents(state, elementIds, requested);
+        // Joining an existing folder is the point here: it keeps its spelling.
+        const folder = asked === null ? null : (existingFolder(state.views, asked) ?? asked);
         return plan(
-          { kind: 'create', viewId, name: request.name, elementIds, relationshipIds },
+          { kind: 'create', viewId, name: request.name, folder, elementIds, relationshipIds },
           'view-added',
           actor,
-          ['name', 'elementIds', 'relationshipIds'],
+          ['name', ...(folder === null ? [] : ['folder']), 'elementIds', 'relationshipIds'],
         );
       },
     );
@@ -572,6 +651,86 @@ export class ViewService {
       if (error instanceof Unchanged) return { view: storedView(error.result as ViewRecord) };
       throw error;
     }
+  }
+
+  /**
+   * Puts the view in a folder, or (null) takes it out of its folder. Not version-checked, and the
+   * view's version stays. A folder that matches an existing one is that one, with its spelling;
+   * with `newFolder`, it is refused instead (the view's own folder too), as folders are never
+   * merged. The same folder as now stores nothing. `changed`: the views whose folder changed, for
+   * the caller's log.
+   */
+  async moveView(
+    modelId: string,
+    viewId: string,
+    input: unknown,
+    actor: ModelAuthor,
+  ): Promise<MovedViewResult & { changed: string[] }> {
+    const views = this.#views();
+    const request = parse(moveSchema, input);
+    const newFolder = request.newFolder === true;
+    const asked = checkedFolder(request.folder, newFolder);
+    let changed: string[] = [];
+    const after = await views.setFolders(modelId, (all) => {
+      const view = all.find((each) => each.id === viewId);
+      if (view === undefined) throw new NotFoundError('view');
+      let folder: string | null = null;
+      if (asked !== null) {
+        const existing = existingFolder(all, asked);
+        if (newFolder && existing !== undefined) throw folderTaken(existing);
+        folder = existing ?? asked;
+      }
+      changed = view.folder === folder ? [] : [viewId];
+      return folderPlan(
+        changed.map(() => ({ viewId, folder })),
+        actor,
+      );
+    });
+    if (after === undefined) throw new NotFoundError('model');
+    const view = after.find((each) => each.id === viewId);
+    if (view === undefined) throw new NotFoundError('view');
+    return { view, changed };
+  }
+
+  /**
+   * Renames a folder on every view in it, in one step: whichever views are in it when the change
+   * runs. `from` is matched ignoring case and spaces at the ends; `to` may change only its case,
+   * or be a name no other folder has (folders are never merged). The same name as now stores
+   * nothing. `changed`: the views whose folder changed, for the caller's log.
+   */
+  async renameFolder(
+    modelId: string,
+    input: unknown,
+    actor: ModelAuthor,
+  ): Promise<RenamedViewFolderResult & { changed: string[] }> {
+    const views = this.#views();
+    const request = parse(renameFolderSchema, input);
+    const from = request.from.trim();
+    const to = checkedFolder(request.to, true) as string;
+    let inFolder: string[] = [];
+    let changed: string[] = [];
+    const after = await views.setFolders(modelId, (all) => {
+      const members = all.filter(
+        (view) => view.folder !== null && from !== '' && sameViewFolder(view.folder, from),
+      );
+      if (members.length === 0) throw new NotFoundError('folder');
+      const clash = all.find(
+        (view) =>
+          view.folder !== null &&
+          !sameViewFolder(view.folder, from) &&
+          sameViewFolder(view.folder, to),
+      );
+      if (clash?.folder != null) throw folderTaken(clash.folder);
+      inFolder = members.map((view) => view.id);
+      changed = members.filter((view) => view.folder !== to).map((view) => view.id);
+      return folderPlan(
+        changed.map((id) => ({ viewId: id, folder: to })),
+        actor,
+      );
+    });
+    if (after === undefined) throw new NotFoundError('model');
+    const held = new Set(inFolder);
+    return { folder: to, views: byName(after.filter((view) => held.has(view.id))), changed };
   }
 
   /** Deletes the view. The model's elements and relationships stay as they are. */

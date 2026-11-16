@@ -57,6 +57,7 @@ function siteView(
   return {
     id: 'v-site',
     name: 'Site',
+    folder: null,
     version: 1,
     elementCount: elementIds.length,
     relationshipCount: relationshipIds.length,

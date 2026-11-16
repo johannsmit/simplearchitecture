@@ -191,11 +191,20 @@ describe('the panel styles', () => {
     expect(rule('.tree-panel > .psec.legend:has(> .psec-body)')).toContain(
       'min-height: calc(34px + 96px);',
     );
-    expect(rule('.tree-panel > .views-sec')).toContain(
-      'min-height: calc(34px + var(--vs-list) + var(--vs-filter) + var(--vs-save) + var(--vs-pad));',
+    // New folder… (Modelling) keeps its row too.
+    expect(rule('.tree-panel > .views-sec').replace(/\s+/g, ' ')).toContain(
+      'min-height: calc( 34px + var(--vs-list) + var(--vs-filter) + var(--vs-save) + var(--vs-new) + var(--vs-pad) );',
     );
+    expect(rule('.tree-panel > .views-sec:has(.vf-new)')).toContain('--vs-new: 38px;');
     expect(rule('.tree-panel > .views-sec:has(.vp-list > li:nth-child(3))')).toContain(
       '--vs-list: 96px;',
+    );
+  });
+
+  it('drop the hover grey on view rows and folder headers while a view is dragged', () => {
+    // Otherwise it covers the lit drop target's fill and part of its accent border.
+    expect(css).toMatch(
+      /\.psec-body\.is-dragging \.vp-list a:not\(\[aria-current='page'\]\):hover,\s*\.psec-body\.is-dragging \.vp-list \.vf-head:hover \{\s*background: none;/,
     );
   });
 

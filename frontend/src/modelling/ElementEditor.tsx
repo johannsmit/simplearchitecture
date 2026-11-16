@@ -94,6 +94,8 @@ interface ElementEditorProps {
   relationships?: RelationshipTools;
   /** Show on canvas in the head while the catalog shows. */
   headExtra?: ReactNode;
+  /** The "Used in views" section. */
+  usedIn?: ReactNode;
 }
 
 type Conflict = 'changed' | 'deleted' | null;
@@ -779,6 +781,7 @@ export function ElementEditor(props: ElementEditorProps) {
         headingId="ef-heading"
         edit={{ headActions, form }}
         headExtra={props.headExtra}
+        usedIn={props.usedIn}
         {...(props.relationships ? { relationships: props.relationships } : {})}
       />
       {askDiscard && (

@@ -77,6 +77,7 @@ export {
   maxViewCardCoordinate,
   maxViewCardWidth,
   maxViewElements,
+  maxViewFolderLength,
   maxViewLineBends,
   maxViewNameLength,
   maxViewRelationships,
@@ -89,3 +90,6 @@ export {
  * characters (UUIDs and imported ids are far shorter). Larger requests get 413.
  */
 export const viewBodyLimit = 1024 * 1024;
+
+/** Largest body of a folder change (a move, or a folder's rename), well above two names. */
+export const viewFolderBodyLimit = 16 * 1024;

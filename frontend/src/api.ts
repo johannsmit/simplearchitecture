@@ -33,7 +33,10 @@ import type {
   ModelSummary,
   NewModelRequest,
   NewModelResult,
+  MoveViewRequest,
   NewViewRequest,
+  RenamedViewFolderResult,
+  RenameViewFolderRequest,
   RenameViewRequest,
   ReplaceViewContentsRequest,
   ReplaceViewLayoutRequest,
@@ -487,10 +490,16 @@ function isViewSummary(value: unknown): value is ViewSummary {
     isObject(value) &&
     typeof value.id === 'string' &&
     typeof value.name === 'string' &&
+    (value.folder === undefined || value.folder === null || typeof value.folder === 'string') &&
     typeof value.version === 'number' &&
     typeof value.elementCount === 'number' &&
     typeof value.relationshipCount === 'number'
   );
+}
+
+/** A summary with its folder: none when the server sent none. */
+function withFolder<View extends ViewSummary>(view: View): View {
+  return typeof view.folder === 'string' ? view : { ...view, folder: null };
 }
 
 const isIdList = (value: unknown): value is string[] =>
@@ -543,7 +552,7 @@ async function viewResult(response: Response): Promise<StoredView> {
   if (!isStoredView(view)) {
     throw new ApiRequestError(response.status, 'The server sent an unexpected view.');
   }
-  return view;
+  return withFolder(view);
 }
 
 /** GET /api/models/:id/views (Viewer): the model's views, by name. */
@@ -553,7 +562,22 @@ export async function listViews(modelId: string, signal?: AbortSignal): Promise<
   if (!Array.isArray(views) || !views.every(isViewSummary)) {
     throw new ApiRequestError(200, 'The server sent an unexpected list of views.');
   }
-  return views;
+  return views.map(withFolder);
+}
+
+/** GET /api/models/:id/elements/:elementId/views (Viewer): the views holding the element. */
+export async function listElementViews(
+  modelId: string,
+  elementId: string,
+  signal?: AbortSignal,
+): Promise<ViewSummary[]> {
+  const url = `${elementUrl(modelId, elementId)}/views`;
+  const body = await json(await request(url, signal ? { signal } : {}));
+  const views = isObject(body) ? body.views : undefined;
+  if (!Array.isArray(views) || !views.every(isViewSummary)) {
+    throw new ApiRequestError(200, 'The server sent an unexpected list of views.');
+  }
+  return views.map(withFolder);
 }
 
 /** GET /api/models/:id/views/:viewId (Viewer): a view with its element and relationship ids. */
@@ -580,12 +604,51 @@ export async function renameView(
     method: 'PATCH',
     ...jsonBody(change),
   });
+  return summaryResult(response);
+}
+
+async function summaryResult(response: Response): Promise<ViewSummary> {
   const body = await json(response);
   const view = isObject(body) ? body.view : undefined;
   if (!isViewSummary(view)) {
     throw new ApiRequestError(response.status, 'The server sent an unexpected view.');
   }
-  return view;
+  return withFolder(view);
+}
+
+/**
+ * PUT /api/models/:id/views/:viewId/folder (Modeller): puts the view in a folder, or (null) takes
+ * it out. Not version-checked. 422 on `folder`: a new folder whose name exists, or a bad name.
+ */
+export async function moveView(
+  modelId: string,
+  viewId: string,
+  move: MoveViewRequest,
+): Promise<ViewSummary> {
+  return summaryResult(
+    await request(`${viewUrl(modelId, viewId)}/folder`, { method: 'PUT', ...jsonBody(move) }),
+  );
+}
+
+/**
+ * PATCH /api/models/:id/view-folders (Modeller): renames a folder on all its views. 404: no view
+ * is in it any more; 422 on `folder`: another folder has the name.
+ */
+export async function renameViewFolder(
+  modelId: string,
+  rename: RenameViewFolderRequest,
+): Promise<RenamedViewFolderResult> {
+  const response = await request(`/api/models/${encodeURIComponent(modelId)}/view-folders`, {
+    method: 'PATCH',
+    ...jsonBody(rename),
+  });
+  const body = await json(response);
+  const folder = isObject(body) ? body.folder : undefined;
+  const views = isObject(body) ? body.views : undefined;
+  if (typeof folder !== 'string' || !Array.isArray(views) || !views.every(isViewSummary)) {
+    throw new ApiRequestError(response.status, 'The server sent an unexpected answer.');
+  }
+  return { folder, views: views.map(withFolder) };
 }
 
 /** PUT /api/models/:id/views/:viewId/contents (Modeller): new contents. 409: changed meanwhile. */

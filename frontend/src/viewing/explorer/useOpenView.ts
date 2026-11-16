@@ -53,6 +53,8 @@ export interface OpenView {
   reload: () => void;
   /** A rename was saved: the new name and version. */
   renamed: (summary: ViewSummary) => void;
+  /** The view was put in a folder or taken out (its version stays). */
+  refiled: (folder: string | null) => void;
   dismiss: () => void;
 }
 
@@ -315,6 +317,19 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
     setState((previous) => (previous.key === renameKey ? { ...previous, view } : previous));
   }, []);
 
+  const refiled = useCallback((folder: string | null) => {
+    const { saved } = live.current;
+    if (saved === undefined) return;
+    const view = { ...saved, folder };
+    live.current.saved = view;
+    const refileKey = live.current.key;
+    setState((previous) =>
+      previous.key === refileKey && previous.view !== undefined
+        ? { ...previous, view: { ...previous.view, folder } }
+        : previous,
+    );
+  }, []);
+
   const dismiss = useCallback(() => {
     setState((previous) => ({ ...previous, problem: undefined }));
   }, []);
@@ -331,6 +346,7 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
     adopt,
     reload,
     renamed,
+    refiled,
     dismiss,
   };
 }

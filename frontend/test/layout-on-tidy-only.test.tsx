@@ -390,6 +390,7 @@ function reading(): StoredView {
   return {
     id: 'v-reading',
     name: 'Reading',
+    folder: null,
     version: 1,
     elementCount: 4,
     relationshipCount: 3,

@@ -4,6 +4,8 @@ import {
   viewConflictMessage,
   type DeletedViewResult,
   type JgfDocument,
+  type MovedViewResult,
+  type RenamedViewFolderResult,
   type RenamedViewResult,
   type ViewConflict,
   type ViewListResponse,
@@ -15,7 +17,7 @@ import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DatabaseService } from '../src/db/service.js';
-import { viewBodyLimit } from '../src/limits.js';
+import { viewBodyLimit, viewFolderBodyLimit } from '../src/limits.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import {
   buildTestApp,
@@ -554,11 +556,316 @@ describe('a Viewer', () => {
   });
 });
 
+describe('folders', () => {
+  const folderOf = (viewId: string) => `${views()}/${viewId}/folder`;
+  const folders = () => `/api/models/${modelId}/view-folders`;
+  const listed = async (target: FastifyInstance, cookie: string) =>
+    Object.fromEntries(
+      (await call(target, 'GET', views(), { cookie }))
+        .json<ViewListResponse>()
+        .views.map((view) => [view.name, view.folder]),
+    );
+
+  it('a Modeller or an Admin saves into a folder, moves, takes out and renames, logged by id only', async () => {
+    for (const roles of [['Modeller'], ['Admin']]) {
+      const { target, cookie } = await signedInAs(roles);
+      const logs = captureLogs(target);
+      const res = await call(target, 'POST', views(), {
+        cookie,
+        body: { name: 'Booking', folder: ' Quay office ', elementIds: ['clerk'] },
+      });
+      expect(res.statusCode).toBe(201);
+      const booking = res.json<ViewResult>().view;
+      expect(booking).toMatchObject({ folder: 'Quay office', version: 1 });
+      const lifting = (
+        await call(target, 'POST', views(), {
+          cookie,
+          body: { name: 'Lifting', elementIds: ['crane'] },
+        })
+      ).json<ViewResult>().view;
+      expect(lifting.folder).toBeNull();
+
+      const moved = await call(target, 'PUT', folderOf(lifting.id), {
+        cookie,
+        body: { folder: 'quay OFFICE' },
+      });
+      expect(moved.statusCode).toBe(200);
+      expect(moved.json<MovedViewResult>().view).toMatchObject({
+        id: lifting.id,
+        folder: 'Quay office',
+        version: 1,
+      });
+      const renamed = await call(target, 'PATCH', folders(), {
+        cookie,
+        body: { from: 'Quay office', to: 'Harbour office' },
+      });
+      expect(renamed.statusCode).toBe(200);
+      const result = renamed.json<RenamedViewFolderResult>();
+      expect(result.folder).toBe('Harbour office');
+      expect(result.views.map((view) => [view.name, view.folder, view.version])).toEqual([
+        ['Booking', 'Harbour office', 1],
+        ['Lifting', 'Harbour office', 1],
+      ]);
+      const out = await call(target, 'PUT', folderOf(lifting.id), {
+        cookie,
+        body: { folder: null },
+      });
+      expect(out.json<MovedViewResult>().view.folder).toBeNull();
+      expect(await listed(target, cookie)).toEqual({ Booking: 'Harbour office', Lifting: null });
+      // Opening a view gives its folder too, still at version 1.
+      const opened = await call(target, 'GET', `${views()}/${booking.id}`, { cookie });
+      expect(opened.json<ViewResult>().view).toMatchObject({
+        folder: 'Harbour office',
+        version: 1,
+      });
+      // One line per view changed, naming no folder.
+      const lines = logs.filter((line) => line.includes('"audit":"view-folder-changed"'));
+      expect(lines).toHaveLength(4);
+      for (const line of lines) expect(loggedFields(line)).not.toMatch(/office|Quay|Harbour/i);
+      await app?.close();
+      app = undefined;
+      await resetTestDb(db);
+      const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
+      modelId = (await store.save(harbour, { id: 'oid-seed', name: 'Made-up Seeder' })).id;
+    }
+  });
+
+  it("doesn't raise the version: a save with the version read before a move still works", async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    await call(target, 'PUT', folderOf(view.id), { cookie, body: { folder: 'Quay office' } });
+    const laid = await call(target, 'PUT', `${views()}/${view.id}/layout`, {
+      cookie,
+      body: { version: 1, cards: [{ elementId: 'clerk', x: 10, y: 20 }] },
+    });
+    expect(laid.statusCode).toBe(200);
+    expect(laid.json<ViewResult>().view).toMatchObject({ version: 2, folder: 'Quay office' });
+  });
+
+  it('gets 422 on folder for a name taken by another folder, in any case: never merged', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const booking = await created(target, cookie);
+    await call(target, 'PUT', folderOf(booking.id), { cookie, body: { folder: 'Quay office' } });
+    const lifting = (
+      await call(target, 'POST', views(), {
+        cookie,
+        body: { name: 'Lifting', folder: 'Cranes', elementIds: ['crane'] },
+      })
+    ).json<ViewResult>().view;
+    for (const res of [
+      // A new folder with an existing name, the view's own folder too.
+      await call(target, 'PUT', folderOf(booking.id), {
+        cookie,
+        body: { folder: ' cranes ', newFolder: true },
+      }),
+      await call(target, 'PUT', folderOf(booking.id), {
+        cookie,
+        body: { folder: 'QUAY OFFICE', newFolder: true },
+      }),
+      // A rename to another folder's name.
+      await call(target, 'PATCH', folders(), {
+        cookie,
+        body: { from: 'Quay office', to: 'CRANES' },
+      }),
+    ]) {
+      expect(res.statusCode).toBe(422);
+      const [issue] = res.json<ViewRejected>().fields;
+      expect(issue?.field).toBe('folder');
+      expect(issue?.message).toMatch(/^There's already a folder called “(Cranes|Quay office)”\.$/);
+    }
+    expect(await listed(target, cookie)).toEqual({ Booking: 'Quay office', Lifting: 'Cranes' });
+    expect(lifting.folder).toBe('Cranes');
+  });
+
+  it('gets 422 on folder for a name over 100 characters', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    const long = 'q'.repeat(101);
+    for (const res of [
+      await call(target, 'PUT', folderOf(view.id), { cookie, body: { folder: long } }),
+      await call(target, 'POST', views(), {
+        cookie,
+        body: { name: 'Other', folder: long, elementIds: [] },
+      }),
+    ]) {
+      expect(res.statusCode).toBe(422);
+      expect(res.json<ViewRejected>().fields).toEqual([
+        { field: 'folder', message: 'The folder name has 101 characters. Use 100 or fewer.' },
+      ]);
+    }
+    const fits = await call(target, 'PUT', folderOf(view.id), {
+      cookie,
+      body: { folder: 'q'.repeat(100) },
+    });
+    expect(fits.statusCode).toBe(200);
+  });
+
+  it('gets 404 saying what is missing, 400 for a bad model id, 415 and 413', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    const missing = async (res: Awaited<ReturnType<typeof call>>) => {
+      expect(res.statusCode).toBe(404);
+      return res.json<ViewNotFound>().missing;
+    };
+    expect(
+      await missing(
+        await call(target, 'PATCH', folders(), { cookie, body: { from: 'None', to: 'X' } }),
+      ),
+    ).toBe('folder');
+    expect(
+      await missing(
+        await call(target, 'PUT', folderOf(unknownId), { cookie, body: { folder: 'X' } }),
+      ),
+    ).toBe('view');
+    expect(
+      await missing(
+        await call(target, 'PUT', `/api/models/${unknownId}/views/${view.id}/folder`, {
+          cookie,
+          body: { folder: 'X' },
+        }),
+      ),
+    ).toBe('model');
+    const bad = await call(target, 'PATCH', '/api/models/not-a-model/view-folders', {
+      cookie,
+      body: { from: 'A', to: 'B' },
+    });
+    expect(bad.statusCode).toBe(400);
+    const text = await call(target, 'PUT', folderOf(view.id), {
+      cookie,
+      raw: '{"folder":"X"}',
+      contentType: 'text/plain',
+    });
+    expect(text.statusCode).toBe(415);
+    const big = await call(target, 'PUT', folderOf(view.id), {
+      cookie,
+      raw: JSON.stringify({ folder: 'x'.repeat(viewFolderBodyLimit) }),
+    });
+    expect(big.statusCode).toBe(413);
+  });
+
+  it('a Viewer sees folders but gets 403 on every folder change, and nothing is stored', async () => {
+    const modeller = await signedInAs(['Modeller']);
+    const view = await created(modeller.target, modeller.cookie);
+    await call(modeller.target, 'PUT', folderOf(view.id), {
+      cookie: modeller.cookie,
+      body: { folder: 'Quay office' },
+    });
+    await app?.close();
+    const { target, cookie } = await signedInAs(['Viewer']);
+    expect(await listed(target, cookie)).toEqual({ Booking: 'Quay office' });
+    for (const res of [
+      await call(target, 'POST', views(), {
+        cookie,
+        body: { name: 'X', folder: 'Quay office', elementIds: [] },
+      }),
+      await call(target, 'PUT', folderOf(view.id), { cookie, body: { folder: 'Elsewhere' } }),
+      await call(target, 'PUT', folderOf(view.id), { cookie, body: { folder: null } }),
+      await call(target, 'PUT', folderOf(view.id), {
+        cookie,
+        body: { folder: 'New one', newFolder: true },
+      }),
+      await call(target, 'PATCH', folders(), { cookie, body: { from: 'Quay office', to: 'Y' } }),
+    ]) {
+      expect(res.statusCode).toBe(403);
+    }
+    expect(await listed(target, cookie)).toEqual({ Booking: 'Quay office' });
+  });
+});
+
+describe('the views an element is used in', () => {
+  const usedIn = (elementId: string, model = modelId) =>
+    `/api/models/${model}/elements/${encodeURIComponent(elementId)}/views`;
+
+  it.each([['Viewer'], ['Modeller'], ['Admin']])(
+    'a %s gets the views holding the element, by name',
+    async (role) => {
+      const modeller = await signedInAs(['Modeller']);
+      await created(modeller.target, modeller.cookie);
+      for (const [name, elementIds] of [
+        ['lifting', ['crane']],
+        ['All', ['clerk', 'ledger', 'crane']],
+      ] as const) {
+        const res = await call(modeller.target, 'POST', views(), {
+          cookie: modeller.cookie,
+          body: { name, elementIds },
+        });
+        expect(res.statusCode).toBe(201);
+      }
+      await app?.close();
+      const { target, cookie } = await signedInAs([role]);
+      const names = async (elementId: string) => {
+        const res = await call(target, 'GET', usedIn(elementId), { cookie });
+        expect(res.statusCode).toBe(200);
+        return res.json<ViewListResponse>().views.map((view) => view.name);
+      };
+      expect(await names('crane')).toEqual(['All', 'lifting']);
+      expect(await names('ledger')).toEqual(['All', 'Booking']);
+      expect(await names('no such element')).toEqual([]);
+    },
+  );
+
+  it('is current after a Modeller adds the element to a view or takes it out', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    const names = async () =>
+      (await call(target, 'GET', usedIn('crane'), { cookie }))
+        .json<ViewListResponse>()
+        .views.map((one) => one.name);
+    expect(await names()).toEqual([]);
+    const contents = `${views()}/${view.id}/contents`;
+    const added = await call(target, 'PUT', contents, {
+      cookie,
+      body: { version: 1, elementIds: ['clerk', 'ledger', 'crane'] },
+    });
+    expect(added.statusCode).toBe(200);
+    expect(await names()).toEqual(['Booking']);
+    const removed = await call(target, 'PUT', contents, {
+      cookie,
+      body: { version: 2, elementIds: ['clerk', 'ledger'] },
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(await names()).toEqual([]);
+  });
+
+  it('gets 404 for a model that is gone, 400 for one that cannot be, and 401 signed out', async () => {
+    const { target, cookie } = await signedInAs(['Viewer']);
+    const gone = await call(target, 'GET', usedIn('crane', unknownId), { cookie });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.json<ViewNotFound>().missing).toBe('model');
+    expect((await call(target, 'GET', usedIn('crane', 'not-a-model'), { cookie })).statusCode).toBe(
+      400,
+    );
+    expect((await call(target, 'GET', usedIn('crane'))).statusCode).toBe(401);
+  });
+
+  it('a person without a role gets 403', async () => {
+    const { target, cookie } = await signedInAs([]);
+    expect((await call(target, 'GET', usedIn('crane'), { cookie })).statusCode).toBe(403);
+  });
+});
+
 describe('without a database', () => {
   it('answers 501: views need PostgreSQL', async () => {
     const { target, cookie } = await signedInAs(['Admin'], false);
-    const res = await call(target, 'GET', `/api/models/${unknownId}/views`, { cookie });
-    expect(res.statusCode).toBe(501);
-    expect(res.json<{ message: string }>().message).toBe(editingUnavailableMessage);
+    for (const url of [
+      `/api/models/${unknownId}/views`,
+      `/api/models/${unknownId}/elements/crane/views`,
+    ]) {
+      const res = await call(target, 'GET', url, { cookie });
+      expect(res.statusCode).toBe(501);
+      expect(res.json<{ message: string }>().message).toBe(editingUnavailableMessage);
+    }
+    for (const res of [
+      await call(target, 'PUT', `/api/models/${unknownId}/views/${unknownId}/folder`, {
+        cookie,
+        body: { folder: 'X' },
+      }),
+      await call(target, 'PATCH', `/api/models/${unknownId}/view-folders`, {
+        cookie,
+        body: { from: 'X', to: 'Y' },
+      }),
+    ]) {
+      expect(res.statusCode).toBe(501);
+    }
   });
 });

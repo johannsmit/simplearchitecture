@@ -2,18 +2,20 @@ import type { ViewCardLayout, ViewLineRoute, ViewSummary } from '@simplearchitec
 import type { Db, Queryable } from '../db/db.js';
 import {
   isModelId,
+  type PlannedFolderChange,
   type PlannedViewChange,
   type RelationshipEnds,
   type ViewChangeState,
   type ViewLookup,
+  type ViewName,
   type ViewRecord,
   type ViewStore,
 } from './model-store.js';
 
 /**
- * Views in PostgreSQL (migrations 010, 011 and 014): one row per view, plus one per element and
- * per relationship in it; a card's position is on its element's row, and a line's route on its
- * relationship's row. The foreign keys keep views consistent with the model: deleting an element,
+ * Views in PostgreSQL (migrations 010, 011, 014 and 015): one row per view, with its folder, plus
+ * one per element and per relationship in it; a card's position is on its element's row, and a
+ * line's route on its relationship's row. The foreign keys keep views consistent with the model: deleting an element,
  * a relationship or the model removes it from every view in the same transaction. Ids travel as
  * one JSON parameter, whatever their number.
  */
@@ -21,6 +23,7 @@ import {
 interface ViewRow {
   id: string;
   name: string;
+  folder: string | null;
   version: number;
   created_at: Date | string;
   created_by_id: string;
@@ -57,7 +60,7 @@ type Joined<Row extends ViewRow> = Omit<Row, 'id'> & { id: string | null };
 
 const present = <Row extends ViewRow>(row: Joined<Row>): row is Row => row.id !== null;
 
-const viewColumns = `v.id, v.name, v.version, v.created_at, v.created_by_id, v.created_by_name,
+const viewColumns = `v.id, v.name, v.folder, v.version, v.created_at, v.created_by_id, v.created_by_name,
   v.updated_at, v.updated_by_id, v.updated_by_name,
   (select count(*)::int from view_elements ve where ve.view_id = v.id) as element_count,
   (select count(*)::int from view_relationships vr where vr.view_id = v.id) as relationship_count`;
@@ -94,11 +97,18 @@ const listViews = `select m.id as model_id, ${viewColumns}
   from models m left join views v on v.model_id = m.id
   where m.id = $1::uuid`;
 
+// The views holding one element (by the index on the element), as the list reads them.
+const listHolding = `select m.id as model_id, ${viewColumns}
+  from models m left join views v on v.model_id = m.id
+    and v.id in (select ve.view_id from view_elements ve
+                 where ve.model_id = m.id and ve.element_id = $2)
+  where m.id = $1::uuid`;
+
 // View changes hold the model's row lock, as element changes do: they take turns with each other
 // and with element and relationship changes, and a delete of the model waits for them.
 const lockModel = 'select version from models where id = $1::uuid for update';
 
-const viewNames = 'select id, name from views where model_id = $1::uuid';
+const viewNames = 'select id, name, folder from views where model_id = $1::uuid';
 
 const findElements = `select e.id from elements e
   where e.model_id = $1::uuid and e.id in (select jsonb_array_elements_text($2::text::jsonb))`;
@@ -107,9 +117,9 @@ const findRelationships = `select r.id, r.source, r.target from relationships r
   where r.model_id = $1::uuid and r.id in (select jsonb_array_elements_text($2::text::jsonb))
   order by r.ordinal`;
 
-const insertView = `insert into views (id, model_id, name, created_at, created_by_id,
+const insertView = `insert into views (id, model_id, name, folder, created_at, created_by_id,
   created_by_name, updated_at, updated_by_id, updated_by_name)
-  values ($1::uuid, $2::uuid, $3, $4, $5, $6, $4, $5, $6)`;
+  values ($1::uuid, $2::uuid, $3, $7, $4, $5, $6, $4, $5, $6)`;
 
 // New contents are written as a difference, so adding or removing one card costs little: rows no
 // longer wanted go, and only rows not there yet are added.
@@ -160,6 +170,15 @@ const setRoutes = `update view_relationships vr set route_x = c.xs, route_y = c.
 const touchView = `update views set version = version + 1, updated_at = $3, updated_by_id = $4,
   updated_by_name = $5 where id = $1::uuid and model_id = $2::uuid`;
 
+// A folder isn't part of a view's version: neither the version nor the last change moves.
+const setFolders = `update views v set folder = c.folder
+  from jsonb_to_recordset($2::text::jsonb) as c(view_id uuid, folder text)
+  where v.model_id = $1::uuid and v.id = c.view_id`;
+
+const auditFolders = `insert into audit (action, user_id, user_name, model_id, view_id, details)
+  select 'view-changed', $2, $3, $1::uuid, c.view_id, $4::text::jsonb
+  from jsonb_to_recordset($5::text::jsonb) as c(view_id uuid)`;
+
 const insertAudit = `insert into audit (action, user_id, user_name, model_id, view_id, details)
   values ($1, $2, $3, $4::uuid, $5::uuid, $6::text::jsonb)`;
 
@@ -169,6 +188,7 @@ function summaryOf(row: ViewRow): ViewSummary {
   return {
     id: row.id,
     name: row.name,
+    folder: row.folder,
     version: row.version,
     elementCount: row.element_count,
     relationshipCount: row.relationship_count,
@@ -224,6 +244,13 @@ export class PostgresViewStore implements ViewStore {
     return rows.filter(present).map(summaryOf);
   }
 
+  async listHolding(modelId: string, elementId: string): Promise<ViewSummary[] | undefined> {
+    if (!isModelId(modelId)) return undefined;
+    const rows = await this.#db.query<Joined<ViewRow>>(listHolding, [modelId, elementId]);
+    if (rows.length === 0) return undefined;
+    return rows.filter(present).map(summaryOf);
+  }
+
   async get(modelId: string, viewId: string): Promise<ViewRecord | 'no-model' | 'no-view'> {
     if (!isModelId(modelId)) return 'no-model';
     if (!isModelId(viewId)) return 'no-view';
@@ -244,7 +271,7 @@ export class PostgresViewStore implements ViewStore {
         const found = await readView(tx, modelId, lookup.viewId);
         if (typeof found !== 'string') view = found;
       }
-      const names = await tx.query<{ id: string; name: string }>(viewNames, [modelId]);
+      const names = await tx.query<ViewName>(viewNames, [modelId]);
       const elements = await tx.query<{ id: string }>(findElements, [
         modelId,
         JSON.stringify(lookup.elementIds),
@@ -273,7 +300,15 @@ export class PostgresViewStore implements ViewStore {
       const { actor } = audit;
       let details: object = { fields: audit.fields };
       if (write.kind === 'create') {
-        await tx.query(insertView, [write.viewId, modelId, write.name, at, actor.id, actor.name]);
+        await tx.query(insertView, [
+          write.viewId,
+          modelId,
+          write.name,
+          at,
+          actor.id,
+          actor.name,
+          write.folder,
+        ]);
       } else if (write.kind === 'rename') {
         await tx.query('update views set name = $3 where id = $1::uuid and model_id = $2::uuid', [
           write.viewId,
@@ -353,6 +388,34 @@ export class PostgresViewStore implements ViewStore {
       const after = await readView(tx, modelId, write.viewId);
       if (typeof after === 'string') throw new Error('view not written');
       return { view: after };
+    });
+  }
+
+  async setFolders(
+    modelId: string,
+    plan: (views: readonly ViewName[]) => PlannedFolderChange,
+  ): Promise<ViewSummary[] | undefined> {
+    if (!isModelId(modelId)) return undefined;
+    return this.#db.transaction(async (tx) => {
+      const [locked] = await tx.query(lockModel, [modelId]);
+      if (!locked) return undefined;
+      const views = await tx.query<ViewName>(viewNames, [modelId]);
+      const { folders, actor } = plan(views);
+      if (folders.length > 0) {
+        const changes = JSON.stringify(
+          folders.map(({ viewId, folder }) => ({ view_id: viewId, folder })),
+        );
+        await tx.query(setFolders, [modelId, changes]);
+        await tx.query(auditFolders, [
+          modelId,
+          actor.id,
+          actor.name,
+          JSON.stringify({ fields: ['folder'] }),
+          changes,
+        ]);
+      }
+      const rows = await tx.query<Joined<ViewRow>>(listViews, [modelId]);
+      return rows.filter(present).map(summaryOf);
     });
   }
 }

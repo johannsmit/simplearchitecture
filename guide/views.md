@@ -5,7 +5,7 @@ A view is a named canvas that is stored: a set of elements and relationships of 
 ## Who can do what
 
 - **Viewers** (and everyone above) list and open every view of a model, in Viewing or Modelling. A view can't be private.
-- **Modellers and Admins** save, change, rename and delete views, in Modelling.
+- **Modellers and Admins** save, change, rename and delete views, and put them in folders, in Modelling.
 - The server checks the role on every request, whatever the screen shows.
 
 Views are stored in the database, so they need PostgreSQL, as editing does.
@@ -14,11 +14,11 @@ Views are stored in the database, so they need PostgreSQL, as editing does.
 
 1. In Modelling, focus an element, so the canvas shows it and its neighbours.
 2. Open **Views** at the bottom of the element list, and choose **Save as view…**.
-3. Give it a name, or keep the element's name, and choose **Save view**.
+3. Give it a name, or keep the element's name, and choose **Save view**. To put it in a folder, pick one under **Folder** (`↓` shows the model's folders) or type a new name; leave it empty for no folder. See [Folders](#folders).
 
 The view holds exactly what the canvas draws: every card, including containers and cards added by hand, and every relationship among them, including each one inside a "×N" line and each Contains drawn as nesting. Cards held back by the 150-card limit aren't drawn, so they aren't saved.
 
-A name has 1 to 200 characters and is unique within the model, ignoring case: "Payments" and "payments" can't both exist.
+A name has 1 to 200 characters and is unique within the model, ignoring case: "Payments" and "payments" can't both exist. That holds across folders: two views in different folders can't share a name either.
 
 ## Opening a view
 
@@ -28,6 +28,33 @@ A view opens as it was left: each card where it was put, at the width it was giv
 
 Double-click a card, or press `Enter` on it, to leave the view and explore that element; Back returns to the view. **Close view** goes to the model's start page.
 
+### Used in views
+
+An element's details panel, in Viewing and Modelling, has a **Used in views** section: every view of the model that holds the element, by name, each a link that opens it (the view you are in is marked). It says "In no views" when there are none. It is read again when you add the element to the open view or take it out, and when you save, rename or delete a view.
+
+## Folders
+
+Views can be grouped in folders, one level deep: there are no folders inside folders. A folder is a name on the views in it, so it exists while at least one view is in it: there are no empty folders. Everyone who can open the model sees the folders; only Modellers and Admins change them, in Modelling, and the server checks the role whatever the screen shows.
+
+In the **Views** section, the folders come first, by name, each with its views by name and the number of views; the views without a folder follow. The bar above an open view shows its folder before its name ("Stock › Shelving").
+
+- **Open and close a folder:** click its header, or press `Enter`, `Space`, `→` or `←` on it (the README lists every key of the Views list). Folders start open. Your browser remembers which folders you closed, per model (by a code made from the name, not the name itself). Viewers can close folders too: it changes nothing for anyone else. A closed folder that holds the open view shows the check on its header.
+- **Filter** (from 9 views): matches view names and folder names. A matching folder shows open while you filter, without changing what your browser remembers; a folder whose name matches shows all its views.
+- **Put a view in a folder when you save it:** use the **Folder** field of **Save as view**. A name that matches an existing folder, ignoring case and spaces at the ends, puts the view in that folder, with the folder's spelling ("stock" goes into "Stock").
+- **Move a view later:** drag it, with the mouse, in the Views list:
+  - onto a folder's header or any of its views, to put it in that folder (also onto a closed folder, which stays closed);
+  - onto a view without a folder, to take it out of its folder (when every view is in a folder, a **No folder** row shows while you drag);
+  - onto **New folder…** at the end of the list, which asks for the new folder's name.
+
+  A drag starts once the pointer has moved a few pixels, so a click still opens the view. `Esc`, or letting go anywhere else, cancels it. A folder whose last view is dragged out is gone.
+
+- **Rename a folder:** the pencil on its header (shown when you point at it or Tab to it), or `F2` on the header. The folder is renamed on all its views at once, for everyone, and keeps its open or closed state in your browser. Changing only the case is fine.
+- **Names:** 1 to 100 characters. A new folder, or a renamed one, can't take the name of another folder, ignoring case and spaces at the ends: the dialog says "There's already a folder called …" and won't save. Folders are never merged; to put a view in an existing folder, drag it there.
+
+Moving a view is by mouse only: there is no key or button to move a view after it is saved. With the keyboard, you can still choose a view's folder when you save it, and open, close and rename folders.
+
+A folder change isn't a change to the view: it doesn't count as an edit, so someone with the view open can go on changing it without being told someone else changed it.
+
 ## Changing a view (Modelling)
 
 Every change is saved at once, one at a time: the bar above the view says "Saving…", then "Saved". There is no Save button.
@@ -36,7 +63,7 @@ Every change is saved at once, one at a time: the bar above the view says "Savin
 - A relationship drawn between two cards of the view is added to it.
 - The **×** on a card (shown when you point at the card, select it or Tab to it) takes it out of the view, with its relationships (and, with nesting on, the cards drawn inside it).
 - Relationships aren't taken out of a view one by one. To hide them all, switch **Show relationships** off in the legend: that is remembered by your browser, not saved in the view.
-- **Rename** and **Delete** are on the bar above the view. Deleting a view can't be undone.
+- **Rename** and **Delete** are on the bar above the view. Deleting a view can't be undone. To put a view in a folder, see [Folders](#folders).
 
 None of these change the model: the elements and relationships stay. If someone else changed the view meanwhile, your change isn't saved, the canvas goes back to what is stored, and **Reload view** shows their version.
 

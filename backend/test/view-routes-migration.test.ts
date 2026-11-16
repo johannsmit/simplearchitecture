@@ -103,6 +103,8 @@ describe('migration 014', () => {
     const before = await dump(target);
     await migrate(target, all);
     expect(await dump(target)).toEqual(before);
+    // Read as today's app does, with the migrations since.
+    await migrate(target, loadMigrations());
     const { view } = await new ViewService(await PostgresModelStore.open(target, quiet)).getView(
       modelId,
       viewId,

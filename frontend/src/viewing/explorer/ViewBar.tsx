@@ -3,6 +3,8 @@ import { Icon } from '../../icons';
 
 interface ViewBarProps {
   name: string;
+  /** The view's folder, shown before its name, or null. */
+  folder: string | null;
   /** Rename and Delete: Modelling with editing on. */
   editable: boolean;
   saving: boolean;
@@ -21,6 +23,7 @@ interface ViewBarProps {
 /** Under the toolbar while a view is open: the one clear sign of being in a view. */
 export function ViewBar({
   name,
+  folder,
   editable,
   saving,
   savedCount,
@@ -59,11 +62,28 @@ export function ViewBar({
   const status = saving ? 'Saving…' : savedShown === savedCount ? 'Saved' : '';
   return (
     <section className="view-bar" aria-labelledby="view-name">
-      <h2 ref={heading} id="view-name" tabIndex={-1}>
+      <h2
+        ref={heading}
+        id="view-name"
+        tabIndex={-1}
+        {...(folder === null
+          ? {}
+          : { 'aria-label': `View ${name || '(unnamed)'}, in folder ${folder}` })}
+      >
         <span className="mode-pill">
           <Icon name="bookmark" size="sm" />
           View
         </span>{' '}
+        {folder !== null && (
+          <>
+            <span className="vfolder" title={folder}>
+              {folder}
+            </span>
+            <span className="vsep" aria-hidden="true">
+              ›
+            </span>
+          </>
+        )}
         <span className="vname" title={name}>
           {name || '(unnamed)'}
         </span>

@@ -1,5 +1,5 @@
 import type { JgfDocument, ModelSummary, StoredView } from '@simplearchitecture/shared';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   apiError,
@@ -58,6 +58,7 @@ function stored(id: string, name: string, elementIds: string[], relationshipIds:
   const view: StoredView = {
     id,
     name,
+    folder: null,
     version: 1,
     elementCount: elementIds.length,
     relationshipCount: relationshipIds.length,
@@ -83,8 +84,10 @@ interface Call {
 function server(initial: StoredView[] = []) {
   const views = new Map(initial.map((view) => [view.id, structuredClone(view)]));
   const calls: Call[] = [];
-  /** Answers the next change with this instead. */
-  const next: { failWith?: Response } = {};
+  /** The element ids asked about, in order: where each is used. */
+  const usedInReads: string[] = [];
+  /** Answers the next change with this instead; and every read of where an element is used. */
+  const next: { failWith?: Response; failUsedIn?: () => Response } = {};
   let created = 0;
   const base = `/api/models/${libraryId}/views`;
   const summaryOf = (view: StoredView) => {
@@ -99,6 +102,15 @@ function server(initial: StoredView[] = []) {
       return Response.json({ models: [summary], editable: true });
     }
     if (method === 'GET' && url === `/api/models/${libraryId}`) return Response.json(library);
+    const usedIn = new RegExp(`^/api/models/${libraryId}/elements/([^/]+)/views$`).exec(url);
+    if (method === 'GET' && usedIn) {
+      const id = decodeURIComponent(usedIn[1] ?? '');
+      usedInReads.push(id);
+      if (next.failUsedIn) return next.failUsedIn();
+      // In the order stored: the page puts them by name.
+      const holding = [...views.values()].filter((view) => view.elementIds.includes(id));
+      return Response.json({ views: holding.map(summaryOf) });
+    }
     if (method === 'GET' && url.startsWith(`/api/models/${libraryId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1] ?? '');
       return Response.json({
@@ -128,6 +140,36 @@ function server(initial: StoredView[] = []) {
         },
         { status: 201 },
       );
+    }
+    const sameFolder = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    const folderLike = (name: string, except?: string) =>
+      [...views.values()].find(
+        (one) =>
+          one.folder !== null &&
+          sameFolder(one.folder, name) &&
+          (except === undefined || !sameFolder(one.folder, except)),
+      )?.folder ?? undefined;
+    const folderTaken = (existing: string) =>
+      apiError(422, 'The change is not valid.', {
+        fields: [{ field: 'folder', message: `There's already a folder called “${existing}”.` }],
+      });
+    if (method === 'PATCH' && url === `/api/models/${libraryId}/view-folders`) {
+      const request = JSON.parse(String(body)) as { from: string; to: string };
+      calls.push({ method, url, body: request });
+      if (next.failWith) {
+        const answer = next.failWith;
+        delete next.failWith;
+        return answer;
+      }
+      const members = [...views.values()].filter(
+        (one) => one.folder !== null && sameFolder(one.folder, request.from),
+      );
+      if (members.length === 0)
+        return apiError(404, 'No view is in this folder', { missing: 'folder' });
+      const clash = folderLike(request.to, request.from);
+      if (clash !== undefined) return folderTaken(clash);
+      for (const member of members) member.folder = request.to.trim();
+      return Response.json({ folder: request.to.trim(), views: members.map(summaryOf) });
     }
     if (!url.startsWith(base)) return undefined;
     const parsed =
@@ -166,11 +208,21 @@ function server(initial: StoredView[] = []) {
         parsed?.elementIds as string[],
         (parsed?.relationshipIds as string[] | undefined) ?? [],
       );
+      const folder = typeof parsed?.folder === 'string' ? parsed.folder.trim() : '';
+      made.folder = folder === '' ? null : (folderLike(folder) ?? folder);
       views.set(made.id, made);
       return Response.json({ view: made }, { status: 201 });
     }
     if (!view) return apiError(404, 'This view does not exist.', { missing: 'view' });
     if (method === 'GET') return Response.json({ view });
+    // Not version-checked, and the version stays.
+    if (method === 'PUT' && part === 'folder') {
+      const folder = parsed?.folder as string | null;
+      const existing = folder === null ? undefined : folderLike(folder);
+      if (parsed?.newFolder === true && existing !== undefined) return folderTaken(existing);
+      view.folder = folder === null ? null : (existing ?? folder.trim());
+      return Response.json({ view: summaryOf(view) });
+    }
     const version =
       method === 'DELETE'
         ? Number(new URL(url, 'http://x').searchParams.get('version'))
@@ -202,7 +254,7 @@ function server(initial: StoredView[] = []) {
     }
     return undefined;
   };
-  return { views, calls, next, handler };
+  return { views, calls, usedInReads, next, handler };
 }
 
 type Space = 'viewing' | 'modelling';
@@ -1086,5 +1138,607 @@ describe('Show relationships in an open view', () => {
     await shown(['reader', 'catalogue', 'loans']);
     expect(linesSwitch().checked).toBe(false);
     expect(edgeCount()).toBe(0);
+  });
+});
+
+describe('Used in views, in the details panel', () => {
+  const details = () => screen.getByRole('complementary', { name: 'Details' });
+  const findDetails = () => screen.findByRole('complementary', { name: 'Details' });
+  const usedIn = () => within(details()).getByRole('region', { name: 'Used in views' });
+  const usedInNames = () =>
+    within(usedIn())
+      .queryAllByRole('link')
+      .map((link) => link.textContent);
+  const archiving = () => stored('v-archiving', 'archiving', ['archive', 'loans']);
+  /** Selects an element with a click on its row in the element list. */
+  const pick = (name: string, group: string) => {
+    const tree = screen.getByRole('tree', { name: 'Elements by type' });
+    const type = within(tree).getByRole('treeitem', { name: new RegExp(`^${group},`) });
+    if (type.getAttribute('aria-expanded') === 'false') {
+      fireEvent.click(type.querySelector('.trow') as HTMLElement);
+    }
+    const row = within(tree).getByRole('treeitem', { name });
+    fireEvent.click(row.querySelector('.trow') as HTMLElement);
+  };
+
+  // In Viewing as a Viewer, in Modelling as a Modeller.
+  it.each(['viewing', 'modelling'] as const)(
+    'lists every view holding the element, by name, as links that open them (%s)',
+    async (space) => {
+      open(`${modelAt(space)}/elements/loans?show=data`, space, [
+        reading(),
+        archiving(),
+        lending(),
+        stored('v-front', 'Front desk', ['reader', 'catalogue']),
+      ]);
+      await waitFor(() => {
+        expect(usedInNames()).toEqual(['archiving', 'Lending', 'Reading']);
+      });
+      expect(within(usedIn()).getByRole('heading', { level: 3 }).textContent).toBe(
+        'Used in views 3',
+      );
+      const link = within(usedIn()).getByRole('link', { name: 'Lending' });
+      // The relationship properties shown go along, as in the Views list.
+      expect(link.getAttribute('href')).toBe(`${viewAt(space, 'v-lending')}?show=data`);
+      fireEvent.click(link);
+      await waitFor(() => {
+        expect(currentLocation()).toBe(`${viewAt(space, 'v-lending')}?show=data`);
+      });
+      await shown(['loans', 'server']);
+    },
+  );
+
+  it('says "In no views" when no view holds the element', async () => {
+    open(`${modelAt('viewing')}/elements/search`, 'viewing', [lending(), reading()]);
+    await within(await findDetails()).findByText('In no views');
+    expect(usedInNames()).toEqual([]);
+    expect(within(usedIn()).getByRole('heading', { level: 3 }).textContent).toBe('Used in views 0');
+  });
+
+  it('marks the open view in the list', async () => {
+    open(viewAt('viewing', 'v-reading'), 'viewing', [reading(), archiving()]);
+    await shown(['reader', 'catalogue', 'loans']);
+    fireEvent.click(card('loans')?.querySelector('.card-main') as HTMLElement);
+    await waitFor(() => {
+      expect(usedInNames()).toEqual(['archiving', 'Reading']);
+    });
+    expect(
+      within(usedIn()).getByRole('link', { name: 'Reading' }).getAttribute('aria-current'),
+    ).toBe('page');
+    expect(
+      within(usedIn()).getByRole('link', { name: 'archiving' }).hasAttribute('aria-current'),
+    ).toBe(false);
+  });
+
+  it('is current after the element is added to the open view and taken out again', async () => {
+    const { usedInReads } = open(viewAt('modelling', 'v-lending'), 'modelling', [
+      lending(),
+      reading(),
+    ]);
+    await shown(['loans', 'server']);
+    pick('Archive', 'Other');
+    await within(details()).findByText('In no views');
+    fireEvent.drop(canvasEl(), { dataTransfer: dragged('archive'), clientX: 200, clientY: 200 });
+    await shown(['loans', 'server', 'archive']);
+    await waitFor(() => {
+      expect(usedInNames()).toEqual(['Lending']);
+    });
+    fireEvent.click(
+      within(card('archive') as HTMLElement).getByRole('button', {
+        name: 'Remove Archive from view',
+      }),
+    );
+    await shown(['loans', 'server']);
+    // Taking the card out closes its details; picked again, they say it is in no view.
+    pick('Archive', 'Other');
+    await within(details()).findByText('In no views');
+    expect(usedInReads.every((id) => id === 'archive')).toBe(true);
+  });
+
+  it("shows a view's new name after Rename", async () => {
+    open(viewAt('modelling', 'v-reading'), 'modelling', [reading()]);
+    await shown(['reader', 'catalogue', 'loans']);
+    fireEvent.click(card('loans')?.querySelector('.card-main') as HTMLElement);
+    await waitFor(() => {
+      expect(usedInNames()).toEqual(['Reading']);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Borrowing' } });
+    fireEvent.submit(within(dialog).getByRole('textbox').closest('form') as HTMLFormElement);
+    await waitFor(() => {
+      expect(usedInNames()).toEqual(['Borrowing']);
+    });
+  });
+
+  it('says when the list could not be read, with Try again', async () => {
+    const { next } = open(`${modelAt('viewing')}/elements/loans`, 'viewing', [lending()]);
+    next.failUsedIn = () => apiError(500, 'Something went wrong.');
+    const alert = await within(await findDetails()).findByRole('alert');
+    expect(alert.textContent).toContain("The views couldn't be loaded.");
+    delete next.failUsedIn;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => {
+      expect(usedInNames()).toEqual(['Lending']);
+    });
+  });
+
+  it('says that views need a database when the server has none', async () => {
+    const { next } = open(`${modelAt('viewing')}/elements/loans`, 'viewing', [lending()]);
+    next.failUsedIn = () => apiError(501, 'Editing needs a database.');
+    const alert = await within(await findDetails()).findByRole('alert');
+    expect(alert.textContent).toBe('Editing needs a database. ');
+    expect(within(alert).queryByRole('button')).toBeNull();
+  });
+});
+
+describe('View folders', () => {
+  const inFolder = (view: StoredView, folder: string | null) => ({ ...view, folder });
+  /** Two folders and two views without one (made up). */
+  const shelves = () => [
+    inFolder(stored('v-shelving', 'Shelving', ['catalogue']), 'Stock'),
+    inFolder(stored('v-orders', 'Ordering', ['loans']), 'Stock'),
+    inFolder(stored('v-desk', 'Desk', ['reader']), 'Front of house'),
+    reading(),
+    lending(),
+  ];
+  const at = (space: Space) => `${modelAt(space)}/elements/catalogue`;
+  const header = (name: string) =>
+    within(viewsList()).getByRole('button', { name: new RegExp(`^${name}, folder,`) });
+  const folderList = (name: string) => within(viewsList()).getByRole('list', { name });
+  const link = (name: string) => within(viewsList()).getByRole('link', { name });
+  const names = (element: HTMLElement) =>
+    [...element.querySelectorAll('.vf-toggle .n, a .n')].map((each) => each.textContent);
+  async function openFolders(space: Space, views = shelves(), path = at(space)) {
+    const fake = open(path, space, views);
+    await waitFor(() => {
+      expect(viewsHeader()).toBeTruthy();
+    });
+    await openPanel();
+    await within(await findViewsList()).findAllByRole('link');
+    return fake;
+  }
+  /** Drags with the mouse from one element to another, past the 4px threshold. */
+  const dragTo = (from: HTMLElement, to: HTMLElement, release = true) => {
+    fireEvent.pointerDown(from, { button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(from, { clientX: 22, clientY: 21 });
+    fireEvent.pointerMove(to, { clientX: 40, clientY: 80 });
+    if (release) fireEvent.pointerUp(to, { clientX: 40, clientY: 80 });
+  };
+  const folderCalls = (calls: Call[]) =>
+    calls.filter((call) => call.url.endsWith('/folder') || call.url.endsWith('/view-folders'));
+
+  it('lists the folders by name with their views, then the views without a folder', async () => {
+    await openFolders('viewing');
+    expect(names(viewsList())).toEqual([
+      'Front of house',
+      'Desk',
+      'Stock',
+      'Ordering',
+      'Shelving',
+      'Lending',
+      'Reading',
+    ]);
+    expect(header('Stock').textContent).toContain('2 views');
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('true');
+    expect(header('Stock').getAttribute('aria-controls')).toBe(folderList('Stock').id);
+    expect(
+      within(folderList('Stock'))
+        .getAllByRole('link')
+        .map((one) => one.textContent),
+    ).toEqual(['Ordering', 'Shelving']);
+    // A Viewer gets no rename, no New folder… and no dragging.
+    expect(within(viewsList()).queryByRole('button', { name: /^Rename folder/ })).toBeNull();
+    expect(viewsSection().querySelector('.vf-new')).toBeNull();
+  });
+
+  it('collapses a folder by click and with ← →, remembered per browser and model by a hash', async () => {
+    await openFolders('viewing');
+    fireEvent.click(header('Stock'));
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('false');
+    expect(within(viewsList()).queryByRole('list', { name: 'Stock' })).toBeNull();
+    const stored = localStorage.getItem(`sa-view-folders-closed-${libraryId}`) ?? '';
+    expect(stored).toMatch(/^[0-9a-z]+$/);
+    expect(stored.toLowerCase()).not.toContain('stock');
+    // → opens, → again goes to its first view, ← there goes back to the folder, ← closes.
+    header('Stock').focus();
+    fireEvent.keyDown(header('Stock'), { key: 'ArrowRight' });
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('true');
+    fireEvent.keyDown(header('Stock'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(link('Ordering'));
+    fireEvent.keyDown(link('Ordering'), { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(header('Stock'));
+    fireEvent.keyDown(header('Stock'), { key: 'ArrowLeft' });
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('false');
+    // After a reload it is as left; another folder starts open.
+    cleanup();
+    await openFolders('viewing');
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('false');
+    expect(header('Front of house').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('goes through folder headers and the views shown with ↓ ↑ Home End', async () => {
+    await openFolders('viewing');
+    fireEvent.click(header('Stock'));
+    fireEvent.keyDown(viewsHeader(), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(header('Front of house'));
+    fireEvent.keyDown(header('Front of house'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(link('Desk'));
+    fireEvent.keyDown(link('Desk'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(header('Stock'));
+    // Stock is closed: its views are skipped.
+    fireEvent.keyDown(header('Stock'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(link('Lending'));
+    fireEvent.keyDown(link('Lending'), { key: 'End' });
+    expect(document.activeElement).toBe(link('Reading'));
+    fireEvent.keyDown(link('Reading'), { key: 'Home' });
+    expect(document.activeElement).toBe(header('Front of house'));
+    fireEvent.keyDown(header('Front of house'), { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(viewsHeader());
+  });
+
+  it('marks a closed folder that holds the open view', async () => {
+    await openFolders('viewing', shelves(), viewAt('viewing', 'v-orders'));
+    fireEvent.click(header('Stock'));
+    expect(header('Stock').textContent).toContain('2 views, has the open view');
+    expect(header('Stock').querySelector('.chk .ico')).toBeTruthy();
+    expect(header('Front of house').textContent).not.toContain('has the open view');
+    // The view bar says the folder.
+    await screen.findByRole('heading', { level: 2, name: 'View Ordering, in folder Stock' });
+  });
+
+  it('filters by view and folder names, showing matching folders open without changing what is remembered', async () => {
+    const many = [
+      ...shelves(),
+      ...['Alpha', 'Beta', 'Gamma', 'Delta'].map((name) => stored(`v-${name}`, name, ['reader'])),
+    ];
+    await openFolders('viewing', many);
+    fireEvent.click(header('Stock'));
+    const filter = within(viewsSection()).getByRole('searchbox', { name: 'Filter views' });
+    fireEvent.change(filter, { target: { value: 'stock' } });
+    expect(names(viewsList())).toEqual(['Stock', 'Ordering', 'Shelving']);
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('true');
+    fireEvent.change(filter, { target: { value: 'desk' } });
+    expect(names(viewsList())).toEqual(['Front of house', 'Desk']);
+    fireEvent.change(filter, { target: { value: '' } });
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('Save as view puts the view in a folder picked or typed, joining one in any case', async () => {
+    const { calls } = open(
+      `${modelAt('modelling')}/elements/catalogue?depth=1`,
+      'modelling',
+      shelves(),
+    );
+    await shown(['catalogue', 'reader', 'loans', 'search']);
+    const panel = await openPanel();
+    fireEvent.click(await panel.findByRole('button', { name: 'Save as view…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Save as view' });
+    const folder = await within(dialog).findByRole('combobox', { name: 'Folder' });
+    // The model's folders, by name.
+    fireEvent.keyDown(folder, { key: 'ArrowDown' });
+    expect(
+      within(within(dialog).getByRole('listbox'))
+        .getAllByRole('option')
+        .map((one) => one.textContent),
+    ).toEqual(['Front of house', 'Stock']);
+    fireEvent.keyDown(folder, { key: 'Escape' });
+    // Too long first.
+    fireEvent.change(folder, { target: { value: 'f'.repeat(101) } });
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    fireEvent.change(name, { target: { value: 'Finding books' } });
+    fireEvent.submit(name);
+    expect(
+      await within(dialog).findByText('The folder name has 101 characters. Use 100 or fewer.'),
+    ).toBeTruthy();
+    expect(calls.filter((call) => call.method === 'POST')).toEqual([]);
+    fireEvent.change(folder, { target: { value: ' stock ' } });
+    fireEvent.submit(name);
+    await waitFor(() => {
+      expect(currentLocation()).toBe(viewAt('modelling', 'v-new-1'));
+    });
+    expect(calls.find((call) => call.method === 'POST')?.body?.folder).toBe('Stock');
+    expect(
+      screen.getByText('Saved the view “Finding books” in “Stock”: 4 elements, 4 relationships.'),
+    ).toBeTruthy();
+    await screen.findByRole('heading', { level: 2, name: 'View Finding books, in folder Stock' });
+  });
+
+  it('Save as view without a folder sends none', async () => {
+    const { calls } = open(
+      `${modelAt('modelling')}/elements/catalogue?depth=1`,
+      'modelling',
+      shelves(),
+    );
+    await shown(['catalogue', 'reader', 'loans', 'search']);
+    fireEvent.click(await (await openPanel()).findByRole('button', { name: 'Save as view…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Save as view' });
+    await within(dialog).findByRole('combobox', { name: 'Folder' });
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    fireEvent.change(name, { target: { value: 'Loose' } });
+    fireEvent.submit(name);
+    await screen.findByRole('heading', { level: 2, name: 'View Loose' });
+    expect(calls.find((call) => call.method === 'POST')?.body).not.toHaveProperty('folder');
+  });
+
+  it('moves a view by dragging it onto another folder, without opening it or raising its version', async () => {
+    const { calls, views } = await openFolders('modelling');
+    const before = currentLocation();
+    dragTo(link('Desk'), header('Stock'));
+    // At once, by name, in its new folder; Front of house had only it, so it's gone.
+    expect(names(viewsList())).toEqual([
+      'Stock',
+      'Desk',
+      'Ordering',
+      'Shelving',
+      'Lending',
+      'Reading',
+    ]);
+    await screen.findByText('Moved “Desk” to “Stock”.');
+    expect(folderCalls(calls)).toEqual([
+      {
+        method: 'PUT',
+        url: `/api/models/${libraryId}/views/v-desk/folder`,
+        body: { folder: 'Stock' },
+      },
+    ]);
+    expect(views.get('v-desk')).toMatchObject({ folder: 'Stock', version: 1 });
+    expect(currentLocation()).toBe(before);
+  });
+
+  it('takes a view out of its folder by dropping it on a view without one, and lights one target at a time', async () => {
+    const { calls } = await openFolders('modelling');
+    dragTo(link('Shelving'), link('Lending'), false);
+    // The loose views light up as one target; the view's own folder never does.
+    expect(link('Lending').closest('li')?.className).toContain('is-drop-loose');
+    expect(viewsList().querySelector('.vf.is-drop')).toBeNull();
+    fireEvent.pointerMove(link('Ordering'), { clientX: 40, clientY: 90 });
+    expect(viewsList().querySelector('.is-drop, .is-drop-loose')).toBeNull();
+    fireEvent.pointerMove(header('Front of house'), { clientX: 40, clientY: 100 });
+    expect(header('Front of house').closest('li')?.className).toContain('is-drop');
+    fireEvent.pointerMove(link('Reading'), { clientX: 40, clientY: 110 });
+    fireEvent.pointerUp(link('Reading'), { clientX: 40, clientY: 110 });
+    await screen.findByText('Took “Shelving” out of its folder.');
+    expect(folderCalls(calls).map((call) => call.body)).toEqual([{ folder: null }]);
+    expect(names(viewsList())).toEqual([
+      'Front of house',
+      'Desk',
+      'Stock',
+      'Ordering',
+      'Lending',
+      'Reading',
+      'Shelving',
+    ]);
+  });
+
+  it('sends nothing for a drop on its own folder, off any target, or after Esc, and a click still opens', async () => {
+    const { calls } = await openFolders('modelling');
+    dragTo(link('Shelving'), link('Ordering'));
+    dragTo(link('Shelving'), viewsHeader());
+    dragTo(link('Shelving'), header('Front of house'), false);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(viewsList().querySelector('.is-drop')).toBeNull();
+    fireEvent.pointerUp(header('Front of house'), { clientX: 40, clientY: 80 });
+    // A press with no move is a click (a moment later: the clicks that end a drag are ignored).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(link('Shelving'), { button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerUp(link('Shelving'), { button: 0, clientX: 21, clientY: 20 });
+    fireEvent.click(link('Shelving'));
+    await waitFor(() => {
+      expect(currentLocation()).toBe(viewAt('modelling', 'v-shelving'));
+    });
+    expect(folderCalls(calls)).toEqual([]);
+    expect(within(folderList('Stock')).getAllByRole('link')).toHaveLength(2);
+  });
+
+  it('keeps a collapsed folder collapsed when a view is dropped on it, with its count up', async () => {
+    await openFolders('modelling');
+    fireEvent.click(header('Stock'));
+    dragTo(link('Lending'), header('Stock'));
+    await screen.findByText('Moved “Lending” to “Stock”.');
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('false');
+    expect(header('Stock').textContent).toContain('3 views');
+  });
+
+  it('shows a No folder target while dragging when no view is without a folder', async () => {
+    const { calls } = await openFolders('modelling', [
+      inFolder(lending(), 'Stock'),
+      inFolder(reading(), 'Front of house'),
+    ]);
+    expect(viewsList().querySelector('.vf-none')).toBeNull();
+    dragTo(link('Lending'), header('Front of house'), false);
+    const none = viewsList().querySelector<HTMLElement>('.vf-none');
+    expect(none?.textContent).toBe('No folder');
+    fireEvent.pointerMove(none as HTMLElement, { clientX: 40, clientY: 120 });
+    fireEvent.pointerUp(none as HTMLElement, { clientX: 40, clientY: 120 });
+    await screen.findByText('Took “Lending” out of its folder.');
+    expect(folderCalls(calls).map((call) => call.body)).toEqual([{ folder: null }]);
+  });
+
+  it('puts the row back and says so when a move fails', async () => {
+    const { next } = await openFolders('modelling');
+    next.failWith = apiError(503, 'Unavailable');
+    dragTo(link('Desk'), header('Stock'));
+    const alert = await within(viewsSection()).findByRole('alert');
+    expect(alert.textContent).toContain(
+      "The view wasn't moved. Check your connection and try again.",
+    );
+    expect(within(folderList('Front of house')).getByRole('link', { name: 'Desk' })).toBeTruthy();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Dismiss' }));
+    expect(within(viewsSection()).queryByRole('alert')).toBeNull();
+    next.failWith = apiError(404, 'This view does not exist.', { missing: 'view' });
+    dragTo(link('Desk'), header('Stock'));
+    expect((await within(viewsSection()).findByRole('alert')).textContent).toContain(
+      'Someone else deleted this view.',
+    );
+  });
+
+  it('updates the view bar when the open view moves', async () => {
+    await openFolders('modelling', shelves(), viewAt('modelling', 'v-desk'));
+    await screen.findByRole('heading', { level: 2, name: 'View Desk, in folder Front of house' });
+    dragTo(link('Desk'), header('Stock'));
+    await screen.findByRole('heading', { level: 2, name: 'View Desk, in folder Stock' });
+    dragTo(link('Desk'), link('Reading'));
+    await screen.findByRole('heading', { level: 2, name: 'View Desk' });
+  });
+
+  it('makes a new folder from a drop on New folder…, refusing a name that exists in any case', async () => {
+    const { calls } = await openFolders('modelling');
+    const target = viewsSection().querySelector<HTMLElement>('.vf-new');
+    expect(target?.getAttribute('aria-hidden')).toBe('true');
+    dragTo(link('Lending'), target as HTMLElement);
+    const dialog = await screen.findByRole('dialog', { name: 'New folder' });
+    expect(within(dialog).getByText('Puts “Lending” in a new folder.')).toBeTruthy();
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    const create = within(dialog).getByRole('button', { name: 'Create folder' });
+    fireEvent.change(name, { target: { value: ' STOCK ' } });
+    expect(within(dialog).getByText("There's already a folder called “Stock”.")).toBeTruthy();
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(create.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.submit(name);
+    fireEvent.change(name, { target: { value: '' } });
+    fireEvent.submit(name);
+    expect(within(dialog).getByText('Enter a name.')).toBeTruthy();
+    fireEvent.change(name, { target: { value: 'q'.repeat(101) } });
+    fireEvent.submit(name);
+    expect(
+      within(dialog).getByText('The folder name has 101 characters. Use 100 or fewer.'),
+    ).toBeTruthy();
+    expect(folderCalls(calls)).toEqual([]);
+    fireEvent.change(name, { target: { value: ' Returns ' } });
+    expect(create.hasAttribute('aria-disabled')).toBe(false);
+    fireEvent.submit(name);
+    await screen.findByText('Made the folder “Returns” with “Lending”.');
+    expect(folderCalls(calls).map((call) => call.body)).toEqual([
+      { folder: 'Returns', newFolder: true },
+    ]);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(header('Returns'));
+    });
+    expect(within(folderList('Returns')).getByRole('link', { name: 'Lending' })).toBeTruthy();
+  });
+
+  it('leaves the view where it was when New folder is cancelled, or refused by the server', async () => {
+    const { calls, views } = await openFolders('modelling');
+    dragTo(link('Lending'), viewsSection().querySelector<HTMLElement>('.vf-new') as HTMLElement);
+    let dialog = await screen.findByRole('dialog', { name: 'New folder' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(link('Lending'));
+    });
+    expect(folderCalls(calls)).toEqual([]);
+    // Someone made the folder meanwhile: the server refuses, with the same words.
+    views.set('v-other', inFolder(stored('v-other', 'Other', ['reader']), 'Returns'));
+    dragTo(link('Lending'), viewsSection().querySelector<HTMLElement>('.vf-new') as HTMLElement);
+    dialog = await screen.findByRole('dialog', { name: 'New folder' });
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    fireEvent.change(name, { target: { value: 'returns' } });
+    fireEvent.submit(name);
+    expect(
+      await within(dialog).findByText("There's already a folder called “Returns”."),
+    ).toBeTruthy();
+    expect(views.get('v-lending')?.folder).toBeNull();
+  });
+
+  it('renames a folder from its pencil or F2, keeping its collapsed state, and refuses a name that exists', async () => {
+    const { calls, views } = await openFolders('modelling');
+    fireEvent.click(header('Stock'));
+    const pencil = within(viewsList()).getByRole('button', { name: 'Rename folder Stock' });
+    fireEvent.click(pencil);
+    let dialog = await screen.findByRole('dialog', { name: 'Rename folder' });
+    expect(
+      within(dialog).getByText('Renames the folder on its 2 views, for everyone.'),
+    ).toBeTruthy();
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    expect(name.value).toBe('Stock');
+    fireEvent.change(name, { target: { value: 'front OF house' } });
+    expect(
+      within(dialog).getByText("There's already a folder called “Front of house”."),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole('button', { name: 'Rename' }).getAttribute('aria-disabled'),
+    ).toBe('true');
+    fireEvent.submit(name);
+    expect(folderCalls(calls)).toEqual([]);
+    // Only the case: allowed.
+    fireEvent.change(name, { target: { value: 'STOCK' } });
+    fireEvent.submit(name);
+    await screen.findByText('Renamed the folder to “STOCK” on 2 views.');
+    expect(header('STOCK').getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(header('STOCK'));
+    });
+    // F2 on the header, to a new name.
+    fireEvent.keyDown(header('STOCK'), { key: 'F2' });
+    dialog = await screen.findByRole('dialog', { name: 'Rename folder' });
+    const again = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    fireEvent.change(again, { target: { value: 'Back room' } });
+    fireEvent.submit(again);
+    await screen.findByText('Renamed the folder to “Back room” on 2 views.');
+    expect(header('Back room').getAttribute('aria-expanded')).toBe('false');
+    expect(folderCalls(calls).map((call) => call.body)).toEqual([
+      { from: 'Stock', to: 'STOCK' },
+      { from: 'STOCK', to: 'Back room' },
+    ]);
+    expect(views.get('v-orders')).toMatchObject({ folder: 'Back room', version: 1 });
+  });
+
+  it('counts all of a folder’s views when renaming it while the list is filtered', async () => {
+    const many = [
+      ...shelves(),
+      ...['Alpha', 'Beta', 'Gamma', 'Delta'].map((name) => stored(`v-${name}`, name, ['reader'])),
+    ];
+    await openFolders('modelling', many);
+    fireEvent.click(header('Stock'));
+    const filter = within(viewsSection()).getByRole('searchbox', { name: 'Filter views' });
+    fireEvent.change(filter, { target: { value: 'order' } });
+    expect(names(viewsList())).toEqual(['Stock', 'Ordering']);
+    const text = 'Renames the folder on its 2 views, for everyone.';
+    // From the pencil.
+    fireEvent.click(within(viewsList()).getByRole('button', { name: 'Rename folder Stock' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Rename folder' });
+    expect(within(dialog).getByText(text)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    // From F2 on the header.
+    fireEvent.keyDown(header('Stock'), { key: 'F2' });
+    dialog = await screen.findByRole('dialog', { name: 'Rename folder' });
+    expect(within(dialog).getByText(text)).toBeTruthy();
+  });
+
+  it('says when a folder to rename has no views any more', async () => {
+    const { views } = await openFolders('modelling');
+    for (const id of ['v-desk']) {
+      const view = views.get(id);
+      if (view) view.folder = null;
+    }
+    fireEvent.click(
+      within(viewsList()).getByRole('button', { name: 'Rename folder Front of house' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Rename folder' });
+    const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: /Name/ });
+    fireEvent.change(name, { target: { value: 'Lobby' } });
+    fireEvent.submit(name);
+    expect(await within(dialog).findByText('This folder has no views any more.')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(
+        within(viewsList()).queryByRole('button', { name: /^Front of house, folder/ }),
+      ).toBeNull();
+    });
+  });
+
+  it('gives a Viewer, and Modelling without editing, no way to change folders', async () => {
+    const { calls } = await openFolders('viewing');
+    dragTo(link('Desk'), header('Stock'));
+    fireEvent.keyDown(header('Stock'), { key: 'F2' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(folderCalls(calls)).toEqual([]);
+    expect(within(folderList('Front of house')).getByRole('link', { name: 'Desk' })).toBeTruthy();
+    // Collapsing still works: it is the browser's, not the model's.
+    fireEvent.click(header('Stock'));
+    expect(header('Stock').getAttribute('aria-expanded')).toBe('false');
   });
 });

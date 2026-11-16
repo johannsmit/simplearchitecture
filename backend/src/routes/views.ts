@@ -1,13 +1,15 @@
 import type {
   ApiError,
   DeletedViewResult,
+  MovedViewResult,
+  RenamedViewFolderResult,
   RenamedViewResult,
   ViewListResponse,
   ViewResult,
 } from '@simplearchitecture/shared';
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import { errorBody } from '../errors.js';
-import { viewBodyLimit } from '../limits.js';
+import { viewBodyLimit, viewFolderBodyLimit } from '../limits.js';
 import { ViewLimitError, type ViewService } from '../views/view-service.js';
 import { requireMediaType } from './body.js';
 import { actor, auditLog, badModelId, modelling, refused } from './editing.js';
@@ -44,6 +46,22 @@ export function viewRoutes(service: ViewService): FastifyPluginAsync {
         if (invalid) return invalid;
         try {
           return await service.listViews(id);
+        } catch (error) {
+          return refusedView(reply, error);
+        }
+      },
+    );
+
+    // Where an element is used: read by everyone who can open the model, as the views are.
+    app.get<{ Params: { id: string; elementId: string }; Reply: ViewListResponse | ApiError }>(
+      '/api/models/:id/elements/:elementId/views',
+      { config: viewing },
+      async (request, reply) => {
+        const { id, elementId } = request.params;
+        const invalid = badModelId(reply, id);
+        if (invalid) return invalid;
+        try {
+          return await service.listViewsHolding(id, elementId);
         } catch (error) {
           return refusedView(reply, error);
         }
@@ -139,6 +157,54 @@ export function viewRoutes(service: ViewService): FastifyPluginAsync {
             auditLog(request, 'view-laid-out', { modelId: id, viewId });
           }
           return result;
+        } catch (error) {
+          return refusedView(reply, error);
+        }
+      },
+    );
+
+    // Folders: not version-checked, and the view's version stays. One log line per view changed.
+    app.put<{ Params: ViewParams; Reply: MovedViewResult | ApiError }>(
+      '/api/models/:id/views/:viewId/folder',
+      { config: modelling, bodyLimit: viewFolderBodyLimit, onRequest: jsonOnly },
+      async (request, reply) => {
+        const { id, viewId } = request.params;
+        const invalid = badModelId(reply, id);
+        if (invalid) return invalid;
+        try {
+          const { view, changed } = await service.moveView(
+            id,
+            viewId,
+            request.body,
+            actor(request),
+          );
+          for (const changedId of changed) {
+            auditLog(request, 'view-folder-changed', { modelId: id, viewId: changedId });
+          }
+          return { view };
+        } catch (error) {
+          return refusedView(reply, error);
+        }
+      },
+    );
+
+    app.patch<{ Params: { id: string }; Reply: RenamedViewFolderResult | ApiError }>(
+      '/api/models/:id/view-folders',
+      { config: modelling, bodyLimit: viewFolderBodyLimit, onRequest: jsonOnly },
+      async (request, reply) => {
+        const { id } = request.params;
+        const invalid = badModelId(reply, id);
+        if (invalid) return invalid;
+        try {
+          const { folder, views, changed } = await service.renameFolder(
+            id,
+            request.body,
+            actor(request),
+          );
+          for (const changedId of changed) {
+            auditLog(request, 'view-folder-changed', { modelId: id, viewId: changedId });
+          }
+          return { folder, views };
         } catch (error) {
           return refusedView(reply, error);
         }

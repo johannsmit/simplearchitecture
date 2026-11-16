@@ -1507,9 +1507,12 @@
   --vs-list: 0px;
   --vs-filter: 0px;
   --vs-save: 0px;
+  --vs-new: 0px;
   --vs-pad: 0px;
   flex: 0 1 auto;
-  min-height: calc(34px + var(--vs-list) + var(--vs-filter) + var(--vs-save) + var(--vs-pad));
+  min-height: calc(
+    34px + var(--vs-list) + var(--vs-filter) + var(--vs-save) + var(--vs-new) + var(--vs-pad)
+  );
 }
 
 .tree-panel > .views-sec:has(> .psec-body) {
@@ -1534,6 +1537,10 @@
 
 .tree-panel > .views-sec:has(.save-view) {
   --vs-save: 38px;
+}
+
+.tree-panel > .views-sec:has(.vf-new) {
+  --vs-new: 38px;
 }
 
 /* The legend stays at the bottom, and gives way before Views. Open, it keeps its header and
@@ -1891,6 +1898,49 @@
   overflow-wrap: anywhere;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+/* Used in views: one link per view, names wrapped (not cut) as relationship names are. */
+.used-in ul {
+  margin: 0 -6px;
+  padding: 0;
+  list-style: none;
+}
+
+.used-in a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.used-in a:hover {
+  background: var(--surface-2);
+}
+
+.used-in a[aria-current='page'] {
+  background: var(--select-soft);
+  font-weight: 600;
+}
+
+.used-in a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.used-in a .ico {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.used-in a .n {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .meta > summary {
@@ -4028,6 +4078,248 @@ li.is-new {
   }
 }
 
+/* Folders in the Views list: a header row, then its views indented, with a guide line under the
+ * chevron. Views without a folder come after the folders. */
+.vp-list .vf-head {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-radius: var(--r-sm);
+}
+
+.vp-list .vf-head:hover {
+  background: var(--surface-2);
+}
+
+.vp-list .vf-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vp-list .vf-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.vp-list .vf-toggle .ico {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.vp-list .vf-toggle > .ico:first-child {
+  transition: transform var(--t-fast);
+}
+
+.vp-list .vf-toggle[aria-expanded='true'] > .ico:first-child {
+  transform: rotate(90deg);
+}
+
+.vp-list .vf-toggle .chk {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.vp-list .vf-toggle .chk .ico {
+  color: var(--accent);
+}
+
+.vp-list .vf-count {
+  flex: none;
+  min-width: 16px;
+  padding-right: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* Rename (Modelling): shown on hover, and while the header or the button has focus. */
+.vp-list .vf-rename {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.vp-list .vf-head:hover .vf-rename,
+.vp-list .vf-head:focus-within .vf-rename {
+  opacity: 1;
+}
+
+.vp-list .vf-rename:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.vp-list .vf-rename:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.vp-list .vf > ul {
+  margin: 0 0 0 11px;
+  padding: 0 0 0 4px;
+  border-left: 1px solid var(--border);
+  list-style: none;
+}
+
+/* Dragging a view (Modelling): the row stays at half strength, a chip follows the pointer, and
+ * the target under it takes the drop zone's drag-over look. */
+.can-move .vp-list a {
+  cursor: grab;
+  user-select: none;
+}
+
+.is-dragging .vp-list a,
+.is-dragging .vf-toggle {
+  cursor: inherit;
+}
+
+.vp-list a.is-dragged {
+  opacity: 0.5;
+}
+
+/* No hover grey while dragging: it would cover the lit target's fill and accent border. */
+.psec-body.is-dragging .vp-list a:not([aria-current='page']):hover,
+.psec-body.is-dragging .vp-list .vf-head:hover {
+  background: none;
+}
+
+.vp-list .vf.is-drop {
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.vp-list .is-drop-loose {
+  background: var(--accent-soft);
+  box-shadow:
+    inset 1.5px 0 var(--accent),
+    inset -1.5px 0 var(--accent);
+}
+
+.vp-list .is-drop-loose.first {
+  border-top-left-radius: var(--r-sm);
+  border-top-right-radius: var(--r-sm);
+  box-shadow:
+    inset 1.5px 0 var(--accent),
+    inset -1.5px 0 var(--accent),
+    inset 0 1.5px var(--accent);
+}
+
+.vp-list .is-drop-loose.last {
+  border-bottom-right-radius: var(--r-sm);
+  border-bottom-left-radius: var(--r-sm);
+  box-shadow:
+    inset 1.5px 0 var(--accent),
+    inset -1.5px 0 var(--accent),
+    inset 0 -1.5px var(--accent);
+}
+
+.vp-list .is-drop-loose.first.last {
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.vf-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  user-select: none;
+}
+
+.vp-list .vf-none {
+  margin-top: 2px;
+}
+
+.psec-body > .vf-new {
+  margin-top: 6px;
+}
+
+.vf-target.is-drop {
+  border: 1.5px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.vf-chip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 200px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--e2);
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.vf-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+
+.vf-alert span {
+  flex: 1;
+}
+
+.vf-dismiss {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Save as view's Folder field: its suggestions open under the input. */
+.vf-input {
+  position: relative;
+}
+
+.new-model-dialog .row .btn.is-blocked[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* An open view: the bar under the toolbar. */
 .view-bar {
   display: flex;
@@ -4059,6 +4351,23 @@ li.is-new {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The open view's folder before its name, so its place shows while the folder is closed. */
+.view-bar .vfolder {
+  flex: 0 1 auto;
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-bar .vsep {
+  flex: none;
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
 .view-bar .vstatus {

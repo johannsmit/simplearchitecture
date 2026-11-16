@@ -145,12 +145,19 @@ export interface RelationshipEnds {
   target: string | null;
 }
 
+/** One view of a model as the name and folder rules see it. */
+export interface ViewName {
+  id: string;
+  name: string;
+  folder: string | null;
+}
+
 /** What a view change's plan sees, read under the model's row lock. */
 export interface ViewChangeState {
   /** The view the change is about, or undefined (a new view, or no such view in the model). */
   view: ViewRecord | undefined;
-  /** Every view of the model, by id and name (for the count and the name rules). */
-  views: readonly { id: string; name: string }[];
+  /** Every view of the model, by id, name and folder (for the count, name and folder rules). */
+  views: readonly ViewName[];
   /** Of the element ids asked about, those that are elements of the model. */
   elements: ReadonlySet<string>;
   /**
@@ -169,6 +176,7 @@ export type ViewWrite =
       kind: 'create';
       viewId: string;
       name: string;
+      folder: string | null;
       elementIds: readonly string[];
       relationshipIds: readonly string[];
     }
@@ -195,6 +203,16 @@ export interface PlannedViewChange {
   audit: { action: ViewAuditAction; actor: ModelAuthor; fields: string[] };
 }
 
+/**
+ * Views put in folders or taken out, by one request: a move (one view) or a folder's rename (every
+ * view in it). Each view at most once; an empty list stores nothing. The audit row of each view
+ * names the field `folder` only.
+ */
+export interface PlannedFolderChange {
+  folders: readonly { viewId: string; folder: string | null }[];
+  actor: ModelAuthor;
+}
+
 /** The ids a view change needs to know about: the view, and the ids the request names. */
 export interface ViewLookup {
   viewId?: string;
@@ -205,6 +223,11 @@ export interface ViewLookup {
 export interface ViewStore {
   /** The model's views, in no particular order. Undefined when there is no such model. */
   list(modelId: string): Promise<ViewSummary[] | undefined>;
+  /**
+   * The model's views that hold the element, in no particular order (none when no view does, or
+   * the model has no such element). Undefined when there is no such model.
+   */
+  listHolding(modelId: string, elementId: string): Promise<ViewSummary[] | undefined>;
   /** One view with its contents, or which of the two is missing. */
   get(modelId: string, viewId: string): Promise<ViewRecord | 'no-model' | 'no-view'>;
   /**
@@ -218,6 +241,17 @@ export interface ViewStore {
     lookup: ViewLookup,
     plan: (state: ViewChangeState) => PlannedViewChange,
   ): Promise<{ view: ViewRecord | undefined } | undefined>;
+  /**
+   * Runs `plan` on the model's views (id, name and folder), in one transaction that holds the
+   * model's row lock, and sets the folder of each view it names, with one audit row per view
+   * (`view-changed`, field `folder`). A folder isn't part of a view's version: neither the version
+   * nor the last change moves. `plan` refuses by throwing: then nothing is stored. Undefined when
+   * there is no such model; otherwise every view of the model as it now is.
+   */
+  setFolders(
+    modelId: string,
+    plan: (views: readonly ViewName[]) => PlannedFolderChange,
+  ): Promise<ViewSummary[] | undefined>;
 }
 
 export interface DeletedModel {

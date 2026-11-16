@@ -100,6 +100,7 @@ import {
   withRelationshipInView,
   type ViewContents,
 } from './explorer/views';
+import { UsedInViews } from './explorer/UsedInViews';
 import { useViewList, ViewsSection } from './explorer/ViewsSection';
 import {
   elementPath,
@@ -1503,6 +1504,24 @@ function Explorer({
       </button>
     ) : null;
 
+  /**
+   * The views holding the element, read again after this person saves, renames or deletes a view,
+   * and after each save of the open view (its contents may have gained or lost the element).
+   */
+  const usedInViews = (id: string): ReactNode => (
+    <UsedInViews
+      modelId={modelId}
+      elementId={id}
+      space={space}
+      shown={shownAsked}
+      currentViewId={viewId}
+      refresh={`${viewsRefresh}\n${viewId ?? ''}\n${openView.savedCount}`}
+      onOpenView={() => {
+        setViewHeadingFocus(true);
+      }}
+    />
+  );
+
   const detailsVisible = details.open && selected !== undefined;
   const style = {
     '--tree-w': `${tree.width}px`,
@@ -1611,6 +1630,12 @@ function Explorer({
               saveRef={saveViewButton}
               onOpenView={() => {
                 setViewHeadingFocus(true);
+              }}
+              editable={editable}
+              onAnnounce={setAnnouncement}
+              onFolderChanged={(changed) => {
+                const open = changed.find((one) => one.id === viewId);
+                if (open !== undefined) openView.refiled(open.folder);
               }}
             />
             {legendShown && (
@@ -1784,6 +1809,7 @@ function Explorer({
         {inView && viewReady && openView.view && (
           <ViewBar
             name={openView.view.name}
+            folder={openView.view.folder}
             editable={viewEditable}
             saving={openView.saving}
             savedCount={openView.savedCount}
@@ -2163,6 +2189,7 @@ function Explorer({
                 onAnnounce={setAnnouncement}
                 relationships={relationshipTools(selected)}
                 headExtra={showOnCanvas(selected.id)}
+                usedIn={usedInViews(selected.id)}
               />
             ) : (
               <DetailsPanel
@@ -2178,6 +2205,7 @@ function Explorer({
                 onHeadingFocused={clearHeadingFocus}
                 relationships={{ action: null, box: null, onOpen: openRelationship }}
                 headExtra={showOnCanvas(selected.id)}
+                usedIn={usedInViews(selected.id)}
               />
             )}
           </aside>
@@ -2197,7 +2225,7 @@ function Explorer({
             setViewsRefresh((n) => n + 1);
             setViewHeadingFocus(true);
             setAnnouncement(
-              `Saved the view “${saved.name}”: ${counted(saved.elementIds.length, 'element')}, ${counted(saved.relationshipIds.length, 'relationship')}.`,
+              `Saved the view “${saved.name}”${saved.folder === null ? '' : ` in “${saved.folder}”`}: ${counted(saved.elementIds.length, 'element')}, ${counted(saved.relationshipIds.length, 'relationship')}.`,
             );
             void navigate(viewPath(modelId, saved.id, space, shownAsked));
           }}
