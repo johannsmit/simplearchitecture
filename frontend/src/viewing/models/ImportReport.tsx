@@ -1,5 +1,6 @@
 import {
   type AddedRelationshipProperty,
+  type ChangedRelationshipKey,
   edgeTypes,
   nodeTypes,
   type CountsByReasonAndType,
@@ -24,6 +25,7 @@ export type SectionKey =
   | 'folded'
   | 'properties'
   | 'new-properties'
+  | 'changed-keys'
   | 'not-imported'
   | 'warnings';
 
@@ -76,6 +78,7 @@ export function summaryChips(
   report: OefMappingReport | undefined,
   warningCount: number,
   newProperties: readonly AddedRelationshipProperty[] = [],
+  changedKeys: readonly ChangedRelationshipKey[] = [],
 ): Chip[] {
   const chips: Chip[] = [];
   if (warningCount > 0) {
@@ -91,6 +94,14 @@ export function summaryChips(
       key: 'new-properties',
       icon: 'plus',
       text: counted(newProperties.length, 'new property', 'new properties'),
+    });
+  }
+  if (changedKeys.length > 0) {
+    chips.push({
+      key: 'changed-keys',
+      icon: 'alert',
+      text: `${counted(changedKeys.length, 'property key')} changed`,
+      warn: true,
     });
   }
   if (!report) return chips;
@@ -285,6 +296,8 @@ export function ReportSections(props: {
   validation: JgfValidationResult;
   /** Custom keys on the model's relationships, added as defined properties by the save. */
   newProperties?: readonly AddedRelationshipProperty[];
+  /** Keys on the model's relationships that were too long (shortened) or blank (left out). */
+  changedKeys?: readonly ChangedRelationshipKey[];
   modelId?: string;
   /** Rejected import: the Errors section comes first and is open. */
   rejected?: boolean;
@@ -589,6 +602,53 @@ export function ReportSections(props: {
         <p>
           Check their names and kinds in <Link to="/admin/properties">Admin → Properties</Link>.
         </p>
+      </Section>,
+    );
+  }
+
+  const changedKeys = props.changedKeys ?? [];
+  if (changedKeys.length > 0) {
+    sections.push(
+      <Section
+        key="changed-keys"
+        id="changed-keys"
+        title="Property keys changed"
+        summary={`${counted(changedKeys.length, 'key')} too long or blank`}
+        open
+      >
+        <p>
+          A property key on a relationship can&apos;t be blank or longer than 100 characters, so
+          these were changed on import.
+        </p>
+        <table className="mini-table">
+          <caption>Keys in the file</caption>
+          <thead>
+            <tr>
+              <th scope="col">Key</th>
+              <th scope="col">What happened</th>
+              <th scope="col" className="n">
+                Values
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {changedKeys.map((change, index) => (
+              <tr key={`${String(index)}:${change.key}`}>
+                <td>{change.key.trim() === '' ? <em>Blank</em> : <code>{change.key}</code>}</td>
+                <td>
+                  {change.storedAs === undefined ? (
+                    'Left out, with its values'
+                  ) : (
+                    <>
+                      Shortened to <code>{change.storedAs}</code>
+                    </>
+                  )}
+                </td>
+                <td className="n">{formatNumber(change.values)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Section>,
     );
   }

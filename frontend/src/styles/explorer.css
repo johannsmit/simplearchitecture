@@ -3004,6 +3004,7 @@
 .card:hover > .connect-handle,
 .card:has(.card-main:focus-visible) > .connect-handle,
 .card.is-focus > .connect-handle,
+.card.is-connect-hot > .connect-handle,
 .canvas.is-drawing .connect-handle.connectingfrom {
   opacity: 1;
   pointer-events: all;

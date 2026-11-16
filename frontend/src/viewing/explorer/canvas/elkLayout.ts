@@ -540,6 +540,54 @@ export async function layoutCards(
   return ordered;
 }
 
+/** How long the canvas waits for a layout before it gives up on it: 30 seconds. */
+export const layoutTimeLimit = 30_000;
+
+/** A layout that took longer than its time limit. */
+export class LayoutTimeoutError extends Error {
+  constructor(readonly limit: number) {
+    super(`The layout took longer than ${String(limit)} ms.`);
+    this.name = 'LayoutTimeoutError';
+  }
+}
+
+/**
+ * `work`, or a `LayoutTimeoutError` once `limit` ms have passed without an answer. `cancel` stops
+ * the clock (when the layout is no longer wanted).
+ */
+export function withinTimeLimit<T>(
+  work: Promise<T>,
+  limit: number,
+): { promise: Promise<T>; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new LayoutTimeoutError(limit));
+    }, limit);
+  });
+  const promise = Promise.race([work, late]).finally(() => {
+    clearTimeout(timer);
+  });
+  return {
+    promise,
+    cancel: () => {
+      clearTimeout(timer);
+    },
+  };
+}
+
+/**
+ * What the canvas says when its automatic layout failed or took too long: what happened and what to
+ * do. The canvas can still be used: a new one's cards are placed without it (`keepCards`), and
+ * after Tidy up (`kept`) every card stays where it was.
+ */
+export function layoutFailureMessage(error: unknown, { kept = false } = {}): string {
+  const cards = kept ? 'its cards stay where they were' : 'its cards are placed simply';
+  return error instanceof LayoutTimeoutError
+    ? `The diagram took longer than ${String(Math.round(error.limit / 1000))} seconds to lay out, so ${cards}. Choose Tidy up to try again, or show fewer elements.`
+    : `The diagram couldn't be laid out automatically, so ${cards}. Choose Tidy up to try again.`;
+}
+
 /** Positions on the canvas (not relative to a container), parents first in `placed`. */
 export function absoluteBoxes(
   placed: ReadonlyMap<string, Omit<PlacedCard, 'handles'>>,

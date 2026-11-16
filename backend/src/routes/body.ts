@@ -1,3 +1,4 @@
+import { prototypeKeyMessage } from '@simplearchitecture/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { errorBody } from '../errors.js';
 import { JgfJsonError, parseJgfJson } from '../jgf/parse.js';
@@ -62,6 +63,49 @@ export function registerModelBodyParsers(app: FastifyInstance): void {
       }
     },
   );
+}
+
+/**
+ * Parses the JSON body of an element or relationship change. Like Fastify's own parser it refuses
+ * `__proto__` and `constructor.prototype` (400), with one exception: `__proto__` as a key of the
+ * request's `metadata`, which JSON.parse keeps as a plain own key. The editing service refuses that
+ * one at its field (`metadata.__proto__`, 422), with the message the forms show. The walk uses a
+ * stack, so deep nesting can't overflow the call stack.
+ */
+export function parseEditingJson(text: string): unknown {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw clientError(400, new JgfJsonError('invalid').message);
+  }
+  if (typeof value !== 'object' || value === null) return value;
+  const record = value as Record<string, unknown>;
+  const metadata = Object.hasOwn(record, 'metadata') ? record.metadata : undefined;
+  const stack: object[] = [value];
+  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
+    for (const [key, child] of Object.entries(current) as [string, unknown][]) {
+      if (key === '__proto__' && current !== metadata) throw clientError(400, prototypeKeyMessage);
+      if (typeof child !== 'object' || child === null) continue;
+      if (key === 'constructor' && Object.hasOwn(child, 'prototype')) {
+        throw clientError(400, new JgfJsonError('reserved-key').message);
+      }
+      stack.push(child);
+    }
+  }
+  return value;
+}
+
+/** The JSON parser of the element and relationship routes (`parseEditingJson`), in that plugin. */
+export function registerEditingBodyParser(app: FastifyInstance): void {
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {
+    try {
+      done(null, parseEditingJson(body as string));
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
 }
 
 /** The 413 message when a JGF body has more nodes or edges than an import allows, or undefined. */

@@ -30,9 +30,9 @@ export interface OpenView {
    */
   change: (next: (current: ViewContents) => ViewContents | undefined) => boolean;
   /**
-   * Saves where the view's cards are, and its lines' routes given by hand, after a change of
-   * contents on its way. Only for what the person did on the canvas: a layout the canvas made on
-   * its own is never saved. Refused (false) as `change` is. Cards and lines no longer in the view
+   * Saves where the view's cards are, and its lines' routes, after a change of contents on its way.
+   * Only for what the person did on the canvas (Tidy up included): a layout the canvas made on its
+   * own is never saved. Refused (false) as `change` is. Cards and lines no longer in the view
    * are left out.
    */
   saveLayout: (layout: CanvasLayout) => boolean;

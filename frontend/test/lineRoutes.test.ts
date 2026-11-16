@@ -4,7 +4,9 @@ import {
   endPlace,
   fitEnds,
   followCards,
+  handleEnd,
   heldFromStored,
+  laidLine,
   nearestMiddleStretch,
   isRightAngled,
   middleStretches,
@@ -13,6 +15,7 @@ import {
   squared,
   storedPoints,
   stretchAt,
+  withLaidRoutes,
   type HeldRoute,
 } from '../src/viewing/explorer/canvas/lineRoutes';
 
@@ -481,5 +484,113 @@ describe('which stretch a press grabs', () => {
     expect(nearestMiddleStretch(five, { x: 320, y: 240 })).toBe(2);
     expect(nearestMiddleStretch(five, { x: 900, y: -400 })).toBe(1);
     expect(nearestMiddleStretch(zigzag.slice(0, 3), { x: 200, y: 22 })).toBeUndefined();
+  });
+});
+
+describe('lines on the layout’s route, as a view saves them', () => {
+  const handles = [
+    { id: 'l0:s', kind: 'source' as const, side: 'bottom' as const, offset: 60 },
+    { id: 'l1:t', kind: 'target' as const, side: 'left' as const, offset: 30 },
+    { id: 'l2:s', kind: 'source' as const, side: 'right' as const, offset: 10 },
+  ];
+  const box = { x: 100, y: 50, width: 168, height: 44 };
+
+  it('puts a handle on its card’s side, or on a Stakeholder’s circle', () => {
+    expect(handleEnd(handles, 'l0:s', box)).toEqual({ x: 160, y: 94, side: 'bottom' });
+    expect(handleEnd(handles, 'l1:t', box)).toEqual({ x: 100, y: 80, side: 'left' });
+    expect(handleEnd(handles, 'l2:s', box)).toEqual({ x: 268, y: 60, side: 'right' });
+    expect(handleEnd(handles, 'l9:s', box)).toBeUndefined();
+    // On a circle (48px, centred at the top of its 120px box), a bottom port goes to the side of
+    // the circle, as the card draws it.
+    const end = handleEnd(handles, 'l0:s', { ...box, width: 120, height: 80, circle: true });
+    expect(end?.side).toBe('right');
+    expect(end?.x).toBeGreaterThan(160);
+    expect(Math.hypot((end?.x ?? 0) - 160, (end?.y ?? 0) - 74)).toBeCloseTo(24, 5);
+  });
+
+  it('draws the line from handle to handle through the bends', () => {
+    const top = { x: 0, y: 0, width: 168, height: 44 };
+    const below = { x: 0, y: 200, width: 168, height: 44 };
+    const line = laidLine(
+      [
+        { x: 84, y: 100 },
+        { x: 40, y: 100 },
+      ],
+      {
+        handles: [{ id: 'l0:s', kind: 'source', side: 'bottom', offset: 84 }],
+        box: top,
+        port: 'l0:s',
+      },
+      {
+        handles: [{ id: 'l0:t', kind: 'target', side: 'top', offset: 40 }],
+        box: below,
+        port: 'l0:t',
+      },
+    );
+    expect(line).toEqual([
+      { x: 84, y: 44 },
+      { x: 84, y: 100 },
+      { x: 40, y: 100 },
+      { x: 40, y: 200 },
+    ]);
+  });
+
+  it('saves each relationship on such a line, after the routes given by hand', () => {
+    const top = { x: 0, y: 0, width: 168, height: 44 };
+    const below = { x: 0, y: 200, width: 168, height: 44 };
+    const line = [
+      { x: 84, y: 44 },
+      { x: 84, y: 100 },
+      { x: 40, y: 100 },
+      { x: 40, y: 200 },
+    ];
+    const byHand = [
+      {
+        relationshipId: 'r2',
+        points: [
+          { x: 1, y: 44 },
+          { x: 1, y: 200 },
+        ],
+      },
+    ];
+    const saved = withLaidRoutes(
+      byHand,
+      new Map([['l0', line]]),
+      [{ id: 'l0', source: 'a', target: 'b', relationshipIds: ['r1', 'r2', 'r3'] }],
+      new Map([
+        ['a', top],
+        ['b', below],
+      ]),
+    );
+    expect(saved).toEqual([
+      byHand[0],
+      { relationshipId: 'r1', points: line },
+      { relationshipId: 'r3', points: line },
+    ]);
+  });
+
+  it('saves none for a line whose ends can’t leave their cards outward', () => {
+    const top = { x: 0, y: 0, width: 168, height: 44 };
+    const close = { x: 0, y: 48, width: 168, height: 44 };
+    const saved = withLaidRoutes(
+      [],
+      new Map([
+        [
+          'l0',
+          [
+            { x: 84, y: 44 },
+            { x: 84, y: 46 },
+            { x: 40, y: 46 },
+            { x: 40, y: 48 },
+          ],
+        ],
+      ]),
+      [{ id: 'l0', source: 'a', target: 'b', relationshipIds: ['r1'] }],
+      new Map([
+        ['a', top],
+        ['b', close],
+      ]),
+    );
+    expect(saved).toEqual([]);
   });
 });

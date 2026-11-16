@@ -6,7 +6,7 @@ import type {
 import type { FastifyPluginAsync } from 'fastify';
 import type { ElementService } from '../editing/element-service.js';
 import { elementBodyLimit } from '../limits.js';
-import { requireMediaType } from './body.js';
+import { registerEditingBodyParser, requireMediaType } from './body.js';
 import { actor, auditLog, badModelId as badId, modelling, refused } from './editing.js';
 
 const jsonOnly = requireMediaType(['application/json'], 'Send the element as application/json');
@@ -24,6 +24,8 @@ interface ElementParams {
  */
 export function elementRoutes(service: ElementService): FastifyPluginAsync {
   return async (app) => {
+    registerEditingBodyParser(app);
+
     app.get<{ Params: ElementParams; Reply: ElementChangeResult | ApiError }>(
       '/api/models/:id/elements/:elementId',
       { config: modelling },

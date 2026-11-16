@@ -13,6 +13,19 @@ export const editingUnavailableMessage =
 export const elementConflictMessage =
   'Someone else changed this element after you opened it. Reload it to see their change. Nothing was saved.';
 
+/**
+ * The one metadata key that can never be used, on an element or a relationship: JavaScript reads
+ * `__proto__` as an object's prototype, so a value under it would be lost. The forms and the server
+ * refuse it with the same message.
+ */
+export const prototypeKey = '__proto__';
+export const prototypeKeyMessage =
+  "“__proto__” is reserved and can't be a property name. Use another name.";
+
+export function isPrototypeKey(key: string): boolean {
+  return key === prototypeKey;
+}
+
 /** Body of `POST /api/models/:id/elements`. The server chooses the id. */
 export interface NewElementRequest {
   type: NodeType;

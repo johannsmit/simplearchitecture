@@ -41,6 +41,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { Icon } from '../../../icons';
@@ -60,6 +61,7 @@ import {
   isContainerNameCut,
   whenFontsReady,
 } from './cardSize';
+import { connectHandleAt } from './connectHandle';
 import { ElementCard, relatedButtonId, type CardNode } from './ElementCard';
 import { currentBends, floatingEnds, type EndBox, type FloatingLine } from './edgeLine';
 import { getElk } from './elkEngine';
@@ -67,7 +69,11 @@ import {
   absoluteBoxes,
   containerBox,
   layoutCards,
+  layoutFailureMessage,
+  layoutTimeLimit,
+  LayoutTimeoutError,
   portId,
+  withinTimeLimit,
   type LayoutCard,
   type PlacedCard,
   type Side,
@@ -93,11 +99,13 @@ import {
   fitEnds,
   followCards,
   heldFromStored,
+  laidLine,
   moveStretch,
   nearestMiddleStretch,
   routesToSave,
   squared,
   stretchAt,
+  withLaidRoutes,
   type HeldRoute,
 } from './lineRoutes';
 import { keepCards, relinkHandles, samePlacement, type PlaceHint } from './placeCards';
@@ -256,9 +264,10 @@ interface ExplorerCanvasProps {
    */
   arrangeRequest?: number;
   /**
-   * Where every card is, and the route of every line moved by hand, after the person moved or
-   * resized a card, moved a line, or after `arrangeRequest`. Never for a layout, a placement or a
-   * route the canvas made on its own. Given, in a view, the lines' middle stretches can be dragged.
+   * Where every card is, and the route of every line moved by hand or drawn on the layout's route,
+   * after the person moved or resized a card, moved a line, or after `arrangeRequest`. Never for a
+   * layout, a placement or a route the canvas made on its own. Given, in a view, the lines' middle
+   * stretches can be dragged.
    */
   onArranged?: (layout: CanvasLayout) => void;
 }
@@ -416,6 +425,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const movedRef = useRef(props.moved);
   useEffect(() => {
     movedRef.current = props.moved;
+  });
+  // The moved cards while the canvas is laid out: Tidy up clears them before its layout answers,
+  // so a Tidy up that fails puts them back.
+  const movedBeforeTidy = useRef(props.moved);
+  useEffect(() => {
+    if (laid?.key === props.layoutKey) movedBeforeTidy.current = props.moved;
   });
   /** What the live region says after a keyboard move or a tidy up (until the next layout). */
   const [note, setNote] = useState<{ laid: Laid | null; text: string } | null>(null);
@@ -576,9 +591,14 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     });
 
     const previous = laidRef.current;
-    if (previous?.key === layoutKey) {
+    /**
+     * The previous canvas kept, its lines' routes included, with the cards in `moved` where they
+     * were put: cards that came go to a free spot, cards that went are taken off. True when a card
+     * is somewhere else than before.
+     */
+    const keep = (previous: Laid, moved: MovedPositions) => {
       // The cards as drawn now, moved ones included, become the canvas's own places.
-      const before = arrangeCards(previous.placed, movedRef.current, {
+      const before = arrangeCards(previous.placed, moved, {
         minSizeOf: (id) => sizeOf(id, true),
         holding: holdingRef.current,
       });
@@ -621,7 +641,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         layoutLinkRelationships(previous.hood.relationships),
         layoutLinks(hood.relationships, (relationship) => !nested(parents)(relationship)),
       );
-      setLayoutError(null);
+      // A layout's failure message stays: only a new layout, or a new canvas, clears it.
       setLaid(
         made(placed, parents, kept.containers, false, previous.layoutSizes, {
           canvas: previous.canvas,
@@ -630,23 +650,40 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       );
       for (const id of placed.keys()) hints.current.delete(id);
       // A moved card taken out of its container keeps its place on the canvas.
-      for (const [id, point] of movedRef.current) {
+      for (const [id, point] of moved) {
         const card = placed.get(id);
         if (card && (card.x !== point.x || card.y !== point.y)) {
           latest.current.onMove(id, { x: card.x, y: card.y });
         }
       }
-      if (!samePlacement(before, placed)) latest.current.onKept?.(layoutKey);
+      return !samePlacement(before, placed);
+    };
+    if (previous?.key === layoutKey) {
+      if (keep(previous, movedRef.current)) latest.current.onKept?.(layoutKey);
       return;
     }
 
-    // A view with a stored layout: its cards where they were left, the others at a free spot.
-    // Tidy up lays it out with ELK instead.
-    const tidied = previous !== null && previous.tidyCount !== tidyCount;
-    const stored = tidied ? undefined : storedPositions(storedRef.current.cards ?? []);
-    if (stored !== undefined && ids.some((id) => stored.has(id))) {
+    /**
+     * A new canvas without ELK: the cards with a stored position where they were left (with the
+     * lines' stored routes), the others at a free spot. `problem`: why ELK's layout isn't used.
+     */
+    const placeWithoutElk = (
+      stored: ReadonlyMap<string, Point>,
+      storedRoutes: readonly ViewLineRoute[],
+      problem: string | null,
+    ) => {
       const cards = ids.map((id) => ({ id, parent: wanted.get(id) }));
-      const start = storedPlacement({ cards, stored, sizeOf });
+      // A card at the width it was given, as it was left: the lines' stored routes end on it.
+      const leftSize = (id: string, container: boolean) => {
+        const element = graph.elements.get(id);
+        const set = container ? undefined : widths.get(id);
+        if (set === undefined || !element || cardShape(element.type) !== 'card') {
+          return sizeOf(id, container);
+        }
+        const width = setWidth(set);
+        return { width, height: heightAt(id, width) };
+      };
+      const start = storedPlacement({ cards, stored, sizeOf: leftSize });
       const box = section.current?.getBoundingClientRect();
       const kept = keepCards({
         previous: start.placed,
@@ -682,7 +719,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         hood.relationships.map((relationship) => [relationship.id, relationship]),
       );
       const routes = new Map<string, HeldRoute>();
-      for (const route of storedRef.current.routes ?? []) {
+      for (const route of storedRoutes) {
         const relationship = ends.get(route.relationshipId);
         if (!relationship) continue;
         const { source, target } = relationship;
@@ -695,7 +732,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         if (held) routes.set(route.relationshipId, held);
       }
       hints.current.clear();
-      setLayoutError(null);
+      setLayoutError(problem);
       setLaid(
         made(placed, parents, kept.containers, true, new Map(), {
           canvas: ++canvasCount.current,
@@ -704,6 +741,14 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       );
       // Not ELK's layout: Tidy up has something to do.
       latest.current.onKept?.(layoutKey);
+    };
+
+    // A view with a stored layout: its cards where they were left, the others at a free spot.
+    // Tidy up lays it out with ELK instead.
+    const tidied = previous !== null && previous.tidyCount !== tidyCount;
+    const stored = tidied ? undefined : storedPositions(storedRef.current.cards ?? []);
+    if (stored !== undefined && ids.some((id) => stored.has(id))) {
+      placeWithoutElk(stored, storedRef.current.routes ?? [], null);
       return;
     }
 
@@ -729,7 +774,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       hood.relationships,
       (relationship) => !nested(wanted)(relationship),
     );
-    layoutCards(getElk(), cards, laidOut)
+    // A new try (Tidy up after a failure): "Laying out…" again until it answers.
+    setLayoutError(null);
+    const elk = getElk();
+    const timed = withinTimeLimit(layoutCards(elk, cards, laidOut), layoutTimeLimit);
+    timed.promise
       .then((byElk) => {
         if (!live) return;
         setLayoutError(null);
@@ -749,10 +798,26 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         }
       })
       .catch((error: unknown) => {
-        if (live) setLayoutError(error instanceof Error ? error.message : 'Unknown error');
+        if (!live) return;
+        // Too slow: ELK's worker is stopped, so the next layout doesn't wait behind it.
+        if (error instanceof LayoutTimeoutError) elk.terminateWorker();
+        console.warn('The automatic layout failed.', error);
+        // A failed layout is never saved: Tidy up's save is dropped, unless the person moved a
+        // card while it ran.
+        if (movedRef.current.size === 0) arrangeWanted.current = false;
+        if (previous && tidied) {
+          // Tidy up: every card and line stays where it was before (Tidy up cleared the moves).
+          keep(previous, new Map([...movedBeforeTidy.current, ...movedRef.current]));
+          setLayoutError(layoutFailureMessage(error, { kept: true }));
+          latest.current.onKept?.(layoutKey);
+          return;
+        }
+        // A new canvas stays usable: every card at a free spot, with a message.
+        placeWithoutElk(new Map(), [], layoutFailureMessage(error));
       });
     return () => {
       live = false;
+      timed.cancel();
     };
   }, [fontsReady, hood, links, graph, nest, layoutKey, tidyCount, widths]);
 
@@ -882,6 +947,41 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return boxes;
   }, [absolute, graph, laid, shown]);
 
+  // In Modelling, a line's label can lie over a card's connect handle. With the pointer on the
+  // label there, that card (with what is inside it) comes above the labels and shows its handle,
+  // so it can be grabbed; it stays so while the pointer stays at the handle.
+  const [connectHot, setConnectHot] = useState<string | null>(null);
+  const connectHotRef = useRef<string | null>(null);
+  const onPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!editable || !laid || draggingId !== null) return;
+    const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const cards = [...endBoxes].map(([id, box]) => ({
+      id,
+      box,
+      shape: laid.containers.has(id)
+        ? ('container' as const)
+        : box.circle === true
+          ? ('circle' as const)
+          : ('card' as const),
+    }));
+    const current = connectHotRef.current;
+    let next: string | null = null;
+    if (current !== null) {
+      next =
+        connectHandleAt(
+          at,
+          cards.filter((card) => card.id === current),
+        ) ?? null;
+    }
+    if (next === null && event.target instanceof Element && event.target.closest('.edge-label')) {
+      next = connectHandleAt(at, cards) ?? null;
+    }
+    if (next !== current) {
+      connectHotRef.current = next;
+      setConnectHot(next);
+    }
+  };
+
   // Lines moved by hand (in a view): the routes this canvas started with, or as last dragged.
   const [heldState, setHeldState] = useState<{
     canvas: number;
@@ -974,6 +1074,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         handles: card.handles,
         relatedOpen: related?.cardId === card.id,
         moving: card.id === movingId,
+        ...(editable && card.id === connectHot ? { connectHot: true } : {}),
         onShowRelated: showRelated,
         connectable: editable,
         ...(shape === 'card' ? { onResize: resizeFromGrip } : {}),
@@ -1000,6 +1101,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     showRelated,
     movingId,
     editable,
+    connectHot,
     dropAt,
     props.selectedId,
     props.removable,
@@ -1010,51 +1112,57 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
 
   // The card being dragged or moved with the keyboard, with everything inside it, goes on top.
   const liftedId = draggingId ?? movingId;
-  const baseNodes = useMemo<CardNode[]>(
-    () =>
-      [...shown.values()].flatMap((card) => {
-        const data = cardData.get(card.id);
-        if (!data) return [];
-        const parent = card.parent === undefined ? undefined : shown.get(card.parent);
-        let depthInside = 0;
-        for (let up = card.parent; up !== undefined; up = shown.get(up)?.parent) depthInside++;
-        const { padding } = containerBox;
-        return [
-          {
-            id: flowId(card.id),
-            type: 'element' as const,
-            position: { x: card.x, y: card.y },
-            width: card.width,
-            height: card.height,
-            // The size React Flow would measure (it is fixed). With it, React Flow keeps the
-            // measured handles when a node object changes (hover classes), so the lines aren't
-            // dropped and drawn again on every hover, which let a click fall through.
-            measured: { width: card.width, height: card.height },
-            zIndex:
-              (data.shape === 'container' ? depthInside : zIndexes.card) +
-              (card.id === liftedId ? zIndexes.lifted : 0),
-            ...(parent
-              ? {
-                  parentId: flowId(parent.id),
-                  // Left and up, a card stops at its container's content area (the container's
-                  // corner stays); right and down, the container grows to hold it.
-                  extent: [
-                    [padding.left, padding.top],
-                    [Infinity, Infinity],
-                  ] as [[number, number], [number, number]],
-                }
-              : {}),
-            draggable: true,
-            selectable: false,
-            connectable: editable,
-            // React Flow marks every node "node" for assistive technology; the card says what it is.
-            domAttributes: { 'aria-roledescription': undefined },
-            data,
-          },
-        ];
-      }),
-    [shown, cardData, flowId, liftedId, editable],
-  );
+  const baseNodes = useMemo<CardNode[]>(() => {
+    /** The card whose connect handle is let through, or a card drawn inside it. */
+    const hot = (id: string) => {
+      if (!editable || connectHot === null) return false;
+      for (let up: string | undefined = id; up !== undefined; up = shown.get(up)?.parent) {
+        if (up === connectHot) return true;
+      }
+      return false;
+    };
+    return [...shown.values()].flatMap((card) => {
+      const data = cardData.get(card.id);
+      if (!data) return [];
+      const parent = card.parent === undefined ? undefined : shown.get(card.parent);
+      let depthInside = 0;
+      for (let up = card.parent; up !== undefined; up = shown.get(up)?.parent) depthInside++;
+      const { padding } = containerBox;
+      return [
+        {
+          id: flowId(card.id),
+          type: 'element' as const,
+          position: { x: card.x, y: card.y },
+          width: card.width,
+          height: card.height,
+          // The size React Flow would measure (it is fixed). With it, React Flow keeps the
+          // measured handles when a node object changes (hover classes), so the lines aren't
+          // dropped and drawn again on every hover, which let a click fall through.
+          measured: { width: card.width, height: card.height },
+          zIndex:
+            (data.shape === 'container' ? depthInside : zIndexes.card) +
+            (card.id === liftedId || hot(card.id) ? zIndexes.lifted : 0),
+          ...(parent
+            ? {
+                parentId: flowId(parent.id),
+                // Left and up, a card stops at its container's content area (the container's
+                // corner stays); right and down, the container grows to hold it.
+                extent: [
+                  [padding.left, padding.top],
+                  [Infinity, Infinity],
+                ] as [[number, number], [number, number]],
+              }
+            : {}),
+          draggable: true,
+          selectable: false,
+          connectable: editable,
+          // React Flow marks every node "node" for assistive technology; the card says what it is.
+          domAttributes: { 'aria-roledescription': undefined },
+          data,
+        },
+      ];
+    });
+  }, [shown, cardData, flowId, liftedId, editable, connectHot]);
 
   // What edge labels and state marks must not cover: cards, and only the header of a container.
   const cardBoxes = useMemo(
@@ -1268,8 +1376,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return result;
   }, [laid, shown, absolute, handRoutes]);
 
-  // Where every card is, and the route of every line moved by hand, once the canvas shows the
-  // person's change: the layout made for this canvas, its cards and its widths.
+  // Where every card is, and the route of every line moved by hand or on the layout's route, once
+  // the canvas shows the person's change: the layout made for this canvas, its cards and its widths.
   const { onArranged, arrangeRequest } = props;
   useEffect(() => {
     if (arrangeSeen.current !== arrangeRequest) {
@@ -1289,7 +1397,32 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       );
     });
     const ends = new Map(hood.relationships.map((relationship) => [relationship.id, relationship]));
-    onArranged?.({ cards, routes: routesToSave(held, ends, endBoxes) });
+    // Lines on the layout's route (after Tidy up) are saved as drawn, so the view opens with them.
+    const laidLines = new Map<string, Point[]>();
+    for (const link of laid.drawn) {
+      const bends = routes.get(link.id);
+      const source = endBoxes.get(link.source);
+      const target = endBoxes.get(link.target);
+      if (!bends || !source || !target) continue;
+      const line = laidLine(
+        bends,
+        {
+          handles: shown.get(link.source)?.handles ?? [],
+          box: source,
+          port: portId(link.id, 'source'),
+        },
+        {
+          handles: shown.get(link.target)?.handles ?? [],
+          box: target,
+          port: portId(link.id, 'target'),
+        },
+      );
+      if (line) laidLines.set(link.id, line);
+    }
+    onArranged?.({
+      cards,
+      routes: withLaidRoutes(routesToSave(held, ends, endBoxes), laidLines, laid.drawn, endBoxes),
+    });
   }, [
     arrangeTick,
     arrangeRequest,
@@ -1302,6 +1435,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     onArranged,
     held,
     endBoxes,
+    routes,
   ]);
   // Lines without a route: their ends on the sides where their cards face each other now, so
   // they follow a moved card (live, while it is dragged) and take the shortest way.
@@ -1986,6 +2120,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         props.onBringElement(id);
       }}
       onFocusCapture={onFocusCapture}
+      onPointerMove={onPointerMove}
       onBlurCapture={onBlurCapture}
     >
       <EdgeMarkers />
@@ -2056,6 +2191,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         // Less movement than this is a click (which selects the element), not a drag.
         nodeDragThreshold={dragThreshold}
         nodeClickDistance={dragThreshold}
+        // The same for a press on a line, its label or empty canvas: the pan it starts lets the
+        // click through, so the line opens (or the selection clears).
+        paneClickDistance={dragThreshold}
         // React Flow's auto-pan near the canvas edge can keep running after the drop (its loop
         // re-arms after an await), panning and moving the card on its own. Pan by hand instead.
         autoPanOnNodeDrag={false}
@@ -2084,7 +2222,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
               Laying out…
             </>
           ) : (
-            <>The diagram couldn&apos;t be laid out: {layoutError}</>
+            layoutError
           )}
         </div>
       )}

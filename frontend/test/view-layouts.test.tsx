@@ -5,8 +5,18 @@ import type {
   ViewCardLayout,
   ViewLineRoute,
 } from '@simplearchitecture/shared';
-import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import {
+  act,
+  cleanup,
+  createEvent,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { linePath } from '../src/viewing/explorer/canvas/edgeLine';
+import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
 import { apiError, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
 // A view keeps its cards where they were put: only the person's moves, resizes, adds, removes and
@@ -710,27 +720,80 @@ describe('moving a line', () => {
     expect(cornersOf(plannerLine()).end).toEqual({ x: 132, y: 308 });
   });
 
-  it('Tidy up clears the dragged routes and saves the cards; undragged lines then follow cards', async () => {
+  /** The SVG path a line is drawn with. */
+  const pathOf = (edge: HTMLElement) =>
+    edge.querySelector('path.react-flow__edge-path')?.getAttribute('d');
+  const lineOf: Record<string, () => HTMLElement> = {
+    g1: () => edgeOf(/^Gardener .* Planner$/),
+    g2: () => edgeOf(/^Planner .* Sensors$/),
+    g3: () => edgeOf(/^Sensors .* Pump$/),
+  };
+
+  it('Tidy up saves every line on the route it drew, and the view opens with them again', async () => {
+    const fake = await open('modelling', watering(left));
+    fireEvent.click(tidy());
+    await waitFor(() => {
+      expect(layoutSaves(fake.calls)).toHaveLength(1);
+    });
+    const cards = savedCards(layoutSaves(fake.calls)[0]);
+    const routes = savedRoutes(layoutSaves(fake.calls)[0]);
+    expect(routes.map((route) => route.relationshipId).sort()).toEqual(['g1', 'g2', 'g3']);
+    for (const { points } of routes) expect(points.length).toBeGreaterThanOrEqual(2);
+    await screen.findByText('Saved');
+
+    // Opened again, in Modelling, after a reload, and by a Viewer: the cards where Tidy up put
+    // them, and each line on the route saved for it. Nothing is saved.
+    for (const [space, who] of [
+      ['modelling', modeller],
+      ['modelling', modeller],
+      ['viewing', viewer],
+    ] as const) {
+      cleanup();
+      stubApi(who, fake.handler);
+      renderAt(`/${space}/models/${modelId}/views/v-water`);
+      await waitFor(() => {
+        expect(cardIds()).toEqual(['gardener', 'planner', 'pump', 'sensors']);
+      });
+      await settle();
+      for (const saved of cards) {
+        expect(pick(boxOf(saved.elementId)), saved.elementId).toEqual({ x: saved.x, y: saved.y });
+      }
+      for (const { relationshipId, points } of routes) {
+        expect(pathOf((lineOf[relationshipId] as () => HTMLElement)()), relationshipId).toBe(
+          linePath(points),
+        );
+      }
+    }
+    expect(layoutSaves(fake.calls)).toHaveLength(1);
+  });
+
+  it('Tidy up replaces the dragged routes with its own; a line whose card moves re-routes', async () => {
     const { calls } = await open('modelling', routed());
     fireEvent.click(tidy());
     await waitFor(() => {
       expect(layoutSaves(calls)).toHaveLength(1);
     });
     const [save] = layoutSaves(calls);
-    // Only dragged lines are saved: Tidy up drops their routes, and saves no others.
-    expect(savedRoutes(save)).toEqual([]);
+    // Every line is saved as Tidy up drew it: the dragged route is gone.
+    const tidied = savedRoutes(save);
+    expect(tidied.map((route) => route.relationshipId).sort()).toEqual(['g1', 'g2', 'g3']);
+    expect(tidied.find((route) => route.relationshipId === 'g2')?.points).not.toEqual(
+      plannerToSensors,
+    );
     expect(savedCards(save)).not.toEqual(left);
     expect(cornersOf(plannerLine()).start).not.toEqual({ x: 400, y: 30 });
     await settle();
     const before = plannerLine().querySelector('path.react-flow__edge-path')?.getAttribute('d');
 
     // A card moved after Tidy up: its lines re-route round the cards, from where it is now, and
-    // still no route is saved for a line nobody dragged.
+    // keep no route; the other lines keep Tidy up's.
     moveWithKeys('sensors', [{ key: 'ArrowDown', shiftKey: true }]);
     await waitFor(() => {
       expect(layoutSaves(calls)).toHaveLength(2);
     });
-    expect(savedRoutes(layoutSaves(calls)[1])).toEqual([]);
+    expect(savedRoutes(layoutSaves(calls)[1])).toEqual(
+      tidied.filter((route) => route.relationshipId === 'g1'),
+    );
     const after = plannerLine().querySelector('path.react-flow__edge-path')?.getAttribute('d');
     expect(after).not.toBe(before);
     const { end } = cornersOf(plannerLine());
@@ -908,6 +971,110 @@ describe('moving a line', () => {
     await settle();
     expect(cornersOf(plannerLine()).start).toEqual({ x: 400, y: 30 });
     expect(canvasEl().querySelectorAll('.line-grip')).toHaveLength(0);
+  });
+
+  describe('when the automatic layout fails', () => {
+    const status = () =>
+      [...canvasEl().querySelectorAll('.canvas-overlay')].map((each) => each.textContent).join(' ');
+    const failed = "The diagram couldn't be laid out automatically";
+    /** Every card's box and every line's path, as drawn now. */
+    const picture = () => ({
+      cards: cardIds().map((id) => ({ id, ...boxOf(id) })),
+      lines: Object.entries(lineOf).map(([id, line]) => ({ id, path: pathOf(line()) })),
+    });
+    function failLayouts() {
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      return vi.spyOn(getElk(), 'layout').mockRejectedValue(new Error('Made-up layout failure'));
+    }
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('Tidy up keeps the cards and lines where they were, saves nothing, and says so', async () => {
+      const fake = await open('modelling', routed());
+      // A card moved first, and saved: it stays where it was put.
+      moveWithKeys('pump', [{ key: 'ArrowRight', shiftKey: true }]);
+      await waitFor(() => {
+        expect(layoutSaves(fake.calls)).toHaveLength(1);
+      });
+      await screen.findByText('Saved');
+      await settle();
+      const before = picture();
+      const version = fake.view().version;
+
+      const layout = failLayouts();
+      fireEvent.click(tidy());
+      await waitFor(() => {
+        expect(status()).toContain(failed);
+      });
+      expect(layout).toHaveBeenCalled();
+      expect(status()).toContain('so its cards stay where they were. Choose Tidy up to try again.');
+      await settle();
+      // Nothing saved: the view keeps its version, layout and routes.
+      expect(layoutSaves(fake.calls)).toHaveLength(1);
+      expect(fake.view().version).toBe(version);
+      expect(picture()).toEqual(before);
+      expect(gripsOf(plannerLine())).toHaveLength(2);
+      // The message stays, and the canvas can still be used: Tidy up can try again.
+      expect(status()).toContain(failed);
+      expect(tidy().disabled).toBe(false);
+      // A move is the person's change: saved, and the message still stays.
+      moveWithKeys('gardener', [{ key: 'ArrowDown' }]);
+      await waitFor(() => {
+        expect(layoutSaves(fake.calls)).toHaveLength(2);
+      });
+      await screen.findByText('Saved');
+      await settle();
+      expect(savedCards(layoutSaves(fake.calls)[1])).toEqual(
+        savedCards(layoutSaves(fake.calls)[0]).map((card) =>
+          card.elementId === 'gardener' ? { ...card, y: card.y + 8 } : card,
+        ),
+      );
+      expect(status()).toContain(failed);
+
+      // Once the layout works again, Tidy up lays it out and saves it, and the message goes.
+      layout.mockRestore();
+      fireEvent.click(tidy());
+      await waitFor(() => {
+        expect(layoutSaves(fake.calls)).toHaveLength(3);
+      });
+      await waitFor(() => {
+        expect(status()).toBe('');
+      });
+    });
+
+    it('Tidy up in Viewing keeps a card where the person moved it', async () => {
+      const { calls } = await open('viewing', routed());
+      moveWithKeys('pump', [{ key: 'ArrowRight', shiftKey: true }]);
+      await settle();
+      const before = picture();
+      expect(before.cards.find((each) => each.id === 'pump')?.x).toBe(440);
+
+      failLayouts();
+      fireEvent.click(tidy());
+      await waitFor(() => {
+        expect(status()).toContain(failed);
+      });
+      await settle();
+      expect(picture()).toEqual(before);
+      expect(changes(calls)).toEqual([]);
+      expect(tidy().disabled).toBe(false);
+    });
+
+    it('a view with no stored layout says so on opening, and saves nothing', async () => {
+      failLayouts();
+      const fake = server(watering());
+      stubApi(modeller, fake.handler);
+      renderAt(`/modelling/models/${modelId}/views/v-water`);
+      await waitFor(() => {
+        expect(status()).toContain(failed);
+      });
+      expect(status()).toContain('so its cards are placed simply.');
+      expect(cardIds()).toEqual(['gardener', 'planner', 'pump', 'sensors']);
+      await settle();
+      expect(changes(fake.calls)).toEqual([]);
+      expect(tidy().disabled).toBe(false);
+    });
   });
 });
 

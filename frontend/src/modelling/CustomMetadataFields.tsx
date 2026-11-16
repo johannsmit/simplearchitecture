@@ -73,7 +73,8 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
             rows.map((r) => (r.id === row.id ? { ...r, ...next } : r)),
           );
         };
-        const valueName = key === '' ? 'the new field' : key;
+        // A fixed key is blank only when an earlier import left it so: it is named, not typed.
+        const valueName = key !== '' ? key : canAdd ? 'the new field' : 'the blank key';
         // With fixed keys, the value field takes the slot's id, so errors and focus find it.
         const valueId = canAdd ? undefined : slotId(slot);
         return (
@@ -81,7 +82,7 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
             <div className="meta-key">
               {!canAdd ? (
                 <span className="meta-key-text" title={row.key}>
-                  {row.key}
+                  {key === '' ? <em>Blank</em> : row.key}
                 </span>
               ) : (
                 <ValueField
@@ -149,7 +150,7 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
             <button
               type="button"
               className="icon-btn danger-hover"
-              aria-label={key === '' ? 'Remove the new field' : `Remove ${key}`}
+              aria-label={`Remove ${valueName}`}
               title="Remove"
               disabled={saving}
               onClick={() => {

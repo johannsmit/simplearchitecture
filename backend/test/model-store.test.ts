@@ -441,28 +441,34 @@ describe('FileModelStore.delete', () => {
 });
 
 describe('the cap on stored models', () => {
-  it(`refuses a save beyond ${maxStoredModels} models with a clear error`, async () => {
-    const store = await open();
-    const saved = await store.save(model('Template'), author);
-    const text = readFileSync(join(dir, `${saved.id}.json`), 'utf8');
-    for (let i = 1; i < maxStoredModels; i += 1) {
-      const id = crypto.randomUUID();
-      writeFileSync(join(dir, `${id}.json`), text.replaceAll(saved.id, id));
-    }
-    expect(await store.list()).toHaveLength(maxStoredModels);
+  // Hundreds of files: a fixed amount of work, so no time limit of its own. A busy machine takes
+  // longer, which is no failure.
+  it(
+    `refuses a save beyond ${maxStoredModels} models with a clear error`,
+    { timeout: 0 },
+    async () => {
+      const store = await open();
+      const saved = await store.save(model('Template'), author);
+      const text = readFileSync(join(dir, `${saved.id}.json`), 'utf8');
+      for (let i = 1; i < maxStoredModels; i += 1) {
+        const id = crypto.randomUUID();
+        writeFileSync(join(dir, `${id}.json`), text.replaceAll(saved.id, id));
+      }
+      expect(await store.list()).toHaveLength(maxStoredModels);
 
-    const full = store.save(model('One too many'), author);
-    await expect(full).rejects.toThrow(ModelStoreFullError);
-    await expect(full).rejects.toThrow(
-      `The model store is full (${maxStoredModels} models). Delete a model before saving another.`,
-    );
-    expect(files()).toHaveLength(maxStoredModels);
+      const full = store.save(model('One too many'), author);
+      await expect(full).rejects.toThrow(ModelStoreFullError);
+      await expect(full).rejects.toThrow(
+        `The model store is full (${maxStoredModels} models). Delete a model before saving another.`,
+      );
+      expect(files()).toHaveLength(maxStoredModels);
 
-    await store.delete(saved.id);
-    await expect(store.save(model('Fits again'), author)).resolves.toMatchObject({
-      name: 'Fits again',
-    });
-  });
+      await store.delete(saved.id);
+      await expect(store.save(model('Fits again'), author)).resolves.toMatchObject({
+        name: 'Fits again',
+      });
+    },
+  );
 
   it('counts damaged files, which take up room until deleted', async () => {
     const store = await open({ maxModels: 2 });

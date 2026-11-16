@@ -8,6 +8,7 @@ import {
   labelPropertyNames,
   nameFromKey,
   newRelationshipKeys,
+  prototypeKeyMessage,
   propertyKeyProblem,
   propertyNameProblem,
   propertyOptionsProblems,
@@ -64,7 +65,8 @@ describe('the rules for names, keys and options', () => {
     expect(propertyKeyProblem('architectureState', [])).toBe(
       "“architectureState” is a standard property's key.",
     );
-    expect(propertyKeyProblem('__proto__', [])).toBe('This key is reserved. Use another one.');
+    expect(propertyKeyProblem('__proto__', [])).toBe(prototypeKeyMessage);
+    expect(propertyKeyProblem('type', [])).toBe('This key is reserved. Use another one.');
     expect(propertyKeyProblem('COSTCENTRE', definitions)).toBe(
       "There's already a property with the key “costCentre”.",
     );

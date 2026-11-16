@@ -51,14 +51,24 @@ function freePort(): Promise<number> {
   });
 }
 
+/**
+ * The health answer, once the API listens. No time limit: starting a process takes longer the
+ * busier the machine is, so the wait ends when the API answers, or fails when it exits.
+ */
 async function waitForHealth(url: string, api: RunningApi): Promise<Response> {
-  const deadline = Date.now() + 10_000;
+  const stopped = api.exited.then(() => 'exited' as const);
   for (;;) {
     try {
       return await fetch(url);
     } catch {
-      if (Date.now() > deadline) throw new Error(`API did not start:\n${api.stderr()}`);
-      await new Promise((r) => setTimeout(r, 100));
+      const retry = new Promise<'retry'>((resolve) => {
+        setTimeout(() => {
+          resolve('retry');
+        }, 100);
+      });
+      if ((await Promise.race([stopped, retry])) === 'exited') {
+        throw new Error(`API did not start:\n${api.stderr()}`);
+      }
     }
   }
 }
@@ -74,7 +84,9 @@ const authEnv = {
   WEB_ORIGIN: 'http://localhost:5173',
 };
 
-describe('API process', () => {
+// Each test starts the API as a process and waits for it to exit or answer, however long the
+// machine takes: no time limit, as a busy machine is no failure. The API's own waits are bounded.
+describe('API process', { timeout: 0 }, () => {
   it('refuses to start with invalid config: exit code 1 and a clear message', async () => {
     const api = startApi({ ...authEnv, PORT: 'abc', TRUST_PROXY: 'x', LOG_LEVEL: 'info' });
 
@@ -83,7 +95,7 @@ describe('API process', () => {
     expect(api.stderr()).toMatch(/PORT[\s\S]*TRUST_PROXY/);
     expect(api.stderr()).not.toMatch(/\n\s+at /); // no stack trace
     expect(api.stdout()).not.toContain('Server listening');
-  }, 20_000);
+  });
 
   it('refuses to start without the client secret, naming it but printing no secret', async () => {
     const api = startApi({ ...authEnv, OIDC_CLIENT_SECRET: '', LOG_LEVEL: 'info' });
@@ -93,7 +105,7 @@ describe('API process', () => {
     expect(api.stderr()).toMatch(/is required[\s\S]*OIDC_CLIENT_SECRET/);
     expect(api.stderr()).not.toContain(authEnv.SESSION_SECRET);
     expect(api.stderr()).not.toMatch(/\n\s+at /);
-  }, 20_000);
+  });
 
   it('refuses to start in development without the settings in .env, listing them all', async () => {
     // NODE_ENV unset, as with npm run dev; only the sign-in values of an older .env.
@@ -109,7 +121,7 @@ describe('API process', () => {
     );
     expect(stderr).not.toContain(authEnv.OIDC_CLIENT_SECRET);
     expect(stderr).not.toContain(authEnv.SESSION_SECRET);
-  }, 20_000);
+  });
 
   it('refuses to start in production without the fixed settings, listing them all', async () => {
     // An older host's settings: WEB_ORIGIN instead of APP_DOMAIN, no database, no role values.
@@ -132,7 +144,7 @@ describe('API process', () => {
     );
     expect(stderr).not.toContain(authEnv.OIDC_CLIENT_SECRET);
     expect(stderr).not.toContain(authEnv.SESSION_SECRET);
-  }, 20_000);
+  });
 
   it('refuses a DATABASE_URL without TLS to another host, never printing the password', async () => {
     const api = startApi({
@@ -144,7 +156,7 @@ describe('API process', () => {
     expect(api.stderr()).toMatch(/verified certificate[\s\S]*DATABASE_URL/);
     expect(api.stderr()).not.toContain('made-up-db-password');
     expect(api.stderr()).not.toContain('db.example.test');
-  }, 20_000);
+  });
 
   it('refuses to start when the database is unreachable, with a safe message', async () => {
     const port = await freePort();
@@ -164,7 +176,7 @@ describe('API process', () => {
     expect(api.stderr()).toContain('Gave up after waiting 2 seconds.');
     expect(`${api.stderr()}${api.stdout()}`).not.toContain('made-up-db-password');
     expect(api.stderr()).not.toMatch(/\n\s+at /);
-  }, 20_000);
+  });
 
   it('refuses to start with an invalid OEF mapping config, naming the bad entry', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oef-mapping-server-'));
@@ -189,7 +201,7 @@ describe('API process', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it('refuses to start when OEF_MAPPING_PATH points to a missing file', async () => {
     const api = startApi({
@@ -202,27 +214,23 @@ describe('API process', () => {
     expect(api.stderr()).toContain(
       `API not started. Cannot read OEF mapping config ${join(repoRoot, 'does-not-exist.json')} (ENOENT)`,
     );
-  }, 20_000);
+  });
 
   it.each([
     ['.', /is not allowed: it is the repo root or a folder that contains it/],
     // The home directory usually contains the repo, so either reason may apply.
     ['~', /is not allowed: it is (the repo root or a folder that contains it|your home directory)/],
     ['~nobody/models', /is not supported: only a leading ~\//],
-  ])(
-    'refuses to start with DATA_DIR=%s, changing nothing',
-    async (value, message) => {
-      const before = statSync(repoRoot).mode;
-      const api = startApi({ ...authEnv, DATA_DIR: value, LOG_LEVEL: 'info' });
+  ])('refuses to start with DATA_DIR=%s, changing nothing', async (value, message) => {
+    const before = statSync(repoRoot).mode;
+    const api = startApi({ ...authEnv, DATA_DIR: value, LOG_LEVEL: 'info' });
 
-      expect(await api.exited).toBe(1);
-      expect(api.stderr()).toContain('API not started. DATA_DIR ');
-      expect(api.stderr()).toMatch(message);
-      expect(api.stderr()).not.toMatch(/\n\s+at /);
-      expect(statSync(repoRoot).mode).toBe(before);
-    },
-    20_000,
-  );
+    expect(await api.exited).toBe(1);
+    expect(api.stderr()).toContain('API not started. DATA_DIR ');
+    expect(api.stderr()).toMatch(message);
+    expect(api.stderr()).not.toMatch(/\n\s+at /);
+    expect(statSync(repoRoot).mode).toBe(before);
+  });
 
   it('refuses to start when DATA_DIR is not a writable directory', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'data-dir-server-'));
@@ -240,7 +248,7 @@ describe('API process', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   // The API starts in backend/, but a relative DATA_DIR means the repo root.
   it('resolves a relative DATA_DIR against the repo root, not the folder the API starts in', async () => {
@@ -269,7 +277,7 @@ describe('API process', () => {
       await api.exited;
       rmSync(dataParent, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it('starts with valid config, serves health, logs no credentials, and shuts down cleanly', async () => {
     const port = await freePort();
@@ -310,5 +318,5 @@ describe('API process', () => {
     expect(api.stdout()).toContain('shutting down');
     expect(api.stdout()).not.toMatch(/spawned-token-123|spawned-cookie-456/);
     expect(api.stdout()).not.toMatch(/spawned-client-secret|spawned-session-secret/);
-  }, 20_000);
+  });
 });

@@ -1,5 +1,6 @@
 import {
   editingUnavailableMessage,
+  prototypeKeyMessage,
   type DeletedElementResult,
   type ElementChangeResult,
   type ElementConflict,
@@ -358,9 +359,14 @@ describe('element routes: hostile input', () => {
       ),
     ]);
     expect(results.map((res) => res.statusCode)).toEqual([
-      // 400: Fastify's JSON parser itself refuses an own __proto__ key.
-      400, 400, 422, 422, 422, 422, 422, 422, 422, 422, 422, 422, 400, 413,
+      // A metadata key __proto__ is refused at its field, with the forms' message.
+      422, 422, 422, 422, 422, 422, 422, 422, 422, 422, 422, 422, 400, 413,
     ]);
+    for (const res of results.slice(0, 2)) {
+      expect(res.json<{ fields: unknown[] }>().fields).toEqual([
+        { field: 'metadata.__proto__', message: prototypeKeyMessage },
+      ]);
+    }
     for (const res of results) {
       expect(res.body).not.toContain('polluted');
       expect(res.json()).not.toHaveProperty('stack');

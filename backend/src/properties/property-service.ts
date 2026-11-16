@@ -160,7 +160,8 @@ export class PropertyService {
         fields.push('name');
       }
       let newKey = key;
-      if (request.key !== undefined && request.key.trim() !== key) {
+      // The key sent back as it is stands for no change, even one an import left with spaces.
+      if (request.key !== undefined && request.key !== key && request.key.trim() !== key) {
         const problem =
           propertyKeyProblem(request.key, others) ??
           ((await valueCount(tx, key)) > 0 ? propertyKeyInUseMessage : undefined);

@@ -6,7 +6,7 @@ import type {
 import type { FastifyPluginAsync } from 'fastify';
 import type { RelationshipService } from '../editing/relationship-service.js';
 import { relationshipBodyLimit } from '../limits.js';
-import { requireMediaType } from './body.js';
+import { registerEditingBodyParser, requireMediaType } from './body.js';
 import { actor, auditLog, badModelId, modelling, refused } from './editing.js';
 
 const jsonOnly = requireMediaType(
@@ -26,6 +26,8 @@ interface RelationshipParams {
  */
 export function relationshipRoutes(service: RelationshipService): FastifyPluginAsync {
   return async (app) => {
+    registerEditingBodyParser(app);
+
     app.get<{ Params: RelationshipParams; Reply: RelationshipChangeResult | ApiError }>(
       '/api/models/:id/relationships/:relationshipId',
       { config: modelling },

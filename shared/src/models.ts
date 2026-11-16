@@ -1,6 +1,9 @@
 import type { ApiError } from './api.js';
 import type { JgfValidationResult, OefMappingReport } from './jgf.js';
-import type { AddedRelationshipProperty } from './relationship-properties.js';
+import type {
+  AddedRelationshipProperty,
+  ChangedRelationshipKey,
+} from './relationship-properties.js';
 
 /**
  * The `graph.metadata` key that holds the server-owned data of a stored model. The server sets
@@ -63,6 +66,12 @@ export interface SaveModelResult {
    * there were any.
    */
   newProperties?: AddedRelationshipProperty[];
+  /**
+   * Keys on the model's relationships that no property can have, so the import changed them: a key
+   * over 100 characters was shortened (`storedAs`), and a blank one was left out with its values.
+   * Sorted by key. Only when there were any.
+   */
+  changedKeys?: ChangedRelationshipKey[];
 }
 
 /** Response body (201) of `POST /api/models/import/oef`. */

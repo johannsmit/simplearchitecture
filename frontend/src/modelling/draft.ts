@@ -1,11 +1,13 @@
 import {
   customMetadata,
   isNodeType,
+  isPrototypeKey,
   isStandardPropertyOf,
   keptAsCustomOnTypeChange,
   nodeTypeDefinitions,
   nodeTypeKey,
   normaliseForSearch,
+  prototypeKeyMessage,
   standardProperties,
   type ElementFieldIssue,
   type JgfNode,
@@ -93,19 +95,21 @@ export function metadataChanges(
   before: ReadonlyMap<string, unknown>,
   after: ReadonlyMap<string, unknown>,
 ): Record<string, unknown> {
-  const metadata: Record<string, unknown> = {};
+  const changes: [string, unknown][] = [];
   for (const [key, value] of after) {
     if (!before.has(key) || JSON.stringify(before.get(key)) !== JSON.stringify(value)) {
-      metadata[key] = value;
+      changes.push([key, value]);
     }
   }
-  for (const key of before.keys()) if (!after.has(key)) metadata[key] = null;
-  return metadata;
+  for (const key of before.keys()) if (!after.has(key)) changes.push([key, null]);
+  // fromEntries defines own keys, so no key (not even `__proto__`) is lost on the way to JSON.
+  return Object.fromEntries(changes);
 }
 
 /**
- * The checks on custom rows before saving: a value needs a key, and a key is used once.
- * `reserved` says why a key can't be used here, if so.
+ * The checks on custom rows before saving: a value needs a key, a key is used once, and
+ * `__proto__` is never one (the server's rule and message). `reserved` says why a key can't be used
+ * here, if so.
  */
 export function customRowErrors(
   rows: readonly CustomRow[],
@@ -121,7 +125,11 @@ export function customRowErrors(
       if (hasValue) errors.set(slot, 'Enter a key.');
       continue;
     }
-    const problem = seen.has(key) ? 'This key is used twice.' : reserved(key);
+    const problem = isPrototypeKey(key)
+      ? prototypeKeyMessage
+      : seen.has(key)
+        ? 'This key is used twice.'
+        : reserved(key);
     if (problem !== undefined) errors.set(slot, problem);
     seen.add(key);
   }

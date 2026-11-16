@@ -48,6 +48,11 @@ export interface CardData extends Record<string, unknown> {
   onShowRelated: (elementId: string, button: HTMLButtonElement) => void;
   /** Editable Modelling: a connect handle to draw a relationship from. */
   connectable?: boolean;
+  /**
+   * The pointer is at the connect handle, on a line's label lying over it: the card is lifted
+   * above the labels, with its handle shown, so it can be grabbed.
+   */
+  connectHot?: boolean;
   /** While a line is drawn over it: a valid target, or the source itself. */
   drop?: 'ok' | 'self';
   /**
@@ -167,7 +172,7 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
         : undefined;
   return (
     <div
-      className={`card ${circle ? 'is-circle ' : ''}${container ? 'is-container ' : ''}${circle && style ? 'is-nested ' : ''}${data.nameLines === undefined ? '' : 'is-cut '}${colourClass(element.type)}${data.focused ? ' is-focus' : ''}${data.selected ? ' is-selected' : ''}${data.moving ? ' is-moving' : ''}${data.drop ? ` is-drop-${data.drop}` : ''}`}
+      className={`card ${circle ? 'is-circle ' : ''}${container ? 'is-container ' : ''}${circle && style ? 'is-nested ' : ''}${data.nameLines === undefined ? '' : 'is-cut '}${colourClass(element.type)}${data.focused ? ' is-focus' : ''}${data.selected ? ' is-selected' : ''}${data.moving ? ' is-moving' : ''}${data.connectHot === true ? ' is-connect-hot' : ''}${data.drop ? ` is-drop-${data.drop}` : ''}`}
       style={style}
       data-element-id={element.id}
     >

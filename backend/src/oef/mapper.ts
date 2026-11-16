@@ -384,7 +384,12 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
 
   // Next suffix to try per metadata object and base key, so repeats stay linear.
   const nextSuffix = new WeakMap<Record<string, unknown>, Map<string, number>>();
-  /** A free key: `key` itself, else oefKey, oefKey2, ... */
+  /** `base` with the number `n` (none for 1), cut so the key stays within `maxCustomKeyLength`. */
+  const numbered = (base: string, n: number): string => {
+    const suffix = n === 1 ? '' : String(n);
+    return `${base.slice(0, maxCustomKeyLength - suffix.length)}${suffix}`;
+  };
+  /** A free key: `key` itself, else oefKey, oefKey2, ..., each at most `maxCustomKeyLength`. */
   const freeKey = (meta: Record<string, unknown>, key: string, reserved: Set<string>): string => {
     if (!reserved.has(key) && !Object.hasOwn(meta, key)) return key;
     props.renamedKeys += 1;
@@ -395,10 +400,10 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
       nextSuffix.set(meta, suffixes);
     }
     let n = suffixes.get(base) ?? 1;
-    let candidate = n === 1 ? base : `${base}${n}`;
+    let candidate = numbered(base, n);
     while (reserved.has(candidate) || Object.hasOwn(meta, candidate)) {
       n += 1;
-      candidate = `${base}${n}`;
+      candidate = numbered(base, n);
     }
     suffixes.set(base, n + 1);
     return candidate;

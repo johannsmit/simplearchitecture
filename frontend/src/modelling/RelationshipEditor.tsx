@@ -14,7 +14,6 @@ import {
   relationshipProblems,
   relationshipMetadataNames,
   relationshipPropertyValues,
-  retiredDataKey,
   type ArchitectureState,
   type DeletedRelationshipResult,
   type EdgeType,
@@ -47,7 +46,7 @@ import { MetadataValue } from '../viewing/explorer/DetailsPanel';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { Modal, UnsavedDialog } from './dialogs';
 import { EndPicker } from './EndPicker';
-import { customRow, customRowErrors, metadataChanges, type CustomRow } from './draft';
+import { customRow, metadataChanges, type CustomRow } from './draft';
 import type { EditorHandle, EditorState } from './ElementEditor';
 import { savedNoteMillis } from './ElementEditor';
 import { LabelField } from './LabelField';
@@ -211,8 +210,9 @@ function metadataValues(
 ): Map<string, unknown> {
   const values = new Map<string, unknown>();
   for (const row of rows) {
-    const key = row.key.trim();
-    if (key === '' || (!defined.has(key) && !stored.has(key))) continue;
+    // Keys here are never typed: each is exactly as stored or defined, even blank or padded.
+    const key = row.key;
+    if (!defined.has(key) && !stored.has(key)) continue;
     const changed = row.editable && row.text !== asText(row.original);
     if (!changed) {
       values.set(key, row.original);
@@ -232,15 +232,6 @@ function andList(words: readonly string[]): string {
 }
 
 const noDefinitions: readonly RelationshipPropertyDefinition[] = [];
-
-/** Why a key can't be a custom row here, if so. */
-function reservedKeyWord(key: string): string | undefined {
-  if (key === 'type' || key === 'informationFlow') return `“${key}” is reserved.`;
-  if (key === retiredDataKey)
-    return `“${key}” is reserved: Data is now Request Data and Response Data.`;
-  if (isRelationProperty(key)) return `“${key}” is a standard property of a Relation.`;
-  return ownFields.has(key) ? `“${key}” has its own field above.` : undefined;
-}
 
 /** The relationship in the details panel: always the form. */
 export function RelationshipEditor(props: RelationshipEditorProps) {
@@ -277,12 +268,12 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     definedPropertiesOf(base.type, definitions).map((definition) => definition.key),
   );
   // The keys the relationship has: their values can change or go, but no other key can be added.
-  const storedKeys = new Set(base.custom.map((row) => row.key.trim()));
+  // Exactly as stored: a key an import left blank or padded with spaces is a key like any other.
+  const storedKeys = new Set(base.custom.map((row) => row.key));
   const customRows = draft.custom.filter(
-    (row) => !definedKeys.has(row.key.trim()) && storedKeys.has(row.key.trim()),
+    (row) => !definedKeys.has(row.key) && storedKeys.has(row.key),
   );
-  const rowOf = (key: string): CustomRow | undefined =>
-    draft.custom.find((row) => row.key.trim() === key);
+  const rowOf = (key: string): CustomRow | undefined => draft.custom.find((row) => row.key === key);
 
   // The ends as they will be saved: Reverse swaps the ends picked.
   const source = draft.reversed ? draft.ends.target : draft.ends.source;
@@ -455,16 +446,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       }
       return false;
     }
-    // A key already stored can't block the form: the server has the last word if it is changed.
-    const rowErrors = customRowErrors(customRows, (key) =>
-      storedKeys.has(key) ? undefined : reservedKeyWord(key),
-    );
-    const firstBad = customRows.find((row) => rowErrors.has(`row:${row.id}`));
-    if (firstBad) {
-      setErrors(rowErrors);
-      document.getElementById(rowInputId(`row:${firstBad.id}`))?.focus();
-      return false;
-    }
+    // Custom rows are keys the relationship holds, which can't be renamed: none blocks the form
+    // (a blank one an import left included), and the server has the last word on a change.
     setSaving(true);
     setErrors(new Map());
     setDuplicateOf(undefined);
@@ -530,7 +513,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
         const customSlot = (field: string): string => {
           const key = field.startsWith('metadata.') ? field.slice('metadata.'.length) : undefined;
           if (key !== undefined && definedKeys.has(key)) return `prop:${key}`;
-          const row = draft.custom.find((candidate) => candidate.key.trim() === key);
+          const row = draft.custom.find((candidate) => candidate.key === key);
           return row ? `row:${row.id}` : '';
         };
         // An Admin deleted a property filled in here: its value can't be saved. The definitions
@@ -1011,7 +994,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 id={`rf-prop-${String(index)}`}
                 definition={definition}
                 row={rowOf(definition.key)}
-                stored={base.custom.find((row) => row.key.trim() === definition.key)}
+                stored={base.custom.find((row) => row.key === definition.key)}
                 suggestions={relationshipPropertyValues(graph).get(definition.key) ?? noValues}
                 readOnly={saving}
                 error={fieldError(`prop:${definition.key}`)}
@@ -1026,7 +1009,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 onRemove={() => {
                   setDraft({
                     ...draft,
-                    custom: draft.custom.filter((row) => row.key.trim() !== definition.key),
+                    custom: draft.custom.filter((row) => row.key !== definition.key),
                   });
                 }}
               />

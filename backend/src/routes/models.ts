@@ -1,17 +1,19 @@
-import type {
-  AddedRelationshipProperty,
-  ApiError,
-  DamagedModelListResponse,
-  ImportOefModelResult,
-  JgfDocument,
-  JgfValidationResult,
-  ModelListResponse,
-  ElementRejected,
-  ModelRejected,
-  ModelSummary,
-  NewModelResult,
-  OefMappingReport,
-  SaveModelResult,
+import {
+  withImportableRelationshipKeys,
+  type AddedRelationshipProperty,
+  type ApiError,
+  type ChangedRelationshipKey,
+  type DamagedModelListResponse,
+  type ImportOefModelResult,
+  type JgfDocument,
+  type JgfValidationResult,
+  type ModelListResponse,
+  type ElementRejected,
+  type ModelRejected,
+  type ModelSummary,
+  type NewModelResult,
+  type OefMappingReport,
+  type SaveModelResult,
 } from '@simplearchitecture/shared';
 import type {
   FastifyPluginAsync,
@@ -110,16 +112,29 @@ function storeRefused(
 /**
  * Saves a validated model and writes the audit line (ids and counts only, never names or
  * content). Answers 409 itself when the store is full and returns undefined. With it, the
- * properties the save added from the custom keys on its relationships (only when there were any).
+ * properties the save added from the custom keys on its relationships, and the keys it shortened or
+ * left out first because no property can have them (each only when there were any).
  */
 async function saveModel(
   request: FastifyRequest,
   reply: FastifyReply,
   store: ModelStore,
-  document: JgfDocument,
+  imported: JgfDocument,
   audit: 'model-saved' | 'model-imported',
-): Promise<{ model: ModelSummary; newProperties?: AddedRelationshipProperty[] } | undefined> {
+): Promise<
+  | {
+      model: ModelSummary;
+      newProperties?: AddedRelationshipProperty[];
+      changedKeys?: ChangedRelationshipKey[];
+    }
+  | undefined
+> {
   const user = author(request);
+  const keys = withImportableRelationshipKeys(imported.graph.edges ?? []);
+  const document: JgfDocument =
+    keys.changes.length === 0
+      ? imported
+      : { ...imported, graph: { ...imported.graph, edges: keys.edges } };
   let model: ModelSummary;
   let newProperties: AddedRelationshipProperty[] | undefined;
   try {
@@ -140,11 +155,16 @@ async function saveModel(
       nodes: model.nodeCount,
       edges: model.edgeCount,
       ...(newProperties === undefined ? {} : { newProperties: newProperties.length }),
+      ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes.length }),
     },
     audit === 'model-saved' ? 'model saved' : 'model imported and saved',
   );
   void reply.code(201).header('location', `/api/models/${model.id}`);
-  return newProperties === undefined ? { model } : { model, newProperties };
+  return {
+    model,
+    ...(newProperties === undefined ? {} : { newProperties }),
+    ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes }),
+  };
 }
 
 export interface ModelRouteOptions {

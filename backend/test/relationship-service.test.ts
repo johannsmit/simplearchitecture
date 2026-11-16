@@ -1,4 +1,9 @@
-import { definitionsForKeys, type JgfDocument, type ModelAuthor } from '@simplearchitecture/shared';
+import {
+  definitionsForKeys,
+  prototypeKeyMessage,
+  type JgfDocument,
+  type ModelAuthor,
+} from '@simplearchitecture/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   ConflictError,
@@ -1018,7 +1023,7 @@ describe('custom metadata at the edges of the rules', () => {
         )
       ).fields;
     expect(await refused('{"__proto__": {"polluted": true}}')).toEqual([
-      { field: 'metadata.__proto__', message: 'This property name is reserved.' },
+      { field: 'metadata.__proto__', message: prototypeKeyMessage },
     ]);
     expect(await refused('{"a": {"__proto__": {"polluted": true}}}')).toEqual([
       { field: 'metadata.a', message: 'Must be text.' },

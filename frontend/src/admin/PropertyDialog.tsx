@@ -86,6 +86,8 @@ export function PropertyDialog(props: PropertyDialogProps) {
   });
 
   const others = props.all.filter((other) => other.key !== property?.key);
+  // A key left as it was is no change, even one an import left with spaces around it.
+  const keyChanged = !editing || (key !== property.key && key.trim() !== property.key);
   const countOf = (text: string): number =>
     usage?.values.find((value) => value.value === text)?.count ?? 0;
   const listed = options.map((row) => row.text.trim()).filter((text) => text !== '');
@@ -150,7 +152,7 @@ export function PropertyDialog(props: PropertyDialogProps) {
       const nameProblem = propertyNameProblem(name, others);
       if (nameProblem !== undefined) found.set('name', nameProblem);
     }
-    if (!keyLocked && (!editing || key.trim() !== property.key)) {
+    if (!keyLocked && keyChanged) {
       const keyProblem = propertyKeyProblem(key, others);
       if (keyProblem !== undefined) found.set('key', keyProblem);
     }
@@ -194,7 +196,7 @@ export function PropertyDialog(props: PropertyDialogProps) {
       ? updateProperty(property.key, {
           version: property.version,
           name: name.trim(),
-          ...(keyLocked || key.trim() === property.key ? {} : { key: key.trim() }),
+          ...(keyLocked || !keyChanged ? {} : { key: key.trim() }),
           kind,
           ...(choiceOptions === undefined ? {} : { options: choiceOptions }),
         })

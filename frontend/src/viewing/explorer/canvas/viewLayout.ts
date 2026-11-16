@@ -14,7 +14,10 @@ import { fitContainers, type Point } from './positions';
  * switched. Pure, so it is tested without a browser.
  */
 
-/** What a view saves of its canvas: where its cards are, and the lines moved by hand. */
+/**
+ * What a view saves of its canvas: where its cards are, and the routes of its lines (moved by hand,
+ * or as the layout drew them).
+ */
 export interface CanvasLayout {
   cards: ViewCardLayout[];
   routes: ViewLineRoute[];

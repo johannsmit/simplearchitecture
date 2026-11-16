@@ -56,6 +56,7 @@ import {
   plan,
   refuseErrors,
   RejectedError,
+  reservedKeyProblem,
   sameValue,
   Unchanged,
   versionSchema,
@@ -143,7 +144,12 @@ function dataValueProblem(values: readonly string[], stored: unknown): string | 
     : undefined;
 }
 
-/** Custom metadata: the count and the keys here; the values are checked against the stored ones. */
+/**
+ * Custom metadata: the count and the keys here; the values are checked against the stored ones.
+ * A key's length and a blank key are checked with the definitions (`metadataKeyProblem`): a
+ * defined property or a key the relationship holds can always be set or removed, as an import
+ * may once have brought a blank or very long one.
+ */
 const metadataSchema = z
   .record(z.string(), z.unknown(), { error: 'Must be an object.' })
   .superRefine((record, ctx) => {
@@ -167,7 +173,7 @@ const metadataSchema = z
                 // Removing one kept as custom metadata (on a Contains) is fine.
                 (isRelationProperty(key) && record[key] !== null)
               ? 'Set this in its own field.'
-              : keyProblem(key);
+              : reservedKeyProblem(key);
       if (problem !== undefined) ctx.addIssue({ code: 'custom', message: problem, path: [key] });
     }
   });
@@ -208,7 +214,9 @@ function metadataKeyProblem(
     return customValueProblem(value, stored, key);
   }
   if (Object.hasOwn(stored, key)) return customValueProblem(value, stored, key);
-  return `“${key}” isn't a property here. An Admin can add it in Admin → Properties.`;
+  return (
+    keyProblem(key) ?? `“${key}” isn't a property here. An Admin can add it in Admin → Properties.`
+  );
 }
 
 const newRelationshipSchema = z.strictObject({

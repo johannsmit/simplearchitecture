@@ -3,9 +3,9 @@ import {
   maxViewLineBends,
   type ViewLineRoute,
 } from '@simplearchitecture/shared';
-import { circleDiameter, circleNodeWidth } from './circle';
-import { simplified } from './edgeLine';
-import type { Side } from './elkLayout';
+import { circleDiameter, circleHandles, circleNodeWidth } from './circle';
+import { edgeLine, simplified, type LineEnd } from './edgeLine';
+import type { PlacedHandle, Side } from './elkLayout';
 import type { Box, Point } from './positions';
 
 /**
@@ -319,6 +319,79 @@ export function routesToSave(
     const now = followCards(route, source, target);
     const points = now && storedPoints(now);
     if (points) result.push({ relationshipId, points });
+  }
+  return result;
+}
+
+/**
+ * Where a line meets its card at a handle the layout placed: on the card's side, `offset` along
+ * it, or on a Stakeholder's circle, where the card draws it (`circleHandles`). Undefined for a
+ * handle the card doesn't have.
+ */
+export function handleEnd(
+  handles: readonly PlacedHandle[],
+  id: string,
+  card: EndCard,
+): LineEnd | undefined {
+  if (card.circle === true) {
+    const handle = circleHandles(handles).find((each) => each.id === id);
+    return handle && { x: card.x + handle.x, y: card.y + handle.y, side: handle.side };
+  }
+  const handle = handles.find((each) => each.id === id);
+  if (!handle) return undefined;
+  const { side, offset } = handle;
+  if (side === 'left' || side === 'right') {
+    return { x: side === 'left' ? card.x : card.x + card.width, y: card.y + offset, side };
+  }
+  return { x: card.x + offset, y: side === 'top' ? card.y : card.y + card.height, side };
+}
+
+/**
+ * A line on the layout's route, as the canvas draws it: from its source's handle, through the
+ * layout's bends, to its target's handle.
+ */
+export function laidLine(
+  bends: readonly Point[],
+  source: { handles: readonly PlacedHandle[]; box: EndCard; port: string },
+  target: { handles: readonly PlacedHandle[]; box: EndCard; port: string },
+): Point[] | undefined {
+  const start = handleEnd(source.handles, source.port, source.box);
+  const end = handleEnd(target.handles, target.port, target.box);
+  return start && end ? edgeLine(start, end, bends) : undefined;
+}
+
+/**
+ * The routes a view saves: those given by hand (`byHand`, from `routesToSave`), and for every
+ * line drawn on the layout's route (after Tidy up, or in a view laid out when it opened) the line
+ * as drawn, so the view opens with it again. Each relationship on such a line gets it, unless it
+ * has a route given by hand. A line whose ends can't leave their cards outward (`fitEnds`) gets
+ * none, and is drawn automatically.
+ */
+export function withLaidRoutes(
+  byHand: readonly ViewLineRoute[],
+  laid: ReadonlyMap<string, readonly Point[]>,
+  links: readonly {
+    id: string;
+    source: string;
+    target: string;
+    relationshipIds: readonly string[];
+  }[],
+  boxes: ReadonlyMap<string, EndCard>,
+): ViewLineRoute[] {
+  const result = [...byHand];
+  const routed = new Set(byHand.map((route) => route.relationshipId));
+  for (const link of links) {
+    const line = laid.get(link.id);
+    const source = boxes.get(link.source);
+    const target = boxes.get(link.target);
+    const fitted = line && source && target ? fitEnds(line, source, target) : undefined;
+    const points = fitted && storedPoints(fitted);
+    if (!points) continue;
+    for (const relationshipId of link.relationshipIds) {
+      if (routed.has(relationshipId)) continue;
+      routed.add(relationshipId);
+      result.push({ relationshipId, points: points.map((point) => ({ ...point })) });
+    }
   }
   return result;
 }

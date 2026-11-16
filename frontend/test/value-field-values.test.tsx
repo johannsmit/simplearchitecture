@@ -1,4 +1,4 @@
-import type { JgfDocument, JgfEdge } from '@simplearchitecture/shared';
+import { prototypeKeyMessage, type JgfDocument, type JgfEdge } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
@@ -142,14 +142,19 @@ describe.each(['element', 'relationship'] as const)('on the %s form', (kind) => 
     expect(sent[0]?.metadata).toEqual({ port: '443' });
   });
 
-  // A known gap, so expected to fail: assigning `__proto__` on a plain object does nothing, so the
-  // typed value is never sent, and nothing says so.
-  it.fails('says something about a value typed under the key __proto__', async () => {
-    const { form } = await openForm(kind);
+  // Assigning `__proto__` on a plain object does nothing, so the typed value was never sent, and
+  // nothing said so. The element form refuses the key with the server's message; a relationship
+  // takes no typed keys (an Admin defines them, and Admin → Properties refuses this one too).
+  it('says something about a value typed under the key __proto__', async () => {
+    const { form, sent } = await openForm(kind);
+    if (kind === 'relationship') {
+      expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
+      return;
+    }
     addRow(form, '__proto__', 'Made-up');
-    const save = within(form).queryByRole('button', { name: 'Save' });
-    if (save) fireEvent.click(save);
-    expect(await within(form).findByText(/reserved/, {}, { timeout: 300 })).toBeDefined();
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(await within(form).findByText(prototypeKeyMessage)).toBeDefined();
+    expect(sent).toHaveLength(0);
   });
 });
 

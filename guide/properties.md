@@ -16,7 +16,7 @@ The page lists the properties by name, with each one's key, its kind ("Text", or
 **+ New property** asks for:
 
 - **Name**: what people see, such as "Cost centre". It is also how a label uses the property: `{Cost centre}`. At most 60 characters, without `{` or `}`, and not the name of another property or a standard one.
-- **Key**: what models and JGF files store the values under, such as `costCentre`. It follows the name until you type in it.
+- **Key**: what models and JGF files store the values under, such as `costCentre`. It follows the name until you type in it. At most 100 characters; `__proto__` can't be used, as on any custom metadata (see the README).
 - **Kind**: **Text**, any text, or **Choice**, one of a list of 2 to 50 options you set. Move options up and down to set the order the form lists them in; `Enter` in an option adds another after it.
 
 No property is ever required.
@@ -44,3 +44,12 @@ The form has no **Add field**: new properties are added by an Admin. A value kep
 ## Import
 
 When an Admin imports a model (JGF or ArchiMate), a custom key on a relationship that isn't a property yet is added to the list as a text property, marked From models, and its values are kept. The import result lists them under **New properties**, with a link to Admin → Properties. A key that is a property already shows as that property. Custom keys on elements stay custom metadata, as before.
+
+A property's key can't be blank or longer than 100 characters, so an import changes such keys on relationships, and never fails over one:
+
+- A key over 100 characters is **shortened** to its first 100 (spaces at either end left out). If that is a key the model's relationships use already, or a standard one, it gets " (2)", " (3)" … and stays within 100 characters. The values are kept under the shortened key, which becomes a property like any other. Importing the same file again uses the same shortened keys.
+- A **blank** key (empty, or only spaces) is **left out**, with its values.
+
+The import result lists them under **Property keys changed**: each key as the file has it (cut short when long), what happened to it, and how many relationships held a value under it.
+
+A blank or long key that an earlier version added as a property (when it first started, or on an import) keeps working: its values can be changed and removed on the relationship form and through the API, and an Admin can rename the property or delete it with its values. A blank key an earlier import left on a relationship shows as **Blank** under its custom metadata, and can be removed there.

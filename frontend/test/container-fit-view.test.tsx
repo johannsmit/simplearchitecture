@@ -7,6 +7,7 @@ import type {
 } from '@simplearchitecture/shared';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { linePath } from '../src/viewing/explorer/canvas/edgeLine';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
 // In a view, every container is just big enough for the cards inside it: it opens so, and fits
@@ -154,13 +155,20 @@ function roomIn(container: string, inside: string[]) {
 }
 const noRoom = { left: 0, top: 0, right: 0, bottom: 0 };
 
-/** A line's first point as drawn. */
-function startOf(label: RegExp) {
+/** The SVG path a line is drawn with. */
+function lineOf(label: RegExp) {
   const edge = [...canvasEl().querySelectorAll<HTMLElement>('.react-flow__edge')].find((each) =>
     label.test(each.getAttribute('aria-label') ?? ''),
   );
-  const d = edge?.querySelector('path.react-flow__edge-path')?.getAttribute('d') ?? '';
-  const [x, y] = d.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  return edge?.querySelector('path.react-flow__edge-path')?.getAttribute('d') ?? '';
+}
+
+/** A line's first point as drawn. */
+function startOf(label: RegExp) {
+  const [x, y] =
+    lineOf(label)
+      .match(/-?\d+(?:\.\d+)?/g)
+      ?.map(Number) ?? [];
   return { x, y };
 }
 
@@ -374,7 +382,11 @@ describe('containers fit after an automatic layout', () => {
     expect(roomIn('site', ['hall'])).toEqual(noRoom);
     const drawn = Object.fromEntries(all.map((id) => [id, boxOf(id)]));
     const [save] = layoutSaves(fake.calls);
-    expect(savedRoutes(save)).toEqual([]);
+    // Pump to Tank as Tidy up drew it, in place of the route given by hand.
+    const [route] = savedRoutes(save);
+    expect(savedRoutes(save)).toHaveLength(1);
+    expect(route?.relationshipId).toBe('r1');
+    expect(route?.points).not.toEqual(shifted(pumpRoute(232)).points);
     for (const saved of savedCards(save)) {
       expect(saved, saved.elementId).toMatchObject({
         x: drawn[saved.elementId]?.x,
@@ -391,6 +403,7 @@ describe('containers fit after an automatic layout', () => {
     });
     await settle();
     for (const id of all) expect(boxOf(id), id).toEqual(drawn[id]);
+    expect(lineOf(/^Pump .* Tank$/)).toBe(linePath(route?.points ?? []));
     expect(layoutSaves(fake.calls)).toHaveLength(1);
   });
 });

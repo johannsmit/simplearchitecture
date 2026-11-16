@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { JgfDocument, JgfEdge, ModelSummary } from '@simplearchitecture/shared';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { nearestLineAt } from '../src/viewing/explorer/canvas/ExplorerCanvas';
 import type * as Labels from '../src/viewing/explorer/canvas/labels';
@@ -106,6 +106,34 @@ async function labelOf(edge: HTMLElement): Promise<HTMLElement> {
   });
 }
 
+/**
+ * A press on an element that moves the pointer from one point to another before it lets go, with
+ * the events a browser sends: the canvas's pan listens to the mouse events, the label to both.
+ */
+function pressAndMove(
+  target: Element,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+) {
+  const send = (type: keyof typeof createEvent, at: { x: number; y: number }) => {
+    const event = createEvent[type](target, { button: 0, bubbles: true });
+    // jsdom refuses a view in the constructor, and the pan reads it.
+    Object.defineProperties(event, {
+      clientX: { value: at.x },
+      clientY: { value: at.y },
+      view: { value: window },
+    });
+    fireEvent(target, event);
+  };
+  send('pointerDown', from);
+  send('mouseDown', from);
+  send('pointerMove', to);
+  send('mouseMove', to);
+  send('pointerUp', to);
+  send('mouseUp', to);
+  send('click', to);
+}
+
 describe('a click on a line or its label', () => {
   it.each(['viewing', 'modelling'] as const)(
     'opens the relationship from its label at once (%s)',
@@ -139,6 +167,39 @@ describe('a click on a line or its label', () => {
     const label = await labelOf(await line(/CRM/));
     fireEvent.click(label);
     expect(await screen.findByRole('menu', { name: '2 relationships' })).toBeTruthy();
+  });
+
+  it.each([
+    ['viewing', 2],
+    ['viewing', 3],
+    ['modelling', 3],
+    ['modelling', 4],
+  ] as const)(
+    'opens the relationship from its label after a press that moved a little (%s, %ipx)',
+    async (space, by) => {
+      open(space);
+      const label = await labelOf(await line(/Gateway/));
+      pressAndMove(label, { x: 100, y: 100 }, { x: 100 + by, y: 100 });
+      expect(
+        await within(details()).findByRole('heading', {
+          level: 2,
+          name: 'Hub relates to Gateway',
+        }),
+      ).toBeTruthy();
+    },
+  );
+
+  it('pans and opens nothing when the press on the label moved further (a drag)', async () => {
+    open('viewing');
+    const label = await labelOf(await line(/Gateway/));
+    const viewport = () =>
+      canvas().querySelector<HTMLElement>('.react-flow__viewport')?.style.transform;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const before = viewport();
+    pressAndMove(label, { x: 100, y: 100 }, { x: 130, y: 120 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(viewport()).not.toBe(before);
+    expect(within(details()).queryByRole('heading', { name: /relates to/ })).toBeNull();
   });
 
   it('opens nothing when the press on the label moved (a pan)', async () => {

@@ -90,7 +90,7 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
       );
 
     case 'done': {
-      const { model, report, validation, newProperties = [] } = state.result;
+      const { model, report, validation, newProperties = [], changedKeys = [] } = state.result;
       return (
         <section className="result" aria-labelledby="import-result-title">
           <div className="result-head">
@@ -121,11 +121,14 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
               </button>
             </div>
           </div>
-          <ReportChips chips={summaryChips(report, validation.warningCount, newProperties)} />
+          <ReportChips
+            chips={summaryChips(report, validation.warningCount, newProperties, changedKeys)}
+          />
           <ReportSections
             {...(report === undefined ? {} : { report })}
             validation={validation}
             newProperties={newProperties}
+            changedKeys={changedKeys}
             modelId={model.id}
           />
         </section>

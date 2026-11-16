@@ -918,7 +918,8 @@ describe('convertOef: bounded time and output', () => {
     );
     const keys = Object.keys(jgf.graph.nodes?.a?.metadata ?? {});
     expect(keys).toHaveLength(2 + 2000);
-    for (const key of keys) expect(key.length).toBeLessThanOrEqual(maxCustomKeyLength + 10);
+    // Renamed keys (oefLong…2, oefLong…3 …) too: a longer key couldn't be a property's.
+    for (const key of keys) expect(key.length).toBeLessThanOrEqual(maxCustomKeyLength);
     expect(report.properties.renamedKeys).toBe(1999);
   });
 

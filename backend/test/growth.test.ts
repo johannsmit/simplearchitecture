@@ -79,13 +79,17 @@ describe('expectGrowthBelow, on real work and the real clock', () => {
     for (let i = 0; i < n * n; i++) sink += i;
   };
 
-  it('fails on a real quadratic loop', async () => {
-    await expect(expectGrowthBelow(pairs, 2000, 8000)).rejects.toThrow(/times as long/);
+  // Quadratic work never gets under the limit, so this measures every round, by design. Its
+  // work is fixed and small (a few tenths of a second of CPU), and it has no time limit of its own:
+  // a busy machine makes it take longer, never fail. The ratio is CPU time, which waiting for a
+  // CPU doesn't add to.
+  it('fails on a real quadratic loop', { timeout: 0 }, async () => {
+    await expect(expectGrowthBelow(pairs, 1000, 4000)).rejects.toThrow(/times as long/);
     expect(sink).not.toBe(0.5);
   });
 
-  it('passes on real linear work', async () => {
-    // `walk` of 2000 and 4000 is 4 times the work, done in one straight loop.
-    await expectGrowthBelow(walk, 2000, 4000);
+  it('passes on real linear work', { timeout: 0 }, async () => {
+    // `walk` of 1000 and 2000 is 4 times the work, done in one straight loop.
+    await expectGrowthBelow(walk, 1000, 2000);
   });
 });

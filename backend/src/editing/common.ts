@@ -2,7 +2,9 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   editingUnavailableMessage,
   elementConflictMessage,
+  isPrototypeKey,
   nodeTypeKey,
+  prototypeKeyMessage,
   storedModelKey,
   type ElementFieldIssue,
   type JgfDocument,
@@ -10,7 +12,7 @@ import {
   type ModelAuthor,
 } from '@simplearchitecture/shared';
 import { z } from 'zod';
-import { maxEchoLength, reservedKey } from '../jgf/validate.js';
+import { maxEchoLength } from '../jgf/validate.js';
 import { maxMetadataKeyLength } from '../limits.js';
 import type {
   ElementAuditAction,
@@ -103,30 +105,39 @@ export type Entries = Record<string, unknown>;
 /** What the server keeps for itself in metadata, e.g. `simplearchitecture:stored`. */
 const internalPrefix = storedModelKey.slice(0, storedModelKey.indexOf(':') + 1);
 
+/** Why a metadata key is never used, whatever it holds or is set to, or undefined. */
+export function reservedKeyProblem(key: string): string | undefined {
+  if (isPrototypeKey(key)) return prototypeKeyMessage;
+  if (key === nodeTypeKey || key.startsWith(internalPrefix)) {
+    return 'This property name is reserved. Use another name.';
+  }
+  return undefined;
+}
+
 /** Why a metadata key can't be used on an element or a relationship, or undefined. */
 export function keyProblem(key: string): string | undefined {
   if (key.trim() === '') return 'Enter a name for the property.';
   if (key.length > maxMetadataKeyLength) {
     return `The property name must be at most ${maxMetadataKeyLength} characters.`;
   }
-  if (key === nodeTypeKey || key === reservedKey || key.startsWith(internalPrefix)) {
-    return 'This property name is reserved. Use another name.';
-  }
-  return undefined;
+  return reservedKeyProblem(key);
 }
 
-/** Own keys named `__proto__` would replace a prototype; refuse them before anything else. */
-function reservedKeyIssues(input: unknown): ElementFieldIssue[] {
+/**
+ * An own `__proto__` key in `metadata` (kept by the editing routes' JSON parser, as JSON.parse
+ * does) would replace a prototype once copied: refuse it, at its field, before anything else.
+ */
+function prototypeKeyIssues(input: unknown): ElementFieldIssue[] {
   if (typeof input !== 'object' || input === null) return [];
   const value = (input as Entries).metadata;
-  return typeof value === 'object' && value !== null && Object.hasOwn(value, reservedKey)
-    ? [{ field: `metadata.${reservedKey}`, message: 'This property name is reserved.' }]
+  return typeof value === 'object' && value !== null && Object.hasOwn(value, '__proto__')
+    ? [{ field: 'metadata.__proto__', message: prototypeKeyMessage }]
     : [];
 }
 
 /** Parses a request, or throws RejectedError with one message per field. `noun`: "an element". */
 export function parse<T>(schema: z.ZodType<T>, input: unknown, noun: string): T {
-  const reserved = reservedKeyIssues(input);
+  const reserved = prototypeKeyIssues(input);
   if (reserved.length > 0) throw new RejectedError(reserved);
   const parsed = schema.safeParse(input);
   if (parsed.success) return parsed.data;
