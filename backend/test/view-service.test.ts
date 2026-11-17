@@ -1470,6 +1470,18 @@ describe('layouts', () => {
     expect((error as NotFoundError).what).toBe('view');
   });
 
+  it('keeps a card set very wide, up to 20,000px', async () => {
+    const view = await create();
+    const cards = [
+      { elementId: 'baker', x: 0, y: 0, width: 1600 },
+      { elementId: 'kitchen', x: 0, y: 200, width: 20_000 },
+    ];
+    await service.replaceLayout(modelId, view.id, layout(1, cards), modeller);
+    expect((await service.getView(modelId, view.id)).view.layout).toEqual(
+      expect.arrayContaining(cards),
+    );
+  });
+
   it('refuses positions and widths that are not finite numbers within bounds', async () => {
     const view = await create();
     for (const card of [
@@ -1480,7 +1492,7 @@ describe('layouts', () => {
       { elementId: 'baker', x: '12', y: 0 },
       { elementId: 'baker', x: 0 },
       { elementId: 'baker', x: 0, y: 0, width: 167 },
-      { elementId: 'baker', x: 0, y: 0, width: 481 },
+      { elementId: 'baker', x: 0, y: 0, width: 20_001 },
       { elementId: 'baker', x: 0, y: 0, width: 200.5 },
       { elementId: 'baker', x: 0, y: 0, width: null },
       { elementId: '', x: 0, y: 0 },
@@ -1493,6 +1505,17 @@ describe('layouts', () => {
       );
       expect(fields.map((issue) => issue.field)).toEqual(['cards']);
     }
+    const tooWide = await fieldsOf(
+      service.replaceLayout(
+        modelId,
+        view.id,
+        layout(1, [{ elementId: 'baker', x: 0, y: 0, width: 20_001 }]),
+        modeller,
+      ),
+    );
+    expect(tooWide.map((issue) => issue.message)).toEqual([
+      'Must be a whole number from 168 to 20,000.',
+    ]);
     for (const body of [
       { version: 1 },
       { version: 1, cards: {} },

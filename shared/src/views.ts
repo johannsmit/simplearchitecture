@@ -31,9 +31,12 @@ export const maxViewElements = defaultNeighbourhoodCap;
 export const maxViewRelationships = 5_000;
 /** Most views one model may have. */
 export const maxViewsPerModel = 500;
-/** A card's width in a view's layout, when set by hand: as on the canvas. */
+/**
+ * A card's width in a view's layout, when set by hand: as on the canvas. The widest is a safety cap
+ * far above any real card, so one stored value can't make a card (and the canvas) absurdly large.
+ */
 export const minViewCardWidth = 168;
-export const maxViewCardWidth = 480;
+export const maxViewCardWidth = 20_000;
 /** How far from the canvas's origin a card in a view's layout may be, either way, in pixels. */
 export const maxViewCardCoordinate = 1_000_000;
 /**

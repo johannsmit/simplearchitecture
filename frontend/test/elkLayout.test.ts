@@ -28,29 +28,26 @@ import {
 // The real ELK, in-process (the browser runs the same code in a web worker).
 const elk = new ELK();
 
-const card = (id: string, partition: number, height = 64): LayoutCard => ({
+const card = (id: string, height = 64): LayoutCard => ({
   id,
   width: 200,
   height,
-  partition,
 });
 
 describe('ELK graph builder', () => {
-  it('asks for a layered layout, top to bottom, with partitions and free ports', () => {
-    const graph = buildElkGraph(
-      [card('a', 0), card('b', 2)],
-      [{ id: 'l0', source: 'a', target: 'b' }],
-    );
+  it('asks for a layered layout, top to bottom, with free ports and no rows by type', () => {
+    const graph = buildElkGraph([card('a'), card('b')], [{ id: 'l0', source: 'a', target: 'b' }]);
     expect(layoutDirection).toBe('DOWN');
     expect(graph.layoutOptions).toMatchObject({
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
-      'elk.partitioning.activate': 'true',
     });
-    expect(graph.children?.[1]?.layoutOptions).toMatchObject({
-      'elk.partitioning.partition': '2',
-      'elk.portConstraints': 'FREE',
-    });
+    expect(graph.children?.[1]?.layoutOptions).toMatchObject({ 'elk.portConstraints': 'FREE' });
+    // Nothing but the lines sets a card's row.
+    const options = [graph.layoutOptions, ...(graph.children ?? []).map((c) => c.layoutOptions)];
+    for (const each of options) {
+      expect(Object.keys(each ?? {}).filter((key) => key.includes('partition'))).toEqual([]);
+    }
     // One port per end of every link, and the edge runs between those ports.
     expect(graph.children?.[0]?.ports?.map((p) => p.id)).toEqual(['l0:s']);
     expect(graph.children?.[1]?.ports?.map((p) => p.id)).toEqual(['l0:t']);
@@ -62,41 +59,29 @@ describe('ELK graph builder', () => {
   });
 
   it('skips links to unknown cards', () => {
-    const graph = buildElkGraph([card('a', 0)], [{ id: 'l0', source: 'a', target: 'x' }]);
+    const graph = buildElkGraph([card('a')], [{ id: 'l0', source: 'a', target: 'x' }]);
     expect(graph.edges).toEqual([]);
     expect(graph.children?.[0]?.ports).toEqual([]);
   });
 });
 
 describe('ELK layout', () => {
-  it('orders the node types as rows from top to bottom, whatever the links say', async () => {
-    // Partitions as metamodel order: 0 Stakeholder … 4 Other. Links point every which way.
-    const cards = [
-      card('other', 4),
-      card('app', 2),
-      card('stake', 0),
-      card('infra', 3),
-      card('biz', 1),
-    ];
+  it('lays the cards out by their lines alone: each line points down', async () => {
+    const cards = [card('a'), card('b'), card('c'), card('d'), card('e')];
     const links: LayoutLink[] = [
-      { id: 'l0', source: 'other', target: 'stake' },
-      { id: 'l1', source: 'app', target: 'biz' },
-      { id: 'l2', source: 'infra', target: 'app' },
-      { id: 'l3', source: 'stake', target: 'infra' },
+      { id: 'l0', source: 'e', target: 'd' },
+      { id: 'l1', source: 'd', target: 'c' },
+      { id: 'l2', source: 'c', target: 'b' },
+      { id: 'l3', source: 'b', target: 'a' },
     ];
     const placed = await layoutCards(elk, cards, links);
     const y = (id: string) => placed.get(id)?.y ?? Number.NaN;
-    expect(y('stake')).toBeLessThan(y('biz'));
-    expect(y('biz')).toBeLessThan(y('app'));
-    expect(y('app')).toBeLessThan(y('infra'));
-    expect(y('infra')).toBeLessThan(y('other'));
+    const bottom = (id: string) => y(id) + (placed.get(id)?.height ?? 0);
+    for (const link of links) expect(bottom(link.source)).toBeLessThanOrEqual(y(link.target));
   });
 
   it('gives every link its own ports on the top and bottom sides', async () => {
-    const cards = [
-      card('hub', 1),
-      ...Array.from({ length: 6 }, (_, i) => card(`n${i}`, i % 2 === 0 ? 0 : 2)),
-    ];
+    const cards = [card('hub'), ...Array.from({ length: 6 }, (_, i) => card(`n${i}`))];
     const links: LayoutLink[] = Array.from({ length: 6 }, (_, i) =>
       i % 2 === 0
         ? { id: `l${i}`, source: `n${i}`, target: 'hub' }
@@ -124,13 +109,13 @@ describe('ELK layout', () => {
       expect(handle.kind).toBe(end === 's' ? 'source' : 'target');
       expect(handle.id).toBe(portId(link ?? '', end === 's' ? 'source' : 'target'));
     }
-    // Links into the hub from the row above it arrive on its top side.
+    // Links into the hub come from above it, so they arrive on its top side.
     const fromAbove = hub?.handles.find((h) => h.id === 'l0:t');
     expect(fromAbove?.side).toBe('top');
   });
 
   it('grows a card that needs room for its ports, never shrinks one', async () => {
-    const cards = [card('hub', 1), ...Array.from({ length: 24 }, (_, i) => card(`n${i}`, 0))];
+    const cards = [card('hub'), ...Array.from({ length: 24 }, (_, i) => card(`n${i}`))];
     const links = Array.from({ length: 24 }, (_, i) => ({
       id: `l${i}`,
       source: `n${i}`,
@@ -205,7 +190,7 @@ describe('canvas helpers', () => {
     expect(mergeRelationships(apart).map((l) => l.id)).toEqual(['l0', 'l1']);
     expect(mergeRelationships(merged).map((l) => l.id)).toEqual(['l0']);
     expect(layoutLinks(apart, (r) => r.id !== 'a').map((l) => l.id)).toEqual(['l1']);
-    const cards = [card('x', 0), card('y', 2)];
+    const cards = [card('x'), card('y')];
     const positions = async () =>
       [...(await layoutCards(elk, cards, layoutLinks(merged, all))).values()].map((c) => [
         c.x,
@@ -317,7 +302,7 @@ describe('circle handles', () => {
 
   it('lets ELK keep a circle at its measured size (no room for ports)', () => {
     const graph = buildElkGraph(
-      [card('a', 0), { id: 'c', width: 120, height: 70, partition: 0, shape: 'circle' }],
+      [card('a'), { id: 'c', width: 120, height: 70, shape: 'circle' }],
       [{ id: 'l0', source: 'c', target: 'a' }],
     );
     const options = (id: string) =>

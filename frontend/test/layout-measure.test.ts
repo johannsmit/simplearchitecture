@@ -22,11 +22,13 @@ function row(name: string, m: Measures) {
     lines: m.lines,
     'over cards': m.overCards,
     'over containers': m.overContainers,
-    'rows out (top)': m.rowsOutTop,
-    'rows out (inside)': m.rowsOutInside,
     crossings: m.crossings,
+    'cards covering cards': m.overlaps,
     'widest container': Math.round(m.widestContainer),
+    'tallest container': Math.round(m.tallestContainer),
     'canvas area (Mpx²)': Math.round(m.canvasArea),
+    // Information only: cards out of rows by element type, which the layout no longer keeps.
+    'type rows out (top/inside)': `${String(m.rowsOutTop)}/${String(m.rowsOutInside)}`,
   };
 }
 
@@ -37,9 +39,14 @@ describe.skipIf(process.env.LAYOUT_MEASURE !== '1')('layout measures on made-up 
       const [model] = madeUpSets[set]();
       if (model) rows.push(row(set, await measureModel(model)));
     }
-    const long = noMeasures();
-    for (const model of madeUpSets.long()) add(long, await measureModel(model));
-    rows.push(row('long names', long));
+    for (const [name, models] of [
+      ['long names', madeUpSets.long()],
+      ['wide cards', madeUpSets.wide()],
+    ] as const) {
+      const sum = noMeasures();
+      for (const model of models) add(sum, await measureModel(model));
+      rows.push(row(name, sum));
+    }
     const fuzzed = noMeasures();
     for (const model of madeUpSets.fuzzed(Number(process.env.LAYOUT_MEASURE_FUZZED ?? 24))) {
       add(fuzzed, await measureModel(model));
@@ -54,6 +61,6 @@ describe.skipIf(process.env.LAYOUT_MEASURE !== '1')('layout measures on made-up 
     const out = process.env.LAYOUT_MEASURE_OUT;
     if (out) writeFileSync(out, `${table}\n`);
     process.stdout.write(`\n${table}\n`);
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(5);
   });
 });

@@ -25,11 +25,10 @@ import { arrangeCards, type Point } from '../src/viewing/explorer/canvas/positio
 // Lines along ELK's routes, with right angles. Made-up data only.
 
 const elk = new ELK();
-const card = (id: string, partition: number, parent?: string): LayoutCard => ({
+const card = (id: string, parent?: string): LayoutCard => ({
   id,
   width: 200,
   height: 64,
-  partition,
   ...(parent === undefined ? {} : { parent }),
 });
 const box = (x: number, y: number) => ({ x, y, width: 200, height: 64 });
@@ -45,7 +44,7 @@ function expectRightAngles(line: readonly Point[]) {
 
 describe('routes from the layout', () => {
   it('asks ELK for right-angled lines and a thorough search for few crossings', () => {
-    const { layoutOptions } = buildElkGraph([card('a', 0)], []);
+    const { layoutOptions } = buildElkGraph([card('a')], []);
     expect(layoutOptions).toMatchObject({
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.layered.thoroughness': '30',
@@ -55,7 +54,7 @@ describe('routes from the layout', () => {
   it('keeps each line’s route, relative to its source card', async () => {
     const placed = await layoutCards(
       elk,
-      [card('a', 0), card('b', 0), card('c', 1), card('d', 2)],
+      [card('a'), card('b'), card('c'), card('d')],
       [
         { id: 'ac', source: 'a', target: 'c' },
         { id: 'bd', source: 'b', target: 'd' },
@@ -74,16 +73,21 @@ describe('routes from the layout', () => {
 
   it('routes every line around the cards it isn’t attached to', async () => {
     const cards = [
-      ...Array.from({ length: 6 }, (_, i) => card(`left${i}`, 0)),
-      ...Array.from({ length: 6 }, (_, i) => card(`mid${i}`, 1)),
-      ...Array.from({ length: 6 }, (_, i) => card(`right${i}`, 2)),
+      ...Array.from({ length: 6 }, (_, i) => card(`left${i}`)),
+      ...Array.from({ length: 6 }, (_, i) => card(`mid${i}`)),
+      ...Array.from({ length: 6 }, (_, i) => card(`right${i}`)),
     ];
     const links = Array.from({ length: 6 }, (_, i) => ({
       id: `long${i}`,
       source: `left${i}`,
       target: `right${5 - i}`,
     }));
-    const placed = await layoutCards(elk, cards, links);
+    // Lines through the middle cards put them between the two others, in the long lines' way.
+    const through = Array.from({ length: 6 }, (_, i) => [
+      { id: `in${i}`, source: `left${i}`, target: `mid${i}` },
+      { id: `out${i}`, source: `mid${i}`, target: `right${i}` },
+    ]).flat();
+    const placed = await layoutCards(elk, cards, [...links, ...through]);
     const boxes = absoluteBoxes(placed);
     for (const link of links) {
       const source = boxes.get(link.source);
@@ -119,7 +123,7 @@ describe('routes from the layout', () => {
   it('has routes inside a container and for a line that crosses into one', async () => {
     const placed = await layoutCards(
       elk,
-      [card('box', 0), card('in1', 0, 'box'), card('in2', 1, 'box'), card('out', 2)],
+      [card('box'), card('in1', 'box'), card('in2', 'box'), card('out')],
       [
         { id: 'inside', source: 'in1', target: 'in2' },
         { id: 'crossing', source: 'in2', target: 'out' },
@@ -134,12 +138,12 @@ describe('routes from the layout', () => {
 
   describe('a line across levels of nesting', () => {
     const cards = [
-      card('box', 1),
-      card('in1', 1, 'box'),
-      card('in2', 2, 'box'),
-      card('box2', 3),
-      card('in3', 3, 'box2'),
-      card('out', 0),
+      card('box'),
+      card('in1', 'box'),
+      card('in2', 'box'),
+      card('box2'),
+      card('in3', 'box2'),
+      card('out'),
     ];
     const links = [
       { id: 'across', source: 'in1', target: 'in3' },
@@ -221,7 +225,7 @@ describe('routes from the layout', () => {
       for (let i = 0; i < 60; i++) {
         const parent = i % 7 > 2 ? `n${i - (i % 7)}` : undefined;
         if (parent) parents.set(`n${i}`, parent);
-        many.push(card(`n${i}`, Math.floor(next() * 5), parent));
+        many.push(card(`n${i}`, parent));
       }
       const ids = many.map((c) => c.id);
       const lines = Array.from({ length: 90 }, (_, i) => ({
@@ -264,7 +268,7 @@ describe('routes from the layout', () => {
   });
 
   it('keeps a route when the whole layout is shifted', async () => {
-    const cards = [card('a', 0), card('b', 1), card('c', 1)];
+    const cards = [card('a'), card('b'), card('c')];
     const links = [
       { id: 'ab', source: 'a', target: 'b' },
       { id: 'ac', source: 'a', target: 'c' },

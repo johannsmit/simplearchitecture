@@ -410,7 +410,7 @@ describe('layouts', () => {
     for (const cards of [
       [{ elementId: 'crane', x: 0, y: 0 }],
       [{ elementId: 'clerk', x: 2_000_000, y: 0 }],
-      [{ elementId: 'clerk', x: 0, y: 0, width: 999 }],
+      [{ elementId: 'clerk', x: 0, y: 0, width: 20_001 }],
       [{ elementId: 'clerk', x: 0, y: '0' }],
     ]) {
       const res = await call(target, 'PUT', url, { cookie, body: { version: 1, cards } });

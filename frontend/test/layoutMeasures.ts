@@ -12,6 +12,7 @@ import {
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { cardShape } from '../src/metamodel-ui';
 import {
+  cardHeightAt,
   cardSize,
   containerMinSize,
   containerNameWidth,
@@ -34,8 +35,9 @@ import { nestingParents } from '../src/viewing/explorer/views';
 
 /**
  * Measures of an automatic layout as the canvas draws it, on made-up models: how many container
- * names a line runs across, lines over cards they aren't attached to, rows out of order, crossings
- * and the widest container. The canvas's own steps are repeated here: the neighbourhood with its
+ * names a line runs across, lines over cards they aren't attached to, crossings, the widest and
+ * tallest container, and (as information only, since the layout keeps no such rows) cards out of
+ * rows by element type. The canvas's own steps are repeated here: the neighbourhood with its
  * containers, nesting, card sizes, ELK, containers fitted, and each line on ELK's route while it
  * holds, else on its floating ends.
  */
@@ -73,6 +75,8 @@ const words = [
 export interface MadeUpModel {
   name: string;
   document: JgfDocument;
+  /** Widths set by hand, by element id (rectangle cards only, as on the canvas). */
+  widths?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -203,8 +207,16 @@ export interface Canvas {
 
 const elk = new ELK();
 
-/** The canvas the explorer draws for a focus element at a depth, with nesting on. */
-export async function canvasOf(graph: ModelGraph, focusId: string, depth: number): Promise<Canvas> {
+/**
+ * The canvas the explorer draws for a focus element at a depth, with nesting on. `widths` are
+ * widths set by hand, kept by the layout as Tidy up keeps them.
+ */
+export async function canvasOf(
+  graph: ModelGraph,
+  focusId: string,
+  depth: number,
+  widths: ReadonlyMap<string, number> = new Map(),
+): Promise<Canvas> {
   const hood = withContainers(graph, neighbourhood(graph, focusId, { depth }));
   const wanted = nestingParents(graph, hood);
   const containers = new Set(wanted.values());
@@ -223,14 +235,17 @@ export async function canvasOf(graph: ModelGraph, focusId: string, depth: number
     const parent = wanted.get(id);
     const container = containers.has(id);
     const shape = container ? ('container' as const) : element ? cardShape(element.type) : 'card';
-    const index = element ? nodeTypes.indexOf(element.type) : 0;
-    partition.set(id, index);
+    // Information only: the layout no longer keeps rows by element type.
+    partition.set(id, element ? nodeTypes.indexOf(element.type) : 0);
+    const name = element?.name ?? '';
+    const set = container || shape !== 'card' ? undefined : widths.get(id);
     return {
       id,
       ...(container
         ? minOf(id)
-        : cardSize({ name: element?.name ?? '', focused: id === focusId, shape: shape as 'card' })),
-      partition: index,
+        : set !== undefined
+          ? { width: set, height: cardHeightAt({ name, focused: id === focusId }, set) }
+          : cardSize({ name, focused: id === focusId, shape: shape as 'card' })),
       shape,
       ...(parent === undefined ? {} : { parent }),
       ...(container && element
@@ -392,11 +407,14 @@ export interface Measures {
   lines: number;
   overCards: number;
   overContainers: number;
-  /** Pairs of top-level cards out of their rows; and inside containers. */
+  /** Information only: pairs of top-level cards out of rows by element type; and inside containers. */
   rowsOutTop: number;
   rowsOutInside: number;
   crossings: number;
+  /** Pairs of cards at the same level (top level, or in the same container) that cover each other. */
+  overlaps: number;
   widestContainer: number;
+  tallestContainer: number;
   canvasArea: number;
 }
 
@@ -411,7 +429,9 @@ export const noMeasures = (): Measures => ({
   rowsOutTop: 0,
   rowsOutInside: 0,
   crossings: 0,
+  overlaps: 0,
   widestContainer: 0,
+  tallestContainer: 0,
   canvasArea: 0,
 });
 
@@ -444,6 +464,7 @@ export function measure(canvas: Canvas, into: Measures = noMeasures()): Measures
     if (crossedName) into.crossedNames += 1;
     if (crossedHeader) into.crossedHeaders += 1;
     into.widestContainer = Math.max(into.widestContainer, box.width);
+    into.tallestContainer = Math.max(into.tallestContainer, box.height);
   }
 
   for (const line of lines) {
@@ -485,6 +506,21 @@ export function measure(canvas: Canvas, into: Measures = noMeasures()): Measures
     }
   }
 
+  for (const members of levels.values()) {
+    for (const a of members) {
+      for (const b of members) {
+        if (a >= b) continue;
+        const [one, other] = [boxes.get(a) as Box, boxes.get(b) as Box];
+        const apart =
+          one.x + one.width <= other.x + 0.5 ||
+          other.x + other.width <= one.x + 0.5 ||
+          one.y + one.height <= other.y + 0.5 ||
+          other.y + other.height <= one.y + 0.5;
+        if (!apart) into.overlaps += 1;
+      }
+    }
+  }
+
   // Crossings: a level stretch of one line through an upright stretch of another.
   const all = lines.flatMap((line, index) =>
     stretches(line.points).map(([a, b]) => ({ index, a, b })),
@@ -514,7 +550,10 @@ export function measure(canvas: Canvas, into: Measures = noMeasures()): Measures
 
 export function add(into: Measures, more: Measures): Measures {
   for (const key of Object.keys(into) as (keyof Measures)[]) {
-    into[key] = key === 'widestContainer' ? Math.max(into[key], more[key]) : into[key] + more[key];
+    into[key] =
+      key === 'widestContainer' || key === 'tallestContainer'
+        ? Math.max(into[key], more[key])
+        : into[key] + more[key];
   }
   return into;
 }
@@ -601,12 +640,18 @@ export function longNamesModel(): MadeUpModel {
   };
 }
 
-/** The made-up sets QA measures on: large, moderate, fuzzed with fixed seeds, and long names. */
+/** The made-up sets QA measures on: large, moderate, fuzzed with fixed seeds, long names and wide cards. */
 export const madeUpSets = {
   long: () => [
     longNamesModel(),
     madeUpModel({ seed: 450, elements: 120, relations: 180, longNames: true, name: 'long' }),
   ],
+  /** Long container names, and every seventh element's card set by hand to 640 or 1,600px wide. */
+  wide: () =>
+    [
+      longNamesModel(),
+      madeUpModel({ seed: 450, elements: 120, relations: 180, longNames: true, name: 'wide' }),
+    ].map((model) => ({ ...model, name: `wide ${model.name}`, widths: wideCards(model) })),
   large: () => [madeUpModel({ seed: 300, elements: 300, relations: 600, name: 'large' })],
   moderate: () => [madeUpModel({ seed: 120, elements: 120, relations: 180, name: 'moderate' })],
   fuzzed: (count = 24) =>
@@ -623,13 +668,23 @@ export const madeUpSets = {
     }),
 };
 
+/** Widths set by hand on a model: every seventh element 1,600px wide, and the next one 640px. */
+export function wideCards(model: MadeUpModel): Map<string, number> {
+  const widths = new Map<string, number>();
+  Object.keys(model.document.graph.nodes ?? {}).forEach((id, index) => {
+    if (index % 7 === 0) widths.set(id, 1600);
+    else if (index % 7 === 1) widths.set(id, 640);
+  });
+  return widths;
+}
+
 /** Every canvas of a model: each focus element at depths 1 and 2. */
 export async function measureModel(model: MadeUpModel, depths = [1, 2]): Promise<Measures> {
   const graph = buildModelGraph(model.document);
   const total = noMeasures();
   for (const focus of focusElements(graph)) {
     for (const depth of depths) {
-      measure(await canvasOf(graph, focus, depth), total);
+      measure(await canvasOf(graph, focus, depth, model.widths), total);
     }
   }
   return total;

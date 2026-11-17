@@ -1,4 +1,4 @@
-import type { ELK, ElkExtendedEdge, ElkNode, ElkPort } from 'elkjs/lib/elk-api';
+import type { ELK, ElkNode, ElkPort } from 'elkjs/lib/elk-api';
 import { laidForCanvas } from './laidRoutes';
 import { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
 
@@ -9,8 +9,8 @@ export { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
  * examples). Pure apart from the ELK instance passed in, so it runs in Node tests and in the
  * browser (where the instance runs ELK in a web worker).
  *
- * - Relationships flow in one direction (`layoutDirection`), with few crossings.
- * - Partitioning keeps the node types in metamodel order as rows (or columns, left to right).
+ * - Relationships flow in one direction (`layoutDirection`), with few crossings. Cards are placed
+ *   by their lines alone: an element's type sets no row, at any level of nesting.
  * - Every relationship gets its own port on each card, and ELK decides the side and order of
  *   the ports. The canvas turns the ports into React Flow handles at the same spots, so edges
  *   never stack on one point. Cards grow taller when they need room for their ports.
@@ -31,8 +31,6 @@ export interface LayoutCard {
   /** Measured card size: the smallest the layout may make it. */
   width: number;
   height: number;
-  /** Row (or column) in direction order, e.g. the node type's index in the metamodel. */
-  partition: number;
   /**
    * A circle keeps its measured size: its handles go on the circle, not where ELK puts the ports
    *. A container's width and height are its smallest size; it grows to
@@ -98,7 +96,6 @@ function levelOptions(inside: boolean, direction: 'RIGHT' | 'DOWN'): Record<stri
   return {
     'elk.algorithm': 'layered',
     'elk.direction': direction,
-    'elk.partitioning.activate': 'true',
     'elk.spacing.nodeNode': String(spacing.cards),
     'elk.layered.spacing.nodeNodeBetweenLayers': columns,
     'elk.spacing.componentComponent': columns,
@@ -111,7 +108,6 @@ function levelOptions(inside: boolean, direction: 'RIGHT' | 'DOWN'): Record<stri
 /** How ELK treats a card: `card` with its ports, and a container that may hold more ELK nodes. */
 function cardNode(card: LayoutCard, ports: readonly ElkPort[], children?: ElkNode[]): ElkNode {
   const own = {
-    'elk.partitioning.partition': String(card.partition),
     // ELK picks each port's side (out of the card towards the flow) and order.
     'elk.portConstraints': 'FREE',
     'elk.spacing.portPort': String(spacing.ports),
@@ -129,12 +125,19 @@ function cardNode(card: LayoutCard, ports: readonly ElkPort[], children?: ElkNod
     };
   }
   const { top, left, bottom, right } = containerBox.padding;
+  // ELK (0.12) reads a container's smallest size across the flow, width for height, when it lays
+  // out every level in one pass top to bottom: given so, it comes out as asked. Otherwise the fit
+  // widened it afterwards, over the card beside it.
+  const across = layoutDirection === 'DOWN';
   return {
     id: card.id,
     // No width or height: it grows to hold its cards, down to `nodeSize.minimum`.
     layoutOptions: {
       ...levelOptions(true, layoutDirection),
       ...own,
+      'elk.nodeSize.minimum': across
+        ? `(${card.height}, ${card.width})`
+        : `(${card.width}, ${card.height})`,
       'elk.padding': `[top=${top},left=${left},bottom=${bottom},right=${right}]`,
     },
     ports: [...ports],
@@ -257,52 +260,10 @@ function readRoutes(
 /** Ids of the invisible nodes that stand for a block of packed cards in ELK's graph. */
 const blockId = (container: string) => `\u0000block:${container}`;
 
-/** What holds the rows of one container in ELK's graph; never drawn. */
-interface RowMarks {
-  nodes: ElkNode[];
-  edges: ElkExtendedEdge[];
-}
-
-/**
- * ELK's one pass keeps partitions at the top level only, so inside a container the rows are held by
- * hidden marks: between two rows, a small node that every card of the row above points to, and that
- * points to every card of the row below. Each mark has one port for each way, so ELK bundles its
- * edges into one lane, and they win when a real line points the other way.
- */
-function rowMarks(level: string, cards: readonly { id: string; partition: number }[]): RowMarks {
-  const rows = [...new Set(cards.map((card) => card.partition))].sort((a, b) => a - b);
-  const marks: RowMarks = { nodes: [], edges: [] };
-  rows.slice(1).forEach((row, index) => {
-    const id = `\u0000row:${level}:${row}`;
-    const [into, out] = [`${id}:in`, `${id}:out`];
-    marks.nodes.push({
-      id,
-      width: 1,
-      height: 1,
-      ports: [
-        { id: into, width: 0, height: 0 },
-        { id: out, width: 0, height: 0 },
-      ],
-    });
-    const edge = (source: string, target: string) => ({
-      id: `${source}>${target}`,
-      sources: [source],
-      targets: [target],
-      layoutOptions: { 'elk.layered.priority.direction': '100' },
-    });
-    for (const card of cards) {
-      if (card.partition === rows[index]) marks.edges.push(edge(card.id, into));
-      if (card.partition === row) marks.edges.push(edge(out, card.id));
-    }
-  });
-  return marks;
-}
-
 /**
  * Lays out the cards and links with the given ELK instance, in one pass: ELK sees every level, so
- * it routes the lines between levels around the cards, and keeps the rows inside each level. A
- * container takes the size its cards need. Placed cards come parents first, with positions
- * relative to their container.
+ * it routes the lines between levels around the cards. A container takes the size its cards need.
+ * Placed cards come parents first, with positions relative to their container.
  *
  * A pass like this can't pack, so cards in a container that have no line at them or anywhere inside
  * them are packed first, about 1.6 wide to 1 high, and ELK places that block as one card. A
@@ -402,7 +363,6 @@ export async function layoutCards(
   const ports = portsOfLinks(known);
   /** Blocks in ELK's graph: which cards each stands for, and their size. */
   const blocks = new Map<string, { parent: string; width: number; height: number }>();
-  const hidden: ElkExtendedEdge[] = [];
   const nodeOf = async (card: LayoutCard): Promise<ElkNode> => {
     const own = ports.get(card.id) ?? [];
     if (!membersOf.has(card.id)) return cardNode(card, own);
@@ -419,24 +379,12 @@ export async function layoutCards(
     const nodes = await Promise.all(
       members.filter((m) => alone || lined.has(m.id)).map((m) => nodeOf(m)),
     );
-    if (level === undefined) return nodes;
-    const inRows = members
-      .filter((m) => alone || lined.has(m.id))
-      .map(({ id, partition }) => ({ id, partition }));
-    if (alone) {
-      const marks = rowMarks(level, inRows);
-      hidden.push(...marks.edges);
-      return [...nodes, ...marks.nodes];
-    }
+    if (level === undefined || alone) return nodes;
     const id = blockId(level);
     const block = await packedBlock(unlined, id, { x: 0, y: 0 });
     blocks.set(id, { parent: level, ...block });
-    const partition = Math.min(...unlined.map((m) => m.partition));
-    const marks = rowMarks(level, [...inRows, { id, partition }]);
-    hidden.push(...marks.edges);
     return [
       ...nodes,
-      ...marks.nodes,
       {
         id,
         ...block,
@@ -452,10 +400,10 @@ export async function layoutCards(
     id: 'root',
     layoutOptions: rootOptions(layoutDirection),
     children,
-    edges: [...edgesOfLinks(known), ...hidden],
+    edges: edgesOfLinks(known),
   };
-  // ELK's default cycle breaking threw on a few made-up models in testing, and this retry
-  // worked each time. Its crossings differ widely per model, in both directions.
+  // ELK's default cycle breaking threw on a few made-up models while the layout kept rows by type,
+  // and this retry worked each time; none threw in testing since, so it stays only as a safety net.
   const result = await elk.layout(graph).catch(() =>
     elk.layout({
       ...graph,
@@ -469,7 +417,6 @@ export async function layoutCards(
   const cardOfPort = new Map<string, string>();
   const read = (node: ElkNode, parent: string | undefined) => {
     for (const child of node.children ?? []) {
-      if (child.id.startsWith('\u0000row:')) continue;
       const block = blocks.get(child.id);
       if (block) {
         // A packed card's position so far is within its block.

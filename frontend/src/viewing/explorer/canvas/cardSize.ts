@@ -1,3 +1,4 @@
+import { maxViewCardWidth } from '@simplearchitecture/shared';
 import { circleDiameter, circleLabelGap, circleNodeWidth } from './circle';
 import { containerBox } from './layoutGeometry';
 
@@ -18,8 +19,11 @@ export type CardShape = 'card' | 'circle';
 
 export const minCardWidth = 168;
 export const maxCardWidth = 280;
-/** The widest a card's width can be set by hand: about three times the smallest. */
-export const maxSetCardWidth = 480;
+/**
+ * The widest a card's width can be set by hand: a safety cap far above any real card, as a view
+ * stores it. Moving the grip or `Alt` + arrows stops sooner, at the free room beside the card.
+ */
+export const maxSetCardWidth = maxViewCardWidth;
 const widthStep = 8;
 export const minCardHeight = 44;
 /** A circle's label wraps to at most this many lines, then ends in an ellipsis. */

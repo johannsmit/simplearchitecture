@@ -394,14 +394,17 @@ describe('a width set by hand', () => {
     expectNoOverlap(kept.placed);
   });
 
-  it('is never wider than 480px, even with room to spare', () => {
-    const roomy = keepCards(
-      input(canvas(card('a', 0, 0)), [{ id: 'a' }], {
-        heightAt: () => 44,
-        widths: new Map([['a', 7000]]),
-      }),
-    );
-    expect(roomy.placed.get('a')?.width).toBe(480);
+  it('takes a very wide width when there is room, up to the 20,000px safety cap', () => {
+    const wide = (width: number) =>
+      keepCards(
+        input(canvas(card('a', 0, 0)), [{ id: 'a' }], {
+          heightAt: () => 44,
+          widths: new Map([['a', width]]),
+        }),
+      ).placed.get('a')?.width;
+    expect(wide(1600)).toBe(1600);
+    expect(wide(7000)).toBe(7000);
+    expect(wide(70_000)).toBe(20_000);
   });
 
   it('leaves containers alone', () => {

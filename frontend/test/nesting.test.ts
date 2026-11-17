@@ -1,7 +1,11 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { describe, expect, it } from 'vitest';
 import { edgeEnds } from '../src/metamodel-ui';
-import { containerMinSize, isContainerNameCut } from '../src/viewing/explorer/canvas/cardSize';
+import {
+  cardHeightAt,
+  containerMinSize,
+  isContainerNameCut,
+} from '../src/viewing/explorer/canvas/cardSize';
 import {
   absoluteBoxes,
   containerBox,
@@ -22,7 +26,6 @@ const card = (id: string, extra: Partial<LayoutCard> = {}): LayoutCard => ({
   id,
   width: 168,
   height: 44,
-  partition: 2,
   ...extra,
 });
 const container = (id: string, extra: Partial<LayoutCard> = {}): LayoutCard =>
@@ -45,9 +48,9 @@ describe('nested layout', () => {
       elk,
       [
         card('a', { parent: 'box' }),
-        container('box', { partition: 1 }),
+        container('box'),
         card('b', { parent: 'box' }),
-        card('outside', { partition: 0 }),
+        card('outside'),
       ],
       [{ id: 'l0', source: 'outside', target: 'a' }],
     );
@@ -114,7 +117,7 @@ describe('nested layout', () => {
     const cards: LayoutCard[] = [];
     const links = [];
     for (let i = 0; i < 30; i++) {
-      cards.push(container(`box${i}`, { partition: i % 5 }));
+      cards.push(container(`box${i}`));
       for (let j = 0; j < 9; j++) cards.push(card(`c${i}-${j}`, { parent: `box${i}` }));
       if (i > 0) links.push({ id: `l${i}`, source: `c${i - 1}-0`, target: `c${i}-1` });
     }
@@ -140,7 +143,7 @@ describe('one pass over every level', () => {
     const quiet = Array.from({ length: 8 }, (_, i) => card(`q${i}`, { parent: 'box' }));
     const placed = await layoutCards(
       elk,
-      [container('box'), card('out', { partition: 0 }), card('lined', { parent: 'box' }), ...quiet],
+      [container('box'), card('out'), card('lined', { parent: 'box' }), ...quiet],
       [{ id: 'l0', source: 'out', target: 'lined' }],
     );
     const box = placed.get('box');
@@ -166,7 +169,7 @@ describe('one pass over every level', () => {
         container('inner', { parent: 'box' }),
         card('deep', { parent: 'inner' }),
         card('sibling', { parent: 'box' }),
-        card('other', { partition: 0 }),
+        card('other'),
       ],
       [{ id: 'l0', source: 'other', target: 'box' }],
     );
@@ -179,33 +182,94 @@ describe('one pass over every level', () => {
     expect(absolute.get('deep')?.y).toBeGreaterThan(absolute.get('inner')?.y ?? 0);
   });
 
-  it('keeps the rows inside a container, also against a line pointing up', async () => {
+  it('lays cards inside a container out by their lines: each line points down', async () => {
     const placed = await layoutCards(
       elk,
       [
         container('box'),
-        card('top', { parent: 'box', partition: 0 }),
-        card('mid', { parent: 'box', partition: 1 }),
-        card('low', { parent: 'box', partition: 3 }),
-        card('out', { partition: 4 }),
+        card('first', { parent: 'box' }),
+        card('second', { parent: 'box' }),
+        card('third', { parent: 'box' }),
+        card('out'),
       ],
       [
-        { id: 'up', source: 'low', target: 'top' },
-        { id: 'in', source: 'out', target: 'mid' },
-        { id: 'in2', source: 'out', target: 'low' },
+        { id: 'one', source: 'third', target: 'second' },
+        { id: 'two', source: 'second', target: 'first' },
+        { id: 'in', source: 'out', target: 'third' },
       ],
     );
     const y = (id: string) => placed.get(id)?.y ?? 0;
-    expect(y('top')).toBeLessThan(y('mid'));
-    expect(y('mid')).toBeLessThan(y('low'));
-    // What holds the rows is ELK's only: no card, and no handle, comes of it.
-    expect([...placed.keys()].sort()).toEqual(['box', 'low', 'mid', 'out', 'top']);
+    const bottom = (id: string) => y(id) + (placed.get(id)?.height ?? 0);
+    expect(bottom('third')).toBeLessThanOrEqual(y('second'));
+    expect(bottom('second')).toBeLessThanOrEqual(y('first'));
+    // Only the cards come out, with only the lines' handles.
+    expect([...placed.keys()].sort()).toEqual(['box', 'first', 'out', 'second', 'third']);
     for (const placedCard of placed.values()) {
-      expect(placedCard.handles.every((h) => /^(up|in|in2):[st]$/.test(h.id))).toBe(true);
+      expect(placedCard.handles.every((h) => /^(one|two|in):[st]$/.test(h.id))).toBe(true);
     }
   });
 
-  it('lays out a model on which ELK’s usual cycle breaking throws', async () => {
+  it('gives a container its smallest size across, so it covers no container beside it', async () => {
+    // A long name makes a container wider than the one card it holds.
+    const placed = await layoutCards(
+      elk,
+      [
+        card('top'),
+        container('named', { width: 420 }),
+        card('a', { parent: 'named' }),
+        container('next'),
+        card('b', { parent: 'next' }),
+      ],
+      [
+        { id: 'l0', source: 'top', target: 'a' },
+        { id: 'l1', source: 'top', target: 'b' },
+      ],
+    );
+    const named = placed.get('named') as PlacedCard;
+    const next = placed.get('next') as PlacedCard;
+    expect(named.width).toBeGreaterThanOrEqual(420);
+    expect(named.height).toBeLessThan(200);
+    expect(overlap(named, next)).toBe(false);
+    inside(placed.get('a') as PlacedCard, named);
+  });
+
+  it('fits a container round a very wide card, with its lines routed', async () => {
+    const name = 'Regional Fulfilment, Returns Handling and Last-Mile Delivery Operations Centre';
+    // Set by hand to 1,600px: the long name takes one line.
+    const height = cardHeightAt({ name, focused: false }, 1600);
+    expect(height).toBe(44);
+    const placed = await layoutCards(
+      elk,
+      [
+        card('top'),
+        container('box'),
+        card('wide', { parent: 'box', width: 1600, height }),
+        card('small', { parent: 'box' }),
+        card('below'),
+      ],
+      [
+        { id: 'l0', source: 'top', target: 'wide' },
+        { id: 'l1', source: 'wide', target: 'below' },
+        { id: 'l2', source: 'top', target: 'small' },
+      ],
+    );
+    const box = placed.get('box') as PlacedCard;
+    const wide = placed.get('wide') as PlacedCard;
+    expect(wide.width).toBe(1600);
+    inside(wide, box);
+    inside(placed.get('small') as PlacedCard, box);
+    expect(overlap(wide, placed.get('small') as PlacedCard)).toBe(false);
+    for (const [link, from] of [
+      ['l0', 'top'],
+      ['l1', 'wide'],
+      ['l2', 'top'],
+    ] as const) {
+      const handle = placed.get(from)?.handles.find((h) => h.id === portId(link, 'source'));
+      expect(handle?.route, link).toBeDefined();
+    }
+  });
+
+  it('lays out a model full of cycles with the second try when the first throws', async () => {
     let seed = 3;
     const next = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
     const ids = Array.from({ length: 80 }, (_, i) => `n${i}`);
@@ -217,11 +281,10 @@ describe('one pass over every level', () => {
     }
     const holders = new Set(parents.values());
     const cards = ids.map((id) => {
-      const partition = Math.floor(next() * 5);
       const parent = parents.get(id);
       return holders.has(id)
-        ? container(id, { partition, ...(parent ? { parent } : {}) })
-        : card(id, { partition, ...(parent ? { parent } : {}) });
+        ? container(id, parent ? { parent } : {})
+        : card(id, parent ? { parent } : {});
     });
     const links = [];
     while (links.length < 150) {
@@ -229,21 +292,16 @@ describe('one pass over every level', () => {
       const target = ids[Math.floor(next() * 80)] as string;
       if (source !== target) links.push({ id: `l${links.length}`, source, target });
     }
-    const throwing = new ELK();
-    // The point of this test: the usual settings do throw here.
-    await expect(
-      layoutCards(
-        {
-          layout: (graph) =>
-            graph.layoutOptions?.['elk.layered.cycleBreaking.strategy'] === undefined
-              ? throwing.layout(graph)
-              : Promise.reject(new Error('no second try')),
-        },
-        cards,
-        links,
-      ),
-    ).rejects.toThrow();
-    const placed = await layoutCards(elk, cards, links);
+    const placed = await layoutCards(
+      {
+        layout: (graph) =>
+          graph.layoutOptions?.['elk.layered.cycleBreaking.strategy'] === undefined
+            ? Promise.reject(new Error('made-up failure'))
+            : elk.layout(graph),
+      },
+      cards,
+      links,
+    );
     expect(placed.size).toBe(80);
     for (const link of links) {
       const source = placed.get(link.source);

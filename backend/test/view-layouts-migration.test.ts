@@ -1,7 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   maxViewCardCoordinate,
-  maxViewCardWidth,
   minViewCardWidth,
   type JgfDocument,
   type ModelAuthor,
@@ -106,7 +105,8 @@ describe('migration 011', () => {
 
   it('holds the same bounds as the app', async () => {
     const sql = all.find((each) => each.version === '011')?.sql ?? '';
-    expect(sql).toContain(`width between ${minViewCardWidth} and ${maxViewCardWidth}`);
+    // The widest was 480 until a later migration raised it (view-card-widths-migration.test.ts).
+    expect(sql).toContain(`width between ${minViewCardWidth} and 480`);
     expect(sql).toContain(
       `x between -${maxViewCardCoordinate} and ${maxViewCardCoordinate} and y between -${maxViewCardCoordinate} and ${maxViewCardCoordinate}`,
     );

@@ -813,7 +813,8 @@ describe('New element: use an existing element instead', () => {
       { timeout: 4000 },
     );
     const pane = canvasEl().querySelector('.react-flow__pane') as HTMLElement;
-    fireEvent.doubleClick(pane, { clientX: 400, clientY: 300 });
+    // Well below the laid-out cards, so the spot is free.
+    fireEvent.doubleClick(pane, { clientX: 400, clientY: 1300 });
     const pop = await screen.findByRole('dialog', { name: 'New element' }, { timeout: 4000 });
     typeName(pop, 'Recipe Archive');
     fireEvent.click(within(pop).getByRole('button', { name: /^Add to canvas: Recipe Archive/ }));
@@ -825,7 +826,7 @@ describe('New element: use an existing element instead', () => {
     );
     const node = card('lonely')?.closest<HTMLElement>('.react-flow__node');
     // The jsdom canvas has no size, so its view is unscaled: flow position = pointer.
-    expect(node?.style.transform).toBe('translate(340px,278px)');
+    expect(node?.style.transform).toBe('translate(340px,1278px)');
     expect(elementPosts(sent)).toEqual([]);
   });
 

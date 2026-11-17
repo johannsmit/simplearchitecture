@@ -150,7 +150,8 @@ const coordinateSchema = z
   .number({ error: coordinateMessage })
   .min(-maxViewCardCoordinate, { error: coordinateMessage })
   .max(maxViewCardCoordinate, { error: coordinateMessage });
-const widthMessage = `Must be a whole number from ${minViewCardWidth} to ${maxViewCardWidth}.`;
+// Numbers as the docs print them: "168 to 20,000".
+const widthMessage = `Must be a whole number from ${minViewCardWidth.toLocaleString('en-US')} to ${maxViewCardWidth.toLocaleString('en-US')}.`;
 
 const pointsMessage = `Must be a list of 2 to ${maxViewLineBends + 2} points.`;
 

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { floatingEnds, type EndBox } from '../src/viewing/explorer/canvas/edgeLine';
+import { moveSteps } from '../src/viewing/explorer/canvas/positions';
 import type { JgfDocument, ModelSummary } from '@simplearchitecture/shared';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
@@ -356,7 +357,7 @@ describe('the width grip and the connect handle', () => {
 });
 
 describe('the widest a width can be set', () => {
-  it('is 480px, with the grip and with the keys', async () => {
+  it('is the free room beside the card, far past 480px, with the grip and with the keys', async () => {
     await open('viewing', 'till', 2);
     const widthOf = () => parseFloat(nodeOf('till')?.style.width ?? '');
     const grip = card('till')?.querySelector<HTMLElement>('.cresize') as HTMLElement;
@@ -365,11 +366,13 @@ describe('the widest a width can be set', () => {
       Object.defineProperties(event, { clientX: { value: x }, clientY: { value: 10 } });
       fireEvent(grip, event);
     };
+    const before = widthOf();
+    // Nothing on the card's right: the grip takes it as far as the pointer goes.
     pointer('pointerDown', 0);
     pointer('pointerMove', 7000);
     pointer('pointerUp', 7000);
     await waitFor(() => {
-      expect(widthOf()).toBe(480);
+      expect(widthOf()).toBe(before + 7000);
     });
     const main = card('till')?.querySelector('.card-main') as HTMLElement;
     main.focus();
@@ -377,7 +380,8 @@ describe('the widest a width can be set', () => {
     fireEvent.keyDown(main, { key: 'ArrowRight', altKey: true, shiftKey: true });
     fireEvent.keyDown(main, { key: 'ArrowRight', altKey: true, shiftKey: true });
     fireEvent.keyDown(main, { key: 'Enter' });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(widthOf()).toBe(480);
+    await waitFor(() => {
+      expect(widthOf()).toBe(before + 7000 + 2 * moveSteps.large);
+    });
   });
 });

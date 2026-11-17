@@ -135,11 +135,13 @@ describe('the layout a view saves of the canvas', () => {
   it('keeps within the bounds the server takes', () => {
     const shown = new Map([
       ['far', card('far', 5_000_000, -5_000_000, { width: 900 })],
+      ['huge', card('huge', 0, 100, { width: 25_000 })],
       ['narrow', card('narrow', Number.NaN, 0, { width: 20 })],
       ['thin', card('thin', 0, 0, { width: 20 })],
     ]);
     expect(layoutOfCanvas(shown, () => true)).toEqual([
-      { elementId: 'far', x: 1_000_000, y: -1_000_000, width: 480 },
+      { elementId: 'far', x: 1_000_000, y: -1_000_000, width: 900 },
+      { elementId: 'huge', x: 0, y: 100, width: 20_000 },
       { elementId: 'thin', x: 0, y: 0, width: 168 },
     ]);
   });

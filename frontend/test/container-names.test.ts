@@ -184,13 +184,13 @@ describe('laidForCanvas', () => {
 });
 
 describe('on the made-up models', () => {
-  it('at most one container name in ten has a line across it, and the rows hold', async () => {
+  it('at most one container name in ten has a line across it, and no card covers another', async () => {
     const total = noMeasures();
     for (const model of [...madeUpSets.moderate(), ...madeUpSets.fuzzed(6)]) {
       add(total, await measureModel(model, [1]));
     }
     expect(total.containers).toBeGreaterThan(40);
     expect(total.crossedNames / total.containers).toBeLessThanOrEqual(0.1);
-    expect(total.rowsOutTop).toBe(0);
+    expect(total.overlaps).toBe(0);
   });
 });

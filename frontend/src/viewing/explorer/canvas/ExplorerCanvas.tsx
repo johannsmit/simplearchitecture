@@ -6,7 +6,6 @@ import {
   missingRelatedCount,
   missingRelatedElements,
   nodeTypeDefinitions,
-  nodeTypes,
   relationshipVerb,
   type ElementChangeResult,
   type ModelGraph,
@@ -783,7 +782,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       return {
         id,
         ...(width === undefined ? sizeOf(id, container) : { width, height: heightAt(id, width) }),
-        partition: element ? nodeTypes.indexOf(element.type) : 0,
         shape,
         ...(parent === undefined ? {} : { parent }),
         // Lines into a container come in beside its name, however long.

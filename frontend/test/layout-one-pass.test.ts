@@ -25,7 +25,7 @@ function model(seed: number): { cards: LayoutCard[]; links: LayoutLink[] } {
   for (let i = 0; i < 40; i++) {
     const id = `c${i}`;
     if (i > 0 && next() < 0.45) parents.set(id, `c${int(i)}`);
-    cards.push({ id, width: 170, height: 44, partition: int(5) });
+    cards.push({ id, width: 170, height: 44 });
   }
   const holders = new Set(parents.values());
   for (const card of cards) {
@@ -85,14 +85,23 @@ describe('on any model', () => {
       expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height + 0.5);
     }
 
-    // The rows of types always hold at the top level.
-    const top = cards.filter((card) => card.parent === undefined);
-    for (const a of top) {
-      for (const b of top) {
-        if (a.partition >= b.partition) continue;
-        const [upper, lower] = [boxes.get(a.id), boxes.get(b.id)];
-        if (!upper || !lower) throw new Error('not placed');
-        expect(upper.y + upper.height).toBeLessThanOrEqual(lower.y + 0.5);
+    // No two cards at the same level cover each other.
+    const levels = new Map<string | undefined, string[]>();
+    for (const card of cards)
+      levels.set(card.parent, [...(levels.get(card.parent) ?? []), card.id]);
+    for (const members of levels.values()) {
+      for (const a of members) {
+        for (const b of members) {
+          if (a >= b) continue;
+          const [one, other] = [boxes.get(a), boxes.get(b)];
+          if (!one || !other) throw new Error('not placed');
+          const apart =
+            one.x + one.width <= other.x + 0.5 ||
+            other.x + other.width <= one.x + 0.5 ||
+            one.y + one.height <= other.y + 0.5 ||
+            other.y + other.height <= one.y + 0.5;
+          expect(apart, `${a} covers ${b}`).toBe(true);
+        }
       }
     }
 
@@ -156,8 +165,8 @@ describe('on any model', () => {
       layoutCards(
         broken,
         [
-          { id: 'a', width: 170, height: 44, partition: 1 },
-          { id: 'b', width: 170, height: 44, partition: 2 },
+          { id: 'a', width: 170, height: 44 },
+          { id: 'b', width: 170, height: 44 },
         ],
         [{ id: 'l', source: 'a', target: 'b' }],
       ),
@@ -217,8 +226,8 @@ describe('one layout link per relationship', () => {
 
   it('routes the merged line, and keeps room for the others on real ELK', async () => {
     const cards: LayoutCard[] = [
-      { id: 'a', width: 170, height: 44, partition: 1 },
-      { id: 'b', width: 170, height: 44, partition: 2 },
+      { id: 'a', width: 170, height: 44 },
+      { id: 'b', width: 170, height: 44 },
     ];
     const relationships = [relationship('m1', 'a', 'b'), relationship('m2', 'a', 'b')];
     const [line] = mergeRelationships(relationships);

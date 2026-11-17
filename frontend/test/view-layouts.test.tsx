@@ -278,6 +278,21 @@ describe('opening a view', () => {
     expect(tidy().disabled).toBe(false);
   });
 
+  it('with a card stored far wider than 480px: opens at that width, and Tidy up keeps it', async () => {
+    const wide = left.map((c) => (c.elementId === 'planner' ? { ...c, width: 1600 } : c));
+    const { calls } = await open('modelling', watering(wide));
+    expect(boxOf('planner')).toMatchObject({ x: 400, y: 20, width: 1600 });
+    await settle();
+    expect(changes(calls)).toEqual([]);
+    fireEvent.click(tidy());
+    await waitFor(() => {
+      expect(layoutSaves(calls)).toHaveLength(1);
+    });
+    expect(boxOf('planner').width).toBe(1600);
+    const planner = savedCards(layoutSaves(calls)[0]).find((c) => c.elementId === 'planner');
+    expect(planner?.width).toBe(1600);
+  });
+
   it('puts a card without a stored position at a free spot, and saves nothing', async () => {
     const { calls } = await open('modelling', watering(left.slice(0, 3)));
     for (const { elementId, x, y } of left.slice(0, 3)) {
