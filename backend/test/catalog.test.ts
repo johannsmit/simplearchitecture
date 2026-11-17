@@ -97,6 +97,7 @@ describe('catalog columns', () => {
     expect(catalogColumns('Stakeholder').map((column) => column.key)).toEqual([
       'name',
       'description',
+      'stakeholderKind',
     ]);
     expect(catalogColumns('Other').map((column) => column.key)).toEqual(['name', 'description']);
   });

@@ -1,10 +1,14 @@
 import {
   edgeTypeDefinitions,
+  elementIcon,
   nodeTypeDefinitions,
+  standardProperties,
   type ArchitectureState,
   type EdgeType,
   type ModelRelationship,
   type NodeType,
+  type StandardPropertyDefinition,
+  type StandardPropertyKey,
 } from '@simplearchitecture/shared';
 import { Icon } from './icons';
 
@@ -18,15 +22,53 @@ export function colourClass(type: NodeType): string {
   return `colour-${nodeTypeDefinitions[type].colour}`;
 }
 
-/** The type's mark: its icon in a circle when the metamodel gives one, else a colour swatch. */
-export function TypeMark({ type }: { type: NodeType }) {
-  return nodeTypeDefinitions[type].icon === 'user' ? (
+/**
+ * The type's mark: its icon in a circle when the metamodel gives one, else a colour swatch. With an
+ * element's metadata, the element's own icon (a Stakeholder that is an AI Agent: the robot).
+ */
+export function TypeMark({
+  type,
+  metadata,
+}: {
+  type: NodeType;
+  metadata?: Readonly<Record<string, unknown>>;
+}) {
+  const icon = elementIcon(type, metadata);
+  return icon !== undefined ? (
     <span className={`uicon ${colourClass(type)}`} aria-hidden="true">
-      <Icon name="user" />
+      <Icon name={icon} />
     </span>
   ) : (
     <span className={`swatch ${colourClass(type)}`} aria-hidden="true" />
   );
+}
+
+/** One value a choice property's field offers, with what it shows. */
+export interface ChoiceValue {
+  value: string;
+  label: string;
+}
+
+/**
+ * The values a form offers for a choice property, as stored text ('' for not set): a stored value
+ * that isn't an option first, then Not set and the options. A property whose missing value reads
+ * as an option (Kind: Human) has no Not set; while the element has no value, that option stands
+ * for it, so picking it again changes nothing.
+ */
+export function choiceValues(key: StandardPropertyKey, original: string): ChoiceValue[] {
+  const definition: StandardPropertyDefinition = standardProperties[key];
+  const rule = definition.value;
+  const options: readonly string[] = rule.kind === 'choice' ? rule.options : [];
+  const unknown = original !== '' && !options.includes(original);
+  const values: ChoiceValue[] = unknown
+    ? [{ value: original, label: `“${original}” (not valid)` }]
+    : [];
+  const { readAs } = definition;
+  if (readAs === undefined) values.push({ value: '', label: 'Not set' });
+  for (const option of options) {
+    values.push({ value: option === readAs && original === '' ? '' : option, label: option });
+  }
+  return values;
 }
 
 /**

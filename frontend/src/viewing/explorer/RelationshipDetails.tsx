@@ -122,7 +122,7 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
                   }}
                 >
                   <span className="rcap">{caption}</span>
-                  <TypeMark type={end.type} />
+                  <TypeMark type={end.type} metadata={end.metadata} />
                   <span className="rname">{end.name || '(unnamed)'}</span>
                   <span className="rtype">{end.type}</span>
                   <Icon name="chev-right" size="sm" />

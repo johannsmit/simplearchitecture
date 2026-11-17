@@ -9,6 +9,7 @@ import {
 } from '@simplearchitecture/shared';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Icon } from '../../../icons';
+import { choiceValues } from '../../../metamodel-ui';
 import { cellText, sameNameCount, sameNameNote, type CellKey } from '../../../modelling/draft';
 import { useValueSuggestions } from '../../../modelling/ValueField';
 
@@ -98,13 +99,14 @@ export function CellEditor({
     },
   });
 
-  // The choices: a stored value that isn't one first, then Not set and the options.
-  const options: readonly string[] = rule?.kind === 'choice' ? rule.options : [];
+  // The choices: a stored value that isn't one first, then Not set and the options (Kind: no
+  // Not set, as not set reads as Human).
   const [original] = useState(() => cellText(element, edit.key));
-  const unknown = rule?.kind === 'choice' && original !== '' && !options.includes(original);
-  const values = [...(unknown ? [original] : []), '', ...options];
+  const choices =
+    rule?.kind === 'choice' && edit.key !== 'name' ? choiceValues(edit.key, original) : [];
+  const values = choices.map((choice) => choice.value);
   const labelOf = (value: string) =>
-    value === '' ? 'Not set' : unknown && value === original ? `“${value}” (not valid)` : value;
+    choices.find((choice) => choice.value === value)?.label ?? value;
   const [active, setActive] = useState(() => {
     if (edit.letter !== undefined) {
       const letter = edit.letter.toLowerCase();
@@ -256,7 +258,7 @@ export function CellEditor({
           <ul className="cat-listbox" id="cat-listbox" role="listbox" aria-label={column.label}>
             {values.map((option, index) => (
               <li
-                key={option === '' ? '(not set)' : option}
+                key={labelOf(option)}
                 id={`cat-option-${index}`}
                 role="option"
                 aria-selected={index === active}

@@ -35,6 +35,14 @@ const paths = {
       <path d="M4 21a8 8 0 0 1 16 0" />
     </>
   ),
+  /** Lucide "bot": a robot's head, for a Stakeholder that is an AI Agent. */
+  bot: (
+    <>
+      <path d="M12 8V4H8" />
+      <rect x="4" y="8" width="16" height="12" rx="2" />
+      <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
+    </>
+  ),
   upload: (
     <>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -169,6 +177,7 @@ export function Icon({ name, size }: { name: IconName; size?: 'sm' }) {
       viewBox="0 0 24 24"
       aria-hidden="true"
       focusable="false"
+      data-icon={name}
     >
       {paths[name]}
     </svg>

@@ -23,6 +23,12 @@ export type ArchitectureState = (typeof architectureStates)[number];
 export const sourcingOptions = ['Build', 'Buy'] as const;
 export type Sourcing = (typeof sourcingOptions)[number];
 
+/** What a Stakeholder is: a person, or an AI agent acting as one. */
+export const stakeholderKinds = ['Human', 'AI Agent'] as const;
+export type StakeholderKind = (typeof stakeholderKinds)[number];
+/** The Kind a Stakeholder without one, or with a value outside the options, is read as. */
+export const defaultStakeholderKind: StakeholderKind = 'Human';
+
 /** How a standard property's value is checked. */
 export type PropertyKind =
   | { kind: 'text' }
@@ -33,6 +39,12 @@ export type PropertyKind =
 export interface StandardPropertyDefinition {
   label: string;
   value: PropertyKind;
+  /**
+   * What a missing value is read as (a choice's option). A stored value outside the options is
+   * then only a validation warning and is read the same way: the key may have been custom metadata
+   * before it became standard, and a stored model must stay readable.
+   */
+  readAs?: string;
 }
 
 /**
@@ -48,6 +60,12 @@ export const standardProperties = {
   },
   functions: { label: 'Functions', value: { kind: 'text-list' } },
   sourcing: { label: 'Sourcing', value: { kind: 'choice', options: sourcingOptions } },
+  // A Stakeholder's Kind. Missing (or a value outside the options) reads as Human.
+  stakeholderKind: {
+    label: 'Kind',
+    value: { kind: 'choice', options: stakeholderKinds },
+    readAs: defaultStakeholderKind,
+  },
   // ISO 3166-1 alpha-2, e.g. NL. Non-ISO values are warnings, not errors (imported as is for now).
   supplierHqCountry: { label: 'Supplier HQ country', value: { kind: 'country' } },
   // A Relation's exchange: the active identity used, more context on it, and the data sent with
@@ -62,12 +80,18 @@ export type StandardPropertyKey = keyof typeof standardProperties;
 /** Metadata key that holds the node type. Not a property: every node must have it. */
 export const nodeTypeKey = 'type';
 
+/** Icons named in the metamodel: a person, and a robot for a Stakeholder that is an AI Agent. */
+export type NodeIcon = 'user' | 'bot';
+
 export interface NodeTypeDefinition {
   description: string;
   /** Colour named in the metamodel; the web app maps it to its colour tokens. */
   colour: 'yellow' | 'blue' | 'green' | 'gray';
-  /** Icon named in the metamodel, drawn with the type's colour (Stakeholder: a user icon). */
-  icon?: 'user';
+  /**
+   * Icon named in the metamodel, drawn with the type's colour (Stakeholder: a user icon). An
+   * element's own icon can differ by its Kind (`elementIcon`).
+   */
+  icon?: NodeIcon;
   /** Standard properties of this node type, in display order. */
   properties: readonly StandardPropertyKey[];
 }
@@ -85,7 +109,7 @@ export const nodeTypeDefinitions: Record<NodeType, NodeTypeDefinition> = {
     description: 'Stakeholders and users.',
     colour: 'yellow',
     icon: 'user',
-    properties: ['description'],
+    properties: ['description', 'stakeholderKind'],
   },
   Business: {
     description: 'Business elements, such as business processes and capabilities.',
@@ -225,6 +249,41 @@ export function keptAsCustomOnTypeChange(
         isStandardPropertyOf(from, key) && !isStandardPropertyOf(to, key),
     )
     .sort();
+}
+
+/** The icon of each Kind of Stakeholder. */
+export const stakeholderKindIcons: Record<StakeholderKind, NodeIcon> = {
+  Human: 'user',
+  'AI Agent': 'bot',
+};
+
+function isStakeholderKind(value: unknown): value is StakeholderKind {
+  return typeof value === 'string' && (stakeholderKinds as readonly string[]).includes(value);
+}
+
+/**
+ * An element's Kind as it is read, for a type that has Kind (Stakeholder): AI Agent only when
+ * stored so; missing or any other value is Human. Undefined for the other types.
+ */
+export function stakeholderKindOf(
+  type: NodeType,
+  metadata: Readonly<Record<string, unknown>>,
+): StakeholderKind | undefined {
+  if (!hasStandardProperty(type, 'stakeholderKind')) return undefined;
+  const value = Object.hasOwn(metadata, 'stakeholderKind') ? metadata.stakeholderKind : undefined;
+  return isStakeholderKind(value) ? value : defaultStakeholderKind;
+}
+
+/**
+ * The icon an element is drawn with: its type's (`icon`), or for a Stakeholder its Kind's (a robot
+ * for an AI Agent). Without metadata, the type's. Undefined for a type without an icon.
+ */
+export function elementIcon(
+  type: NodeType,
+  metadata?: Readonly<Record<string, unknown>>,
+): NodeIcon | undefined {
+  const kind = metadata === undefined ? undefined : stakeholderKindOf(type, metadata);
+  return kind === undefined ? nodeTypeDefinitions[type].icon : stakeholderKindIcons[kind];
 }
 
 /** Whether `key` is a standard property of `edgeType`, or of any edge type when it is omitted. */

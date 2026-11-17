@@ -15,6 +15,7 @@ import {
   repeatedDataValue,
   retiredDataKey,
   isStandardPropertyKey,
+  standardProperties,
   nodeTypeKey,
   nodeTypes,
   type EdgeType,
@@ -22,6 +23,7 @@ import {
   type JgfValidationResult,
   type ContainsEdge,
   type NodeType,
+  type StandardPropertyDefinition,
   type ValidationIssue,
 } from '@simplearchitecture/shared';
 import { z } from 'zod';
@@ -220,7 +222,11 @@ function checkNodeMetadata(
     const check = checkStandardProperty(key, value);
     if (!check.ok) {
       const code = check.severity === 'warning' ? 'non-iso-country' : 'invalid-property-value';
-      issues.add(check.severity, subject, field, code, check.problem);
+      // A property that reads an odd value as one of its options (Kind) may have been custom
+      // metadata before it became standard: a warning only, so a stored model stays readable.
+      const { readAs } = standardProperties[key] as StandardPropertyDefinition;
+      if (readAs === undefined) issues.add(check.severity, subject, field, code, check.problem);
+      else issues.add('warning', subject, field, code, `${check.problem}; it is read as ${readAs}`);
     }
   }
   return nodeType;

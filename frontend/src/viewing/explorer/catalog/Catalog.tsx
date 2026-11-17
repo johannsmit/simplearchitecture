@@ -1,12 +1,13 @@
 import {
-  architectureStates,
   catalogCell,
   catalogTable,
   catalogTabs,
   defaultCatalogSort,
   filterFields,
   isIsoCountryCode,
-  sourcingOptions,
+  isStandardPropertyKey,
+  standardProperties,
+  type ArchitectureState,
   type CatalogColumn,
   type CatalogSort,
   type CatalogTab,
@@ -121,9 +122,9 @@ const tabLabel = (tab: CatalogTab) => (tab === 'all' ? 'All' : tab);
 const cellId = (row: number | 'h', col: number) => `cc-${row}-${col}`;
 
 function choiceOptions(key: string): readonly string[] | undefined {
-  if (key === 'architectureState') return architectureStates;
-  if (key === 'sourcing') return sourcingOptions;
-  return undefined;
+  if (!isStandardPropertyKey(key)) return undefined;
+  const rule = standardProperties[key].value;
+  return rule.kind === 'choice' ? rule.options : undefined;
 }
 
 /** A cell's value, shown as in the details panel. */
@@ -133,7 +134,7 @@ function CellValue({ element, column }: { element: ModelElement; column: Catalog
   if (key === 'type') {
     return (
       <>
-        <TypeMark type={element.type} />
+        <TypeMark type={element.type} metadata={element.metadata} />
         {element.type}
       </>
     );
@@ -159,11 +160,7 @@ function CellValue({ element, column }: { element: ModelElement; column: Catalog
         </span>
       );
     }
-    return key === 'architectureState' ? (
-      <StateBadge state={text as (typeof architectureStates)[number]} />
-    ) : (
-      text
-    );
+    return key === 'architectureState' ? <StateBadge state={text as ArchitectureState} /> : text;
   }
   if (key === 'supplierHqCountry') {
     return <PropertyValue row={{ key, label: column.label, value: text }} />;

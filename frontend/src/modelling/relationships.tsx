@@ -433,10 +433,10 @@ export function NewRelationshipPopover(props: NewRelationshipPopoverProps) {
           </p>
         )}
         <p className="rel-ends">
-          {source_ && <TypeMark type={source_.type} />}
+          {source_ && <TypeMark type={source_.type} metadata={source_.metadata} />}
           <span className="rel-end">{nameOf(graph, source)}</span>
           <span className="muted"> → </span>
-          {target_ && <TypeMark type={target_.type} />}
+          {target_ && <TypeMark type={target_.type} metadata={target_.metadata} />}
           <span className="rel-end">{nameOf(graph, target)}</span>
         </p>
         <TypeRadios
@@ -651,7 +651,7 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
         <label htmlFor={`${id}-search`}>Other element</label>
         {pickedElement ? (
           <div className="picked" ref={pickedField}>
-            <TypeMark type={pickedElement.type} />
+            <TypeMark type={pickedElement.type} metadata={pickedElement.metadata} />
             <span className="pname" title={pickedElement.name}>
               {pickedElement.name || '(unnamed)'}
             </span>
@@ -735,7 +735,7 @@ export function AddRelationshipBox(props: AddRelationshipBoxProps) {
                       pick(option);
                     }}
                   >
-                    <TypeMark type={option.type} />
+                    <TypeMark type={option.type} metadata={option.metadata} />
                     <span className="pname" title={option.name}>
                       {option.name || '(unnamed)'}
                     </span>

@@ -10,6 +10,7 @@ import {
   nodeTypes,
   relationProperties,
   sourcingOptions,
+  stakeholderKinds,
   standardProperties,
 } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
@@ -32,6 +33,7 @@ describe('the metamodel in shared/ matches metamodel/', () => {
     expect(edgeTypes).toEqual(options(template.graph.edges[0]?.relation));
     expect(architectureStates).toEqual(options(templateNode.architectureState));
     expect(sourcingOptions).toEqual(options(templateNode.sourcing));
+    expect(stakeholderKinds).toEqual(options(templateNode.stakeholderKind));
   });
 
   it('has the same standard properties', () => {
@@ -51,7 +53,7 @@ describe('the metamodel in shared/ matches metamodel/', () => {
       nodeTypes.map((type) => [type, [...nodeTypeDefinitions[type].properties].sort()]),
     );
     expect(propertiesOf).toEqual({
-      Stakeholder: ['description'],
+      Stakeholder: ['description', 'stakeholderKind'],
       Business: ['description', 'owningTeam'],
       Application: [
         'architectureState',

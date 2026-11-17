@@ -255,6 +255,22 @@ describe('POST /mcp: the protocol', () => {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
     }
   });
+
+  it("names a Stakeholder's Kind and its options in the tools that return elements", async () => {
+    const { target, tokens } = await connected();
+    const res = await mcp(target, tokens.access_token, 'tools/list');
+    const tools = res.json<{ result: { tools: { name: string; description: string }[] } }>().result
+      .tools;
+    for (const name of ['search_elements', 'get_element', 'get_neighbours']) {
+      const description = tools.find((tool) => tool.name === name)?.description ?? '';
+      expect(description, name).toContain('`stakeholderKind`');
+      expect(description, name).toContain('Human or AI Agent');
+    }
+    // The search hint returns Stakeholders only, for people and for AI agents.
+    const search = tools.find((tool) => tool.name === 'search_elements')?.description ?? '';
+    expect(search).toContain('type "Stakeholder" with filters {"stakeholderKind": ["AI Agent"]}');
+    expect(search).toContain('type "Stakeholder" with filters {"stakeholderKind": ["Human"]}');
+  });
 });
 
 describe('the read tools', () => {
@@ -445,7 +461,13 @@ describe('the read tools', () => {
       element_id: 'gardener',
     });
     expect((one.value as { elements: { id: string; steps: number }[] }).elements).toEqual([
-      { id: 'gardener', name: 'Gardener', type: 'Stakeholder', steps: 0 },
+      {
+        id: 'gardener',
+        name: 'Gardener',
+        type: 'Stakeholder',
+        stakeholderKind: 'Human',
+        steps: 0,
+      },
       { id: 'spade', name: 'Spade', type: 'Application', steps: 1 },
     ]);
     const two = await callTool(target, tokens.access_token, 'get_neighbours', {

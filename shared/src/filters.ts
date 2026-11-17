@@ -9,6 +9,7 @@ import {
   nodeTypeKey,
   nodeTypes,
   standardProperties,
+  type StandardPropertyDefinition,
   type StandardPropertyKey,
 } from './metamodel.js';
 
@@ -88,6 +89,29 @@ export function filterValueOf(
 
 const standardOrder = Object.keys(standardProperties);
 
+/** What a missing value of an element property reads as (Kind: Human), if anything. */
+function readAsOf(key: string): string | undefined {
+  if (!isElementStandardKey(key)) return undefined;
+  return (standardProperties[key] as StandardPropertyDefinition).readAs;
+}
+
+/**
+ * Whether an element counts for a field: always, except for a property read as an option when not
+ * set (Kind), which counts only on the types that have it (Stakeholder).
+ */
+function countsFor(element: ModelElement, key: string, readAs: string | undefined): boolean {
+  return readAs === undefined || isStandardPropertyOf(element.type, key);
+}
+
+/** An element's value of a field as the filter reads it: Kind not set (or not text) is Human. */
+function elementFilterValue(
+  element: ModelElement,
+  key: string,
+  readAs: string | undefined,
+): string | undefined {
+  return filterValueOf(element, key) ?? readAs;
+}
+
 /**
  * The fields the model's elements can be filtered on, with each value's count and a "(not set)"
  * count. Standard properties (except description and functions) come first in metamodel order,
@@ -98,10 +122,13 @@ export function filterFields(graph: ModelGraph): FilterField[] {
   const counts = new Map<string, Map<string, number>>();
   const structured = new Set<string>();
   let total = 0;
+  // Per field read as an option when not set (Kind): the elements of the types that have it.
+  const readAsTotals = new Map<string, number>();
   for (const element of graph.elements.values()) {
     total += 1;
     for (const key of Object.keys(element.metadata)) {
       if (!isFilterableKey(key)) continue;
+      if (!countsFor(element, key, readAsOf(key))) continue;
       const raw = element.metadata[key];
       if (typeof raw === 'object' && raw !== null && !isElementStandardKey(key)) {
         structured.add(key);
@@ -116,6 +143,22 @@ export function filterFields(graph: ModelGraph): FilterField[] {
       }
       values.set(value, (values.get(value) ?? 0) + 1);
     }
+  }
+
+  // A field read as an option when not set counts every element it applies to: those without a
+  // value (or with a list or object) count under that option.
+  for (const [key, values] of counts) {
+    const readAs = readAsOf(key);
+    if (readAs === undefined) continue;
+    let applicable = 0;
+    for (const element of graph.elements.values()) {
+      if (!countsFor(element, key, readAs)) continue;
+      applicable += 1;
+      if (filterValueOf(element, key) === undefined) {
+        values.set(readAs, (values.get(readAs) ?? 0) + 1);
+      }
+    }
+    readAsTotals.set(key, applicable);
   }
 
   const fields: FilterField[] = [];
@@ -137,7 +180,7 @@ export function filterFields(graph: ModelGraph): FilterField[] {
       label: standard ? standardProperties[key].label : key,
       standard,
       values: list,
-      notSetCount: total - withValue,
+      notSetCount: (readAsTotals.get(key) ?? total) - withValue,
     });
   }
   return fields.sort((a, b) => {
@@ -166,26 +209,36 @@ export function fieldValueCounts(
   );
   const counts = new Map<string, number>(field.values.map(({ value }) => [value, 0]));
   let notSetCount = 0;
+  const readAs = readAsOf(field.key);
   for (const element of findElements(graph, { ...options, filters: others })) {
-    const value = filterValueOf(element, field.key);
+    if (!countsFor(element, field.key, readAs)) continue;
+    const value = elementFilterValue(element, field.key, readAs);
     if (value === undefined) notSetCount += 1;
     else counts.set(value, (counts.get(value) ?? 0) + 1);
   }
   return { values: [...counts].map(([value, count]) => ({ value, count })), notSetCount };
 }
 
+type CompiledFilter = [
+  key: string,
+  accepted: ReadonlySet<string | null>,
+  readAs: string | undefined,
+];
+
 /** The active filters, ready for matching: fields with at least one value. */
-function compile(filters: ElementFilters): [string, ReadonlySet<string | null>][] {
+function compile(filters: ElementFilters): CompiledFilter[] {
   return Object.entries(filters)
     .filter(([, values]) => values.length > 0)
-    .map(([key, values]) => [key, new Set(values)]);
+    .map(([key, values]) => [key, new Set(values), readAsOf(key)]);
 }
 
-function matchesCompiled(
-  element: ModelElement,
-  compiled: [string, ReadonlySet<string | null>][],
-): boolean {
-  return compiled.every(([key, accepted]) => accepted.has(filterValueOf(element, key) ?? null));
+/** A Kind filter matches Stakeholders only, one without Kind as Human. */
+function matchesCompiled(element: ModelElement, compiled: CompiledFilter[]): boolean {
+  return compiled.every(
+    ([key, accepted, readAs]) =>
+      countsFor(element, key, readAs) &&
+      accepted.has(elementFilterValue(element, key, readAs) ?? null),
+  );
 }
 
 /** Whether an element matches the filters: OR within a field, AND across fields. */

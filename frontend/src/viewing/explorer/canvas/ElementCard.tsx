@@ -1,4 +1,4 @@
-import type { ArchitectureState, ModelElement } from '@simplearchitecture/shared';
+import { elementIcon, type ArchitectureState, type ModelElement } from '@simplearchitecture/shared';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { memo, useRef, type CSSProperties, type PointerEvent } from 'react';
 import { Icon } from '../../../icons';
@@ -152,7 +152,7 @@ function CircleHandles({ handles }: { handles: readonly PlacedHandle[] }) {
 
 /**
  * An element on the canvas, coloured by type: a rectangle card with the name centred, or (for
- * Stakeholders) a circle with the name underneath. A rectangle shows its Architecture state, when
+ * Stakeholders) a circle with the name underneath, holding a person, or a robot for an AI Agent. A rectangle shows its Architecture state, when
  * it isn't the default, on its top border. While related elements are missing from the canvas, a
  * small pill with their number lists them. The card (or the circle with its label) is one button
  * that selects the element (a double click focuses it); it can be dragged, or moved with the keyboard (M, then arrows).
@@ -189,12 +189,12 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
       >
         {circle && (
           <span className="ccircle">
-            <Icon name="user" />
+            <Icon name={elementIcon(element.type, element.metadata) ?? 'user'} />
           </span>
         )}
         {container ? (
           <span className="chead">
-            <TypeMark type={element.type} />
+            <TypeMark type={element.type} metadata={element.metadata} />
             <span className="cname">{name}</span>
           </span>
         ) : (

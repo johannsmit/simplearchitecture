@@ -121,7 +121,7 @@ export function RelatedPopup(props: RelatedPopupProps) {
                         if (!blocked) props.onPick(element.id);
                       }}
                     >
-                      <TypeMark type={element.type} />
+                      <TypeMark type={element.type} metadata={element.metadata} />
                       <span className="rp-name">{name}</span>{' '}
                       <span className="rp-type">{element.type}</span>{' '}
                       <span className="rp-add" aria-hidden="true">

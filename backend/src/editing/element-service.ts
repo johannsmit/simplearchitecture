@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import {
   buildModelGraph,
+  checkStandardProperty,
   childrenOf,
   containerOf,
   isNodeType,
   isStandardPropertyOf,
   nodeTypeKey,
   nodeTypes,
+  standardProperties,
   type DeletedElementResult,
   type ElementChangeResult,
   type ElementFieldIssue,
@@ -15,6 +17,8 @@ import {
   type JgfValidationResult,
   type ModelAuthor,
   type NodeType,
+  type StandardPropertyDefinition,
+  type StandardPropertyKey,
   type ValidationIssue,
 } from '@simplearchitecture/shared';
 import { z } from 'zod';
@@ -94,6 +98,18 @@ function propertyValueProblem(value: unknown): string | undefined {
     return value.some((entry) => entry.length > maxPropertyValueLength) ? tooLong : undefined;
   }
   return 'Must be text, or a list of text for Functions.';
+}
+
+/**
+ * A new value of a property whose odd stored values the validation only warns about (Kind, read as
+ * Human) must still be one of its options. The validation refuses the other properties' values.
+ */
+function readAsChoiceProblem(key: StandardPropertyKey, value: unknown): string | undefined {
+  if ((standardProperties[key] as StandardPropertyDefinition).readAs === undefined)
+    return undefined;
+  const check = checkStandardProperty(key, value);
+  if (check.ok) return undefined;
+  return `${check.problem.charAt(0).toUpperCase()}${check.problem.slice(1)}.`;
 }
 
 /**
@@ -189,7 +205,9 @@ function valueProblem(
   current: Entries,
 ): string | undefined {
   if (Object.hasOwn(current, key) && sameValue(current[key], value)) return undefined;
-  if (isStandardPropertyOf(type, key)) return propertyValueProblem(value);
+  if (isStandardPropertyOf(type, key)) {
+    return propertyValueProblem(value) ?? readAsChoiceProblem(key, value);
+  }
   if (typeof value !== 'string') return 'Must be text.';
   return value.length > maxPropertyValueLength ? tooLong : undefined;
 }

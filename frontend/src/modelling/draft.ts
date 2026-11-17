@@ -267,16 +267,25 @@ export function changesOf(
 /** Where an error shows: 'name', 'type', 'description', `field:<key>`, `row:<id>` or '' (top). */
 export type ErrorSlot = string;
 
-/** The checks run on Save before anything is sent. */
-export function clientErrors(draft: Draft): Map<ErrorSlot, string> {
+/**
+ * The checks run on Save before anything is sent. A choice outside its options is refused unless
+ * it is the value the element holds (`stored`, its metadata): Kind may hold one from before it
+ * was standard, kept until it is changed.
+ */
+export function clientErrors(
+  draft: Draft,
+  stored: Readonly<Record<string, unknown>> = {},
+): Map<ErrorSlot, string> {
   const errors = new Map<ErrorSlot, string>();
   if (draft.name.trim() === '') errors.set('name', 'Enter a name.');
   for (const key of fieldKeys(draft.type)) {
     const definition = standardProperties[key].value;
     const value = (draft.fields[key] ?? '').trim();
+    const kept = Object.hasOwn(stored, key) && fieldText(key, stored[key]).trim() === value;
     if (
       definition.kind === 'choice' &&
       value !== '' &&
+      !kept &&
       !(definition.options as readonly string[]).includes(value)
     ) {
       errors.set(`field:${key}`, `Pick one of ${definition.options.join(', ')}.`);
@@ -430,7 +439,7 @@ export function cellChange(
 /** The panel's check before saving, for this cell only (an empty name, an unknown choice). */
 export function cellError(element: ModelElement, key: CellKey, text: string): string | undefined {
   const draft = withCell(draftOf(element), key, text);
-  return clientErrors(draft).get(key === 'name' ? 'name' : `field:${key}`);
+  return clientErrors(draft, element.metadata).get(key === 'name' ? 'name' : `field:${key}`);
 }
 
 /**

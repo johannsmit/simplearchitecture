@@ -723,7 +723,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                       }}
                     >
                       <span className="rcap">{caption}</span>
-                      <TypeMark type={shown.type} />
+                      <TypeMark type={shown.type} metadata={shown.metadata} />
                       <span className="rname">{name}</span>
                       <span className="rtype">{shown.type}</span>
                       <Icon name="chev-right" size="sm" />

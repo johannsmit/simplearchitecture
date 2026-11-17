@@ -13,6 +13,7 @@ import {
   type ModelElement,
   type ModelGraph,
   type PropertyRow,
+  type StandardPropertyDefinition,
 } from '@simplearchitecture/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '../../icons';
@@ -93,10 +94,28 @@ const regionNames = (() => {
 /** A standard property's value as the details panel shows it (the catalog's cells reuse it). */
 export function PropertyValue({ row }: { row: PropertyRow }): ReactNode {
   const { value } = row;
+  const definition: StandardPropertyDefinition = standardProperties[row.key];
+  const { readAs } = definition;
   if (value === undefined || value === null || value === '') {
-    return <span className="muted">Not set</span>;
+    return readAs ?? <span className="muted">Not set</span>;
   }
-  const kind = standardProperties[row.key].value.kind;
+  const rule = definition.value;
+  if (
+    readAs !== undefined &&
+    rule.kind === 'choice' &&
+    !(typeof value === 'string' && rule.options.includes(value))
+  ) {
+    // A value from before the property was standard (Kind): kept, marked, and read as `readAs`.
+    const note = `not ${rule.options.join(' or ')}; read as ${readAs}`;
+    return (
+      <span className="not-iso" title={`${note.charAt(0).toUpperCase()}${note.slice(1)}`}>
+        {metadataText(value)}
+        <Icon name="alert" size="sm" />
+        <span className="vh"> ({note})</span>
+      </span>
+    );
+  }
+  const kind = rule.kind;
   if (row.key === 'architectureState' && typeof value === 'string') {
     return value === 'Current' || value === 'Target' || value === 'Deprecate' ? (
       <StateBadge state={value} />
@@ -234,7 +253,7 @@ export function DetailsPanel({
     <>
       <div className={`d-head ${colourClass(element.type)}${edit ? ' is-editing' : ''}`}>
         <div className="d-type">
-          <TypeMark type={element.type} />
+          <TypeMark type={element.type} metadata={element.metadata} />
           {element.type}
           {edit && <span> · Editing</span>}
         </div>
@@ -367,7 +386,7 @@ export function DetailsPanel({
                         onFocusElement(other.id);
                       }}
                     >
-                      <TypeMark type={other.type} />
+                      <TypeMark type={other.type} metadata={other.metadata} />
                       <span className="rmain">
                         {group.direction === 'both' && (
                           <span className="rboth" aria-hidden="true" title="Both ways">

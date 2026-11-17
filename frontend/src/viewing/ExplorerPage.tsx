@@ -2044,7 +2044,7 @@ function Explorer({
                           focusElement(suggestion.id);
                         }}
                       >
-                        <TypeMark type={suggestion.type} />
+                        <TypeMark type={suggestion.type} metadata={suggestion.metadata} />
                         {suggestion.name || '(unnamed)'}
                         <span className="count">{degree(graph, suggestion.id)}</span>
                       </button>

@@ -139,7 +139,7 @@ export function EndPicker(props: EndPickerProps) {
               props.onPick(option);
             }}
           >
-            <TypeMark type={option.type} />
+            <TypeMark type={option.type} metadata={option.metadata} />
             <span className="pname" title={option.name}>
               {option.name || '(unnamed)'}
             </span>

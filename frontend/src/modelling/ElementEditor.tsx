@@ -22,7 +22,7 @@ import {
 } from 'react';
 import { ApiRequestError, deleteElement, getElement, updateElement } from '../api';
 import { Icon } from '../icons';
-import { TypeMark } from '../metamodel-ui';
+import { choiceValues, TypeMark } from '../metamodel-ui';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { DetailsPanel, type RelationshipTools } from '../viewing/explorer/DetailsPanel';
 import {
@@ -276,7 +276,7 @@ export function ElementEditor(props: ElementEditorProps) {
   const save = async (): Promise<boolean> => {
     if (!change) return true;
     if (!canSave || saving) return false;
-    const found = clientErrors(draft);
+    const found = clientErrors(draft, base.metadata);
     if (found.size > 0) {
       refuse(found, null);
       return false;
@@ -445,6 +445,8 @@ export function ElementEditor(props: ElementEditorProps) {
     const kind = definition.value;
     if (kind.kind === 'choice') {
       const unknown = value !== '' && !(kind.options as readonly string[]).includes(value);
+      // The value the field opened with for this type: Kind not set offers Human for it.
+      const opened = initial.type === draft.type ? (initial.fields[key] ?? '') : '';
       return (
         <div className="select-wrap">
           <select
@@ -456,11 +458,9 @@ export function ElementEditor(props: ElementEditorProps) {
               setField(key, event.target.value);
             }}
           >
-            {unknown && <option value={value}>“{value}” (not valid)</option>}
-            <option value="">Not set</option>
-            {kind.options.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            {choiceValues(key, unknown ? value : opened).map((choice) => (
+              <option key={choice.label} value={choice.value}>
+                {choice.label}
               </option>
             ))}
           </select>
@@ -624,7 +624,7 @@ export function ElementEditor(props: ElementEditorProps) {
         <div className="field">
           <label htmlFor={slotId('type')}>Type</label>
           <div className="select-wrap has-mark">
-            <TypeMark type={draft.type} />
+            <TypeMark type={draft.type} metadata={draft.fields} />
             <select
               id={slotId('type')}
               aria-invalid={errors.has('type') || undefined}

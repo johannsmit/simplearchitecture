@@ -1,7 +1,7 @@
 # Simple Architecture Metamodel
 ## Nodes
 The metamodel contains the following node types:
-- Stakeholder node: This node is depicted in yellow as user icon and is reserved for any stakeholders or users.
+- Stakeholder node: This node is depicted in yellow as user icon and is reserved for any stakeholders or users. A Stakeholder that is an AI Agent (see Kind below) is depicted the same way, with a robot icon in place of the user icon.
 - Business node: This node is depicted in in yellow and is reserved for any business related elements such as business processess, capabilities etc.
 - Application node: This node is depicted in in blue and is reserved for any application related elements.
 - Infrastructure node: This node is depicted in in green and is reserved for any infrastructure related elements.
@@ -12,6 +12,9 @@ Nodes will contain standard metadata properties:
 
 **All nodes:**
 - Description
+
+**Stakeholder nodes:**
+- Kind (Options: Human, AI Agent). Stored as `"stakeholderKind"`. A Stakeholder without Kind is Human. A stored value that isn't one of the options is a validation warning (it may have been custom metadata before Kind became standard): it is kept as it is and read as Human.
 
 **Business nodes:**
 - Owning team

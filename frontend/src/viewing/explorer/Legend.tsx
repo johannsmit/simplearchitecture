@@ -1,4 +1,4 @@
-import type { nodeTypes } from '@simplearchitecture/shared';
+import { hasStandardProperty, stakeholderKinds, type nodeTypes } from '@simplearchitecture/shared';
 import { useId, useState } from 'react';
 import { Icon } from '../../icons';
 import { TypeMark } from '../../metamodel-ui';
@@ -7,7 +7,7 @@ import { readLegendOpen, writeLegendOpen } from './prefs';
 
 /**
  * The legend, at the bottom of the left panel while a canvas is drawn: the element types on the
- * canvas, the relationship state marks, and the "Nest contained elements" and "Show relationships"
+ * canvas (a Stakeholder as Human and as AI Agent), the relationship state marks, and the "Nest contained elements" and "Show relationships"
  * switches. Open or closed is remembered per browser.
  */
 export function Legend(props: {
@@ -39,12 +39,22 @@ export function Legend(props: {
           {/* h2: the legend comes right after the page's h1 (axe heading-order). */}
           <h2>Elements</h2>
           <ul>
-            {props.types.map((type) => (
-              <li key={type}>
-                <TypeMark type={type} />
-                {type}
-              </li>
-            ))}
+            {props.types.flatMap((type) =>
+              // A type with Kinds (Stakeholder) shows each, with its own icon.
+              hasStandardProperty(type, 'stakeholderKind') ? (
+                stakeholderKinds.map((kind) => (
+                  <li key={`${type} ${kind}`}>
+                    <TypeMark type={type} metadata={{ stakeholderKind: kind }} />
+                    {type} · {kind}
+                  </li>
+                ))
+              ) : (
+                <li key={type}>
+                  <TypeMark type={type} />
+                  {type}
+                </li>
+              ),
+            )}
           </ul>
           <h2>Relationship state</h2>
           <ul>

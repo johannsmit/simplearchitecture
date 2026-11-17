@@ -12,6 +12,7 @@ import {
   standardProperties,
   type NodeType,
   type PropertyKind,
+  type StandardPropertyDefinition,
   type StandardPropertyKey,
 } from './metamodel.js';
 
@@ -97,14 +98,17 @@ export function hasCatalogColumn(tab: CatalogTab, column: string): column is Cat
 
 /**
  * One cell. Description reads as the details panel shows it (line breaks normalised, trimmed);
- * other properties as the stored value in text (a list joined with ", "). Only own keys count.
+ * other properties as the stored value in text (a list joined with ", "), and Kind not set as
+ * Human. Only own keys count.
  */
 export function catalogCell(element: ModelElement, key: CatalogColumnKey): CatalogCell {
   if (key === 'name') return { value: element.name, text: element.name.trim() };
   if (key === 'type') return { value: element.type, text: element.type };
   const value = Object.hasOwn(element.metadata, key) ? element.metadata[key] : undefined;
   if (key === 'description') return { value, text: elementDescription(element) ?? '' };
-  const text = value === undefined || value === null ? '' : metadataText(value).trim();
+  // A property read as one of its options when not set (Kind: Human) reads so here too.
+  const readAs = (standardProperties[key] as StandardPropertyDefinition).readAs ?? '';
+  const text = value === undefined || value === null ? readAs : metadataText(value).trim();
   return { value, text };
 }
 

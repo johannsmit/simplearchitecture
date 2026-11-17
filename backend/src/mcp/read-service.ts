@@ -16,6 +16,7 @@ import {
   relationshipsOf,
   relationshipValue,
   relationProperties,
+  stakeholderKindOf,
   type EdgeType,
   type ElementFilters,
   type ModelElement,
@@ -62,8 +63,15 @@ function propertiesOf(element: ModelElement, cut: boolean): Record<string, unkno
   return properties;
 }
 
+/** An element in short. A Stakeholder says its Kind as read: Human unless it is an AI Agent. */
 function brief(element: ModelElement) {
-  return { id: element.id, name: element.name, type: element.type };
+  const kind = stakeholderKindOf(element.type, element.metadata);
+  return {
+    id: element.id,
+    name: element.name,
+    type: element.type,
+    ...(kind === undefined ? {} : { stakeholderKind: kind }),
+  };
 }
 
 function listed(element: ModelElement) {

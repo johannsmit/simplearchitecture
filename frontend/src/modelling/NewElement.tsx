@@ -303,7 +303,7 @@ export function NewElementForm({
                 const label = existingLabel ?? (shown ? 'Show on canvas' : 'Add to canvas');
                 return (
                   <li key={match.id}>
-                    <TypeMark type={match.type} />
+                    <TypeMark type={match.type} metadata={match.metadata} />
                     <span className="pname" title={match.name}>
                       {match.name || '(unnamed)'}
                     </span>
