@@ -11,7 +11,7 @@ import { modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // A line moved by hand between cards nested in containers keeps its arrowhead: its last stretch
 // always comes into the target card from outside, so the arrowhead is drawn outside the card,
-// pointing into it, however far the stretch before it is dragged. Made-up data: two wings of a
+// pointing into it, however far the bend before it is dragged. Made-up data: two wings of a
 // made-up irrigation plant.
 
 const modelId = '55555555-5555-4555-8555-555555555555';
@@ -132,7 +132,23 @@ const edgeOf = (label: RegExp) =>
     label.test(edge.getAttribute('aria-label') ?? ''),
   );
 const valvesLine = () => edgeOf(/^Scheduler .* Valves$/) as HTMLElement;
-const gripsOf = (edge: HTMLElement) => [...edge.querySelectorAll<SVGPathElement>('.line-grip')];
+/** The bend handles a line shows once pointed at, and where each sits on the canvas. */
+function handlesOf(edge: HTMLElement) {
+  fireEvent.mouseEnter(edge);
+  return [
+    ...canvasEl().querySelectorAll<HTMLElement>(
+      `.bend-handle[data-line="${CSS.escape(edge.getAttribute('data-id') ?? '')}"]:not(.is-leaving)`,
+    ),
+  ].map((handle) => {
+    const [x, y] = /translate\(([-\d.]+)px, ([-\d.]+)px\)/
+      .exec(handle.style.transform)
+      ?.slice(1)
+      .map(Number) ?? [NaN, NaN];
+    return { handle, x, y };
+  });
+}
+const handleAt = (edge: HTMLElement, point: { x: number; y: number }) =>
+  handlesOf(edge).find((each) => each.x === point.x && each.y === point.y)?.handle as HTMLElement;
 const layoutSaves = (calls: Call[]) => calls.filter((call) => call.url.endsWith('/layout'));
 const savedRoutes = (call: Call | undefined) => (call?.body?.routes ?? []) as ViewLineRoute[];
 
@@ -222,17 +238,17 @@ describe('a line moved by hand between nested cards keeps its arrowhead', () => 
     expect(layoutSaves(calls)).toEqual([]);
   });
 
-  it('dragged over the target card: the stretch stops beside it, and the end still comes in', async () => {
+  it('dragged over the target card: the bend stops beside it, and the end still comes in', async () => {
     const fake = await open([{ relationshipId: 'r1', points: schedulerToValves }]);
-    const [upright] = gripsOf(valvesLine());
-    // Dragged left, to above the middle of Valves: the line would come down into Valves' top and
-    // run back out of its right side, its arrowhead under the card.
-    const at = onScreen({ x: 450, y: 200 });
+    const bend = handleAt(valvesLine(), { x: 450, y: 378 });
+    // The bend beside Valves dragged left, over the middle of Valves: the line would run back out
+    // of its right side, its arrowhead under the card.
+    const at = onScreen({ x: 450, y: 378 });
     const by = 150 * zoom();
-    pointer(upright as SVGPathElement, 'pointerDown', at.x, at.y);
-    pointer(upright as SVGPathElement, 'pointerMove', at.x - by, at.y);
+    pointer(bend, 'pointerDown', at.x, at.y);
+    pointer(bend, 'pointerMove', at.x - by, at.y);
     expect(comesInFromOutside(lastStretch(valvesLine()), valves)).toBe(true);
-    pointer(upright as SVGPathElement, 'pointerUp', at.x - by, at.y);
+    pointer(bend, 'pointerUp', at.x - by, at.y);
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });
@@ -293,21 +309,22 @@ describe('a line moved by hand from a Stakeholder keeps its end on the circle', 
   it('opens a saved route ending on the circle drawn as saved, and saves nothing', async () => {
     const { calls } = await open([{ relationshipId: 'r3', points: keeperToScheduler }]);
     expect(startOf(keeperLine())).toEqual({ x: 836, y: 224 });
-    expect(gripsOf(keeperLine()).map((grip) => grip.getAttribute('d'))).toEqual([
-      'M760 224L760 78',
+    expect(handlesOf(keeperLine()).map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 760, y: 224 },
+      { x: 760, y: 78 },
     ]);
     expect(layoutSaves(calls)).toEqual([]);
   });
 
-  it('a drag towards the Stakeholder moves the stretch past the box, up to beside the circle', async () => {
+  it('a drag towards the Stakeholder moves the bend past the box, up to beside the circle', async () => {
     const fake = await open([{ relationshipId: 'r3', points: keeperToScheduler }]);
-    const [upright] = gripsOf(keeperLine());
-    const at = onScreen({ x: 760, y: 150 });
+    const bend = handleAt(keeperLine(), { x: 760, y: 224 });
+    const at = onScreen({ x: 760, y: 224 });
     // 60 to the right, to x 820: inside Keeper's box (from x 800), but clear of its circle.
     const by = 60 * zoom();
-    pointer(upright as SVGPathElement, 'pointerDown', at.x, at.y);
-    pointer(upright as SVGPathElement, 'pointerMove', at.x + by, at.y);
-    pointer(upright as SVGPathElement, 'pointerUp', at.x + by, at.y);
+    pointer(bend, 'pointerDown', at.x, at.y);
+    pointer(bend, 'pointerMove', at.x + by, at.y);
+    pointer(bend, 'pointerUp', at.x + by, at.y);
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });
@@ -327,10 +344,11 @@ describe('a line moved by hand from a Stakeholder keeps its end on the circle', 
     await steady();
 
     // Further, over the circle: it stops 8px beside the circle, and the end stays on it.
-    const again = onScreen({ x: 820, y: 150 });
-    pointer(upright as SVGPathElement, 'pointerDown', again.x, again.y);
-    pointer(upright as SVGPathElement, 'pointerMove', again.x + 40 * zoom(), again.y);
-    pointer(upright as SVGPathElement, 'pointerUp', again.x + 40 * zoom(), again.y);
+    const moved = handleAt(keeperLine(), { x: 820, y: 224 });
+    const again = onScreen({ x: 820, y: 224 });
+    pointer(moved, 'pointerDown', again.x, again.y);
+    pointer(moved, 'pointerMove', again.x + 40 * zoom(), again.y);
+    pointer(moved, 'pointerUp', again.x + 40 * zoom(), again.y);
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(2);
     });

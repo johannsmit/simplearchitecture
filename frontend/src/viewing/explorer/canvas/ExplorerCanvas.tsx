@@ -63,7 +63,7 @@ import {
 } from './cardSize';
 import { connectHandleAt } from './connectHandle';
 import { ElementCard, relatedButtonId, type CardNode } from './ElementCard';
-import { currentBends, floatingEnds, type EndBox, type FloatingLine } from './edgeLine';
+import { currentBends, floatingEnds, simplified, type EndBox, type FloatingLine } from './edgeLine';
 import { getElk } from './elkEngine';
 import {
   absoluteBoxes,
@@ -95,16 +95,16 @@ import {
 } from './positions';
 import { LineProperties } from './LineProperties';
 import {
+  bendAt,
+  bendSnap,
   endPlace,
   fitEnds,
   followCards,
   heldFromStored,
   laidLine,
-  moveStretch,
-  nearestMiddleStretch,
+  moveBend,
   routesToSave,
   squared,
-  stretchAt,
   withLaidRoutes,
   type HeldRoute,
 } from './lineRoutes';
@@ -432,8 +432,13 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   useEffect(() => {
     if (laid?.key === props.layoutKey) movedBeforeTidy.current = props.moved;
   });
-  /** What the live region says after a keyboard move or a tidy up (until the next layout). */
-  const [note, setNote] = useState<{ laid: Laid | null; text: string } | null>(null);
+  /**
+   * What the live region says after a keyboard move or a tidy up (until the next layout), or, with
+   * `canvas`, until the canvas is a new one (a moved line's save redraws the same canvas).
+   */
+  const [note, setNote] = useState<{ laid: Laid | null; text: string; canvas?: number } | null>(
+    null,
+  );
   /** The card being dragged with the mouse: edge labels are hidden until the drop. */
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragging = draggingId !== null;
@@ -464,6 +469,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const store = useStoreApi();
   /** Drawing a relationship: from this element. Esc cancels (then the drop is ignored). */
   const drawing = useRef<{ source: string; cancelled: boolean } | null>(null);
+  const [drawingFrom, setDrawingFrom] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; ok: boolean } | null>(null);
   const [chip, setChip] = useState<{ x: number; y: number } | null>(null);
   const [pop, setPop] = useState<CanvasPop | null>(null);
@@ -932,14 +938,18 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   };
   /** The width grip: the card's width when the press started, plus how far the pointer went. */
   const resizing = useRef<{ id: string; width: number } | null>(null);
+  /** A card's width is being set with its grip: lines show no bend handles meanwhile. */
+  const [resizingCard, setResizingCard] = useState(false);
   const resizeFromGrip = useCallback(
     (id: string, phase: 'start' | 'move' | 'end', dx: number) => {
       if (phase === 'start') {
         const card = shownRef.current.get(id);
         resizing.current = card ? { id, width: card.width } : null;
+        setResizingCard(true);
         setRelated(null);
         return;
       }
+      if (phase === 'end') setResizingCard(false);
       const from = resizing.current;
       if (from?.id !== id) return;
       const zoom = latest.current.flow.getZoom() || 1;
@@ -1247,22 +1257,28 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return result;
   }, [laid, endBoxes, held]);
 
-  // In a view that saves its layout, a line's middle stretches can be dragged.
+  // In a view that saves its layout, a line's bends can be dragged.
   const linesMovable = inView && editable && props.onArranged !== undefined;
   /** A line dropped where the person dragged it: held for every relationship on it, and saved. */
   const latestRouteMoved = useRef<(linkId: string, line: Point[]) => void>(() => undefined);
-  /** When a line was last dropped: the click that ends the drag opens nothing. */
+  /**
+   * When a line was last dropped, its drag cancelled, or the canvas panned from it: the click that
+   * ends it opens nothing.
+   */
   const routeMovedAt = useRef(-Infinity);
-  /** A line as dragged, with each end leaving its card outward; undefined when it can't be. */
-  const latestFitted = useRef<(linkId: string, line: readonly Point[]) => Point[] | undefined>(
-    () => undefined,
-  );
+  /** A line with a bend dragged to a point; undefined where no such line fits. */
+  const latestFitted = useRef<
+    (linkId: string, line: readonly Point[], index: number, to: Point) => Point[] | undefined
+  >(() => undefined);
   useEffect(() => {
-    latestFitted.current = (linkId, line) => {
+    latestFitted.current = (linkId, line, index, to) => {
       const link = laid?.drawn.find((each) => each.id === linkId);
       const sourceBox = link && endBoxes.get(link.source);
       const targetBox = link && endBoxes.get(link.target);
-      return sourceBox && targetBox ? fitEnds(squared(line), sourceBox, targetBox) : undefined;
+      if (!sourceBox || !targetBox) return undefined;
+      // Snapping is the same distance on the screen at every zoom.
+      const snap = bendSnap / (flow.getZoom() || 1);
+      return moveBend(line, index, to, sourceBox, targetBox, snap);
     };
     latestRouteMoved.current = (linkId, line) => {
       routeMovedAt.current = performance.now();
@@ -1278,95 +1294,168 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
       setHeldState({ canvas: laid.canvas, routes: next });
       setEdgeMenu(null);
+      setNote({ laid, text: 'Line moved.', canvas: laid.canvas });
       wantArranged();
     };
   });
-  // Every line as drawn now (reported by the lines), to find the line nearest a press.
+  // Every line as drawn now (reported by the lines), to find the bend nearest a press.
   const drawnLines = useRef(new Map<string, readonly Point[]>());
   const lineDrawn = useCallback((linkId: string, line: readonly Point[] | undefined) => {
     if (line) drawnLines.current.set(linkId, line);
     else drawnLines.current.delete(linkId);
   }, []);
-  /** A stretch being dragged: the line as it would be if dropped now. */
-  const [lineDrag, setLineDrag] = useState<{ linkId: string; points: Point[] } | null>(null);
-  const stretchDrag = useRef<{
-    pointer: number;
-    linkId: string;
-    index: number;
-    line: readonly Point[];
-    from: Point;
-    screen: { x: number; y: number };
-    moved: boolean;
-    stop: () => void;
-  } | null>(null);
+  /**
+   * A bend being dragged, on this line: from 4px of movement on, the line as it would be if
+   * dropped now (`points`).
+   */
+  const [lineDrag, setLineDrag] = useState<{ linkId: string; points?: Point[] } | null>(null);
+  /** The lines whose bend handles show now: a press grabs the nearest of their bends. */
+  const bendLines = useRef<readonly string[]>([]);
+  const bendDrag = useRef<{ stop: () => void } | null>(null);
   useEffect(
     () => () => {
-      stretchDrag.current?.stop();
+      bendDrag.current?.stop();
     },
     [],
   );
   /**
-   * A press on a line's grip or label. On a grip, the line nearest the pointer is the one moved,
-   * as a click there opens it, even where another line's grip lies on top; on a label, that line's
-   * nearest middle stretch. True when the press grabbed a stretch: from 4px on it is dragged, and
-   * the drop saves the line.
+   * What the live region says, for the drag's handlers, until another message or a new canvas
+   * (an empty text empties it).
    */
-  const linePress = useCallback(
-    (linkId: string, press: LinePress, on: 'grip' | 'label'): boolean => {
-      stretchDrag.current?.stop();
+  const latestNote = useRef<(text: string) => void>(() => undefined);
+  useEffect(() => {
+    latestNote.current = (text) => {
+      setNote({ laid, text, ...(laid ? { canvas: laid.canvas } : {}) });
+    };
+  });
+  /**
+   * A press on a bend handle: the bend nearest the pointer, among the lines whose handles show, is
+   * the one grabbed, where two lines' handles lie on top of each other. True when a bend was
+   * grabbed: from 4px on it is dragged, and the drop saves the line. Esc, a cancelled pointer or
+   * the window losing focus puts the line back, and nothing is saved.
+   */
+  const bendPress = useCallback(
+    (press: LinePress): boolean => {
+      bendDrag.current?.stop();
       const from = flow.screenToFlowPosition({ x: press.clientX, y: press.clientY });
-      let grabbed: { id: string; index: number } | undefined;
-      if (on === 'grip') {
-        grabbed = stretchAt(drawnLines.current, from);
-      } else {
-        const own = drawnLines.current.get(linkId);
-        const index = own && nearestMiddleStretch(own, from);
-        grabbed = index === undefined ? undefined : { id: linkId, index };
+      const shownLines = new Map<string, readonly Point[]>();
+      for (const id of bendLines.current) {
+        const drawn = drawnLines.current.get(id);
+        if (drawn) shownLines.set(id, drawn);
       }
-      const line = grabbed && drawnLines.current.get(grabbed.id);
-      if (!grabbed || !line) return false;
-      // The line as it would be if dropped here: each end still leaves its card outward, so a
-      // stretch dragged over a card stops beside it. Undefined where no such line fits.
+      const grabbed = bendAt(shownLines, from);
+      const line = grabbed && simplified(shownLines.get(grabbed.id) ?? []);
+      const bend = grabbed && line?.[grabbed.index];
+      if (!grabbed || !line || !bend) return false;
+      const { id: linkId, index } = grabbed;
+      // The line as it would be if dropped here: undefined where no line fits.
       const to = (event: PointerEvent) => {
         const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        const moved = moveStretch(line, drag.index, { x: at.x - from.x, y: at.y - from.y });
-        return latestFitted.current(drag.linkId, moved);
+        return latestFitted.current(linkId, line, index, {
+          x: bend.x + at.x - from.x,
+          y: bend.y + at.y - from.y,
+        });
       };
+      let moved = false;
       const onMove = (event: PointerEvent) => {
-        if (event.pointerId !== drag.pointer) return;
-        const distance = Math.hypot(event.clientX - drag.screen.x, event.clientY - drag.screen.y);
-        if (!drag.moved && distance <= dragThreshold) return;
-        drag.moved = true;
-        setLineDrag({ linkId: drag.linkId, points: to(event) ?? [...line] });
+        if (event.pointerId !== press.pointerId) return;
+        const distance = Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY);
+        if (!moved && distance <= dragThreshold) return;
+        // The live region empties as the drag starts, so the drop's "Line moved." is a change and
+        // is announced, also for a second move in a row.
+        if (!moved) latestNote.current('');
+        moved = true;
+        setLineDrag({ linkId, points: to(event) ?? [...line] });
       };
       const onUp = (event: PointerEvent) => {
-        if (event.pointerId !== drag.pointer) return;
-        drag.stop();
-        if (!drag.moved) return;
+        if (event.pointerId !== press.pointerId) return;
+        stop();
+        if (!moved) return;
         // A drag: the line is held where it was dropped, and saved; the click ending it opens
         // nothing, also where no line fits and nothing changes.
         routeMovedAt.current = performance.now();
         const dropped = to(event);
-        if (dropped) latestRouteMoved.current(drag.linkId, dropped);
+        if (dropped) latestRouteMoved.current(linkId, dropped);
+      };
+      /**
+       * The release after a cancel opens nothing either. A release outside the window is never
+       * seen: the next press ends the wait.
+       */
+      const swallowRelease = (event: PointerEvent) => {
+        if (event.type === 'pointerup' && event.pointerId === press.pointerId) {
+          routeMovedAt.current = performance.now();
+        } else if (event.type !== 'pointerdown') {
+          return;
+        }
+        window.removeEventListener('pointerup', swallowRelease, true);
+        window.removeEventListener('pointerdown', swallowRelease, true);
+      };
+      const cancel = () => {
+        stop();
+        routeMovedAt.current = performance.now();
+        window.addEventListener('pointerup', swallowRelease, true);
+        window.addEventListener('pointerdown', swallowRelease, true);
+        latestNote.current('Line move cancelled.');
+      };
+      const onKey = (event: globalThis.KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        // Only the drag: the open relationship stays open, and the cards keep focus.
+        event.preventDefault();
+        event.stopPropagation();
+        cancel();
+      };
+      const onCancel = (event: PointerEvent) => {
+        if (event.pointerId === press.pointerId) cancel();
+      };
+      const stop = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('blur', cancel);
+        if (bendDrag.current === drag) bendDrag.current = null;
+        setLineDrag(null);
+      };
+      const drag = { stop };
+      bendDrag.current = drag;
+      setLineDrag({ linkId });
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onKey, true);
+      window.addEventListener('blur', cancel);
+      return true;
+    },
+    [flow],
+  );
+
+  /**
+   * A press on a line: from 4px on, the drag pans the canvas (React Flow keeps its lines from
+   * panning), and the click ending it opens nothing. Less is a click, which opens the line.
+   */
+  const linePress = useCallback(
+    (press: LinePress): boolean => {
+      const start = flow.getViewport();
+      let moved = false;
+      const onMove = (event: PointerEvent) => {
+        if (event.pointerId !== press.pointerId) return;
+        const dx = event.clientX - press.clientX;
+        const dy = event.clientY - press.clientY;
+        if (!moved && Math.hypot(dx, dy) <= dragThreshold) return;
+        if (!moved) setRelated(null);
+        moved = true;
+        void flow.setViewport({ x: start.x + dx, y: start.y + dy, zoom: start.zoom });
+      };
+      const onUp = (event: PointerEvent) => {
+        if (event.pointerId !== press.pointerId) return;
+        stop();
+        if (moved) routeMovedAt.current = performance.now();
       };
       const stop = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointercancel', stop);
-        if (stretchDrag.current === drag) stretchDrag.current = null;
-        setLineDrag(null);
       };
-      const drag = {
-        pointer: press.pointerId,
-        linkId: grabbed.id,
-        index: grabbed.index,
-        line,
-        from,
-        screen: { x: press.clientX, y: press.clientY },
-        moved: false,
-        stop,
-      };
-      stretchDrag.current = drag;
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', stop);
@@ -1501,6 +1590,26 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   }, [laid, absolute, endBoxes, shown, routes, handRoutes]);
 
   const { selectedRelationshipId: chosen, litRelationshipId: fresh, shownProperties } = props;
+  // Bend handles show on the line under the pointer and on the open relationship's line; while a
+  // bend is dragged, only on its line. None while a card is dragged, moved or resized, or while a
+  // relationship is drawn.
+  const hoveredLink = hover?.kind === 'link' ? hover.id : undefined;
+  const bendsAllowed =
+    linesMovable && !dragging && moving === null && !resizingCard && drawingFrom === null;
+  const bendLinkIds = useMemo(() => {
+    if (!bendsAllowed || !laid) return [];
+    if (lineDrag) return [lineDrag.linkId];
+    return laid.drawn
+      .filter(
+        (link) =>
+          link.id === hoveredLink ||
+          (chosen !== undefined && link.relationshipIds.includes(chosen)),
+      )
+      .map((link) => link.id);
+  }, [bendsAllowed, laid, lineDrag, hoveredLink, chosen]);
+  useEffect(() => {
+    bendLines.current = bendLinkIds;
+  });
   const edges = useMemo<RelationshipFlowEdge[]>(() => {
     if (!laid) return [];
     const name = (id: string) => graph.elements.get(id)?.name || '(unnamed)';
@@ -1514,7 +1623,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const grayed = isGrayed(link, shownProperties);
       const bends = routes.get(link.id);
       const ends = floating.get(link.id);
-      const route = lineDrag?.linkId === link.id ? lineDrag.points : handRoutes.get(link.id);
+      const dragged = lineDrag?.linkId === link.id ? lineDrag.points : undefined;
+      const route = dragged ?? handRoutes.get(link.id);
       return {
         id: link.id,
         type: 'relationship' as const,
@@ -1548,19 +1658,27 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           ...(bends ? { bends } : {}),
           ...(ends ? { ends } : {}),
           ...(route ? { route } : {}),
-          ...(linesMovable ? { onLinePress: linePress, onLineDrawn: lineDrawn } : {}),
+          ...(linesMovable
+            ? {
+                onBendPress: bendPress,
+                onLinePress: linePress,
+                onLineDrawn: lineDrawn,
+                ...(bendLinkIds.includes(link.id) ? { bendHandles: true } : {}),
+              }
+            : {}),
           ...(highlight && !lit ? { dim: true } : {}),
           ...(grayed && !lit ? { grayed: true } : {}),
           ...(resting ? { resting: true } : {}),
           ...(lit || resting || link.state !== 'Current'
             ? { cards: cardBoxes, hideLabel: dragging }
             : {}),
-          // The label is part of the line: hovering keeps it lit, a click opens it.
-          onLabelClick: (clientX: number, clientY: number) => {
+          // The label and the bend handles are part of the line: hovering keeps it lit, a click
+          // opens it.
+          onLineClick: (clientX: number, clientY: number) => {
             if (performance.now() - routeMovedAt.current < clickAfterDrag) return;
             latestOpenLink.current(link.id, clientX, clientY);
           },
-          onLabelHover: (over: boolean) => {
+          onLineHover: (over: boolean) => {
             setHover(over ? { kind: 'link', id: link.id } : null);
           },
         },
@@ -1580,7 +1698,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     handRoutes,
     lineDrag,
     linesMovable,
+    bendPress,
     linePress,
+    bendLinkIds,
     lineDrawn,
     shownProperties,
   ]);
@@ -1881,7 +2001,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     [graph, related, laid],
   );
   const announcement =
-    note && note.laid === laid
+    note && (note.laid === laid || (note.canvas !== undefined && note.canvas === laid?.canvas))
       ? note.text
       : laid
         ? `${inView ? `View ${props.viewName || '(unnamed)'}` : `Focused ${graph.elements.get(laid.hood.focusId)?.name || '(unnamed)'}`}. ${counted(laid.placed.size, 'element')} shown.`
@@ -1950,7 +2070,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   };
 
   // While drawing: the card under the pointer (and the chip over the source), and Esc.
-  const [drawingFrom, setDrawingFrom] = useState<string | null>(null);
   useEffect(() => {
     if (drawingFrom === null) return;
     const onMove = (event: PointerEvent) => {
@@ -2110,7 +2229,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     <section
       ref={section}
       id="canvas"
-      className={`canvas${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}${drawingFrom !== null ? ' is-drawing' : ''}${editable ? ' is-editable' : ''}`}
+      className={`canvas${dragging ? ' is-dragging' : ''}${lineDrag ? ' is-bending' : ''}${dropTarget ? ' is-drop-target' : ''}${drawingFrom !== null ? ' is-drawing' : ''}${editable ? ' is-editable' : ''}`}
       tabIndex={-1}
       onDoubleClick={(event) => {
         const target = event.target as HTMLElement;
@@ -2197,8 +2316,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           setHover(null);
         }}
         onEdgeClick={(event, edge) => {
-          // The line's own grip keeps a drag's click from the line; this is in case a browser
-          // sends it to the line instead.
+          // A bend handle keeps a drag's click from the line; this is in case a browser sends it
+          // to the line instead.
           if (performance.now() - routeMovedAt.current < clickAfterDrag) return;
           openLink(
             nearestLineAt(event.clientX, event.clientY, edge.id),
@@ -2207,6 +2326,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           );
         }}
         onPaneClick={() => {
+          // Nor does the end of a bend drag whose handle went (bends that lined up) clear it.
+          if (performance.now() - routeMovedAt.current < clickAfterDrag) return;
           setEdgeMenu(null);
           props.onDeselect?.();
         }}

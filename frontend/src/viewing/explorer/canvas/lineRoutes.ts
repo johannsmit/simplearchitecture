@@ -9,8 +9,8 @@ import type { PlacedHandle, Side } from './elkLayout';
 import type { Box, Point } from './positions';
 
 /**
- * Lines moved by hand in a view: dragging one of a line's middle stretches sideways, and keeping
- * that route as its cards move. A line is its points on the canvas, from the source's end to the
+ * Lines moved by hand in a view: dragging one of a line's bends, and keeping that route as its
+ * cards move. A line is its points on the canvas, from the source's end to the
  * target's end, each stretch straight across or straight up and down. Pure, so it is tested
  * without a browser.
  */
@@ -40,36 +40,6 @@ const roomSpare = 0.5;
 
 /** A stretch that runs across (rather than up and down). */
 export const isLevel = (a: Point, b: Point): boolean => Math.abs(a.y - b.y) <= Math.abs(a.x - b.x);
-
-/**
- * The stretches of a line that can be dragged, by the index of their first point: every one but
- * the first and the last, which stay on their cards.
- */
-export function middleStretches(line: readonly Point[]): number[] {
-  const result: number[] = [];
-  for (let index = 1; index <= line.length - 3; index++) result.push(index);
-  return result;
-}
-
-/**
- * The line with one middle stretch moved sideways by `by`: a stretch across moves up or down, one
- * up and down moves left or right. The stretches either side of it grow or shrink, so the line
- * keeps its right angles; its other points stay.
- */
-export function moveStretch(line: readonly Point[], index: number, by: Point): Point[] {
-  const points = line.map((point) => ({ ...point }));
-  const a = points[index];
-  const b = points[index + 1];
-  if (!a || !b || index < 1 || index > line.length - 3) return points;
-  if (isLevel(a, b)) {
-    a.y += by.y;
-    b.y += by.y;
-  } else {
-    a.x += by.x;
-    b.x += by.x;
-  }
-  return points;
-}
 
 /**
  * The line with exact right angles: each stretch shares x or y with the one before, whichever it
@@ -204,6 +174,173 @@ export function fitEnds(
   return leavesOutward(first, second, source) && leavesOutward(last, beforeLast, target)
     ? result
     : undefined;
+}
+
+type Axis = 'x' | 'y';
+
+/**
+ * How near a dragged bend comes to lining up before it snaps, on the screen (the canvas divides it
+ * by the zoom).
+ */
+export const bendSnap = 6;
+
+/**
+ * A line's bends, by their index in the line: every point between its two ends. A straight line
+ * has none. The line is taken without repeated points or points in the middle of a stretch.
+ */
+export function bendsOf(line: readonly Point[]): number[] {
+  const result: number[] = [];
+  for (let index = 1; index < line.length - 1; index++) result.push(index);
+  return result;
+}
+
+/** The middle of a card, or of a Stakeholder's circle: where a line leaves the middle of a side. */
+function centreOf(card: EndCard): Point {
+  return card.circle === true
+    ? { x: card.x + circleNodeWidth / 2, y: card.y + circleDiameter / 2 }
+    : { x: card.x + card.width / 2, y: card.y + card.height / 2 };
+}
+
+/**
+ * Where an end may slide along its card's side, along `axis`: `endRoom` clear of the side's
+ * corners (on a Stakeholder, of its circle's top and bottom). An end already closer keeps its
+ * place, but goes no further. On a circle an end slides only up and down.
+ */
+function slideRange(card: EndCard, end: Point, axis: Axis): { low: number; high: number } {
+  let low: number;
+  let high: number;
+  if (card.circle === true) {
+    if (axis === 'x') return { low: end.x, high: end.x };
+    low = card.y + endRoom;
+    high = card.y + circleDiameter - endRoom;
+  } else {
+    low = card[axis] + endRoom;
+    high = card[axis] + (axis === 'x' ? card.width : card.height) - endRoom;
+  }
+  if (low > high) low = high = (low + high) / 2;
+  return { low: Math.min(low, end[axis]), high: Math.max(high, end[axis]) };
+}
+
+/** The value, or the nearest of `candidates` within `within` of it. */
+function snapped(value: number, candidates: readonly number[], within: number): number {
+  let best = value;
+  let distance = within;
+  for (const candidate of candidates) {
+    const away = Math.abs(candidate - value);
+    if (away <= distance) {
+      best = candidate;
+      distance = away;
+    }
+  }
+  return best;
+}
+
+/**
+ * The line with bend `index` dragged to `to`. The stretches either side of the bend move with it,
+ * sideways, so the line keeps its right angles; its other bends stay. An end next to the bend
+ * slides along its card's side, `endRoom` clear of the corners, and never turns onto another side:
+ * past that, the bend stops. The bend first snaps, within `snap`, to the x or y of the line's other
+ * points and of its two cards' middles. A bend dragged over the card of an end next to it stops just
+ * outside the side the end is on; dragged past the card, the end goes to its other side
+ * (`fitEnds`). Bends that line up merge. Undefined when no such line fits: the line stays as it
+ * was.
+ */
+export function moveBend(
+  line: readonly Point[],
+  index: number,
+  to: Point,
+  source: EndCard,
+  target: EndCard,
+  snap = 0,
+): Point[] | undefined {
+  const points = simplified(squared(line));
+  const last = points.length - 1;
+  const bend = points[index];
+  if (!bend || index < 1 || index >= last) return undefined;
+  // The neighbours that move with the bend: up and down on its stretch across, left and right on
+  // its stretch up and down.
+  const beforeLevel = isLevel(points[index - 1] as Point, bend);
+  const along: Record<Axis, number> = {
+    x: beforeLevel ? index + 1 : index - 1,
+    y: beforeLevel ? index - 1 : index + 1,
+  };
+  const cardAt = (at: number) => (at === 0 ? source : at === last ? target : undefined);
+  const ranges = new Map<number, { axis: Axis; low: number; high: number }>();
+  for (const axis of ['x', 'y'] as const) {
+    const card = cardAt(along[axis]);
+    if (card)
+      ranges.set(along[axis], { axis, ...slideRange(card, points[along[axis]] as Point, axis) });
+  }
+  const middles = [centreOf(source), centreOf(target)];
+  const at = { ...to };
+  for (const axis of ['x', 'y'] as const) {
+    if (snap > 0) {
+      const others = points.filter((_, each) => each !== index && each !== along[axis]);
+      at[axis] = snapped(
+        at[axis],
+        [...others, ...middles].map((point) => point[axis]),
+        snap,
+      );
+    }
+    const range = ranges.get(along[axis]);
+    if (range) at[axis] = Math.min(range.high, Math.max(range.low, at[axis]));
+  }
+  /** Puts the bend, and the neighbour that moves with it, at `value` along `axis`. */
+  const place = (axis: Axis, value: number) => {
+    bend[axis] = value;
+    const neighbour = points[along[axis]] as Point;
+    neighbour[axis] = value;
+    const card = cardAt(along[axis]);
+    // An end on a circle stays on it as it slides up or down.
+    const sides = card && axis === 'y' ? sidesOf(card, true, neighbour) : undefined;
+    if (card?.circle === true && sides) {
+      neighbour.x = neighbour.x < card.x + circleNodeWidth / 2 ? sides.low : sides.high;
+    }
+  };
+  place('x', at.x);
+  place('y', at.y);
+  for (const [endIndex, card] of [
+    [0, source],
+    [last, target],
+  ] as const) {
+    if (Math.abs(endIndex - index) !== 1) continue;
+    const end = points[endIndex] as Point;
+    // The end's stretch runs along x when the end moves up and down with the bend.
+    const axis: Axis = along.y === endIndex ? 'x' : 'y';
+    const sides = sidesOf(card, axis === 'x', end);
+    const room = endRoom - roomSpare;
+    if (!sides || bend[axis] <= sides.low - room || bend[axis] >= sides.high + room) continue;
+    const onLow = Math.abs(end[axis] - sides.low) <= Math.abs(end[axis] - sides.high);
+    place(axis, onLow ? sides.low - endRoom : sides.high + endRoom);
+  }
+  // An end that had to move on with the bend (on a line with one corner) is still on its side.
+  for (const [at, range] of ranges) {
+    const value = (points[at] as Point)[range.axis];
+    if (value < range.low - roomSpare || value > range.high + roomSpare) return undefined;
+  }
+  return fitEnds(points, source, target);
+}
+
+/** How far a point is from a bend. */
+const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/**
+ * The bend a press grabs: the one nearest the point among the lines given (those whose bends
+ * show), as overlapping handles may lie on top of each other. Undefined for lines without bends.
+ */
+export function bendAt(
+  lines: ReadonlyMap<string, readonly Point[]>,
+  point: Point,
+): { id: string; index: number } | undefined {
+  let best: { id: string; index: number; away: number } | undefined;
+  for (const [id, line] of lines) {
+    const points = simplified(line);
+    for (const index of bendsOf(points)) {
+      const away = distance(points[index] as Point, point);
+      if (!best || away < best.away) best = { id, index, away };
+    }
+  }
+  return best && { id: best.id, index: best.index };
 }
 
 /**
@@ -407,61 +544,4 @@ export function endPlace(point: Point, box: Box): { side: Side; offset: number }
   if (near(point.y, box.y)) return { side: 'top', offset: point.x - box.x };
   if (near(point.y, box.y + box.height)) return { side: 'bottom', offset: point.x - box.x };
   return undefined;
-}
-
-/** How far a point is from a stretch of a line. */
-function distanceTo(point: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const length = dx * dx + dy * dy;
-  const t =
-    length === 0
-      ? 0
-      : Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length));
-  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
-}
-
-/** The stretch of a line nearest a point, by the index of its first point, and how far it is. */
-function nearestStretch(
-  line: readonly Point[],
-  point: Point,
-  only?: readonly number[],
-): { index: number; distance: number } | undefined {
-  let best: { index: number; distance: number } | undefined;
-  for (let index = 0; index < line.length - 1; index++) {
-    if (only && !only.includes(index)) continue;
-    const distance = distanceTo(point, line[index] as Point, line[index + 1] as Point);
-    if (!best || distance < best.distance) best = { index, distance };
-  }
-  return best;
-}
-
-/**
- * The middle stretch a press on the canvas grabs: that of the line nearest the point, among all the
- * lines drawn, as a click there opens the nearest line. Undefined when the nearest line's nearest
- * stretch is its first or last (attached to a card), so nothing moves.
- */
-export function stretchAt(
-  lines: ReadonlyMap<string, readonly Point[]>,
-  point: Point,
-): { id: string; index: number } | undefined {
-  let best: { id: string; index: number; distance: number } | undefined;
-  for (const [id, line] of lines) {
-    const found = nearestStretch(line, point);
-    if (found && (!best || found.distance < best.distance)) best = { id, ...found };
-  }
-  if (!best) return undefined;
-  const line = lines.get(best.id) as readonly Point[];
-  return middleStretches(line).includes(best.index)
-    ? { id: best.id, index: best.index }
-    : undefined;
-}
-
-/**
- * The middle stretch of a line nearest a point, however far: a press on the line's label grabs
- * it, as the label may cover a short stretch whole. Undefined for a line without one.
- */
-export function nearestMiddleStretch(line: readonly Point[], point: Point): number | undefined {
-  const middle = middleStretches(line);
-  return middle.length === 0 ? undefined : nearestStretch(line, point, middle)?.index;
 }

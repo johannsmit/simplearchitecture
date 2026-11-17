@@ -886,22 +886,60 @@
   opacity: 0.15;
 }
 
-/* A line's middle stretch in a view that can change: an invisible, wider stroke over it, dragged
- * sideways to move the stretch. The cursor shows the way it moves. */
-.line-grip {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 12;
-  pointer-events: stroke;
+/* A bend of a line in a view that can change: a square on the corner, dragged to move it. Above
+ * the cards and the labels, below a lifted card. The canvas scales it back, so it is the same
+ * size on the screen at every zoom: 24px to grab, 10px drawn. */
+.bend-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2500;
+  width: 24px;
+  height: 24px;
+  transform-origin: 0 0;
+  pointer-events: all;
+  cursor: move;
   touch-action: none;
+  animation: bend-handle-in var(--t-fast);
 }
 
-.line-grip.is-upright {
-  cursor: ew-resize;
+.bend-handle::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-xs);
+  background: var(--surface-raised);
+  transition: background-color var(--t-fast);
 }
 
-.line-grip.is-across {
-  cursor: ns-resize;
+.bend-handle:hover::before,
+.bend-handle.is-pressed::before {
+  background: var(--accent);
+}
+
+/* Fading out: it can no longer be grabbed. */
+.bend-handle.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast);
+}
+
+@keyframes bend-handle-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Dragging a bend: the cursor is a closed hand everywhere. */
+.canvas.is-bending,
+.canvas.is-bending .react-flow__pane,
+.canvas.is-bending .react-flow__edge,
+.canvas.is-bending .edge-label,
+.canvas.is-bending .bend-handle,
+.canvas.is-bending .card-main {
+  cursor: grabbing;
 }
 
 .smark {

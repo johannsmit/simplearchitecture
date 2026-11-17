@@ -1,20 +1,19 @@
 import { maxViewLineBends } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
 import {
+  bendAt,
+  bendsOf,
   endPlace,
   fitEnds,
   followCards,
   handleEnd,
   heldFromStored,
-  laidLine,
-  nearestMiddleStretch,
   isRightAngled,
-  middleStretches,
-  moveStretch,
+  laidLine,
+  moveBend,
   routesToSave,
   squared,
   storedPoints,
-  stretchAt,
   withLaidRoutes,
   type HeldRoute,
 } from '../src/viewing/explorer/canvas/lineRoutes';
@@ -38,45 +37,182 @@ const held: HeldRoute = {
   targetBox: target,
 };
 
-describe('moving a stretch', () => {
-  it('only the middle stretches can be dragged', () => {
-    expect(middleStretches(zigzag)).toEqual([1]);
-    expect(middleStretches(zigzag.slice(0, 3))).toEqual([]);
-    expect(middleStretches(zigzag.slice(0, 2))).toEqual([]);
-    expect(middleStretches([...zigzag, { x: 400, y: 300 }])).toEqual([1, 2]);
+describe('moving a bend', () => {
+  it('a line’s bends are the points between its ends; a straight line has none', () => {
+    expect(bendsOf(zigzag)).toEqual([1, 2]);
+    expect(bendsOf(zigzag.slice(0, 3))).toEqual([1]);
+    expect(bendsOf(zigzag.slice(0, 2))).toEqual([]);
   });
 
-  it('moves an upright stretch left or right only, and its neighbours stretch', () => {
-    const moved = moveStretch(zigzag, 1, { x: -60, y: 35 });
-    expect(moved).toEqual([
+  it('moves the stretches beside the bend with it, and leaves the other bends', () => {
+    // Out of the source, across, down, across, down, across into the target.
+    const line = [
       { x: 168, y: 22 },
       { x: 220, y: 22 },
-      { x: 220, y: 222 },
+      { x: 220, y: 120 },
+      { x: 330, y: 120 },
+      { x: 330, y: 222 },
+      { x: 400, y: 222 },
+    ];
+    const moved = moveBend(line, 2, { x: 240, y: 140 }, source, target);
+    expect(moved).toEqual([
+      { x: 168, y: 22 },
+      { x: 240, y: 22 },
+      { x: 240, y: 140 },
+      { x: 330, y: 140 },
+      { x: 330, y: 222 },
       { x: 400, y: 222 },
     ]);
-    expect(isRightAngled(moved)).toBe(true);
+    expect(isRightAngled(moved ?? [])).toBe(true);
     // The line given is unchanged.
-    expect(zigzag[1]).toEqual({ x: 280, y: 22 });
+    expect(line[2]).toEqual({ x: 220, y: 120 });
   });
 
-  it('moves a stretch across up or down only', () => {
-    const line = [
-      { x: 84, y: 44 },
-      { x: 84, y: 120 },
-      { x: 484, y: 120 },
-      { x: 484, y: 200 },
-    ];
-    expect(moveStretch(line, 1, { x: 50, y: -30 })).toEqual([
-      { x: 84, y: 44 },
-      { x: 84, y: 90 },
-      { x: 484, y: 90 },
-      { x: 484, y: 200 },
+  it('slides the end next to the bend along its card’s side', () => {
+    expect(moveBend(zigzag, 1, { x: 300, y: 30 }, source, target)).toEqual([
+      { x: 168, y: 30 },
+      { x: 300, y: 30 },
+      { x: 300, y: 222 },
+      { x: 400, y: 222 },
     ]);
   });
 
-  it('never moves the first or the last stretch', () => {
-    expect(moveStretch(zigzag, 0, { x: 10, y: 10 })).toEqual(zigzag);
-    expect(moveStretch(zigzag, 2, { x: 10, y: 10 })).toEqual(zigzag);
+  it('keeps the end 8px clear of its side’s corners, and never on another side', () => {
+    // Down past the source's bottom right corner: the bend stops 8px above it.
+    expect(moveBend(zigzag, 1, { x: 280, y: 100 }, source, target)).toEqual([
+      { x: 168, y: 36 },
+      { x: 280, y: 36 },
+      { x: 280, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+    expect(moveBend(zigzag, 1, { x: 280, y: -50 }, source, target)?.[0]).toEqual({ x: 168, y: 8 });
+    // The bend beside the target: its end stays on the target's left side.
+    expect(moveBend(zigzag, 2, { x: 300, y: 400 }, source, target)?.slice(1)).toEqual([
+      { x: 300, y: 22 },
+      { x: 300, y: 236 },
+      { x: 400, y: 236 },
+    ]);
+  });
+
+  it('stops a bend dragged over its end’s card just beside it; past the card, the end goes to the other side', () => {
+    expect(moveBend(zigzag, 1, { x: 100, y: 22 }, source, target)).toEqual([
+      { x: 168, y: 22 },
+      { x: 176, y: 22 },
+      { x: 176, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+    expect(moveBend(zigzag, 1, { x: -60, y: 22 }, source, target)).toEqual([
+      { x: 0, y: 22 },
+      { x: -60, y: 22 },
+      { x: -60, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+  });
+
+  it('moves a line with one corner by that corner: both ends slide', () => {
+    const below = { x: 300, y: 200, width: 168, height: 44 };
+    const corner = [
+      { x: 168, y: 22 },
+      { x: 384, y: 22 },
+      { x: 384, y: 200 },
+    ];
+    expect(moveBend(corner, 1, { x: 360, y: 30 }, source, below)).toEqual([
+      { x: 168, y: 30 },
+      { x: 360, y: 30 },
+      { x: 360, y: 200 },
+    ]);
+    // Past the target's left corner: the bend stops 8px inside it.
+    expect(moveBend(corner, 1, { x: 250, y: 30 }, source, below)?.[1]).toEqual({ x: 308, y: 30 });
+    // Over its source: just beside it, the target's end sliding with it.
+    const under = { x: 100, y: 200, width: 168, height: 44 };
+    const short = [
+      { x: 168, y: 22 },
+      { x: 220, y: 22 },
+      { x: 220, y: 200 },
+    ];
+    expect(moveBend(short, 1, { x: 150, y: 22 }, source, under)).toEqual([
+      { x: 168, y: 22 },
+      { x: 176, y: 22 },
+      { x: 176, y: 200 },
+    ]);
+  });
+
+  it('slides an end on a Stakeholder along its circle, between its top and bottom', () => {
+    // A circle 48 across, centred at x 860, y 214.
+    const keeper = { x: 800, y: 190, width: 120, height: 70, circle: true };
+    const scheduler = { x: 500, y: 56, width: 168, height: 44 };
+    const line = [
+      { x: 836, y: 214 },
+      { x: 760, y: 214 },
+      { x: 760, y: 78 },
+      { x: 668, y: 78 },
+    ];
+    const moved = moveBend(line, 1, { x: 760, y: 224 }, keeper, scheduler);
+    expect(moved?.[0]?.y).toBe(224);
+    expect(moved?.[0]?.x).toBeCloseTo(860 - Math.sqrt(24 * 24 - 10 * 10), 6);
+    const far = moveBend(line, 1, { x: 760, y: 400 }, keeper, scheduler);
+    expect(far?.[0]?.y).toBe(230);
+    expect(far?.[0]?.x).toBeCloseTo(860 - Math.sqrt(24 * 24 - 16 * 16), 6);
+  });
+
+  it('snaps within 6px to the line’s other points; bends that line up merge', () => {
+    const line = [
+      { x: 168, y: 22 },
+      { x: 220, y: 22 },
+      { x: 220, y: 120 },
+      { x: 330, y: 120 },
+      { x: 330, y: 222 },
+      { x: 400, y: 222 },
+    ];
+    expect(moveBend(line, 2, { x: 326, y: 124 }, source, target)).toEqual([
+      { x: 168, y: 22 },
+      { x: 326, y: 22 },
+      { x: 326, y: 124 },
+      { x: 330, y: 124 },
+      { x: 330, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+    // With snapping: x lines up with the bend at 330, and the line becomes a Z.
+    expect(moveBend(line, 2, { x: 326, y: 124 }, source, target, 6)).toEqual(
+      zigzag.map((point, index) => (index === 1 || index === 2 ? { ...point, x: 330 } : point)),
+    );
+    // Further than 6px: no snap.
+    expect(moveBend(line, 2, { x: 323, y: 124 }, source, target, 6)?.[1]).toEqual({
+      x: 323,
+      y: 22,
+    });
+  });
+
+  it('snaps to the middle of an end’s card, so the end leaves from the middle of its side', () => {
+    const low = [
+      { x: 168, y: 22 },
+      { x: 280, y: 22 },
+      { x: 280, y: 210 },
+      { x: 400, y: 210 },
+    ];
+    expect(moveBend(low, 2, { x: 280, y: 218 }, source, target, 6)?.slice(2)).toEqual([
+      { x: 280, y: 222 },
+      { x: 400, y: 222 },
+    ]);
+  });
+
+  it('a Z-shaped line whose middle bends line up becomes straight', () => {
+    const beside = { x: 400, y: 10, width: 168, height: 44 };
+    const z = [
+      { x: 168, y: 22 },
+      { x: 280, y: 22 },
+      { x: 280, y: 40 },
+      { x: 400, y: 40 },
+    ];
+    expect(moveBend(z, 2, { x: 280, y: 24 }, source, beside, 6)).toEqual([
+      { x: 168, y: 22 },
+      { x: 400, y: 22 },
+    ]);
+  });
+
+  it('a straight line has no bend to move', () => {
+    expect(moveBend(zigzag.slice(0, 2), 1, { x: 200, y: 100 }, source, target)).toBeUndefined();
+    expect(moveBend(zigzag, 0, { x: 200, y: 100 }, source, target)).toBeUndefined();
   });
 
   it('squares a line that is nearly right-angled, keeping both ends', () => {
@@ -416,8 +552,9 @@ describe('a line from the automatic layout, moved by hand', () => {
   ];
 
   it('saves right-angled to a tenth of a pixel, and opens again with the same route', () => {
-    const dragged = squared(moveStretch(laidOut, 1, { x: 40.26, y: 7.3 }));
-    const saved = storedPoints(dragged);
+    // Its second bend dragged right.
+    const dragged = moveBend(laidOut, 2, { x: 254.4999912780347 + 40.26, y: 92 }, from, to);
+    const saved = dragged && storedPoints(dragged);
     expect(saved).toEqual([
       { x: 198.5, y: 36 },
       { x: 294.8, y: 36 },
@@ -443,11 +580,11 @@ describe('where an end sits', () => {
   });
 });
 
-describe('which stretch a press grabs', () => {
-  // Another line running 4px beside the zigzag's upright stretch.
+describe('which bend a press grabs', () => {
+  // Another line whose bend lies 4px from the zigzag's first bend.
   const beside = [
-    { x: 168, y: 30 },
-    { x: 284, y: 30 },
+    { x: 168, y: 26 },
+    { x: 284, y: 26 },
     { x: 284, y: 230 },
     { x: 400, y: 230 },
   ];
@@ -456,15 +593,15 @@ describe('which stretch a press grabs', () => {
     ['beside', beside],
   ]);
 
-  it('takes the line nearest the pointer, as a click there opens it', () => {
-    expect(stretchAt(lines, { x: 280.5, y: 120 })).toEqual({ id: 'zig', index: 1 });
-    expect(stretchAt(lines, { x: 283.5, y: 120 })).toEqual({ id: 'beside', index: 1 });
+  it('takes the bend nearest the pointer, among the lines whose bends show', () => {
+    expect(bendAt(lines, { x: 281, y: 23 })).toEqual({ id: 'zig', index: 1 });
+    expect(bendAt(lines, { x: 283, y: 25 })).toEqual({ id: 'beside', index: 1 });
+    expect(bendAt(lines, { x: 279, y: 221 })).toEqual({ id: 'zig', index: 2 });
   });
 
-  it('grabs nothing when the nearest stretch is attached to a card', () => {
-    expect(stretchAt(lines, { x: 200, y: 21 })).toBeUndefined();
+  it('grabs nothing on a straight line', () => {
     expect(
-      stretchAt(
+      bendAt(
         new Map([
           [
             'straight',
@@ -477,13 +614,6 @@ describe('which stretch a press grabs', () => {
         { x: 200, y: 22 },
       ),
     ).toBeUndefined();
-  });
-
-  it('from a label, takes its own line’s nearest middle stretch, however far', () => {
-    const five = [...zigzag.slice(0, 3), { x: 330, y: 222 }, { x: 330, y: 300 }];
-    expect(nearestMiddleStretch(five, { x: 320, y: 240 })).toBe(2);
-    expect(nearestMiddleStretch(five, { x: 900, y: -400 })).toBe(1);
-    expect(nearestMiddleStretch(zigzag.slice(0, 3), { x: 200, y: 22 })).toBeUndefined();
   });
 });
 

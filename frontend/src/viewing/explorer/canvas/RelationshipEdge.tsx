@@ -1,10 +1,10 @@
 import type { ArchitectureState, EdgeType } from '@simplearchitecture/shared';
-import { BaseEdge, EdgeLabelRenderer, type Edge, type EdgeProps } from '@xyflow/react';
-import { memo, useEffect, useMemo, useRef, type PointerEvent } from 'react';
+import { BaseEdge, EdgeLabelRenderer, useStore, type Edge, type EdgeProps } from '@xyflow/react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { edgeEnds } from '../../../metamodel-ui';
-import { directLine, edgeLine, linePath, type LineEnd } from './edgeLine';
+import { directLine, edgeLine, linePath, simplified, type LineEnd } from './edgeLine';
 import { labelLines, placeRestingLabel, placeStateMark } from './labels';
-import { isLevel, middleStretches } from './lineRoutes';
+import { bendsOf } from './lineRoutes';
 import { dragThreshold } from './positions';
 import type { Box, Point } from './positions';
 
@@ -32,13 +32,19 @@ export interface RelationshipData extends Record<string, unknown> {
   ends?: { start: LineEnd; end: LineEnd; points?: readonly Point[] };
   /** A route given by hand (in a view), as it runs with its cards where they are now. */
   route?: readonly Point[];
+  /** Its bends show as handles, to be dragged (Modelling, in a view). */
+  bendHandles?: boolean;
   /**
-   * Its middle stretches can be dragged sideways (Modelling, in a view). A press on a stretch's
-   * grip (`on: 'grip'`) or on the label (`on: 'label'`): the canvas decides which line and stretch
-   * it grabs, and true when the press may become a drag (the pointer is then captured).
+   * A press on a bend handle: the canvas decides which bend it grabs (the nearest of those that
+   * show), and true when the press may become a drag (the pointer is then captured).
    */
-  onLinePress?: (linkId: string, press: LinePress, on: 'grip' | 'label') => boolean;
-  /** Where the line is drawn now, so the canvas can find the line nearest a press. */
+  onBendPress?: (press: LinePress) => boolean;
+  /**
+   * A press on the line itself (Modelling, in a view): a drag from it pans the canvas, as React
+   * Flow keeps its lines from panning. True when the canvas took it.
+   */
+  onLinePress?: (press: LinePress) => boolean;
+  /** Where the line is drawn now, so the canvas can find the bend nearest a press. */
   onLineDrawn?: (linkId: string, line: readonly Point[] | undefined) => void;
   /**
    * While lit, with a resting label, or with a state mark: every card on the canvas, so the label
@@ -47,10 +53,13 @@ export interface RelationshipData extends Record<string, unknown> {
   cards?: readonly Box[];
   /** Labels are hidden while a card is dragged, and placed again on the drop. */
   hideLabel?: boolean;
-  /** A click on the label: does what a click on the line does. */
-  onLabelClick?: (clientX: number, clientY: number) => void;
-  /** The pointer enters or leaves the label: the line stays lit while it is on the label. */
-  onLabelHover?: (over: boolean) => void;
+  /** A click on the label or a bend handle: does what a click on the line does. */
+  onLineClick?: (clientX: number, clientY: number) => void;
+  /**
+   * The pointer enters or leaves the label or a bend handle: the line stays lit (and its bends
+   * show) while it is on them.
+   */
+  onLineHover?: (over: boolean) => void;
 }
 
 export type RelationshipFlowEdge = Edge<RelationshipData, 'relationship'>;
@@ -103,8 +112,9 @@ export const RelationshipEdge = memo(function RelationshipEdge(
       floatingEnds,
     ],
   );
-  // While a stretch is dragged, the canvas gives the line as it would be if dropped (`route`).
+  // While a bend is dragged, the canvas gives the line as it would be if dropped (`route`).
   const line = automatic;
+  const onBendPress = data?.onBendPress;
   const onLinePress = data?.onLinePress;
   const onLineDrawn = data?.onLineDrawn;
   useEffect(() => {
@@ -137,51 +147,44 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   );
   // Where a press on the label started: a press that moved (a pan) opens nothing.
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
-  /** Presses the pointer for a drag of a stretch: true when the canvas took it. */
-  const press = (event: PointerEvent, on: 'grip' | 'label'): boolean => {
-    // The main button only.
-    if (!onLinePress || event.button > 0) return false;
-    const { clientX, clientY, pointerId } = event;
-    if (!onLinePress(props.id, { clientX, clientY, pointerId }, on)) return false;
-    if (typeof event.currentTarget.setPointerCapture === 'function') {
-      event.currentTarget.setPointerCapture(pointerId);
-    }
-    return true;
-  };
   return (
     <>
-      <BaseEdge
-        id={props.id}
-        path={path}
-        {...(ends.start === 'diamond'
-          ? { markerStart: `url(#${lit ? litDiamondMarkerId : diamondMarkerId})` }
-          : ends.end === 'arrow' && data?.twoWay === true
-            ? // The arrow marker is drawn reversed at the start (orient="auto-start-reverse").
-              { markerStart: `url(#${lit ? litArrowMarkerId : arrowMarkerId})` }
+      <g
+        onPointerDown={(event) => {
+          // The main button only.
+          if (!onLinePress || event.button > 0) return;
+          const { clientX, clientY, pointerId } = event;
+          if (!onLinePress({ clientX, clientY, pointerId })) return;
+          // No text selection while panning.
+          event.preventDefault();
+        }}
+      >
+        <BaseEdge
+          id={props.id}
+          path={path}
+          {...(ends.start === 'diamond'
+            ? { markerStart: `url(#${lit ? litDiamondMarkerId : diamondMarkerId})` }
+            : ends.end === 'arrow' && data?.twoWay === true
+              ? // The arrow marker is drawn reversed at the start (orient="auto-start-reverse").
+                { markerStart: `url(#${lit ? litArrowMarkerId : arrowMarkerId})` }
+              : {})}
+          {...(ends.end === 'arrow'
+            ? { markerEnd: `url(#${lit ? litArrowMarkerId : arrowMarkerId})` }
             : {})}
-        {...(ends.end === 'arrow'
-          ? { markerEnd: `url(#${lit ? litArrowMarkerId : arrowMarkerId})` }
-          : {})}
-        // About 20px to click on, so a thin line is easy to hit.
-        interactionWidth={20}
-      />
-      {onLinePress &&
-        middleStretches(line).map((index) => {
-          const a = line[index] as Point;
-          const b = line[index + 1] as Point;
-          return (
-            <path
-              key={index}
-              // Not a pan of the canvas, nor a drag of a card.
-              className={`line-grip nopan nodrag ${isLevel(a, b) ? 'is-across' : 'is-upright'}`}
-              d={`M${a.x} ${a.y}L${b.x} ${b.y}`}
-              onPointerDown={(event) => {
-                // No text selection while dragging.
-                if (press(event, 'grip')) event.preventDefault();
-              }}
-            />
-          );
-        })}
+          // About 20px to click on, so a thin line is easy to hit.
+          interactionWidth={20}
+        />
+      </g>
+      {onBendPress && (
+        <BendHandles
+          linkId={props.id}
+          line={line}
+          shown={data.bendHandles === true}
+          onPress={onBendPress}
+          onClick={data.onLineClick}
+          onHover={data.onLineHover}
+        />
+      )}
       {mark && (
         <g
           className={`smark ${state.toLowerCase()}`}
@@ -197,20 +200,15 @@ export const RelationshipEdge = memo(function RelationshipEdge(
           <div
             className={`edge-label${marked ? ' has-mark' : ''}${lit ? ' is-lit' : ''}${
               data?.grayed === true ? ' is-grayed' : ''
-            }${data?.dim === true ? ' is-dim' : ''}${
-              // Dragging the label moves the line, not the canvas.
-              onLinePress && middleStretches(line).length > 0 ? ' nopan' : ''
-            }`}
+            }${data?.dim === true ? ' is-dim' : ''}`}
             style={{
               maxWidth: label.width,
               transform: `translate(-50%, -50%) translate(${label.x}px, ${label.y}px)`,
             }}
             title={text}
             onPointerDown={(event) => {
+              // A drag from the label pans the canvas; a click without a move opens the line.
               pressedAt.current = { x: event.clientX, y: event.clientY };
-              // A drag from the label moves the line's nearest middle stretch: the label may
-              // cover a short one whole. A click without a move still opens the relationship.
-              press(event, 'label');
             }}
             onClick={(event) => {
               // React passes events up from the label to its line (the label is a portal inside
@@ -221,10 +219,13 @@ export const RelationshipEdge = memo(function RelationshipEdge(
               const moved =
                 from !== null &&
                 Math.hypot(event.clientX - from.x, event.clientY - from.y) > dragThreshold;
-              if (!moved) data?.onLabelClick?.(event.clientX, event.clientY);
+              if (!moved) data?.onLineClick?.(event.clientX, event.clientY);
             }}
-            onMouseEnter={() => data?.onLabelHover?.(true)}
-            onMouseLeave={() => data?.onLabelHover?.(false)}
+            data-line={props.id}
+            onMouseEnter={() => data?.onLineHover?.(true)}
+            onMouseLeave={(event) => {
+              if (!stillOnLine(event.relatedTarget, props.id)) data?.onLineHover?.(false);
+            }}
           >
             {marked && <StateMark state={state} />}
             {lines.length === 1 ? (
@@ -244,6 +245,114 @@ export const RelationshipEdge = memo(function RelationshipEdge(
     </>
   );
 });
+
+/**
+ * True when the pointer left the label or a square for another part of the same line: its stroke,
+ * its label or another square. The line then stays pointed at, as React Flow sees no new entry
+ * onto a line from its own label or squares (they are drawn elsewhere, but belong to the line).
+ */
+function stillOnLine(to: EventTarget | null, linkId: string): boolean {
+  if (!(to instanceof Element)) return false;
+  const id = CSS.escape(linkId);
+  return to.closest(`.react-flow__edge[data-id="${id}"], [data-line="${id}"]`) !== null;
+}
+
+/** How long bend handles take to fade out, as `--t-fast`. */
+const handleFade = 120;
+
+/**
+ * A square on each bend of a line, dragged to move the bend. Drawn in the labels' layer, above the
+ * cards and labels, and the same size on the screen at every zoom. Hidden from assistive
+ * technology: the drop and a cancel are announced by the canvas.
+ */
+function BendHandles(props: {
+  linkId: string;
+  line: readonly Point[];
+  shown: boolean;
+  onPress: (press: LinePress) => boolean;
+  onClick: ((clientX: number, clientY: number) => void) | undefined;
+  onHover: ((over: boolean) => void) | undefined;
+}) {
+  const { shown } = props;
+  // Hidden handles fade out before they go.
+  const [leaving, setLeaving] = useState(false);
+  const [wasShown, setWasShown] = useState(shown);
+  if (shown !== wasShown) {
+    setWasShown(shown);
+    setLeaving(!shown);
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => {
+      setLeaving(false);
+    }, handleFade);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [leaving]);
+  const active = shown || leaving;
+  // Only lines whose handles show follow the zoom.
+  const zoom = useStore((state) => (active ? state.transform[2] : 1));
+  const [pressed, setPressed] = useState<number | null>(null);
+  // Where the press started: a press that moved (a drag) opens nothing.
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  const points = useMemo(() => simplified(props.line), [props.line]);
+  if (!active) return null;
+  return (
+    <EdgeLabelRenderer>
+      {bendsOf(points).map((index) => {
+        const { x, y } = points[index] as Point;
+        return (
+          <div
+            key={index}
+            // Not a pan of the canvas, nor a drag of a card.
+            className={`bend-handle nopan nodrag${shown ? '' : ' is-leaving'}${
+              pressed === index ? ' is-pressed' : ''
+            }`}
+            data-line={props.linkId}
+            aria-hidden="true"
+            style={{
+              transform: `translate(${x}px, ${y}px) scale(${1 / (zoom || 1)}) translate(-50%, -50%)`,
+            }}
+            onPointerDown={(event) => {
+              // The main button only.
+              if (!shown || event.button > 0) return;
+              pressedAt.current = { x: event.clientX, y: event.clientY };
+              const { clientX, clientY, pointerId } = event;
+              if (!props.onPress({ clientX, clientY, pointerId })) return;
+              // No text selection while dragging.
+              event.preventDefault();
+              setPressed(index);
+              if (typeof event.currentTarget.setPointerCapture === 'function') {
+                event.currentTarget.setPointerCapture(pointerId);
+              }
+            }}
+            onPointerUp={() => {
+              setPressed(null);
+            }}
+            onLostPointerCapture={() => {
+              setPressed(null);
+            }}
+            onClick={(event) => {
+              // The handle is part of its line: a click opens it, not the line under it.
+              event.stopPropagation();
+              const from = pressedAt.current;
+              pressedAt.current = null;
+              const moved =
+                from !== null &&
+                Math.hypot(event.clientX - from.x, event.clientY - from.y) > dragThreshold;
+              if (!moved) props.onClick?.(event.clientX, event.clientY);
+            }}
+            onMouseEnter={() => props.onHover?.(true)}
+            onMouseLeave={(event) => {
+              if (!stillOnLine(event.relatedTarget, props.linkId)) props.onHover?.(false);
+            }}
+          />
+        );
+      })}
+    </EdgeLabelRenderer>
+  );
+}
 
 /** The glyph of a state mark, centred on 0,0: plus for Target, minus for Deprecate. */
 export function statePath(state: ArchitectureState, half: number): string {
