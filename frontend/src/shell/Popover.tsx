@@ -16,7 +16,7 @@ interface PopoverState {
 
 const PopoverContext = createContext<PopoverState | null>(null);
 
-/** Keeps at most one header popover open at a time. */
+/** Keeps at most one popover open at a time (the header's menus and the toolbar's). */
 export function PopoverGroup({ children }: { children: ReactNode }) {
   const [openId, setOpenId] = useState<string | null>(null);
   return <PopoverContext value={{ openId, setOpenId }}>{children}</PopoverContext>;
@@ -32,13 +32,18 @@ interface PopoverProps {
   popoverClassName: string;
   /** `menu` for a list of menu items (arrow keys move between them). */
   role?: 'menu';
-  /** Popover content; `close` closes it (and puts focus back on the button). */
-  children: (close: () => void) => ReactNode;
+  /** The button can't be used now: it is disabled, and an open popover closes. */
+  buttonDisabled?: boolean;
+  /**
+   * Popover content; `close` closes it and puts focus back on the button, and `leave` closes it
+   * without (for an item that puts focus elsewhere).
+   */
+  children: (close: () => void, leave: () => void) => ReactNode;
 }
 
 /**
  * A button with a popover: opens on click, Enter or Space; closes on Esc (focus back to the
- * button), a click outside, or `close()` from a chosen item.
+ * button), a click outside, `Tab` out of a menu (focus moves on), or `close()` from a chosen item.
  */
 export function Popover(props: PopoverProps) {
   const group = use(PopoverContext);
@@ -54,6 +59,15 @@ export function Popover(props: PopoverProps) {
     setOpenId(null);
     document.getElementById(buttonId)?.focus();
   }, [setOpenId, buttonId]);
+  const leave = useCallback(() => {
+    setOpenId(null);
+  }, [setOpenId]);
+
+  // A button that can't be used closes its popover.
+  const disabled = props.buttonDisabled === true;
+  useEffect(() => {
+    if (open && disabled) setOpenId(null);
+  }, [open, disabled, setOpenId]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,23 +80,31 @@ export function Popover(props: PopoverProps) {
         close();
       }
     };
-    document.addEventListener('mousedown', onPointerDown);
+    // Caught on the way down: the canvas's pan and drag stop a press from bubbling up.
+    document.addEventListener('mousedown', onPointerDown, true);
     document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('mousedown', onPointerDown, true);
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [open, close, setOpenId]);
 
-  // A menu puts focus on its checked (or first) item when it opens.
+  // A menu puts focus on its checked (or first usable) item when it opens.
   useEffect(() => {
     if (!open || props.role !== 'menu') return;
     const items = [...(wrap.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
-    (items.find((item) => item.getAttribute('aria-checked') === 'true') ?? items[0])?.focus();
+    const usable = items.filter((item) => item.getAttribute('aria-disabled') !== 'true');
+    (usable.find((item) => item.getAttribute('aria-checked') === 'true') ?? usable[0])?.focus();
   }, [open, props.role]);
 
   const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (props.role !== 'menu') return;
+    if (event.key === 'Tab') {
+      // From the button, `Tab` goes on to what comes after it (or before it, with Shift).
+      document.getElementById(buttonId)?.focus();
+      setOpenId(null);
+      return;
+    }
     const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
     const at = items.findIndex((item) => item === document.activeElement);
     const next =
@@ -111,6 +133,7 @@ export function Popover(props: PopoverProps) {
         aria-haspopup={props.role === 'menu' ? 'menu' : undefined}
         aria-label={props.buttonLabel}
         title={props.buttonTitle}
+        disabled={props.buttonDisabled}
         onClick={() => {
           setOpenId(open ? null : props.id);
         }}
@@ -125,7 +148,7 @@ export function Popover(props: PopoverProps) {
         hidden={!open}
         onKeyDown={onMenuKeyDown}
       >
-        {open && props.children(close)}
+        {open && props.children(close, leave)}
       </div>
     </div>
   );

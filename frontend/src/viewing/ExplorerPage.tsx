@@ -49,9 +49,10 @@ import { AddRelationshipBox, relationshipSentence } from '../modelling/relations
 import { ElementEditor, type EditorHandle, type EditorState } from '../modelling/ElementEditor';
 import { NewElement } from '../modelling/NewElement';
 import { ErrorBoundary } from '../ErrorBoundary';
-import { Icon } from '../icons';
+import { Icon, type IconName } from '../icons';
 import { TypeMark } from '../metamodel-ui';
 import { useModels } from '../models';
+import { Popover } from '../shell/Popover';
 import { counted, formatNumber } from '../words';
 import { ExplorerCanvas } from './explorer/canvas/ExplorerCanvas';
 import { storedWidths } from './explorer/canvas/viewLayout';
@@ -519,6 +520,49 @@ function UnsavedGuard(props: {
   );
 }
 
+/** What Tidy up does: its tooltip, and its line in the tidy menu. */
+const tidyUpText = 'Put every card and line back in the automatic layout';
+
+/**
+ * One action in the tidy menu: its name, a line on what it does, and its key, if any. A disabled
+ * one stays in the menu (the arrow keys reach it) and does nothing.
+ */
+function TidyItem(props: {
+  id: string;
+  icon: IconName;
+  name: string;
+  description: string;
+  shortcut?: string;
+  disabled: boolean;
+  onChoose: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className="menu-item tidy-item"
+      aria-labelledby={`${props.id}-name`}
+      aria-describedby={`${props.id}-text`}
+      aria-disabled={props.disabled}
+      aria-keyshortcuts={props.shortcut}
+      onClick={() => {
+        if (!props.disabled) props.onChoose();
+      }}
+    >
+      <Icon name={props.icon} />
+      <span className="menu-item-text">
+        <span id={`${props.id}-name`} className="menu-item-name">
+          {props.name}
+        </span>
+        <span id={`${props.id}-text`} className="menu-item-description">
+          {props.description}
+        </span>
+      </span>
+      {props.shortcut !== undefined && <kbd aria-hidden="true">{props.shortcut}</kbd>}
+    </button>
+  );
+}
+
 function ExplorerMessage(props: { title: string; text: string; action: ReactNode }) {
   return (
     <main id="canvas" tabIndex={-1} className="page-scroll">
@@ -737,6 +781,9 @@ function Explorer({
     [movedKey],
   );
   const [tidyCount, setTidyCount] = useState(0);
+  // Tidy relations: each choice redraws every line from the cards; the canvas says when it can.
+  const [relationsTidyCount, setRelationsTidyCount] = useState(0);
+  const [canTidyRelations, setCanTidyRelations] = useState(false);
   // The canvas is laid out only when it is a new one; changes in between keep every card in place.
   const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}`;
   const layoutKey = `${canvasLayoutKey}|${tidyCount}`;
@@ -1485,6 +1532,22 @@ function Explorer({
     // The button is disabled now: keep keyboard focus on the canvas, never on <body>.
     document.getElementById('canvas')?.focus();
   };
+  /**
+   * Tidy relations: every card stays, and every line is drawn again from the cards (lines moved by
+   * hand too). In a view, the result is saved. From the menu, focus goes to the canvas.
+   */
+  const tidyRelations = (fromMenu: boolean) => {
+    if (!canTidyRelations) return;
+    setRelationsTidyCount((n) => n + 1);
+    // The canvas is no longer the automatic layout: Tidy up has something to do.
+    setKeptFor(layoutKey);
+    if (inView) requestArrange();
+    if (fromMenu) document.getElementById('canvas')?.focus();
+  };
+
+  const tidyRelationsByKey = () => {
+    tidyRelations(false);
+  };
 
   const relationshipTools = (focused: NonNullable<typeof element>): RelationshipTools => ({
     action: (
@@ -1778,17 +1841,57 @@ function Explorer({
             </>
           )}
           {view === 'canvas' && (
-            <button
-              type="button"
-              className="btn tidy"
-              aria-label="Tidy up"
-              title="Put every card and line back in the automatic layout"
-              disabled={!canTidy}
-              onClick={tidyUp}
-            >
-              <Icon name="wand-sparkles" />
-              <span className="tidy-label">Tidy up</span>
-            </button>
+            <div className="split">
+              <button
+                type="button"
+                className="btn tidy"
+                aria-label="Tidy up"
+                title={tidyUpText}
+                disabled={!canTidy}
+                onClick={tidyUp}
+              >
+                <Icon name="wand-sparkles" />
+                <span className="tidy-label">Tidy up</span>
+              </button>
+              <Popover
+                id="tidy"
+                role="menu"
+                buttonClassName="btn tidy-more"
+                buttonLabel="More ways to tidy"
+                buttonTitle="More ways to tidy"
+                buttonContent={<Icon name="chev-down" size="sm" />}
+                buttonDisabled={!canTidy && !canTidyRelations}
+                popoverClassName="tidy-pop"
+              >
+                {(_close, leave) => (
+                  <>
+                    <TidyItem
+                      id="tidy-up"
+                      icon="wand-sparkles"
+                      name="Tidy up"
+                      description={tidyUpText}
+                      disabled={!canTidy}
+                      onChoose={() => {
+                        leave();
+                        tidyUp();
+                      }}
+                    />
+                    <TidyItem
+                      id="tidy-relations"
+                      icon="spline"
+                      name="Tidy relations"
+                      description="Redraw every line, including lines moved by hand. No card moves."
+                      shortcut="T"
+                      disabled={!canTidyRelations}
+                      onChoose={() => {
+                        leave();
+                        tidyRelations(true);
+                      }}
+                    />
+                  </>
+                )}
+              </Popover>
+            </div>
           )}
           {view === 'canvas' && !inView && (
             <div className="segmented" role="group" aria-label="Relationship depth">
@@ -1946,6 +2049,9 @@ function Explorer({
                 tidyCount={tidyCount}
                 layoutKey={layoutKey}
                 onKept={setKeptFor}
+                relationsTidyCount={relationsTidyCount}
+                onRelationsTidyable={setCanTidyRelations}
+                onTidyRelations={tidyRelationsByKey}
                 nest={nest}
                 onToggleNest={toggleNest}
                 lines={lines}
@@ -2128,6 +2234,9 @@ function Explorer({
                 tidyCount={tidyCount}
                 layoutKey={layoutKey}
                 onKept={setKeptFor}
+                relationsTidyCount={relationsTidyCount}
+                onRelationsTidyable={setCanTidyRelations}
+                onTidyRelations={tidyRelationsByKey}
                 nest={nest}
                 onToggleNest={toggleNest}
                 lines={lines}

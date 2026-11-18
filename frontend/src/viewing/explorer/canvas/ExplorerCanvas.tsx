@@ -76,6 +76,7 @@ import {
   withinTimeLimit,
   type LayoutCard,
   type PlacedCard,
+  type PlacedHandle,
   type Side,
 } from './elkLayout';
 import {
@@ -201,6 +202,15 @@ interface ExplorerCanvasProps {
   layoutKey: string;
   /** Cards or lines came or went without a new layout: Tidy up has something to do. */
   onKept?: (layoutKey: string) => void;
+  /**
+   * Goes up by one on each "Tidy relations": every card stays where it is, and every line is drawn
+   * again from the cards, its route from the layout or by hand dropped. No new layout.
+   */
+  relationsTidyCount?: number;
+  /** Whether Tidy relations can be used now: the canvas draws a line and isn't laying out. */
+  onRelationsTidyable?: (can: boolean) => void;
+  /** `T` on the canvas, when Tidy relations can be used. */
+  onTidyRelations?: () => void;
   /** "Nest contained elements": draw contained elements inside their container. */
   nest: boolean;
   onToggleNest: () => void;
@@ -349,6 +359,14 @@ interface Laid {
 }
 
 const noRoutes: ReadonlyMap<string, HeldRoute> = new Map();
+
+/** A handle without the layout's route: its line follows its cards. */
+function withoutRoute(handle: PlacedHandle): PlacedHandle {
+  if (!handle.route) return handle;
+  const rest = { ...handle };
+  delete rest.route;
+  return rest;
+}
 
 /** Stacking (React Flow's manual z-index): containers by depth, then edges, then cards. */
 const zIndexes = { nestedEdge: 500, card: 1000, lifted: 3000 } as const;
@@ -1257,6 +1275,39 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return result;
   }, [laid, endBoxes, held]);
 
+  // Tidy relations can be used once the canvas is laid out and draws a line.
+  const relationsTidyable =
+    props.lines && laid !== null && laid.key === props.layoutKey && laid.drawn.length > 0;
+  const { onRelationsTidyable } = props;
+  useEffect(() => {
+    onRelationsTidyable?.(relationsTidyable);
+  }, [relationsTidyable, onRelationsTidyable]);
+  // After "Tidy relations" (set while rendering, so a save asked for with it sees the result): the
+  // cards stay, the layout's routes and the routes given by hand go, and every line follows its
+  // cards. Said at once, as there is no layout to wait for.
+  const relationsTidyCount = props.relationsTidyCount ?? 0;
+  const [relationsSeen, setRelationsSeen] = useState(relationsTidyCount);
+  if (relationsSeen !== relationsTidyCount) {
+    setRelationsSeen(relationsTidyCount);
+    if (laid && relationsTidyable) {
+      const placed = new Map<string, PlacedCard>();
+      for (const [id, card] of laid.placed) {
+        placed.set(id, { ...card, handles: card.handles.map(withoutRoute) });
+      }
+      const next = { ...laid, placed, routes: noRoutes };
+      setLaid(next);
+      setHeldState({ canvas: laid.canvas, routes: noRoutes });
+      setNote({
+        laid: next,
+        text:
+          handRoutes.size > 0
+            ? 'Relations tidied up, including lines moved by hand. No card moved.'
+            : 'Relations tidied up. No card moved.',
+        canvas: laid.canvas,
+      });
+    }
+  }
+
   // In a view that saves its layout, a line's bends can be dragged.
   const linesMovable = inView && editable && props.onArranged !== undefined;
   /** A line dropped where the person dragged it: held for every relationship on it, and saved. */
@@ -1878,6 +1929,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       void flow.zoomOut({ duration: reducedMotion() ? 0 : 200 });
     } else if (event.key === '0') {
       void flow.fitView({ ...fitOptions, duration: reducedMotion() ? 0 : 200 });
+    } else if (event.key === 't' || event.key === 'T') {
+      // Not while a card, its width or a bend is dragged, or a relationship is drawn.
+      const busy = dragging || resizingCard || lineDrag !== null || drawingFrom !== null;
+      if (!relationsTidyable || busy) return;
+      props.onTidyRelations?.();
     } else {
       return;
     }

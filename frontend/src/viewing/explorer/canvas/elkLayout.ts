@@ -1,5 +1,6 @@
 import type { ELK, ElkNode, ElkPort } from 'elkjs/lib/elk-api';
 import { laidForCanvas } from './laidRoutes';
+import { straightLaid } from './straightLines';
 import { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
 
 export { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
@@ -21,6 +22,7 @@ export { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
  *   and ELK sees the block as one card (`packedBlock`), so they don't become one long row.
  * - Containers come out fitted to what they hold, as the canvas fits them, with the routes kept,
  *   and a line into a container comes in beside or under its name (laidRoutes.ts).
+ * - A line between cards that face each other with room for it runs straight (straightLines.ts).
  */
 
 /** Top to bottom. Use 'RIGHT' for left to right: nothing else needs to change. */
@@ -470,11 +472,13 @@ export async function layoutCards(
     });
   }
   // Containers fitted as the canvas fits them, with the routes kept and clear of their names.
-  return laidForCanvas(ordered, {
+  const fitted = laidForCanvas(ordered, {
     nameWidthOf: (id) => byId.get(id)?.nameWidth,
     minSizeOf: (id) =>
       byId.get(id) ?? { width: containerBox.minWidth, height: containerBox.minHeight },
   });
+  // ELK spreads a card's ports before it places the cards: lines that can run straight do.
+  return straightLaid(fitted, (id) => byId.get(id)?.shape === 'circle');
 }
 
 /** How long the canvas waits for a layout before it gives up on it: 30 seconds. */

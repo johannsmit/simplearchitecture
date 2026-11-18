@@ -70,17 +70,17 @@ export function Shell() {
               <UserMenu />
             </div>
           </header>
+          <div className="shell-main">
+            <ErrorBoundary
+              resetKey={pathname}
+              title="This page couldn't be shown."
+              backTo="/"
+              backLabel="Go to the start page"
+            >
+              <Outlet />
+            </ErrorBoundary>
+          </div>
         </PopoverGroup>
-        <div className="shell-main">
-          <ErrorBoundary
-            resetKey={pathname}
-            title="This page couldn't be shown."
-            backTo="/"
-            backLabel="Go to the start page"
-          >
-            <Outlet />
-          </ErrorBoundary>
-        </div>
       </div>
     </ModelsProvider>
   );

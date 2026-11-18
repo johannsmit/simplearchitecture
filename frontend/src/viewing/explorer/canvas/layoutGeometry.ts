@@ -1,4 +1,5 @@
 import type { PlacedCard } from './elkLayout';
+import type { Box, Point } from './positions';
 
 /**
  * The canvas's sizes and spacing, and what the layout, the containers' fit and the lines' routes
@@ -55,4 +56,25 @@ export function absoluteBoxes(
     });
   }
   return result;
+}
+
+/** True when an axis-aligned stretch runs through the inside of a box (touching its edge is fine). */
+function cutsThrough(a: Point, b: Point, box: Box): boolean {
+  const inset = 0.5;
+  const [left, right] = [box.x + inset, box.x + box.width - inset];
+  const [top, bottom] = [box.y + inset, box.y + box.height - inset];
+  if (a.x === b.x) {
+    return a.x > left && a.x < right && Math.max(a.y, b.y) > top && Math.min(a.y, b.y) < bottom;
+  }
+  return a.y > top && a.y < bottom && Math.max(a.x, b.x) > left && Math.min(a.x, b.x) < right;
+}
+
+/** True when a line runs through any of the boxes. */
+export function crossesAny(line: readonly Point[], boxes: readonly Box[]): boolean {
+  for (let index = 1; index < line.length; index++) {
+    const a = line[index - 1] as Point;
+    const b = line[index] as Point;
+    if (boxes.some((box) => cutsThrough(a, b, box))) return true;
+  }
+  return false;
 }

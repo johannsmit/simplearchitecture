@@ -557,7 +557,9 @@ describe('a line without a route follows its cards', () => {
     expect(all.get('l0')?.start.side).toBe('right');
     expect(ys).toEqual([...ys].sort((p, q) => p - q));
     expect(new Set(ys).size).toBe(3);
-    expect(ys).toEqual([125, 150, 175]);
+    // Spread evenly, then the middle one moves down, within its room, to run straight to d.
+    expect(ys).toEqual([125, 161, 175]);
+    expect(all.get('l2')?.points).toHaveLength(2);
   });
 
   it('keeps clear of a routed line on the same side', () => {

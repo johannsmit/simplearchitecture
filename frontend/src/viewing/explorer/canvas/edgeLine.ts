@@ -1,7 +1,11 @@
 import { getSmoothStepPath, Position } from '@xyflow/react';
 import { circleAngles, circleDiameter, circleNodeWidth } from './circle';
-import { spacing, type LinkRoute, type Side } from './elkLayout';
+import type { LinkRoute, Side } from './elkLayout';
+import { containerBox, crossesAny, spacing } from './layoutGeometry';
 import type { Box, Point } from './positions';
+import { opposite, straightEnds, straightRoom, type StraightCandidate } from './straightLines';
+
+export { crossesAny } from './layoutGeometry';
 
 /**
  * The shape of a relationship line: right angles with rounded corners, along the route
@@ -219,7 +223,6 @@ interface FloatingEnd {
   towards: number;
 }
 
-const opposite: Record<Side, Side> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
 const allSides: readonly Side[] = ['left', 'right', 'top', 'bottom'];
 const circleSides: readonly Side[] = ['left', 'right'];
 
@@ -273,6 +276,23 @@ function middleOf(box: EndBox, side: Side): LineEnd {
   return pointOn(box, side, leavesSideways(side) ? box.height / 2 : box.width / 2);
 }
 
+/**
+ * The ends a pair of sides is judged by: the middles of the sides, or, where the cards face each
+ * other across the pair and overlap, a place both share, so a straight line counts as straight.
+ */
+function judgedEnds(source: EndBox, start: Side, target: EndBox, end: Side): [LineEnd, LineEnd] {
+  const room =
+    source.circle !== true && target.circle !== true && end === opposite[start]
+      ? straightRoom(source, start, target)
+      : undefined;
+  if (!room) return [middleOf(source, start), middleOf(target, end)];
+  const middle = (box: Box) =>
+    leavesSideways(start) ? box.y + box.height / 2 : box.x + box.width / 2;
+  const at = Math.min(Math.max((middle(source) + middle(target)) / 2, room.low), room.high);
+  const offset = (box: Box) => at - (leavesSideways(start) ? box.y : box.x);
+  return [pointOn(source, start, offset(source)), pointOn(target, end, offset(target))];
+}
+
 /** The free place along a side nearest to `wanted`, keeping `spacing.ports` from `taken`. */
 function nearestFree(wanted: number, taken: readonly number[], length: number): number {
   const free = (offset: number) =>
@@ -292,27 +312,6 @@ const bendRoom = 12;
 const nearby = 160;
 /** The most bend places tried for one pair of sides, nearest to the middle first. */
 const maxBends = 12;
-
-/** True when an axis-aligned stretch runs through the inside of a box (touching its edge is fine). */
-function cutsThrough(a: Point, b: Point, box: Box): boolean {
-  const inset = 0.5;
-  const [left, right] = [box.x + inset, box.x + box.width - inset];
-  const [top, bottom] = [box.y + inset, box.y + box.height - inset];
-  if (a.x === b.x) {
-    return a.x > left && a.x < right && Math.max(a.y, b.y) > top && Math.min(a.y, b.y) < bottom;
-  }
-  return a.y > top && a.y < bottom && Math.max(a.x, b.x) > left && Math.min(a.x, b.x) < right;
-}
-
-/** True when a line runs through any of the boxes. */
-export function crossesAny(line: readonly Point[], boxes: readonly Box[]): boolean {
-  for (let index = 1; index < line.length; index++) {
-    const a = line[index - 1] as Point;
-    const b = line[index] as Point;
-    if (boxes.some((box) => cutsThrough(a, b, box))) return true;
-  }
-  return false;
-}
 
 function lengthOf(line: readonly Point[]): number {
   let total = 0;
@@ -424,6 +423,31 @@ function bestLine(
   return best && { line: best.line, clear: best.clear };
 }
 
+/**
+ * The headers of the containers one card is in and the other isn't (nor is it one of them): a line
+ * between the two would run over a container's name there.
+ */
+function headersCrossed(boxes: ReadonlyMap<string, EndBox>, source: string, target: string): Box[] {
+  const chainOf = (id: string) => {
+    const chain: string[] = [];
+    for (let up = boxes.get(id)?.parent; up !== undefined && !chain.includes(up);) {
+      chain.push(up);
+      up = boxes.get(up)?.parent;
+    }
+    return chain;
+  };
+  const [fromSource, fromTarget] = [chainOf(source), chainOf(target)];
+  const shared = new Set([source, target, ...fromSource.filter((id) => fromTarget.includes(id))]);
+  const result: Box[] = [];
+  for (const id of [...fromSource, ...fromTarget]) {
+    const box = boxes.get(id);
+    if (shared.has(id) || !box) continue;
+    const height = Math.min(box.height, containerBox.header);
+    result.push({ x: box.x, y: box.y, width: box.width, height });
+  }
+  return result;
+}
+
 /** The cards a line between two cards must not run through: near them, but not their containers. */
 function blockersOf(
   boxes: ReadonlyMap<string, EndBox>,
@@ -461,9 +485,12 @@ function blockersOf(
  * is the shortest kept. Cards facing each other come first on a tie (`facingSides`). Several ends
  * on one side are then spread evenly along it, ordered by where their other cards are, and kept
  * apart from the ends of routed lines there (`taken`, by card and side); the bend is chosen again
- * for the ends' final places. A line alone on both of its sides, between cards level with each
- * other, runs straight. On a circle, the ends sit on the circle, as its routed handles do. Only
- * cards near a line are checked, so this keeps up with a drag.
+ * for the ends' final places. A line between cards that face each other with room for it runs
+ * straight: its ends move along their sides, keeping their order and spacing (`straightEnds`),
+ * where that runs through no other card. A line into or out of a container keeps off its header,
+ * where the name is, coming in by a side below it, when it can. On a circle, the ends sit on the
+ * circle, as its routed handles do. Only cards near a line are checked, so this keeps up with a
+ * drag.
  */
 export function floatingEnds(
   links: readonly { id: string; source: string; target: string }[],
@@ -481,19 +508,25 @@ export function floatingEnds(
     const target = boxes.get(link.target);
     if (!source || !target) continue;
     const near = blockersOf(boxes, link.source, link.target);
+    // The headers of the containers it goes into or out of, where their names are: it comes in
+    // or leaves by a container's side below them.
+    const headers = headersCrossed(boxes, link.source, link.target);
     // Its own two cards too: a line never runs back through them.
-    const ownFree = near.map((entry) => entry.box);
+    const ownFree = [...near.map((entry) => entry.box), ...headers];
     blockers.set(link.id, ownFree);
-    const others = near
-      .filter((entry) => entry.id !== link.source && entry.id !== link.target)
-      .map((entry) => entry.box);
+    const others = [
+      ...near
+        .filter((entry) => entry.id !== link.source && entry.id !== link.target)
+        .map((entry) => entry.box),
+      ...headers,
+    ];
     const facing = facingSides(source, target);
     let chosen = facing;
     let best: { clear: boolean; length: number; bends: number } | undefined;
     for (const startSide of source.circle === true ? circleSides : allSides) {
       for (const endSide of target.circle === true ? circleSides : allSides) {
         const found = bestLine(
-          candidateLines(middleOf(source, startSide), middleOf(target, endSide), others),
+          candidateLines(...judgedEnds(source, startSide, target, endSide), others),
           ownFree,
         );
         if (!found) continue;
@@ -534,7 +567,6 @@ export function floatingEnds(
     });
   }
   const points = new Map<string, LineEnd>();
-  const alone = new Set<string>();
   for (const group of groups.values()) {
     group.sort((a, b) => a.towards - b.towards || (a.link < b.link ? -1 : a.link > b.link ? 1 : 0));
     const [first] = group;
@@ -560,13 +592,55 @@ export function floatingEnds(
     const used = (taken.get(first.card) ?? [])
       .filter((handle) => handle.side === first.side)
       .map((handle) => handle.offset);
-    // Alone on a side with no routed line there: free to move along it to run straight.
-    if (group.length === 1 && used.length === 0) alone.add(key(first));
     group.forEach((end, index) => {
       const offset = nearestFree((length * (index + 1)) / (group.length + 1), used, length);
       used.push(offset);
       points.set(key(end), pointOn(box, end.side, offset));
     });
+  }
+  // Lines between cards that face each other with room for it run straight (circles keep theirs).
+  const offsetOf = (point: LineEnd, box: Box) =>
+    leavesSideways(point.side) ? point.y - box.y : point.x - box.x;
+  const straightLinks: StraightCandidate[] = [];
+  // The other ends stay, and are kept clear of: routed lines' and a circle's lines' other ends.
+  const staying = new Map([...taken].map(([card, ends]) => [card, [...ends]]));
+  for (const link of links) {
+    const from = points.get(`${link.id}\nstart`);
+    const to = points.get(`${link.id}\nend`);
+    const source = boxes.get(link.source);
+    const target = boxes.get(link.target);
+    if (!from || !to || !source || !target) continue;
+    if (source.circle === true || target.circle === true) {
+      for (const [card, box, end] of [
+        [link.source, source, from],
+        [link.target, target, to],
+      ] as const) {
+        if (box.circle === true) continue;
+        staying.set(card, [
+          ...(staying.get(card) ?? []),
+          { side: end.side, offset: offsetOf(end, box) },
+        ]);
+      }
+      continue;
+    }
+    straightLinks.push({
+      id: link.id,
+      start: { card: link.source, side: from.side, offset: offsetOf(from, source) },
+      end: { card: link.target, side: to.side, offset: offsetOf(to, target) },
+    });
+  }
+  const straight = straightEnds(straightLinks, boxes, staying, (line, from, to) => {
+    const [source, target] = [boxes.get(line.start.card), boxes.get(line.end.card)];
+    const others = (blockers.get(line.id) ?? []).filter((box) => box !== source && box !== target);
+    return !crossesAny([from, to], others);
+  });
+  for (const line of straightLinks) {
+    const offsets = straight.get(line.id);
+    if (!offsets) continue;
+    const source = boxes.get(line.start.card) as Box;
+    const target = boxes.get(line.end.card) as Box;
+    points.set(`${line.id}\nstart`, pointOn(source, line.start.side, offsets.start));
+    points.set(`${line.id}\nend`, pointOn(target, line.end.side, offsets.end));
   }
   const result = new Map<string, FloatingLine>();
   for (const link of links) {
@@ -575,42 +649,12 @@ export function floatingEnds(
     if (!start || !end) continue;
     const source = boxes.get(link.source) as EndBox;
     const target = boxes.get(link.target) as EndBox;
-    if (
-      alone.has(`${link.id}\nstart`) &&
-      alone.has(`${link.id}\nend`) &&
-      source.circle !== true &&
-      target.circle !== true
-    ) {
-      straighten(start, end, source, target);
-    }
     const all = blockers.get(link.id) ?? [];
     const others = all.filter((box) => box !== source && box !== target);
     const found = bestLine(candidateLines(start, end, others), all);
     result.set(link.id, { start, end, points: found?.line ?? directLine(start, end) });
   }
   return result;
-}
-
-/** Room kept between a straightened line and a card's corner. */
-const cornerRoom = 8;
-
-/** Two ends facing each other across cards that are level: moved to where both can meet straight. */
-function straighten(start: LineEnd, end: LineEnd, source: Box, target: Box) {
-  if (leavesSideways(start.side)) {
-    const from = Math.max(source.y, target.y) + cornerRoom;
-    const to = Math.min(source.y + source.height, target.y + target.height) - cornerRoom;
-    if (from > to) return;
-    const y = Math.min(Math.max((start.y + end.y) / 2, from), to);
-    start.y = y;
-    end.y = y;
-  } else {
-    const from = Math.max(source.x, target.x) + cornerRoom;
-    const to = Math.min(source.x + source.width, target.x + target.width) - cornerRoom;
-    if (from > to) return;
-    const x = Math.min(Math.max((start.x + end.x) / 2, from), to);
-    start.x = x;
-    end.x = x;
-  }
 }
 
 /**

@@ -597,10 +597,106 @@
   text-overflow: ellipsis;
 }
 
-/* Tidy up sits between the trail and Depth, 8px from each. */
-.toolbar .tidy {
+/*
+ * Tidy up and its arrow, one split button between the trail and Depth, 8px from each. The arrow
+ * opens the tidy menu (Tidy up, Tidy relations), its right edge at the arrow's.
+ */
+.toolbar .split {
+  display: inline-flex;
   flex: none;
   margin: 0 2px;
+}
+
+.toolbar .tidy {
+  flex: none;
+}
+
+.split > .tidy {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.split .tidy-more {
+  justify-content: center;
+  width: 24px;
+  margin-left: -1px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.split .tidy-more[aria-expanded='true'] {
+  background: var(--surface-2);
+}
+
+/* The focused half's ring isn't covered by the other half. */
+.split .btn:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+
+.tidy-pop {
+  right: 0;
+  width: 280px;
+}
+
+.tidy-pop .menu-item {
+  align-items: flex-start;
+}
+
+.tidy-pop .menu-item .ico {
+  flex: none;
+  margin-top: 1px;
+}
+
+.menu-item-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.menu-item-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.menu-item-description {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.menu-item kbd {
+  flex: none;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: 11px/1 var(--font);
+}
+
+.tidy-pop .menu-item:focus-visible {
+  background: var(--surface-2);
+  outline-offset: -2px;
+}
+
+.menu-item[aria-disabled='true'] {
+  cursor: default;
+}
+
+.menu-item[aria-disabled='true']:hover {
+  background: none;
+}
+
+.menu-item[aria-disabled='true'] .menu-item-name {
+  color: var(--text-muted);
+}
+
+.menu-item[aria-disabled='true'] .ico {
+  opacity: 0.55;
 }
 
 .segmented {
