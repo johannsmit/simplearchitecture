@@ -61,12 +61,12 @@ The agent gets five read-only tools:
 - **List models**: the models you can see, with their size.
 - **Model summary**: how many elements of each type, and how many relationships.
 - **Search elements**: by name, type and properties, 50 at a time.
-- **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity and Identity Context (text) and its Request Data and Response Data (lists of values), when set.
+- **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity and Identity Context (text) and its Source to target data and Target to source data (`sourceToTargetData`, `targetToSourceData`: lists of the data that goes from the relationship's source to its target, and back), when set.
 - **Get neighbours**: the elements up to three relationship steps away, as on the canvas, with the same details for each relationship.
 
 Every element comes with its type. A Stakeholder also says its Kind, `stakeholderKind`: `Human` or `AI Agent` (an AI agent acting as a stakeholder), with Human when none is set. So you can ask, for example, which AI agents use an application; the agent searches Stakeholders (type `Stakeholder`) with the filter `{"stakeholderKind": ["AI Agent"]}`, and for people with `{"stakeholderKind": ["Human"]}`, which includes Stakeholders without a Kind. The filter never matches elements of other types.
 
-A relationship's label comes twice: `label` as stored, which may name properties in braces (such as `{Identity} {Request Data}`), and `displayLabel`, the label as the canvas shows it, with those values filled in (Request Data and Response Data as their values joined by ", "). A Relation's properties defined by an Admin (Admin → Properties) come by name under `definedProperties`, with the values that are set; a label can name them too.
+A relationship's label comes twice: `label` as stored, which may name properties in braces (such as `{Identity} {Source to Target Data}`), and `displayLabel`, the label as the canvas shows it, with those values filled in (the data lists as their values joined by ", "). A Relation's properties defined by an Admin (Admin → Properties) come by name under `definedProperties`, with the values that are set; a label can name them too.
 
 Model content (names, descriptions, properties) is passed to the agent as data, marked as untrusted, never as instructions. The app logs each call with your user id, the tool and the model, never the content.
 

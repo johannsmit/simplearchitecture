@@ -16,6 +16,7 @@ import {
   relationshipOfEdge,
   relationshipsOf,
   relationshipViewFields,
+  dataViewKey,
   type StoredView,
   type ElementChangeResult,
   type JgfDocument,
@@ -1748,6 +1749,7 @@ function Explorer({
                   onToggleLines={() => {
                     showLines(!lines);
                   }}
+                  dataShown={shownProperties.includes(dataViewKey)}
                 />
               )}
             </div>

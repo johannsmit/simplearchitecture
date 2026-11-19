@@ -121,7 +121,9 @@ describe('links and memory from older versions', () => {
     });
     expect(button().textContent).toBe('Show Viewpoints: 1 selected');
     await waitFor(() => {
-      expect(restingLabels()).toContain('Req: Places orders');
+      expect(restingLabels()).toContainEqual(
+        expect.stringMatching(/Customer to Web Shop: Places orders$/),
+      );
     });
   });
 

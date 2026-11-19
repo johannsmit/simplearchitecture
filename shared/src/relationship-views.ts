@@ -6,11 +6,14 @@ import { dataValuesOf, dataValuesText } from './data-values.js';
 import { filterValueOf, isFilterableKey } from './filters.js';
 import { compareNames, containsType, type ModelGraph, type ModelRelationship } from './graph.js';
 import {
+  isOlderDataKey,
   isRelationDataProperty,
   isRelationProperty,
+  relationDataProperties,
   relationProperties,
   retiredDataKey,
   standardProperties,
+  type RelationDataProperty,
 } from './metamodel.js';
 
 /** A property that a viewpoint can show. */
@@ -24,15 +27,35 @@ export interface RelationshipViewField {
 const stateKey = 'architectureState';
 
 /**
- * The Data viewpoint: one choice that shows Request Data and Response Data, each on a line of its
- * own. Its key is the one Data had, so an address or a browser that remembers it keeps working.
+ * The Data viewpoint: one choice that shows Source to target data and Target to source data, each
+ * on a line of its own. Its key is the one Data had, so an address or a browser that remembers it
+ * keeps working.
  */
 export const dataViewKey = retiredDataKey;
-const dataViewParts = [
-  ['requestData', 'Req'],
-  ['responseData', 'Resp'],
-] as const;
-const dataViewKeys = new Set<string>(dataViewParts.map(([key]) => key));
+
+/**
+ * The arrow each list's line starts with, as written in a line's text: source to target `→`,
+ * target to source `←`. The canvas turns them to point the way the line is drawn.
+ */
+export const dataViewArrows: Readonly<Record<RelationDataProperty, string>> = {
+  sourceToTargetData: '→',
+  targetToSourceData: '←',
+};
+const dataViewKeys = new Set<string>(relationDataProperties);
+
+/** One list's part of the Data viewpoint: its key and its values joined by ", ". */
+export interface DataViewPart {
+  key: RelationDataProperty;
+  value: string;
+}
+
+/** The Data viewpoint's parts, source to target first, leaving out a list without a value. */
+export function relationshipDataParts(relationship: ModelRelationship): DataViewPart[] {
+  return relationDataProperties.flatMap((key) => {
+    const value = relationshipValue(relationship, key);
+    return value === undefined ? [] : [{ key, value }];
+  });
+}
 
 /** The element filter's keys, plus `functions`: only elements have that as a property of their own. */
 export const isRelationshipViewKey = (key: string): boolean =>
@@ -41,7 +64,7 @@ export const isRelationshipViewKey = (key: string): boolean =>
 /**
  * A relationship's value for a property as text, or undefined when it doesn't have it. The rules
  * are the element filter's: an empty text, a list or an object counts as not having it, except for
- * Request Data and Response Data, whose values are joined by ", ". Every relationship has an
+ * the two lists of data, whose values are joined by ", ". Every relationship has an
  * Architecture state, as none means Current.
  */
 export function relationshipValue(
@@ -58,14 +81,13 @@ export function relationshipValue(
 }
 
 /**
- * The Data viewpoint's value: "Req: a, b" above "Resp: c", on two lines, leaving out a part
- * without a value; undefined when neither has one.
+ * The Data viewpoint's value: "→ a, b" (source to target) above "← c" (target to source), on two
+ * lines, leaving out a part without a value; undefined when neither has one.
  */
 function dataViewValue(relationship: ModelRelationship): string | undefined {
-  const lines = dataViewParts.flatMap(([key, prefix]) => {
-    const value = relationshipValue(relationship, key);
-    return value === undefined ? [] : [`${prefix}: ${value}`];
-  });
+  const lines = relationshipDataParts(relationship).map(
+    ({ key, value }) => `${dataViewArrows[key]} ${value}`,
+  );
   return lines.length === 0 ? undefined : lines.join('\n');
 }
 
@@ -79,7 +101,7 @@ export function relationshipViewValues(
 
 /**
  * What a line shows for the selected properties: their one-line values joined by " · " on the first
- * line, then Data's lines ("Req: …", "Resp: …") each on its own. Empty when the
+ * line, then Data's lines ("→ …", "← …") each on its own. Empty when the
  * relationship has none of them.
  */
 export function relationshipViewText(
@@ -99,8 +121,8 @@ export function relationshipViewText(
 
 /**
  * The properties a viewpoint can show: those found on this model's relationships, plus the standard
- * ones and the defined ones (by name) whenever the model has a Relation (Request Data and Response
- * Data as one choice, Data), sorted by name. Contains isn't part of a viewpoint. A custom key
+ * ones and the defined ones (by name) whenever the model has a Relation (the two lists of data as
+ * one choice, Data), sorted by name. Contains isn't part of a viewpoint. A custom key
  * holding a list or an object on any relationship is left out, as in the element filter, because
  * every value differs.
  */
@@ -114,8 +136,9 @@ export function relationshipViewFields(graph: ModelGraph): RelationshipViewField
     any = true;
     for (const [key, value] of Object.entries(relationship.metadata)) {
       if (!isRelationshipViewKey(key) || key === stateKey || defined.has(key)) continue;
-      // Leftover Data (kept where Request Data had a value) has no choice: "Data" is the viewpoint.
-      if (isRelationProperty(key) || key === retiredDataKey) continue;
+      // Leftover Data, Request Data or Response Data (kept where the new key had a value) has no
+      // choice: "Data" is the viewpoint.
+      if (isRelationProperty(key) || key === retiredDataKey || isOlderDataKey(key)) continue;
       if (typeof value === 'object' && value !== null) structured.add(key);
       else if (relationshipValue(relationship, key) !== undefined) found.add(key);
     }

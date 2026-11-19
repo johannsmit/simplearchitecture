@@ -48,18 +48,20 @@ Several Relation edges may link the same two elements in the same direction.
 **Relation edges**
 - Identity (free text): the active identity used for the exchange. Stored as `"identity"`.
 - Identity Context (free text): additional context, such as the original user's ID. Stored as `"identityContext"`.
-- Request Data (list of texts): the data sent with the request over the relationship. Stored as `"requestData"`, a JSON list such as `["Orders", "Customer ids"]`.
-- Response Data (list of texts): the data returned in the response. Stored as `"responseData"`, a JSON list.
+- Source to target data (list of texts): the data that goes from the edge's source to its target. Stored as `"sourceToTargetData"`, a JSON list such as `["Orders", "Customer ids"]`.
+- Target to source data (list of texts): the data that goes from the target to the source. Stored as `"targetToSourceData"`, a JSON list.
 
-Identity, Identity Context, Request Data and Response Data are optional and apply to Relation edges only. On a Contains edge, such a key is a validation warning, and the value is kept as it is.
+On a two-way edge, the source is the end stored as `source`. Reversing an edge swaps its two lists along with its ends, so the same data flows between the same two elements. In a label, the two lists are written `{Source to Target Data}` and `{Target to Source Data}`.
 
-Request Data and Response Data each hold zero or more values, in the order they were added; the same value is never there twice, ignoring case, and an empty text is not a value. A single text (as stored before they were lists) is read as a list of that one value. Any other value that isn't a list of texts is a validation warning, and is kept as it is.
+Identity, Identity Context, Source to target data and Target to source data are optional and apply to Relation edges only. On a Contains edge, such a key is a validation warning, and the value is kept as it is.
+
+Source to target data and Target to source data each hold zero or more values, in the order they were added; the same value is never there twice, ignoring case, and an empty text is not a value. A single text (as stored before they were lists) is read as a list of that one value. Any other value that isn't a list of texts is a validation warning, and is kept as it is.
 
 Custom metadata is allowed to be added to any edge as needed
 
 ## Viewpoints
 A viewpoint is a selection of relationship properties: Architecture state, Identity, Identity Context, Data or any custom metadata found on the model's edges.
-- Data is one choice for both Request Data and Response Data. An edge shows them on two lines, "Req: a, b" (Request Data) above "Resp: c" (Response Data), the values joined by ", ", leaving out a part that is empty.
+- Data is one choice for both data lists. An edge shows each list on a line of its own, starting with an arrow pointing the way its data flows on the canvas, the values joined by ", ", leaving out an empty list. On one relationship, the lists are named after its ends ("Order system to Warehouse", "Warehouse to Order system").
 - With nothing selected, an edge shows its label, or nothing. An edge never shows its type name.
 - With properties selected, an edge that has at least one of them shows their values instead of its label. Any other edge is grayed out.
 - Contains edges are never grayed out and keep their label.
@@ -71,6 +73,7 @@ This metamodel is always exchanged using the JSON Graph Format (JGF v2, https://
 - Nodes are an object keyed by node id. The node type and all properties go in the node's `metadata`.
 - The edge type goes in the standard JGF `relation` field (`Relation` or `Contains`).
 - The direction goes in the standard JGF `directed` field of the edge: `false` for a two-way Relation edge (see Direction above).
-- Older files with `Information flow` or `Integration` still import: both become a Relation. An `Information flow` edge, or an edge with `"informationFlow": true`, that has a label also gets that label as its Request Data, unless it has Data already; the label stays. `"informationFlow"` itself is no longer stored.
-- Older files with Data (`"data"`) still import: Data becomes Request Data (`"requestData"`), unless the edge has Request Data already (then both are kept as they are), and every `{Data}` in a label becomes `{Request Data}`.
-- Older files with a single text in Request Data or Response Data still import: it becomes a list of that one value, and an empty one is left out.
+- Older files with `Information flow` or `Integration` still import: both become a Relation. An `Information flow` edge, or an edge with `"informationFlow": true`, that has a label also gets that label as its Source to target data, unless it has Data already; the label stays. `"informationFlow"` itself is no longer stored.
+- Older files with Data (`"data"`) still import: Data becomes Source to target data (`"sourceToTargetData"`), unless the edge has it already (then both are kept as they are, with a warning), and every `{Data}` in a label becomes `{Source to Target Data}`.
+- Older files with Request Data (`"requestData"`) or Response Data (`"responseData"`) still import: they become Source to target data and Target to source data, each with its value, unless the edge has the new key already (then both are kept as they are, with a warning). Every `{Request Data}` and `{Response Data}` in a label becomes `{Source to Target Data}` and `{Target to Source Data}`.
+- Older files with a single text in a data list still import: it becomes a list of that one value, and an empty one is left out.

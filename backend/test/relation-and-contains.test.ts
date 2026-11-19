@@ -63,7 +63,7 @@ describe('older JGF', () => {
         target: 'b',
         relation: 'Relation',
         label: 'Orders',
-        metadata: { requestData: ['Orders'] },
+        metadata: { sourceToTargetData: ['Orders'] },
       },
       {
         id: 'both',
@@ -82,7 +82,12 @@ describe('older JGF', () => {
     const today = { graph: { nodes, edges: [] } };
     expect(convertOlderTypes(today).document).toBe(today);
     for (const odd of [null, 3, 'x', [], {}, { graph: 1 }, { graph: { edges: 'x' } }]) {
-      expect(convertOlderTypes(odd)).toEqual({ document: odd, converted: 0, dataConverted: 0 });
+      expect(convertOlderTypes(odd)).toEqual({
+        document: odd,
+        converted: 0,
+        dataConverted: 0,
+        directionConverted: 0,
+      });
     }
     const bad = { graph: { edges: [7, null, { relation: 'Information flow', metadata: [1] }] } };
     expect((convertOlderTypes(bad).document as typeof bad).graph.edges[2]).toEqual({
@@ -98,7 +103,7 @@ describe('older JGF', () => {
     expect(validation.warnings[0]).toMatchObject({
       code: 'older-relationship-types',
       message:
-        'Document: 3 relationships with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Request Data.',
+        'Document: 3 relationships with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Source to target data.',
     });
     expect(validation.summary.edges.byRelation).toEqual({ Relation: 3, Contains: 1 });
     expect(validateJgf(document).valid).toBe(true);
@@ -123,7 +128,7 @@ describe('Information flow, no longer a property', () => {
     }
   });
 
-  it('goes from a Contains too, which never takes the label as Request Data', () => {
+  it('goes from a Contains too, which never takes the label as Source to target data', () => {
     const document = withEdge('Contains', { informationFlow: true });
     const edge = { ...document.graph.edges[0], label: 'Holds' };
     const converted = convertOlderTypes({ graph: { nodes, edges: [edge] } })
@@ -147,7 +152,7 @@ describe('Information flow, no longer a property', () => {
     const standard = ['Architecture state', 'Data', 'Identity', 'Identity Context'];
     expect(fields(withEdge('Relation', {}))).toEqual(standard);
     expect(fields(withEdge('Contains', {}))).toEqual([]);
-    expect(fields(withEdge('Relation', { zone: 'x', requestData: 'y' }))).toEqual([
+    expect(fields(withEdge('Relation', { zone: 'x', sourceToTargetData: 'y' }))).toEqual([
       ...standard,
       'zone',
     ]);
@@ -315,12 +320,12 @@ describe('migration 006', () => {
       expect(validateJgf(document).valid).toBe(true);
     }
     const graph = buildModelGraph((await store.get(first)) as JgfDocument);
-    // Read as today's: Information flow is gone, and a labelled flow has its label as Request Data.
+    // Read as today's: Information flow is gone, and a labelled flow has its label as Source to target data.
     expect(
       graph.relationships.map((r) => [
         r.id,
         r.type,
-        r.metadata.requestData ?? null,
+        r.metadata.sourceToTargetData ?? null,
         r.twoWay ?? false,
       ]),
     ).toEqual([
@@ -371,7 +376,7 @@ describe('migration 006', () => {
     );
     expect(saved.relationship.version).toBe(8);
     expect(saved.relationship.edge.metadata).toEqual({
-      requestData: ['Orders'],
+      sourceToTargetData: ['Orders'],
       description: 'Made-up',
     });
     // Several Relations with the same ends stay, and merge only on the UI.
@@ -547,10 +552,10 @@ describe('RelationshipService: Information flow is gone', () => {
     }
   });
 
-  it('reads a stored yes with a label as Request Data, and a change to Contains removes it', async () => {
+  it('reads a stored yes with a label as Source to target data, and a change to Contains removes it', async () => {
     const { service, id } = await setup();
     const read = await service.getRelationship(id, 'flow');
-    expect(read.relationship.edge.metadata).toEqual({ zone: 'x', requestData: ['Orders'] });
+    expect(read.relationship.edge.metadata).toEqual({ zone: 'x', sourceToTargetData: ['Orders'] });
     const result = await service.updateRelationship(
       id,
       'flow',

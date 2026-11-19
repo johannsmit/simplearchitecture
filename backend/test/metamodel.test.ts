@@ -87,8 +87,8 @@ describe('the metamodel in shared/ matches metamodel/', () => {
       'architectureState',
       'identity',
       'identityContext',
-      'requestData',
-      'responseData',
+      'sourceToTargetData',
+      'targetToSourceData',
     ]);
     expect(edgeTypeDefinitions.Contains.properties).toEqual(['architectureState']);
   });

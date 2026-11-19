@@ -174,7 +174,7 @@ describe('convertOef: the made-up bakery sample', () => {
     expect(report.functions.keptAsNodes).toEqual([{ id: 'e-fn-report', name: 'Sales report' }]);
   });
 
-  it('maps Flow to a Relation with its name as Request Data, mapping relationship properties like element ones', () => {
+  it('maps Flow to a Relation with its name as Source to target data, mapping relationship properties like element ones', () => {
     expect(jgf.graph.edges).toEqual([
       {
         id: 'r-orders',
@@ -184,7 +184,7 @@ describe('convertOef: the made-up bakery sample', () => {
         directed: true,
         label: 'Orders',
         metadata: {
-          requestData: ['Orders'],
+          sourceToTargetData: ['Orders'],
           archimateType: 'Flow',
           description: 'Customers send orders.',
           integrationType: 'API Gateway',
@@ -1223,7 +1223,7 @@ describe('convertOef: two-way relationships', () => {
     expect(validateJgf(jgf).warnings).toEqual([]);
   });
 
-  it('sets Request Data from the name only where a rule says so, and keeps a custom property apart', () => {
+  it('sets Source to target data from the name only where a rule says so, and keeps a custom property apart', () => {
     const { jgf } = convertOef(
       oef({
         elements,
@@ -1240,7 +1240,7 @@ describe('convertOef: two-way relationships', () => {
       withAssociation('Relation'),
     );
     expect(jgf.graph.edges?.[0]?.metadata).toMatchObject({
-      requestData: ['Made-up rows'],
+      sourceToTargetData: ['Made-up rows'],
       oefInformationFlow: 'Made-up',
       // A property named Data never takes the retired key.
       oefData: 'Made-up data',
@@ -1248,17 +1248,17 @@ describe('convertOef: two-way relationships', () => {
     expect(jgf.graph.edges?.[0]?.metadata).not.toHaveProperty('data');
     expect(jgf.graph.edges?.[0]?.metadata).not.toHaveProperty('informationFlow');
     expect(jgf.graph.edges?.[1]?.label).toBe('Made-up link');
-    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('requestData');
+    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('sourceToTargetData');
     expect(validateJgf(jgf).valid).toBe(true);
   });
 
-  it('takes a property mapped to Response Data as one value of its list, and drops a blank one', () => {
+  it('takes a property mapped to Target to source data as one value of its list, and drops a blank one', () => {
     const config = withMapping((draft) => {
       draft.relationships.rules = [
         ...draft.relationships.rules.filter((rule) => rule.type !== 'Association'),
         { type: 'Association', relation: 'Relation' },
       ];
-      draft.properties.mappings.push({ name: 'Returns', key: 'responseData' });
+      draft.properties.mappings.push({ name: 'Returns', key: 'targetToSourceData' });
     });
     const { jgf } = convertOef(
       oef({
@@ -1275,9 +1275,52 @@ describe('convertOef: two-way relationships', () => {
       config,
     );
     expect(jgf.graph.edges?.[0]?.metadata).toMatchObject({
-      responseData: ['Made-up totals, by day'],
+      targetToSourceData: ['Made-up totals, by day'],
+    });
+    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('targetToSourceData');
+    expect(validateJgf(jgf).warnings).toEqual([]);
+  });
+
+  it('keeps the data flowing from the file’s source to its target on a reversed rule', () => {
+    const config = withMapping((draft) => {
+      draft.relationships.rules = draft.relationships.rules.map((rule) =>
+        rule.type === 'Flow' ? { ...rule, reverse: true } : rule,
+      );
+      draft.properties.mappings.push(
+        { name: 'Sends', key: 'sourceToTargetData' },
+        { name: 'Returns', key: 'responseData' },
+      );
+    });
+    const { jgf } = convertOef(
+      oef({
+        elements,
+        definitions:
+          `<propertyDefinition identifier="pd-sends" type="string"><name>Sends</name></propertyDefinition>` +
+          `<propertyDefinition identifier="pd-returns" type="string"><name>Returns</name></propertyDefinition>`,
+        relationships: `
+          <relationship identifier="r1" source="a" target="b" xsi:type="Flow">
+            <name xml:lang="en">Made-up rows</name>
+          </relationship>
+          <relationship identifier="r2" source="a" target="b" xsi:type="Flow">
+            <properties><property propertyDefinitionRef="pd-sends"><value xml:lang="en">Made-up orders</value></property><property propertyDefinitionRef="pd-returns"><value xml:lang="en">Made-up receipts</value></property></properties>
+          </relationship>`,
+      }),
+      config,
+    );
+    // Stored from b to a: what went from a to b is now Target to source data.
+    expect(jgf.graph.edges?.[0]).toMatchObject({ source: 'b', target: 'a' });
+    expect(jgf.graph.edges?.[0]?.metadata).toMatchObject({
+      targetToSourceData: ['Made-up rows'],
+    });
+    expect(jgf.graph.edges?.[0]?.metadata).not.toHaveProperty('sourceToTargetData');
+    // Mapped properties swap as well, one under an older key too.
+    expect(jgf.graph.edges?.[1]).toMatchObject({ source: 'b', target: 'a' });
+    expect(jgf.graph.edges?.[1]?.metadata).toMatchObject({
+      sourceToTargetData: ['Made-up receipts'],
+      targetToSourceData: ['Made-up orders'],
     });
     expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('responseData');
+    expect(jgf.graph.edges?.[1]?.metadata).not.toHaveProperty('requestData');
     expect(validateJgf(jgf).warnings).toEqual([]);
   });
 

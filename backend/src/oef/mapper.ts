@@ -6,6 +6,7 @@ import {
   isStandardPropertyOf,
   nodeTypeKey,
   nodeTypes,
+  olderDataKeys,
   retiredDataKey,
   standardProperties,
   type CountsByReasonAndType,
@@ -16,7 +17,11 @@ import {
   type NodeType,
   type OefMappingReport,
 } from '@simplearchitecture/shared';
-import { convertedDataLists, retiredInformationFlowKey } from '../jgf/older-types.js';
+import {
+  convertedDataLists,
+  convertedDirections,
+  retiredInformationFlowKey,
+} from '../jgf/older-types.js';
 import { newRelationshipId } from '../jgf/relationship-ids.js';
 import { maxEchoLength, reservedKey } from '../jgf/validate.js';
 import { ImportTooLargeError, maxImportEdges, maxImportNodes } from '../limits.js';
@@ -121,6 +126,14 @@ export class OefFormatError extends Error {
 export const maxFunctionEntryLength = 200;
 /** At most this many entries are added to `functions` lists in one import; the rest are counted. */
 export const maxFunctionEntries = 50_000;
+/** Each list of data's key and the other's, today's and older: a reversed rule swaps them. */
+const swappedDataKeys = new Map([
+  ['sourceToTargetData', 'targetToSourceData'],
+  ['targetToSourceData', 'sourceToTargetData'],
+  ['requestData', 'responseData'],
+  ['responseData', 'requestData'],
+]);
+
 /** Custom metadata keys derived from property names are cut to this length. */
 export const maxCustomKeyLength = 100;
 /** At most this many relationships with a folded end are listed one by one; all are counted. */
@@ -363,7 +376,7 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
   const reservedNodeKeys = new Set<string>([
     nodeTypeKey,
     ...ownKeys,
-    // Keys standard on edges only (such as requestData) are free for an element's custom metadata.
+    // Keys standard on edges only (such as identity) are free for an element's custom metadata.
     ...Object.keys(standardProperties).filter((key) =>
       nodeTypes.some((type) => isStandardPropertyOf(type, key)),
     ),
@@ -378,6 +391,7 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
     ...mapping.properties.mappings.map((entry) => entry.key),
     retiredInformationFlowKey,
     retiredDataKey,
+    ...Object.keys(olderDataKeys),
   ]);
   const reservedGraphKeys = new Set<string>(ownKeys);
   const mappingsByName = new Map(mapping.properties.mappings.map((entry) => [entry.name, entry]));
@@ -622,37 +636,51 @@ export function convertOef(xml: string, mapping: OefMapping, limits?: XmlLimits)
       continue;
     }
 
-    const meta: Record<string, unknown> = {};
+    let meta: Record<string, unknown> = {};
     if (typeKey !== undefined) meta[typeKey] = relationship.type;
     if (relationship.documentation !== '') {
       meta[mapping.properties.documentation] = relationship.documentation;
     }
     applyProperties(meta, relationship.properties, reservedEdgeKeys, true);
+    // The file's data flows from its source to its target, so when a rule swaps the ends, the
+    // lists of data swap with them (older keys too, before they are renamed below).
+    if (rule.reverse === true) {
+      meta = Object.fromEntries(
+        Object.entries(meta).map(([key, value]) => [swappedDataKeys.get(key) ?? key, value]),
+      );
+    }
     applyDefaults(meta, { relation: rule.relation });
-    // The option once set Information flow; now, as for older files, the label becomes its
-    // Request Data.
+    // The option once set Information flow; now, as for older files, the label becomes the data
+    // that goes from the file's source to its target.
+    const flowKey = rule.reverse === true ? 'targetToSourceData' : 'sourceToTargetData';
     if (
       rule.informationFlow === true &&
-      hasStandardEdgeProperty('requestData', rule.relation) &&
+      hasStandardEdgeProperty(flowKey, rule.relation) &&
       relationship.name.trim() !== '' &&
-      !Object.hasOwn(meta, 'requestData')
+      !Object.hasOwn(meta, flowKey)
     ) {
-      meta.requestData = relationship.name;
+      meta[flowKey] = relationship.name;
     }
     const [source, target] = rule.reverse
       ? [relationship.target, relationship.source]
       : [relationship.source, relationship.target];
-    // Request Data and Response Data are lists: a text mapped or set above becomes one value.
+    // The lists of data: a text mapped or set above becomes one value. A mapping file that still
+    // names an older key (requestData, responseData) sets the key it became.
     edges.push(
-      convertedDataLists({
-        id: relationship.id,
-        source,
-        target,
-        relation: rule.relation,
-        directed: !(relationship.undirected && canBeTwoWay(rule.relation)),
-        ...(relationship.name === '' ? {} : { label: relationship.name }),
-        metadata: meta,
-      }) as JgfEdge,
+      convertedDataLists(
+        convertedDirections(
+          {
+            id: relationship.id,
+            source,
+            target,
+            relation: rule.relation,
+            directed: !(relationship.undirected && canBeTwoWay(rule.relation)),
+            ...(relationship.name === '' ? {} : { label: relationship.name }),
+            metadata: meta,
+          },
+          false,
+        ),
+      ) as JgfEdge,
     );
     edgeIds.add(relationship.id);
     report.relationships.mapped[rule.relation] += 1;

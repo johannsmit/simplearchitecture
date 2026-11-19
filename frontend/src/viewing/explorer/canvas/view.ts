@@ -1,11 +1,16 @@
 import {
   containsType,
+  dataListNames,
+  dataViewKey,
   displayLabel,
+  relationshipDataParts,
   relationshipViewText,
   relationshipViewValues,
   type ArchitectureState,
   type EdgeType,
+  type ModelGraph,
   type ModelRelationship,
+  type RelationDataProperty,
 } from '@simplearchitecture/shared';
 
 /** One drawn edge: the relationships of one type from one card to another, merged. */
@@ -104,7 +109,7 @@ export function layoutLinkRelationships(
 
 /**
  * What a line shows. With no property selected: its label filled in (`labelOf`), or nothing. With
- * properties selected: their values in place of its label, Data's "Req: …" and "Resp: …" on
+ * properties selected: their values in place of its label, Data's "→ …" and "← …" on
  * lines of their own below the rest. Merged lines always say how many they
  * are. Contains isn't part of a viewpoint, so it only ever shows its label or count. There is no
  * type name, on hover either: the details panel and screen readers have it.
@@ -130,6 +135,41 @@ export function linkText(
     .map((member) => relationshipViewText(member, shown))
     .filter((text) => text !== '')
     .join('\n');
+}
+
+/** A list of data on its own line of a label: which list, and its full name on this relationship. */
+export interface LineDataPart {
+  key: RelationDataProperty;
+  name: string;
+}
+
+/**
+ * The lists of data a line's text ends with (`linkText`), each with its full name, and the
+ * tooltip: the text with each list's arrow in place of its name ("Order system to Warehouse:
+ * orders"). Undefined when the line shows no list (Data not selected, a merged line, Contains).
+ */
+export function linkDataParts(
+  link: CanvasLink,
+  shown: readonly string[],
+  graph: ModelGraph,
+  text: string,
+): { parts: LineDataPart[]; title: string } | undefined {
+  const [only] = link.members;
+  if (link.count !== 1 || only === undefined || link.type === containsType) return undefined;
+  if (!shown.includes(dataViewKey)) return undefined;
+  const names = dataListNames(graph, only.source, only.target);
+  const parts = relationshipDataParts(only).map(({ key }) => ({ key, name: names[key].full }));
+  if (parts.length === 0) return undefined;
+  const lines = text.split('\n');
+  const start = lines.length - parts.length;
+  const title = lines
+    .map((line, index) => {
+      const part = index >= start ? parts[index - start] : undefined;
+      // A list's line is its arrow, a space, then its values.
+      return part === undefined ? line : `${part.name}: ${line.slice(2)}`;
+    })
+    .join('\n');
+  return { parts, title };
 }
 
 /** Whether a line is grayed out: properties are selected and it has none of them. */

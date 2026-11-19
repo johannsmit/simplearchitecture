@@ -153,13 +153,14 @@ describe('older files and imports', () => {
   it('follow the same rule as the migration', () => {
     const { converted: count } = convertOlderTypes(document());
     expect(count).toBe(8);
-    // The step migration 009 matches; reading today also moves Data to Request Data (012).
+    // The step migration 009 matches; reading today also moves Data to Request Data (012), named
+    // Source to target data since (018).
     const edges = (document().graph.edges ?? []).map((e) => convertedEdgeType(e) as JgfEdge);
     expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => after));
     expect(edges.map((e) => e.label)).toEqual(cases.map(([stored]) => stored.label));
   });
 
-  it('turn an older Information flow type into a Relation with its label as Request Data', () => {
+  it('turn an older Information flow type into a Relation with its label as Source to target data', () => {
     const older = {
       graph: {
         nodes,
@@ -178,7 +179,7 @@ describe('older files and imports', () => {
         target: 'b',
         relation: 'Relation',
         label: 'Claims',
-        metadata: { requestData: ['Claims'] },
+        metadata: { sourceToTargetData: ['Claims'] },
       },
       { id: 'g', source: 'a', target: 'b', relation: 'Relation', metadata: { x: 1 } },
       { id: 'i', source: 'a', target: 'c', relation: 'Relation', label: 'API' },
@@ -187,6 +188,11 @@ describe('older files and imports', () => {
 
   it('leave a document without Information flow as it is', () => {
     const plain = { graph: { nodes, edges: [cases[8]?.[0]] } };
-    expect(convertOlderTypes(plain)).toEqual({ document: plain, converted: 0, dataConverted: 0 });
+    expect(convertOlderTypes(plain)).toEqual({
+      document: plain,
+      converted: 0,
+      dataConverted: 0,
+      directionConverted: 0,
+    });
   });
 });

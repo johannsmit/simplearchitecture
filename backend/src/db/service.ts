@@ -8,7 +8,9 @@ import {
   toDatabaseError,
   type DatabaseFailure,
   type Db,
+  type Queryable,
 } from './db.js';
+import { standardNameClashes } from '../properties/property-store.js';
 import { entraTokenPassword, entraUnreachable } from './entra-token.js';
 import {
   appliedCount,
@@ -95,6 +97,25 @@ export async function waitForDatabase<T>(
   }
 }
 
+/**
+ * Warns when an Admin's property is named like a standard one (a name defined before the standard
+ * property had it): the standard property wins in labels, so the Admin should rename it. Names only
+ * the standard properties, never the defined ones. Never stops the start.
+ */
+export async function warnAboutNameClashes(db: Queryable, log: DatabaseLogger): Promise<void> {
+  try {
+    const standard = await standardNameClashes(db);
+    if (standard.length > 0) {
+      log.warn(
+        { standard },
+        'a relationship property is named like a standard property: rename it in Admin → Properties',
+      );
+    }
+  } catch {
+    // Only a warning: the start goes on.
+  }
+}
+
 /** The database can't be used at startup. The message is safe to print (no URL or password). */
 export class DatabaseStartError extends Error {
   override name = 'DatabaseStartError';
@@ -163,6 +184,7 @@ export class DatabaseService {
     try {
       const ran = await waitForDatabase(() => migrate(db, migrations), log, wait);
       log.info({ ran, total: migrations.length }, 'database migrations checked');
+      await warnAboutNameClashes(db, log);
     } catch (error) {
       await db.close().catch(() => undefined);
       if (error instanceof MigrationError) throw error;

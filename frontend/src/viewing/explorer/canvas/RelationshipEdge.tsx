@@ -3,15 +3,26 @@ import { BaseEdge, EdgeLabelRenderer, useStore, type Edge, type EdgeProps } from
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { edgeEnds } from '../../../metamodel-ui';
 import { directLine, edgeLine, linePath, simplified, type LineEnd } from './edgeLine';
+import { dataArrow } from './dataArrows';
 import { labelLines, placeRestingLabel, placeStateMark } from './labels';
 import { bendsOf } from './lineRoutes';
 import { dragThreshold } from './positions';
 import type { Box, Point } from './positions';
+import type { LineDataPart } from './view';
 
 export interface RelationshipData extends Record<string, unknown> {
   type: EdgeType;
   /** What the line shows (`linkText`): its label, selected values or "×3". Empty: nothing. */
   text: string;
+  /**
+   * The lists of data the text's last lines show, in order (`linkDataParts`): each line starts with
+   * an arrow that is turned to point the way the line is drawn, and is named for screen readers.
+   */
+  dataLines?: readonly LineDataPart[];
+  /** The label's tooltip, when it differs from its text: the lists of data by their full names. */
+  title?: string;
+  /** A relationship from an element to itself: its lists' arrows are the fixed → and ←. */
+  self?: boolean;
   lit: boolean;
   /** Another line or card is lit: a resting label fades with its line. */
   dim?: boolean;
@@ -70,6 +81,8 @@ export interface LinePress {
   clientY: number;
   pointerId: number;
 }
+
+const noDataLines: readonly LineDataPart[] = [];
 
 export const arrowMarkerId = 'sa-arrow';
 export const litArrowMarkerId = 'sa-arrow-lit';
@@ -130,6 +143,8 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const text = data?.text ?? '';
   // Data shows its parts on lines of their own; anything else is one line.
   const lines = useMemo(() => labelLines(text), [text]);
+  const dataLines = data?.dataLines ?? noDataLines;
+  const self = data?.self === true;
   const cards = data?.cards;
   const state = data?.state ?? 'Current';
   const marked = state !== 'Current';
@@ -205,7 +220,7 @@ export const RelationshipEdge = memo(function RelationshipEdge(
               maxWidth: label.width,
               transform: `translate(-50%, -50%) translate(${label.x}px, ${label.y}px)`,
             }}
-            title={text}
+            title={data?.title ?? text}
             onPointerDown={(event) => {
               // A drag from the label pans the canvas; a click without a move opens the line.
               pressedAt.current = { x: event.clientX, y: event.clientY };
@@ -228,15 +243,26 @@ export const RelationshipEdge = memo(function RelationshipEdge(
             }}
           >
             {marked && <StateMark state={state} />}
-            {lines.length === 1 ? (
+            {lines.length === 1 && dataLines.length === 0 ? (
               <span className="t">{text}</span>
             ) : (
               <span className="tl">
-                {lines.map((part, index) => (
-                  <span className="t" key={index}>
-                    {part}
-                  </span>
-                ))}
+                {lines.map((part, index) => {
+                  const list = dataLines[index - (lines.length - dataLines.length)];
+                  return (
+                    <span className="t" key={index}>
+                      {list === undefined ? (
+                        part
+                      ) : (
+                        <>
+                          <span aria-hidden="true">{dataArrow(line, list.key, self)}</span>{' '}
+                          <span className="vh">{`${list.name}: `}</span>
+                          {part.slice(2)}
+                        </>
+                      )}
+                    </span>
+                  );
+                })}
               </span>
             )}
           </div>

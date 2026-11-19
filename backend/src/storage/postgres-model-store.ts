@@ -388,9 +388,10 @@ function documentOf(row: FullModelRow, summary: ModelSummary): JgfDocument {
     'metadata',
     Object.fromEntries([[storedModelKey, summary], ...entriesOf(row.metadata)]),
   ]);
-  // Migrations 006, 009 and 012 converted the older edge types and properties. One still written by
-  // an older API running during an upgrade reads converted too: its type isn't damage. Labels stay
-  // as stored: 012 converted the older ones, and a `{Data}` typed since is an unknown name.
+  // Migrations 006, 009, 012, 013 and 018 converted the older edge types and properties. One still
+  // written by an older API running during an upgrade reads converted too: its type isn't damage.
+  // Labels stay as stored: 012 and 018 converted the older ones, and a `{Data}` or `{Request Data}`
+  // typed since is an unknown name.
   return convertOlderTypes({ graph: Object.fromEntries(parts) }, { labels: false })
     .document as JgfDocument;
 }

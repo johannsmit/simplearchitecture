@@ -8,6 +8,7 @@ import { compareText, filterValueOf, isFilterableKey } from './filters.js';
 import { normaliseForSearch, type ModelGraph } from './graph.js';
 import {
   hasStandardEdgeProperty,
+  isOlderDataKey,
   isRelationDataProperty,
   isStandardPropertyKey,
   isStandardPropertyOf,
@@ -86,10 +87,10 @@ export function elementPropertyValues(graph: ModelGraph): PropertyValues {
 }
 
 /**
- * Request Data and Response Data suggest the same values, from both: the same data are often sent
- * one way and returned another. Each value in their lists counts.
+ * The two lists of data suggest the same values, from both: the same data often flow one way and
+ * another the other way. Each value in their lists counts.
  */
-const dataPool = 'requestData';
+const dataPool = 'sourceToTargetData';
 const relationshipValues = (item: Item, key: string): readonly string[] =>
   isRelationDataProperty(key)
     ? Object.hasOwn(item.metadata, key)
@@ -105,7 +106,9 @@ export function relationshipPropertyValues(graph: ModelGraph): PropertyValues {
     const defined = new Set(graph.relationshipProperties.map((definition) => definition.key));
     const found = valuesOf(
       graph.relationships,
-      (key) => defined.has(key) || (isRelationshipViewKey(key) && key !== 'architectureState'),
+      (key) =>
+        defined.has(key) ||
+        (isRelationshipViewKey(key) && key !== 'architectureState' && !isOlderDataKey(key)),
       (key) => (isRelationDataProperty(key) ? dataPool : key),
       relationshipValues,
     );
@@ -138,10 +141,14 @@ function namesOf(
 const isElementName = (key: string): boolean =>
   isFilterableKey(key) && !nodeTypes.some((type) => isStandardPropertyOf(type, key));
 
-/** A key a relationship's form can take as custom metadata: not one of its own fields, nor Data. */
+/**
+ * A key a relationship's form can take as custom metadata: not one of its own fields, nor Data,
+ * Request Data or Response Data.
+ */
 const isRelationshipName = (key: string): boolean =>
   isRelationshipViewKey(key) &&
   key !== retiredDataKey &&
+  !isOlderDataKey(key) &&
   !(isStandardPropertyKey(key) && hasStandardEdgeProperty(key));
 
 const elementNameCache = new WeakMap<ModelGraph, readonly string[]>();

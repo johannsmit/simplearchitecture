@@ -1,19 +1,23 @@
 /**
- * Relationship labels that show property values: in a label such as `{Identity} {Request Data}`,
- * each `{Name}` stands for the relationship's value of that property. Pure functions, linear in the
- * label's length, so the canvas, the details panel, the form and the MCP tools fill in a label the
- * same way. The stored label is always the expression as typed; nothing here changes it.
+ * Relationship labels that show property values: in a label such as
+ * `{Identity} {Source to Target Data}`, each `{Name}` stands for the relationship's value of that
+ * property. Pure functions, linear in the label's length, so the canvas, the details panel, the form
+ * and the MCP tools fill in a label the same way. The stored label is always the expression as typed; nothing here changes it.
  */
 import { dataValuesOf, dataValuesText } from './data-values.js';
 import type { ModelGraph, ModelRelationship } from './graph.js';
 import {
   hasStandardEdgeProperty,
+  isOlderDataKey,
   isRelationDataProperty,
+  olderDataKeys,
   isStandardPropertyKey,
   relationProperties,
+  retiredDataKey,
   standardProperties,
   type ArchitectureState,
   type EdgeType,
+  type StandardPropertyDefinition,
   type StandardPropertyKey,
 } from './metamodel.js';
 import {
@@ -65,12 +69,18 @@ function customKeys(subject: LabelSubject, definitions: Definitions = []): strin
   );
 }
 
+/** How a label writes a standard property: its label name, or its name. */
+const labelNameOf = (key: StandardPropertyKey): string => {
+  const definition: StandardPropertyDefinition = standardProperties[key];
+  return definition.labelName ?? definition.label;
+};
+
 /** How names are compared: ignoring case, and runs of spaces count as one. */
 const nameKey = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase();
 
 /**
  * A value as one line of text, or undefined when it has none. Lists and objects have none, except
- * Request Data's and Response Data's lists: their values joined by ", ".
+ * the two lists of data: their values joined by ", ".
  */
 function valueText(key: string, value: unknown): string | undefined {
   return isRelationDataProperty(key) ? dataValuesText(dataValuesOf(value)) : textOf(value);
@@ -138,10 +148,10 @@ type Piece = string | null;
 
 /**
  * Fills in a label: `{Name}` becomes the value of the property with that name, as the form shows it
- * (Identity, Identity Context, Request Data, Response Data, Architecture state, Description) or a
- * custom metadata name, ignoring case. Request Data and Response Data give their values joined by
- * ", ". A standard key kept as custom metadata (Request Data on a Contains) answers to its standard
- * name too. A property with no value gives nothing, and the spaces around it close up. A name
+ * (Identity, Identity Context, Source to Target Data, Target to Source Data, Architecture state,
+ * Description) or a custom metadata name, ignoring case. The two lists of data give their values
+ * joined by ", ". A standard key kept as custom metadata (Source to target data on a Contains)
+ * answers to its standard name too. A property with no value gives nothing, and the spaces around it close up. A name
  * the relationship can't have stays as typed and is listed in `unknown`. `{{` and `}}` give literal
  * braces. `names` are custom metadata names other relationships in the model use: this one has no
  * value for them, so they give nothing rather than staying as typed. `definitions`: the properties
@@ -256,6 +266,17 @@ export function labelExpressionNames(label: string): string[] {
   return names;
 }
 
+/**
+ * What a label now writes for an older name of a list of data (`Request Data` → `Source to Target
+ * Data`), ignoring case and runs of spaces; undefined for any other name. The older names aren't
+ * names any more: a form says what to write instead.
+ */
+export function newerLabelName(name: string): string | undefined {
+  const wanted = nameKey(name);
+  const older = Object.values(olderDataKeys).find((entry) => nameKey(entry.name) === wanted);
+  return older === undefined ? undefined : labelNameOf(older.key);
+}
+
 /** Whether a label may hold something to fill in. */
 export const isLabelExpression = (label: string): boolean => /[{}]/.test(label);
 
@@ -277,8 +298,8 @@ export function displayLabel(
 
 /**
  * The names a relationship's label can use, for suggesting: its standard fields in the form's order,
- * a Relation's defined properties by name, then its own custom metadata names and those in `names`,
- * once each, ignoring case.
+ * a Relation's defined properties by name, then its own custom metadata names (but leftover Data,
+ * Request Data and Response Data) and those in `names`, once each, ignoring case.
  */
 export function labelPropertyNames(
   subject: LabelSubject,
@@ -293,9 +314,12 @@ export function labelPropertyNames(
     seen.add(key);
     result.push(name);
   };
-  for (const key of fieldKeys(subject.type)) add(standardProperties[key].label);
+  for (const key of fieldKeys(subject.type)) add(labelNameOf(key));
   for (const definition of definedPropertiesOf(subject.type, definitions)) add(definition.name);
-  for (const key of customKeys(subject, definitions)) add(key);
+  // Data, Request Data and Response Data kept from before are only there to be moved or removed.
+  for (const key of customKeys(subject, definitions)) {
+    if (key !== retiredDataKey && !isOlderDataKey(key)) add(key);
+  }
   for (const name of names) add(name);
   return result;
 }

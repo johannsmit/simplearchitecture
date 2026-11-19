@@ -14,7 +14,7 @@ interface ValueListFieldProps extends Pick<
 > {
   /** The input's id, for the field's label. */
   id: string;
-  /** The field's name, e.g. Request Data. */
+  /** The field's full name, e.g. Order system to Warehouse: for its chips and suggestions. */
   label: string;
   /** The values, in the order added. */
   values: readonly string[];
@@ -69,7 +69,7 @@ export function ValueListField({
         : trimmed.length > maxDataValueLength
           ? `A value can be at most ${maxDataValueLength} characters.`
           : values.length >= maxDataValues
-            ? `${label} can hold at most ${maxDataValues} values.`
+            ? `This list can hold at most ${maxDataValues} values.`
             : '';
     if (problem !== '') {
       setNote(problem);
@@ -148,7 +148,7 @@ export function ValueListField({
           type="text"
           value={text}
           readOnly={readOnly}
-          placeholder="Add a value"
+          placeholder="Add data"
           aria-invalid={aria['aria-invalid']}
           aria-describedby={describedBy}
           onChange={(event) => {

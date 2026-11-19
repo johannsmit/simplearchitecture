@@ -1201,7 +1201,7 @@
   text-overflow: ellipsis;
 }
 
-/* Data's parts, "Req: …" above "Resp: …" (labelLineHeight in labels.ts). */
+/* The lists of Data, each on a line of its own (labelLineHeight in labels.ts). */
 .edge-label .tl {
   display: flex;
   flex-direction: column;
@@ -1786,6 +1786,15 @@
   flex: 1;
 }
 
+/* The arrow on a line's Data, in a line sample's place (28px). */
+.legend .data-arrow {
+  width: 28px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
+
 .zoom {
   position: absolute;
   right: 12px;
@@ -1934,6 +1943,16 @@
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+/* The Data row's lists: each name on its own line, its values below, the full value column wide. */
+.props.is-stacked div {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+.props.is-stacked dt {
+  font-size: 12px;
 }
 
 .not-iso {
@@ -2417,7 +2436,7 @@
   position: relative;
 }
 
-/* A field with several values (Request Data, Response Data): its chips above the text box. */
+/* A field with several values (the data lists): its chips above the text box. */
 .value-chips {
   display: grid;
   gap: 6px;
@@ -2585,6 +2604,27 @@
 }
 
 .field + .field {
+  margin-top: 14px;
+}
+
+/* A group of fields under one name (the Data lists): the legend reads as a field label. */
+.field-group {
+  min-width: 0;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.field-group legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.field-group + .field {
   margin-top: 14px;
 }
 

@@ -14,6 +14,8 @@ import {
   maxDataValues,
   repeatedDataValue,
   retiredDataKey,
+  isOlderDataKey,
+  olderDataKeys,
   isStandardPropertyKey,
   standardProperties,
   nodeTypeKey,
@@ -206,7 +208,7 @@ function checkNodeMetadata(
       continue;
     }
     if (key === nodeTypeKey || !isStandardPropertyKey(key)) continue; // custom metadata: any value
-    // A key standard on edges only (such as requestData) is ordinary custom metadata on a node.
+    // A key standard on edges only (such as identity) is ordinary custom metadata on a node.
     if (!nodeTypes.some((type) => hasStandardProperty(type, key))) continue;
     const field = `metadata.${key}`;
     if (nodeType && !hasStandardProperty(nodeType, key)) {
@@ -239,8 +241,9 @@ function checkNodeMetadata(
  *
  * A bad value is a warning, never an error: edge properties became standard after models were
  * stored, and a stored model must stay readable. The graph reads a bad Architecture state as
- * Current. Identity, Identity Context, Request Data and Response Data apply to a Relation only. Data
- * (`data`) left from before, where Request Data had a value already, is kept as it is.
+ * Current. Identity, Identity Context and the two lists of data apply to a Relation only. Data
+ * (`data`), Request Data (`requestData`) and Response Data (`responseData`) left from before, where
+ * the key they became had a value already, are kept as they are.
  */
 function checkEdgeMetadata(
   issues: IssueList,
@@ -259,7 +262,18 @@ function checkEdgeMetadata(
         subject,
         `metadata.${key}`,
         'retired-property',
-        'is Data from before it became Request Data and Response Data; it is kept as it is',
+        'is Data from before it became Source to target data and Target to source data; it is kept as it is',
+      );
+      continue;
+    }
+    if (isOlderDataKey(key)) {
+      const older = olderDataKeys[key];
+      issues.add(
+        'warning',
+        subject,
+        `metadata.${key}`,
+        'older-data-kept',
+        `is ${older.name} from before it became ${standardProperties[older.key].label}; it is kept as it is`,
       );
       continue;
     }
@@ -293,7 +307,7 @@ function checkEdgeMetadata(
 }
 
 /**
- * What a stored list of Request Data or Response Data has that a change can't make: a blank value,
+ * What a stored list of data has that a change can't make: a blank value,
  * a value twice (ignoring case), more than `maxDataValues` values. A warning only: the list is kept
  * and read as it is.
  */

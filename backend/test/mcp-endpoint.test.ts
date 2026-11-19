@@ -57,8 +57,8 @@ const garden: JgfDocument = {
         relation: 'Relation',
         label: 'digs with',
         metadata: {
-          requestData: ['Soil depth', 'Weeds'],
-          responseData: ['Dig plan'],
+          sourceToTargetData: ['Soil depth', 'Weeds'],
+          targetToSourceData: ['Dig plan'],
           identity: 'Made-up gardener',
         },
       },
@@ -390,8 +390,8 @@ describe('the read tools', () => {
           label: 'digs with',
           displayLabel: 'digs with',
           identity: 'Made-up gardener',
-          requestData: ['Soil depth', 'Weeds'],
-          responseData: ['Dig plan'],
+          sourceToTargetData: ['Soil depth', 'Weeds'],
+          targetToSourceData: ['Dig plan'],
           direction: 'incoming',
           other: { id: 'gardener', name: 'Gardener', type: 'Stakeholder' },
         },
@@ -417,8 +417,8 @@ describe('the read tools', () => {
             source: 'rake',
             target: 'bed',
             relation: 'Relation',
-            label: '{Request Data} as {Identity} {{note}}',
-            metadata: { requestData: ['<b>Leaves</b>', 'Twigs'] },
+            label: '{Source to Target Data} as {Identity} {{note}}',
+            metadata: { sourceToTargetData: ['<b>Leaves</b>', 'Twigs'] },
           },
           { id: 'r4', source: 'rake', target: 'bed', relation: 'Relation', label: '{Identity}' },
           { id: 'c2', source: 'shed', target: 'rake', relation: 'Contains' },
@@ -434,9 +434,9 @@ describe('the read tools', () => {
     const relationships = (rake.value as { relationships: Record<string, unknown>[] })
       .relationships;
     expect(relationships.find((r) => r.id === 'r3')).toMatchObject({
-      label: '{Request Data} as {Identity} {{note}}',
+      label: '{Source to Target Data} as {Identity} {{note}}',
       displayLabel: '<b>Leaves</b>, Twigs as {note}',
-      requestData: ['<b>Leaves</b>', 'Twigs'],
+      sourceToTargetData: ['<b>Leaves</b>', 'Twigs'],
     });
     expect(relationships.find((r) => r.id === 'r4')).toMatchObject({
       label: '{Identity}',

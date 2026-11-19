@@ -51,7 +51,7 @@ const metadataKey = z
   .refine((key) => key !== nodeTypeKey, `must not be "${nodeTypeKey}" (that holds the node type)`);
 // List-typed standard properties of elements (functions) are filled by function folding, which
 // would replace the text from the OEF file without a trace. So they never hold documentation or a
-// property. A Relation's lists (Request Data, Response Data) take a mapped text as one value.
+// property. A Relation's lists of data take a mapped text as one value.
 const listKeys: readonly string[] = Object.entries(standardProperties)
   .filter(
     ([key, definition]) =>
@@ -89,7 +89,7 @@ const relationshipRule = z
     relation: edgeType,
     /**
      * Optional, Relation only: the imported relationship's name (its label) also becomes its
-     * Request Data, where Information flow once was set. It keeps its older name, so existing
+     * Source to target data, where Information flow once was set. It keeps its older name, so existing
      * mapping files still load.
      */
     informationFlow: flag.optional(),
@@ -98,7 +98,7 @@ const relationshipRule = z
   })
   .refine(
     (rule) =>
-      rule.informationFlow !== true || hasStandardEdgeProperty('requestData', rule.relation),
+      rule.informationFlow !== true || hasStandardEdgeProperty('sourceToTargetData', rule.relation),
     {
       path: ['informationFlow'],
       message: 'only applies to a type that can have it (Relation)',
@@ -116,7 +116,7 @@ const propertyMapping = z
     values: z.record(z.string(), z.string()).optional(),
   })
   .superRefine((mapping, ctx) => {
-    // A text set as Request Data or Response Data becomes one value of the list.
+    // A text set as a list of data becomes one value of the list.
     if (!isStandardPropertyKey(mapping.key) || isRelationDataProperty(mapping.key)) return;
     for (const [from, to] of Object.entries(mapping.values ?? {})) {
       const check = checkStandardProperty(mapping.key, to);

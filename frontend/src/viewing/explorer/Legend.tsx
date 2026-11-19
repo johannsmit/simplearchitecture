@@ -7,8 +7,8 @@ import { readLegendOpen, writeLegendOpen } from './prefs';
 
 /**
  * The legend, at the bottom of the left panel while a canvas is drawn: the element types on the
- * canvas (a Stakeholder as Human and as AI Agent), the relationship state marks, and the "Nest contained elements" and "Show relationships"
- * switches. Open or closed is remembered per browser.
+ * canvas (a Stakeholder as Human and as AI Agent), the relationship state marks, the arrow on lines
+ * while Data is shown, and the "Nest contained elements" and "Show relationships" switches. Open or closed is remembered per browser.
  */
 export function Legend(props: {
   types: readonly (typeof nodeTypes)[number][];
@@ -16,6 +16,8 @@ export function Legend(props: {
   onToggleNest: () => void;
   lines: boolean;
   onToggleLines: () => void;
+  /** Data is selected in Show Viewpoints: the legend explains the arrows on the lines. */
+  dataShown?: boolean;
 }) {
   const [open, setOpen] = useState(readLegendOpen);
   const bodyId = useId();
@@ -65,6 +67,19 @@ export function Legend(props: {
               </li>
             ))}
           </ul>
+          {props.dataShown === true && (
+            <>
+              <h2>Data on lines</h2>
+              <ul>
+                <li>
+                  <span className="data-arrow" aria-hidden="true">
+                    →
+                  </span>
+                  Points the way the data flows
+                </li>
+              </ul>
+            </>
+          )}
           <label className="nest" title="Draw contained elements inside their container">
             <input
               type="checkbox"

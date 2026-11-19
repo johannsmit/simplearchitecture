@@ -1,6 +1,11 @@
-import { catalogTabs, type CatalogTab } from '@simplearchitecture/shared';
+import {
+  catalogTabs,
+  isOlderDataKey,
+  olderDataKeys,
+  type CatalogTab,
+} from '@simplearchitecture/shared';
 
-/** What the older Information Flow viewpoint shows today: Data (Request Data and Response Data). */
+/** What the older Information Flow viewpoint shows today: Data (both lists of data). */
 const olderFlowKey = 'data';
 
 /**
@@ -102,10 +107,14 @@ export const maxShownKeyLength = 100;
 /**
  * The relationship properties a viewpoint shows, from the address (`show=protocol&show=auth`). Only
  * the address holds them, so a viewpoint can be shared as a link: a property name is model content,
- * so it never goes in the browser's storage.
+ * so it never goes in the browser's storage. An address from before the lists of data were named by
+ * direction (`show=requestData`) reads as the key it became.
  */
 export function readShownProperties(params: URLSearchParams): string[] {
-  const keys = params.getAll('show').filter((key) => key !== '' && key.length <= maxShownKeyLength);
+  const keys = params
+    .getAll('show')
+    .filter((key) => key !== '' && key.length <= maxShownKeyLength)
+    .map((key) => (isOlderDataKey(key) ? olderDataKeys[key].key : key));
   return [...new Set(keys)].slice(0, maxShownProperties);
 }
 

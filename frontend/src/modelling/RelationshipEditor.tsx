@@ -2,6 +2,7 @@ import {
   canBeTwoWay,
   containerOf,
   containsType,
+  dataListNames,
   dataValuesOf,
   definedPropertiesOf,
   displayLabel,
@@ -52,6 +53,7 @@ import { savedNoteMillis } from './ElementEditor';
 import { LabelField } from './LabelField';
 import { relationshipVersionToSave } from './save';
 import { ValueField } from './ValueField';
+import { DataListLabel } from './DataListLabel';
 import { ValueListField } from './ValueListField';
 import {
   containsNote,
@@ -113,7 +115,10 @@ interface Draft {
   twoWay: boolean;
   /** Identity and Identity Context, as typed. */
   texts: Record<TextProperty, string>;
-  /** Request Data and Response Data: the values, and what is typed but not yet added. */
+  /**
+   * The lists of data: the values, and what is typed but not yet added. Named by direction, so
+   * Reverse swaps them (`withReversed`).
+   */
   data: Record<RelationDataProperty, { values: readonly string[]; text: string }>;
   custom: CustomRow[];
 }
@@ -130,9 +135,22 @@ const noData: Draft['data'][RelationDataProperty] = { values: [], text: '' };
 const perDataField = <T,>(
   make: (key: RelationDataProperty) => T,
 ): Record<RelationDataProperty, T> => ({
-  requestData: make('requestData'),
-  responseData: make('responseData'),
+  sourceToTargetData: make('sourceToTargetData'),
+  targetToSourceData: make('targetToSourceData'),
 });
+
+/** The two lists swapped: what flowed from the source now flows to it, as the ends swap. */
+const swappedData = (data: Draft['data']): Draft['data'] => ({
+  sourceToTargetData: data.targetToSourceData,
+  targetToSourceData: data.sourceToTargetData,
+});
+
+/**
+ * The draft reversed or not. Reverse swaps the two lists with the ends, typed text included, so
+ * each list stays with its direction and the same data flows between the same two elements.
+ */
+const withReversed = (draft: Draft, reversed: boolean): Draft =>
+  reversed === draft.reversed ? draft : { ...draft, reversed, data: swappedData(draft.data) };
 
 /** The values a Data field saves: those added, and what is typed if it is a new one. */
 const dataOf = (draft: Draft, key: RelationDataProperty): readonly string[] =>
@@ -281,6 +299,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const endsChanged =
     draft.ends.source !== base.ends.source || draft.ends.target !== base.ends.target;
   const self = source === target;
+  // The lists of data, named after the ends as they will be saved.
+  const listNames = dataListNames(graph, source, target);
   // The Change box open for an end (as the form shows it: source first), if any.
   const [picking, setPicking] = useState<End | null>(null);
   // Which shown end was changed with Change: one that Reverse alone wouldn't show.
@@ -475,9 +495,12 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
         const text = draft.texts[key].trim();
         if (text !== base.texts[key].trim()) change[key] = text === '' ? null : text;
       }
+      // With `reverse`, the server swaps the lists with the ends: a list goes only if it differs
+      // from the swapped one. New ends go already reversed, so the lists go swapped as they are.
+      const expected: Draft = change.reverse === true ? withReversed(base, true) : base;
       for (const key of dataProperties) {
         const values = dataOf(draft, key);
-        if (!sameValues(values, dataOf(base, key))) {
+        if (!sameValues(values, dataOf(expected, key))) {
           change[key] = values.length === 0 ? null : [...values];
         }
       }
@@ -797,7 +820,14 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               disabled={self || saving}
               aria-describedby={endsProblem || errors.has('ends') ? 'rf-ends-error' : undefined}
               onClick={() => {
-                setDraft({ ...draft, reversed: !draft.reversed });
+                setDraft(withReversed(draft, !draft.reversed));
+                if (dataProperties.some((key) => fits(draft.type, key))) {
+                  props.onAnnounce(
+                    draft.reversed
+                      ? 'Reverse undone.'
+                      : 'Reversed. The data lists follow their ends.',
+                  );
+                }
               }}
             >
               <Icon name="arrow-left-right" size="sm" />
@@ -946,48 +976,58 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               />
               {fieldError('label')}
             </div>
-            {relationProperties
+            {textProperties
               .filter((key) => fits(draft.type, key))
-              .map((key) =>
-                isRelationDataProperty(key) ? (
-                  <div className="field" key={key}>
-                    <label htmlFor={`rf-${key}`}>{standardProperties[key].label}</label>
-                    <ValueListField
+              .map((key) => (
+                <div className="field" key={key}>
+                  <label htmlFor={`rf-${key}`}>{standardProperties[key].label}</label>
+                  <div className="value-anchor">
+                    <ValueField
                       id={`rf-${key}`}
+                      value={draft.texts[key]}
+                      values={relationshipPropertyValues(graph).get(key) ?? noValues}
                       label={standardProperties[key].label}
-                      values={draft.data[key].values}
-                      text={draft.data[key].text}
-                      suggestions={relationshipPropertyValues(graph).get(key) ?? noValues}
                       readOnly={saving}
                       aria-invalid={errors.has(key) || undefined}
                       aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
-                      onChange={(values, text) => {
-                        setDraft({ ...draft, data: { ...draft.data, [key]: { values, text } } });
+                      onValue={(text) => {
+                        setDraft({ ...draft, texts: { ...draft.texts, [key]: text } });
                       }}
                     />
-                    {fieldError(key)}
                   </div>
-                ) : (
-                  <div className="field" key={key}>
-                    <label htmlFor={`rf-${key}`}>{standardProperties[key].label}</label>
-                    <div className="value-anchor">
-                      <ValueField
+                  {fieldError(key)}
+                </div>
+              ))}
+            {dataProperties.some((key) => fits(draft.type, key)) && (
+              // The lists are named after the ends as they will be saved; ids stay on the key, so
+              // error links and focus survive a Change or a Reverse.
+              <fieldset className="field-group">
+                <legend>Data</legend>
+                {dataProperties
+                  .filter((key) => fits(draft.type, key))
+                  .map((key) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`rf-${key}`}>
+                        <DataListLabel name={listNames[key]} />
+                      </label>
+                      <ValueListField
                         id={`rf-${key}`}
-                        value={draft.texts[key]}
-                        values={relationshipPropertyValues(graph).get(key) ?? noValues}
-                        label={standardProperties[key].label}
+                        label={listNames[key].full}
+                        values={draft.data[key].values}
+                        text={draft.data[key].text}
+                        suggestions={relationshipPropertyValues(graph).get(key) ?? noValues}
                         readOnly={saving}
                         aria-invalid={errors.has(key) || undefined}
                         aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
-                        onValue={(text) => {
-                          setDraft({ ...draft, texts: { ...draft.texts, [key]: text } });
+                        onChange={(values, text) => {
+                          setDraft({ ...draft, data: { ...draft.data, [key]: { values, text } } });
                         }}
                       />
+                      {fieldError(key)}
                     </div>
-                    {fieldError(key)}
-                  </div>
-                ),
-              )}
+                  ))}
+              </fieldset>
+            )}
             {defined.map((definition, index) => (
               <DefinedField
                 key={definition.key}
@@ -1043,7 +1083,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                       <TypeNote
                         note={{
                           kind: 'info',
-                          text: 'Identity, Identity Context, Request Data and Response Data are removed when you save.',
+                          text: 'Identity, Identity Context and the data in both directions are removed when you save.',
                         }}
                       />
                     )}
@@ -1067,7 +1107,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                   disabled={saving}
                   onChange={(twoWay) => {
                     // Reverse means nothing both ways: it is dropped.
-                    setDraft({ ...draft, twoWay, reversed: twoWay ? false : draft.reversed });
+                    setDraft({ ...withReversed(draft, twoWay ? false : draft.reversed), twoWay });
                   }}
                 />
                 {fieldError('twoWay')}

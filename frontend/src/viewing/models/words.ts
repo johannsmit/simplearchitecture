@@ -23,8 +23,10 @@ const issueWords: Record<string, string> = {
   'not-standard-for-type': 'Not a standard property for this type',
   'property-not-for-type': 'Property not for this relationship type',
   'retired-property': 'Data kept as it was',
-  'older-data-property': 'Data converted to Request Data',
-  'data-values-not-kept': 'Request or Response Data breaks its rules',
+  'older-data-property': 'Data converted to Source to target data',
+  'older-data-direction': 'Request Data and Response Data converted',
+  'older-data-kept': 'Request Data or Response Data kept as it was',
+  'data-values-not-kept': 'A data list breaks its rules',
 };
 
 export function issueInWords(code: string): string {

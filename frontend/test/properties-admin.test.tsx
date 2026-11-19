@@ -549,7 +549,12 @@ describe('a defined property in the read-only panel', () => {
       expect(found).toContain('Criticality');
       return found;
     });
-    expect(terms.slice(-3)).toEqual(['Response Data', 'Criticality', 'Service tier']);
+    // After the Data row's two lists, named after the ends.
+    expect(terms.slice(-3)).toEqual([
+      'Back Office Server to Web Shop',
+      'Criticality',
+      'Service tier',
+    ]);
     expect(within(details).getByTitle('Not in the list').textContent).toContain('Gold');
     expect(within(details).queryByText('Custom metadata')).toBeNull();
   });

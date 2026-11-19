@@ -363,7 +363,7 @@ describe('the line rules', () => {
     ]);
   });
 
-  it('offers Request Data and Response Data as one choice, Data, and never Data kept from before', () => {
+  it('offers Source to target data and Target to source data as one choice, Data, and never Data kept from before', () => {
     const graph = buildModelGraph({
       graph: {
         ...model.graph,
@@ -373,7 +373,7 @@ describe('the line rules', () => {
             source: 'shop',
             target: 'till',
             relation: 'Relation',
-            metadata: { requestData: ['a'], responseData: ['b'], data: 'c' },
+            metadata: { sourceToTargetData: ['a'], targetToSourceData: ['b'], data: 'c' },
           },
         ],
       },
@@ -430,25 +430,30 @@ describe('Data in a viewpoint', () => {
       .map((label) => [...label.querySelectorAll('.t')].map((part) => part.textContent))
       .sort((a, b) => (a.join('\n') < b.join('\n') ? -1 : 1));
 
-  it('shows Request Data and Response Data under the other values, and grays out the rest', async () => {
+  it('shows Source to target data and Target to source data under the other values, and grays out the rest', async () => {
     const edges = (model.graph.edges ?? []).map((edge) =>
       edge.source === 'customer'
-        ? { ...edge, metadata: { ...edge.metadata, responseData: ['Order numbers', 'Receipts'] } }
+        ? {
+            ...edge,
+            metadata: { ...edge.metadata, targetToSourceData: ['Order numbers', 'Receipts'] },
+          }
         : edge,
     );
     await open('&show=data&show=protocol', { graph: { ...model.graph, edges } });
     await waitFor(() => {
+      // Each list's line: its arrow (pointing the way the line runs), its name for screen readers,
+      // its values.
       expect(labelLines()).toContainEqual([
         'REST',
-        'Req: Places orders',
-        'Resp: Order numbers, Receipts',
+        expect.stringMatching(/^. Customer to Web Shop: Places orders$/),
+        expect.stringMatching(/^. Web Shop to Customer: Order numbers, Receipts$/),
       ]);
     });
     // The till's line has neither: gray, and its label gives way.
     expect(tillLine().classList.contains('is-grayed')).toBe(true);
   });
 
-  it('leaves out an empty part, and the other keeps its prefix', () => {
+  it('leaves out an empty part, and the other keeps its arrow', () => {
     const relationship = (metadata: Record<string, unknown>) => ({
       id: 'r',
       source: 'a',
@@ -459,13 +464,13 @@ describe('Data in a viewpoint', () => {
     });
     for (const [metadata, text] of [
       [
-        { requestData: ['Orders', 'Invoices'], responseData: ['Order ids'] },
-        'Req: Orders, Invoices\nResp: Order ids',
+        { sourceToTargetData: ['Orders', 'Invoices'], targetToSourceData: ['Order ids'] },
+        '→ Orders, Invoices\n← Order ids',
       ],
-      [{ requestData: ['Orders'] }, 'Req: Orders'],
-      [{ responseData: [' Order\n  ids '] }, 'Resp: Order ids'],
-      [{ requestData: [], responseData: ['  '] }, ''],
-      [{ data: 'From before', requestData: ['Orders'] }, 'Req: Orders'],
+      [{ sourceToTargetData: ['Orders'] }, '→ Orders'],
+      [{ targetToSourceData: [' Order\n  ids '] }, '← Order ids'],
+      [{ sourceToTargetData: [], targetToSourceData: ['  '] }, ''],
+      [{ data: 'From before', sourceToTargetData: ['Orders'] }, '→ Orders'],
     ] as const) {
       const [link] = mergeRelationships([relationship(metadata)]);
       if (!link) throw new Error('no link');
@@ -485,17 +490,17 @@ describe('Data in a viewpoint', () => {
       target: 'b',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
-      metadata: { requestData: value, responseData: value },
+      metadata: { sourceToTargetData: value, targetToSourceData: value },
     });
     for (const [value, text] of [
-      [['Orders', 'Bills'], 'Req: Orders, Bills\nResp: Orders, Bills'],
-      ['Orders', 'Req: Orders\nResp: Orders'],
+      [['Orders', 'Bills'], '→ Orders, Bills\n← Orders, Bills'],
+      ['Orders', '→ Orders\n← Orders'],
       ['  ', ''],
       [[], ''],
       [['  ', ''], ''],
       [[{ a: 1 }], ''],
       [{ a: 1 }, ''],
-      [[1, 'a'], 'Req: 1, a\nResp: 1, a'],
+      [[1, 'a'], '→ 1, a\n← 1, a'],
     ] as const) {
       const [link] = mergeRelationships([relationship(value)]);
       if (!link) throw new Error('no link');
@@ -527,7 +532,7 @@ describe('Data in a viewpoint', () => {
       target: 'b',
       type: 'Relation' as const,
       architectureState: 'Current' as const,
-      metadata: { requestData: data },
+      metadata: { sourceToTargetData: data },
       ...(twoWay ? { twoWay } : {}),
     });
     const merged = mergeRelationships([
@@ -540,7 +545,7 @@ describe('Data in a viewpoint', () => {
       [false, 3],
       [true, 1],
     ]);
-    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', 'Req: Orders']);
+    expect(merged.map((link) => linkText(link, ['data']))).toEqual(['×3', '→ Orders']);
   });
 
   it('leaves Contains out of it', async () => {
@@ -550,7 +555,9 @@ describe('Data in a viewpoint', () => {
     ];
     await open('&show=data', { graph: { ...model.graph, edges } });
     await waitFor(() => {
-      expect(labels()).toContain('Req: Places orders');
+      expect(labels()).toContainEqual(
+        expect.stringMatching(/Customer to Web Shop: Places orders$/),
+      );
     });
     expect(canvas().querySelectorAll('.is-grayed').length).toBeGreaterThan(0);
     const contains = [...canvas().querySelectorAll('.react-flow__edge')].filter((edge) =>
@@ -564,8 +571,8 @@ describe('Data in a viewpoint', () => {
     fireEvent.click(button());
     const choices = screen.getAllByRole('checkbox').map((box) => box.closest('label')?.textContent);
     expect(choices).toContain('Data');
-    expect(choices).not.toContain('Request Data');
-    expect(choices).not.toContain('Response Data');
+    expect(choices).not.toContain('Source to target data');
+    expect(choices).not.toContain('Target to source data');
   });
 });
 

@@ -65,21 +65,24 @@ export interface UpdateRelationshipRequest {
   identity?: string | null;
   identityContext?: string | null;
   /**
-   * Relation only: the whole list of values, stored as `metadata.requestData` and
-   * `metadata.responseData` in the order sent, each value trimmed. No value may be blank or come
-   * twice (ignoring case); at most `maxDataValues` values of at most `maxDataValueLength` characters
-   * (a value already stored in the field may be longer). `null` or an empty list removes it, and a
-   * change to Contains removes them.
+   * Relation only: the whole list of values, stored as `metadata.sourceToTargetData` (the data that
+   * flows from the source to the target) and `metadata.targetToSourceData` (from the target to the
+   * source) in the order sent, each value trimmed. No value may be blank or come twice (ignoring
+   * case); at most `maxDataValues` values of at most `maxDataValueLength` characters (a value already
+   * stored in the field may be longer). `null` or an empty list removes it, and a change to Contains
+   * removes them. With `reverse: true` the two lists swap along with the ends, and a list sent with
+   * it is the list after the swap. The older keys `requestData` and `responseData` are refused.
    */
-  requestData?: string[] | null;
-  responseData?: string[] | null;
+  sourceToTargetData?: string[] | null;
+  targetToSourceData?: string[] | null;
   /**
    * A Relation's defined properties (relationship-properties.ts), and keys the relationship already
    * holds (custom metadata kept on a Contains): text, or one of a choice's options. No other key can
    * be added: an Admin defines properties. `null` removes a key, and keys not sent stay as they
    * are. A list or object read from the model may be sent back unchanged. Architecture state, description,
-   * Identity, Identity Context, Request Data and Response Data have their own fields. `data` is
-   * reserved: it was Data, now Request Data.
+   * Identity, Identity Context, Source to target data and Target to source data have their own
+   * fields. `data`, `requestData` and `responseData` are reserved: they were Data, Request Data and
+   * Response Data, now the two lists named by direction (one kept from before can only be removed).
    */
   metadata?: Record<string, unknown>;
 }
@@ -145,8 +148,8 @@ export interface RelationshipNotFound extends ApiError {
 
 /**
  * One problem with a change: `source`, `target`, `type`, `architectureState`, `description`,
- * `label`, `version`, `reverse`, `identity`, `identityContext`, `requestData`, `responseData`, or ''
- * (a general message).
+ * `label`, `version`, `reverse`, `identity`, `identityContext`, `sourceToTargetData`,
+ * `targetToSourceData`, or '' (a general message).
  */
 export type RelationshipFieldIssue = ElementFieldIssue;
 

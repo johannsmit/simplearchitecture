@@ -1,6 +1,6 @@
 /**
- * Request Data and Response Data: each holds zero or more text values, stored as a JSON list in the
- * order they were added. Pure functions, so the API, the web app and the MCP tools read and compare
+ * Source to target data and Target to source data: each holds zero or more text values, stored as
+ * a JSON list in the order they were added. Pure functions, so the API, the web app and the MCP tools read and compare
  * values the same way.
  */
 
@@ -17,7 +17,7 @@ function entryText(entry: unknown): string | undefined {
 }
 
 /**
- * The values a stored Request Data or Response Data holds, for showing, filling in and suggesting:
+ * The values a stored list of data holds, for showing, filling in and suggesting:
  * a list's entries in their order, trimmed, skipping blanks and anything that isn't text; a single
  * text (as stored before these were lists) as one value. Any other shape holds none. Never changes
  * what is stored.

@@ -122,6 +122,7 @@ import {
 import {
   elementDragType,
   isGrayed,
+  linkDataParts,
   linkText,
   layoutLinkRelationships,
   layoutLinks,
@@ -1670,6 +1671,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const lit = (highlight?.links.has(link.id) ?? false) || isSelected || isFresh;
       const nested = laid.parents.has(link.source) || laid.parents.has(link.target);
       const text = linkText(link, shownProperties, (member) => displayLabel(member, graph));
+      const lists = linkDataParts(link, shownProperties, graph, text);
+      const [only] = link.members;
       const resting = text !== '';
       const grayed = isGrayed(link, shownProperties);
       const bends = routes.get(link.id);
@@ -1703,6 +1706,13 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         data: {
           type: link.type,
           text,
+          ...(lists
+            ? {
+                dataLines: lists.parts,
+                title: lists.title,
+                ...(only?.source === only?.target ? { self: true } : {}),
+              }
+            : {}),
           lit,
           state: link.state,
           ...(link.twoWay ? { twoWay: true } : {}),

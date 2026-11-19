@@ -16,13 +16,15 @@ import {
   type Handler,
 } from './helpers';
 
-/** The values a Request Data or Response Data field shows as chips. */
-const chipTexts = (form: HTMLElement, name: string): (string | null)[] =>
-  [
-    ...(within(form)
-      .queryByRole('list', { name: new RegExp(`^${name}: `) })
-      ?.querySelectorAll('.chip-text') ?? []),
-  ].map((chip) => chip.textContent);
+/** A list of data's box on the form, by its stored key (its name follows the ends). */
+const dataField = (form: HTMLElement, key: string): HTMLInputElement | null =>
+  form.querySelector<HTMLInputElement>(`#rf-${key}`);
+
+/** The values a list of data's field shows as chips. */
+const chipTexts = (form: HTMLElement, key: string): (string | null)[] =>
+  [...(dataField(form, key)?.closest('.field')?.querySelectorAll('.chip-text') ?? [])].map(
+    (chip) => chip.textContent,
+  );
 
 // Relationships in the Modelling explorer. Made-up data (the bakery fixture).
 
@@ -255,9 +257,9 @@ describe('The relationship form', () => {
     // e4 is a plain Relation between the same ends: fine, as several may link them.
     expect(within(form).getByRole('radio', { name: 'Relation' })).toHaveProperty('disabled', false);
     expect(within(form).queryByRole('button', { name: 'Show it' })).toBeNull();
-    expect(chipTexts(form, 'Request Data')).toEqual(['Orders']);
-    expect(chipTexts(form, 'Response Data')).toEqual([]);
-    expect(within(form).getByLabelText<HTMLInputElement>('Request Data').value).toBe('');
+    expect(chipTexts(form, 'sourceToTargetData')).toEqual(['Orders']);
+    expect(chipTexts(form, 'targetToSourceData')).toEqual([]);
+    expect((dataField(form, 'sourceToTargetData') as HTMLInputElement).value).toBe('');
 
     // No footer until something changes.
     expect(within(form).queryByRole('button', { name: /^Save/ })).toBeNull();
@@ -1000,8 +1002,8 @@ describe('Relation properties on the forms', () => {
     const fields = [
       within(form).getByRole('combobox', { name: 'Label' }),
       within(form).getByLabelText('Identity'),
-      within(form).getByLabelText('Request Data'),
-      within(form).getByLabelText('Response Data'),
+      dataField(form, 'sourceToTargetData') as HTMLInputElement,
+      dataField(form, 'targetToSourceData') as HTMLInputElement,
       within(form).getByRole('radio', { name: 'Relation' }),
     ];
     for (const field of fields) {
@@ -1030,32 +1032,32 @@ describe('Relation properties on the forms', () => {
     });
   });
 
-  it('warns before saving Request Data away as Contains, and Discard restores it', async () => {
+  it('warns before saving Source to target data away as Contains, and Discard restores it', async () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
-    const data = () => within(form).queryByLabelText<HTMLInputElement>('Request Data');
-    expect(chipTexts(form, 'Request Data')).toEqual(['Orders']);
+    const data = () => dataField(form, 'sourceToTargetData');
+    expect(chipTexts(form, 'sourceToTargetData')).toEqual(['Orders']);
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     expect(data()).toBeNull();
-    expect(within(form).queryByLabelText('Response Data')).toBeNull();
+    expect(dataField(form, 'targetToSourceData')).toBeNull();
     expect(
       within(form).getByText(
-        'Identity, Identity Context, Request Data and Response Data are removed when you save.',
+        'Identity, Identity Context and the data in both directions are removed when you save.',
       ),
     ).toBeDefined();
-    // Back to Relation: Request Data is empty, so it still counts as a change.
+    // Back to Relation: Source to target data is empty, so it still counts as a change.
     fireEvent.click(within(form).getByRole('radio', { name: 'Relation' }));
-    expect(chipTexts(form, 'Request Data')).toEqual([]);
+    expect(chipTexts(form, 'sourceToTargetData')).toEqual([]);
     expect(within(form).getByRole('button', { name: 'Save' })).toBeDefined();
     fireEvent.click(within(form).getByRole('button', { name: 'Discard changes' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /^Discard/ }));
-    expect(chipTexts(form, 'Request Data')).toEqual(['Orders']);
+    expect(chipTexts(form, 'sourceToTargetData')).toEqual(['Orders']);
 
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', requestData: null });
+      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', sourceToTargetData: null });
     });
   });
 
@@ -1066,25 +1068,28 @@ describe('Relation properties on the forms', () => {
     expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
   });
 
-  it('shows the server’s refusal of Response Data under its field', async () => {
+  it('shows the server’s refusal of Target to source data under its field', async () => {
     await openShop((method) =>
       method === 'PATCH'
         ? apiError(422, 'Refused', {
             fields: [
-              { field: 'responseData', message: 'Each value must be at most 200 characters.' },
+              {
+                field: 'targetToSourceData',
+                message: 'Each value must be at most 200 characters.',
+              },
             ],
           })
         : undefined,
     );
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/, 1);
-    fireEvent.change(within(form).getByLabelText('Response Data'), {
+    fireEvent.change(dataField(form, 'targetToSourceData') as HTMLInputElement, {
       target: { value: 'Made-up' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     const message = await within(form).findByText('Each value must be at most 200 characters.');
-    expect(within(form).getByLabelText('Response Data').getAttribute('aria-describedby')).toContain(
-      message.closest('.field-error')?.id ?? 'missing',
-    );
+    expect(
+      (dataField(form, 'targetToSourceData') as HTMLInputElement).getAttribute('aria-describedby'),
+    ).toContain(message.closest('.field-error')?.id ?? 'missing');
   });
 
   it('words a two-way Relation on the type line in Modelling too', async () => {
@@ -1122,15 +1127,15 @@ describe('properties defined by an Admin on the form', () => {
         ? Response.json({ properties: definitions })
         : more?.(method, url, body);
 
-  it('shows them after Response Data, in name order, always, with no Add field', async () => {
+  it('shows them after Target to source data, in name order, always, with no Add field', async () => {
     await openShop(defined());
     const form = await open();
     const protocol = await within(form).findByLabelText('Protocol');
     const criticality = within(form).getByRole<HTMLSelectElement>('combobox', {
       name: 'Criticality',
     });
-    const response = within(form).getByLabelText('Response Data');
-    // After Response Data and before Type, Criticality before Protocol.
+    const response = dataField(form, 'targetToSourceData') as HTMLInputElement;
+    // After Target to source data and before Type, Criticality before Protocol.
     expect(
       response.compareDocumentPosition(criticality) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();

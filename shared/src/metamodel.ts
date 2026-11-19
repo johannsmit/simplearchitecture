@@ -45,6 +45,11 @@ export interface StandardPropertyDefinition {
    * before it became standard, and a stored model must stay readable.
    */
   readAs?: string;
+  /**
+   * How a label writes the property in braces, when it differs from `label` (only in case: a label
+   * matches a name ignoring case).
+   */
+  labelName?: string;
 }
 
 /**
@@ -68,12 +73,20 @@ export const standardProperties = {
   },
   // ISO 3166-1 alpha-2, e.g. NL. Non-ISO values are warnings, not errors (imported as is for now).
   supplierHqCountry: { label: 'Supplier HQ country', value: { kind: 'country' } },
-  // A Relation's exchange: the active identity used, more context on it, and the data sent with
-  // the request and returned in the response (each a list of values: data-values.ts).
+  // A Relation's exchange: the active identity used, more context on it, and the data that flows
+  // from its source to its target and back (each a list of values: data-values.ts).
   identity: { label: 'Identity', value: { kind: 'text' } },
   identityContext: { label: 'Identity Context', value: { kind: 'text' } },
-  requestData: { label: 'Request Data', value: { kind: 'text-list' } },
-  responseData: { label: 'Response Data', value: { kind: 'text-list' } },
+  sourceToTargetData: {
+    label: 'Source to target data',
+    value: { kind: 'text-list' },
+    labelName: 'Source to Target Data',
+  },
+  targetToSourceData: {
+    label: 'Target to source data',
+    value: { kind: 'text-list' },
+    labelName: 'Target to Source Data',
+  },
 } as const satisfies Record<string, StandardPropertyDefinition>;
 export type StandardPropertyKey = keyof typeof standardProperties;
 
@@ -151,14 +164,14 @@ const allEdges = ['architectureState'] as const;
 
 /**
  * A Relation's own standard properties, in display order: edited on the relationship form under the
- * label, and never custom metadata there. Identity and Identity Context are text; Request Data and
- * Response Data are lists of texts (`relationDataProperties`).
+ * label, and never custom metadata there. Identity and Identity Context are text; Source to target
+ * data and Target to source data are lists of texts (`relationDataProperties`).
  */
 export const relationProperties = [
   'identity',
   'identityContext',
-  'requestData',
-  'responseData',
+  'sourceToTargetData',
+  'targetToSourceData',
 ] as const;
 export type RelationProperty = (typeof relationProperties)[number];
 
@@ -166,8 +179,11 @@ export function isRelationProperty(key: string): key is RelationProperty {
   return (relationProperties as readonly string[]).includes(key);
 }
 
-/** Request Data and Response Data: each zero or more text values, stored as a JSON list. */
-export const relationDataProperties = ['requestData', 'responseData'] as const;
+/**
+ * Source to target data and Target to source data: each zero or more text values, stored as a JSON
+ * list. Named by direction, so reversing a Relation swaps them along with its ends.
+ */
+export const relationDataProperties = ['sourceToTargetData', 'targetToSourceData'] as const;
 export type RelationDataProperty = (typeof relationDataProperties)[number];
 
 export function isRelationDataProperty(key: string): key is RelationDataProperty {
@@ -175,11 +191,27 @@ export function isRelationDataProperty(key: string): key is RelationDataProperty
 }
 
 /**
- * Data, before it became Request Data and Response Data. Reading a model or a file turns it into
- * Request Data (unless it has Request Data already), so it is never set as custom metadata on a
- * relationship.
+ * Data, before it became Request Data and Response Data (now Source to target data and Target to
+ * source data). Reading a model or a file turns it into Source to target data (unless it has that
+ * already), so it is never set as custom metadata on a relationship.
  */
 export const retiredDataKey = 'data';
+
+/**
+ * Request Data and Response Data, before the two lists were named by direction: each older key, its
+ * name then, and the key it became. Reading a model or a file renames them (unless the relationship
+ * has the new key already: then both stay, the older one a warning), so neither is ever set as
+ * custom metadata on a relationship.
+ */
+export const olderDataKeys = {
+  requestData: { name: 'Request Data', key: 'sourceToTargetData' },
+  responseData: { name: 'Response Data', key: 'targetToSourceData' },
+} as const satisfies Record<string, { name: string; key: RelationDataProperty }>;
+export type OlderDataKey = keyof typeof olderDataKeys;
+
+export function isOlderDataKey(key: string): key is OlderDataKey {
+  return Object.hasOwn(olderDataKeys, key);
+}
 
 export const edgeTypeDefinitions: Record<EdgeType, EdgeTypeDefinition> = {
   Relation: {

@@ -18,6 +18,7 @@ import {
   type ChangedPropertyKey,
 } from './imported-keys.js';
 import {
+  olderDataKeys,
   relationProperties,
   retiredDataKey,
   standardProperties,
@@ -148,7 +149,11 @@ export const relationshipStandardKeys: readonly string[] = [
 const reservedKeys = new Set(['type', '__proto__']);
 const internalPrefix = 'simplearchitecture:';
 /** Retired properties, converted when a model is read. */
-const retiredKeys = new Set([retiredDataKey, 'informationFlow']);
+const retiredKeys = new Set<string>([
+  retiredDataKey,
+  'informationFlow',
+  ...Object.keys(olderDataKeys),
+]);
 
 /** The labels of a relationship's own fields: no property can be called so. */
 const standardNames: readonly string[] = relationshipStandardKeys.map(
@@ -156,6 +161,17 @@ const standardNames: readonly string[] = relationshipStandardKeys.map(
 );
 /** Other words the relationship form and panel use for their fields. */
 const formNames: readonly string[] = ['Name', 'Type', 'Direction', 'Label', 'Data'];
+/** The names the two lists of data had before they were named by direction: still no property's. */
+const olderNames = Object.values(olderDataKeys);
+
+/**
+ * The standard property a defined property's name clashes with (ignoring case and runs of spaces),
+ * or undefined. In a label, the standard property wins.
+ */
+export function standardNameClash(name: string): string | undefined {
+  const key = propertyNameKey(name);
+  return standardNames.find((other) => propertyNameKey(other) === key);
+}
 
 /** How names are compared: ignoring case, and runs of spaces count as one (as in labels). */
 export const propertyNameKey = (name: string): string =>
@@ -270,6 +286,10 @@ export function propertyNameProblem(name: string, others: Others): string | unde
   if (standard !== undefined) return `“${standard}” is a standard property.`;
   const used = formNames.find((other) => propertyNameKey(other) === key);
   if (used !== undefined) return `“${used}” is used on the relationship form already.`;
+  const older = olderNames.find((other) => propertyNameKey(other.name) === key);
+  if (older !== undefined) {
+    return `“${older.name}” is the older name of ${standardProperties[older.key].label}.`;
+  }
   const same = others.find((other) => propertyNameKey(other.name) === key);
   if (same !== undefined) return `There's already a property called “${same.name}”.`;
   if (others.some((other) => other.key.toLowerCase() === trimmed.toLowerCase())) {

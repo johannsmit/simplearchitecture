@@ -38,6 +38,7 @@ export {
   isEdgeType,
   isIsoCountryCode,
   isNodeType,
+  isOlderDataKey,
   isRelationDataProperty,
   isRelationProperty,
   isStandardPropertyKey,
@@ -46,6 +47,7 @@ export {
   nodeTypeDefinitions,
   nodeTypeKey,
   nodeTypes,
+  olderDataKeys,
   relationDataProperties,
   relationProperties,
   retiredDataKey,
@@ -58,6 +60,7 @@ export {
   type EdgeType,
   type EdgeTypeDefinition,
   type NodeIcon,
+  type OlderDataKey,
   type NodeType,
   type NodeTypeDefinition,
   type PropertyCheck,
@@ -188,11 +191,24 @@ export {
   withDataValue,
 } from './data-values.js';
 export {
+  cutEndName,
+  dataListNames,
+  dataListNamesOf,
+  fixedDataListNames,
+  maxDataEndName,
+  unnamedElement,
+  type DataListName,
+  type DataListNames,
+} from './data-list-names.js';
+export {
+  dataViewArrows,
   dataViewKey,
+  relationshipDataParts,
   relationshipValue,
   relationshipViewFields,
   relationshipViewText,
   relationshipViewValues,
+  type DataViewPart,
   type RelationshipViewField,
 } from './relationship-views.js';
 export {
@@ -203,6 +219,7 @@ export {
   labelExpressionNames,
   labelNameAt,
   labelPropertyNames,
+  newerLabelName,
   type FilledLabel,
   type LabelSubject,
 } from './label-expressions.js';
@@ -232,6 +249,7 @@ export {
   propertyKeyProblem,
   propertyNameKey,
   propertyNameProblem,
+  standardNameClash,
   propertyOptionsProblems,
   relationshipKeyRole,
   relationshipStandardKeys,

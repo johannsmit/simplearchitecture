@@ -2,6 +2,7 @@ import {
   definitionsForKeys,
   newRelationshipKeys,
   sortDefinitions,
+  standardNameClash,
   type AddedRelationshipProperty,
   type DefinedPropertyKind,
   type ModelAuthor,
@@ -60,6 +61,18 @@ export async function hasDefinitions(q: Queryable): Promise<boolean> {
 /** Takes the definitions' lock until the transaction ends. */
 export async function lockPropertyChanges(tx: Queryable): Promise<void> {
   await tx.query('select pg_advisory_xact_lock($1::bigint)', [propertyLock]);
+}
+
+/**
+ * The standard properties that a defined property is named like (ignoring case and runs of
+ * spaces), once each: one defined before the standard name existed, as when the two lists of data
+ * were named by direction. In a label, the standard property wins.
+ */
+export async function standardNameClashes(q: Queryable): Promise<string[]> {
+  if (!(await hasDefinitions(q))) return [];
+  const rows = await q.query<{ name: string }>('select name from relationship_properties');
+  const clashes = rows.flatMap((row) => standardNameClash(row.name) ?? []);
+  return [...new Set(clashes)].sort();
 }
 
 /** Every definition, by name. */

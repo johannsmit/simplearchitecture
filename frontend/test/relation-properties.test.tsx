@@ -4,9 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
-// Identity, Identity Context, Request Data and Response Data on the relationship form and in the
-// details panel. Request Data and Response Data hold lists of values, edited as chips. Made-up
-// data.
+// Identity, Identity Context and the two lists of data on the relationship form and in the details
+// panel. The lists, named after the ends, hold values edited as chips. Made-up data.
 
 const model = (opened: Record<string, unknown>): JgfDocument => ({
   graph: {
@@ -14,7 +13,7 @@ const model = (opened: Record<string, unknown>): JgfDocument => ({
     edges: (bakeryModel.graph.edges ?? []).map((edge): JgfEdge => {
       if (edge.id === 'e7') return { ...edge, metadata: opened };
       if (edge.id === 'e8' || edge.id === 'e9') {
-        return { ...edge, metadata: { ...edge.metadata, requestData: ['Orders'] } };
+        return { ...edge, metadata: { ...edge.metadata, sourceToTargetData: ['Orders'] } };
       }
       return edge;
     }),
@@ -83,14 +82,14 @@ describe('on the relationship form', () => {
       'Label',
       'Identity',
       'Identity Context',
-      'Request Data',
-      'Response Data',
+      'Web Shop to Back Office Server',
+      'Back Office Server to Web Shop',
     ]);
     expect(labels).not.toContain('Data');
     const identity = within(form).getByRole<HTMLInputElement>('combobox', { name: 'Identity' });
     expect(identity.value).toBe('svc-shop');
     // Both offer the values either has in the model: the values Data had.
-    for (const name of ['Request Data', 'Response Data']) {
+    for (const name of ['Web Shop to Back Office Server', 'Back Office Server to Web Shop']) {
       fireEvent.click(within(form).getByRole('combobox', { name }));
       expect(
         within(screen.getByRole('listbox', { name: `Suggestions for ${name}` }))
@@ -108,8 +107,8 @@ describe('on the relationship form', () => {
     expect(sent[0]).toEqual({
       version: 1,
       identity: null,
-      requestData: ['Orders'],
-      responseData: ['Orders'],
+      sourceToTargetData: ['Orders'],
+      targetToSourceData: ['Orders'],
     });
   });
 
@@ -118,11 +117,15 @@ describe('on the relationship form', () => {
     const form = await screen.findByRole('form', { name: /^Relationship / });
     fireEvent.click(within(form).getByRole('radio', { name: /^Contains/ }));
     expect(within(form).queryByRole('combobox', { name: 'Identity' })).toBeNull();
-    expect(within(form).queryByRole('combobox', { name: 'Request Data' })).toBeNull();
-    expect(within(form).queryByRole('combobox', { name: 'Response Data' })).toBeNull();
+    expect(
+      within(form).queryByRole('combobox', { name: 'Web Shop to Back Office Server' }),
+    ).toBeNull();
+    expect(
+      within(form).queryByRole('combobox', { name: 'Back Office Server to Web Shop' }),
+    ).toBeNull();
     expect(
       within(form).getByText(
-        'Identity, Identity Context, Request Data and Response Data are removed when you save.',
+        'Identity, Identity Context and the data in both directions are removed when you save.',
       ),
     ).toBeTruthy();
   });
@@ -138,7 +141,7 @@ describe('on the relationship form', () => {
   });
 });
 
-describe('Request Data and Response Data as chips', () => {
+describe('Source to target data and Target to source data as chips', () => {
   const chipsOf = (form: HTMLElement, name: string) =>
     within(form)
       .queryByRole('list', { name: new RegExp(`^${name}: `) })
@@ -149,34 +152,34 @@ describe('Request Data and Response Data as chips', () => {
     within(form).getByRole<HTMLInputElement>('combobox', { name });
 
   it('adds what is typed with Enter, keeps the order, and never saves on Enter', async () => {
-    const { sent } = await openHostedOn('modelling', { requestData: ['Flour'] });
+    const { sent } = await openHostedOn('modelling', { sourceToTargetData: ['Flour'] });
     const form = await screen.findByRole('form', { name: /^Relationship / });
-    expect(texts(form, 'Request Data')).toEqual(['Flour']);
-    const field = input(form, 'Request Data');
+    expect(texts(form, 'Web Shop to Back Office Server')).toEqual(['Flour']);
+    const field = input(form, 'Web Shop to Back Office Server');
     field.focus();
     fireEvent.change(field, { target: { value: '  Sugar  ' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(texts(form, 'Request Data')).toEqual(['Flour', 'Sugar']);
+    expect(texts(form, 'Web Shop to Back Office Server')).toEqual(['Flour', 'Sugar']);
     expect(field.value).toBe('');
     expect(document.activeElement).toBe(field);
     expect(within(form).getByText('Added Sugar.')).toBeTruthy();
     // Enter on an empty box adds nothing and saves nothing.
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(texts(form, 'Request Data')).toEqual(['Flour', 'Sugar']);
+    expect(texts(form, 'Web Shop to Back Office Server')).toEqual(['Flour', 'Sugar']);
     expect(sent).toEqual([]);
     fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, requestData: ['Flour', 'Sugar'] }]);
+      expect(sent).toEqual([{ version: 1, sourceToTargetData: ['Flour', 'Sugar'] }]);
     });
   });
 
   it('refuses a value that is there already, ignoring case, and says so', async () => {
-    await openHostedOn('modelling', { responseData: ['Order ids'] });
+    await openHostedOn('modelling', { targetToSourceData: ['Order ids'] });
     const form = await screen.findByRole('form', { name: /^Relationship / });
-    const field = input(form, 'Response Data');
+    const field = input(form, 'Back Office Server to Web Shop');
     fireEvent.change(field, { target: { value: 'ORDER IDS' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(texts(form, 'Response Data')).toEqual(['Order ids']);
+    expect(texts(form, 'Back Office Server to Web Shop')).toEqual(['Order ids']);
     expect(field.value).toBe('ORDER IDS');
     const note = within(form).getAllByText('“Order ids” is there already.');
     expect(note.length).toBeGreaterThan(0);
@@ -186,11 +189,13 @@ describe('Request Data and Response Data as chips', () => {
   });
 
   it('picks a suggestion with the arrows and Enter, offering only values not there yet', async () => {
-    await openHostedOn('modelling', { requestData: ['Orders'] });
+    await openHostedOn('modelling', { sourceToTargetData: ['Orders'] });
     const form = await screen.findByRole('form', { name: /^Relationship / });
-    const field = input(form, 'Request Data');
+    const field = input(form, 'Web Shop to Back Office Server');
     fireEvent.keyDown(field, { key: 'ArrowDown' });
-    const list = screen.getByRole('listbox', { name: 'Suggestions for Request Data' });
+    const list = screen.getByRole('listbox', {
+      name: 'Suggestions for Web Shop to Back Office Server',
+    });
     expect(
       within(list)
         .getAllByRole('option')
@@ -198,15 +203,19 @@ describe('Request Data and Response Data as chips', () => {
     ).toEqual(['Places orders']);
     expect(field.getAttribute('aria-activedescendant')).toBe(within(list).getByRole('option').id);
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(texts(form, 'Request Data')).toEqual(['Orders', 'Places orders']);
-    expect(screen.queryByRole('listbox', { name: 'Suggestions for Request Data' })).toBeNull();
+    expect(texts(form, 'Web Shop to Back Office Server')).toEqual(['Orders', 'Places orders']);
+    expect(
+      screen.queryByRole('listbox', { name: 'Suggestions for Web Shop to Back Office Server' }),
+    ).toBeNull();
   });
 
   it('removes a chip with its button and puts focus on the next one, then on the box', async () => {
-    const { sent } = await openHostedOn('modelling', { requestData: ['Flour', 'Sugar', 'Salt'] });
+    const { sent } = await openHostedOn('modelling', {
+      sourceToTargetData: ['Flour', 'Sugar', 'Salt'],
+    });
     const form = await screen.findByRole('form', { name: /^Relationship / });
     fireEvent.click(within(form).getByRole('button', { name: 'Remove Sugar' }));
-    expect(texts(form, 'Request Data')).toEqual(['Flour', 'Salt']);
+    expect(texts(form, 'Web Shop to Back Office Server')).toEqual(['Flour', 'Salt']);
     await waitFor(() => {
       expect(document.activeElement).toBe(
         within(form).getByRole('button', { name: 'Remove Salt' }),
@@ -216,23 +225,25 @@ describe('Request Data and Response Data as chips', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Remove Salt' }));
     fireEvent.click(within(form).getByRole('button', { name: 'Remove Flour' }));
     await waitFor(() => {
-      expect(document.activeElement).toBe(input(form, 'Request Data'));
+      expect(document.activeElement).toBe(input(form, 'Web Shop to Back Office Server'));
     });
-    expect(chipsOf(form, 'Request Data')).toHaveLength(0);
+    expect(chipsOf(form, 'Web Shop to Back Office Server')).toHaveLength(0);
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, requestData: null }]);
+      expect(sent).toEqual([{ version: 1, sourceToTargetData: null }]);
     });
   });
 
   it('saves a value typed and not yet added, and shows an older single text as one chip', async () => {
-    const { sent } = await openHostedOn('modelling', { requestData: 'Flour' });
+    const { sent } = await openHostedOn('modelling', { sourceToTargetData: 'Flour' });
     const form = await screen.findByRole('form', { name: /^Relationship / });
-    expect(texts(form, 'Request Data')).toEqual(['Flour']);
-    fireEvent.change(input(form, 'Response Data'), { target: { value: 'Loaves' } });
+    expect(texts(form, 'Web Shop to Back Office Server')).toEqual(['Flour']);
+    fireEvent.change(input(form, 'Back Office Server to Web Shop'), {
+      target: { value: 'Loaves' },
+    });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, responseData: ['Loaves'] }]);
+      expect(sent).toEqual([{ version: 1, targetToSourceData: ['Loaves'] }]);
     });
   });
 });
@@ -246,27 +257,41 @@ describe('in the details panel', () => {
     });
     const terms = [...panel.querySelectorAll('dt')].map((dt) => dt.textContent);
     expect(terms).toEqual(
-      expect.arrayContaining(['Identity', 'Identity Context', 'Request Data', 'Response Data']),
+      expect.arrayContaining([
+        'Identity',
+        'Identity Context',
+        'Web Shop to Back Office Server',
+        'Back Office Server to Web Shop',
+      ]),
     );
     const value = (term: string) =>
       [...panel.querySelectorAll('dt')].find((dt) => dt.textContent === term)?.nextElementSibling
         ?.textContent;
     expect(value('Identity')).toBe('svc-shop');
-    expect(value('Request Data')).toBe('Not set');
-    expect(value('Response Data')).toBe('Not set');
-    expect(terms).not.toContain('Data');
+    expect(value('Web Shop to Back Office Server')).toBe('Not set');
+    expect(value('Back Office Server to Web Shop')).toBe('Not set');
+    // Both lists in one Data row, named after the ends.
+    expect(terms).toContain('Data');
+    expect(terms).not.toContain('Source to target data');
     expect(within(details()).queryByRole('heading', { name: /^Custom metadata/ })).toBeNull();
   });
 
-  it('lists the values of Request Data and Response Data, in their order', async () => {
-    await openHostedOn('viewing', { requestData: ['Flour', 'Sugar'], responseData: 'Loaves' });
-    const list = await within(details()).findByRole('list', { name: 'Request Data' });
+  it('lists the values of Source to target data and Target to source data, in their order', async () => {
+    await openHostedOn('viewing', {
+      sourceToTargetData: ['Flour', 'Sugar'],
+      targetToSourceData: 'Loaves',
+    });
+    const list = await within(details()).findByRole('list', {
+      name: 'Web Shop to Back Office Server',
+    });
     expect(
       within(list)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
     ).toEqual(['Flour', 'Sugar']);
-    const response = within(details()).getByRole('list', { name: 'Response Data' });
+    const response = within(details()).getByRole('list', {
+      name: 'Back Office Server to Web Shop',
+    });
     expect(
       within(response)
         .getAllByRole('listitem')

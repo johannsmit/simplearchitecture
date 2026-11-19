@@ -3,6 +3,7 @@ import {
   insertLabelName,
   labelNameAt,
   labelPropertyNames,
+  newerLabelName,
   type LabelSubject,
   type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
@@ -31,6 +32,22 @@ const noDefinitions: readonly RelationshipPropertyDefinition[] = [];
 /** "No property called “A”." or "… “A” or “B”." */
 const unknownWords = (names: readonly string[]): string =>
   `No property called ${names.map((name) => `“${name}”`).join(' or ')}.`;
+
+/**
+ * What to say about the unknown names: one sentence for them all, and one for each older name of a
+ * list of data, with what it is now ("No property called “Request Data”. It is now
+ * {Source to Target Data}.").
+ */
+function unknownSentences(names: readonly string[]): string[] {
+  const others = names.filter((name) => newerLabelName(name) === undefined);
+  return [
+    ...(others.length > 0 ? [unknownWords(others)] : []),
+    ...names.flatMap((name) => {
+      const newer = newerLabelName(name);
+      return newer === undefined ? [] : [`${unknownWords([name])} It is now {${newer}}.`];
+    }),
+  ];
+}
 
 /**
  * The relationship's Label: plain text that may hold `{Name}` for a property's value. Typing `{`
@@ -135,7 +152,8 @@ export function LabelField(props: LabelFieldProps) {
       {filled && filled.unknown.length > 0 && (
         <p className="hint warn-note" id={warnId}>
           <Icon name="alert" size="sm" />
-          <span>{unknownWords(filled.unknown)}</span>
+          {/* One child, so the sentences run on as text beside the icon. */}
+          <span>{unknownSentences(filled.unknown).join(' ')}</span>
         </p>
       )}
     </>

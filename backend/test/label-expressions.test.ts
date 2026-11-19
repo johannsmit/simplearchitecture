@@ -29,18 +29,18 @@ describe('fillLabel', () => {
       metadata: {
         identity: 'Made-up service account',
         identityContext: 'Original user id',
-        requestData: 'Seed orders',
+        sourceToTargetData: 'Seed orders',
         description: 'Sends the\n  nightly batch',
       },
     };
-    expect(fill('{Identity} {Request Data}', subject).text).toBe(
+    expect(fill('{Identity} {Source to Target Data}', subject).text).toBe(
       'Made-up service account Seed orders',
     );
     expect(fill('{identity context}', subject).text).toBe('Original user id');
     expect(fill('{IDENTITY   Context}', subject).text).toBe('Original user id');
     expect(fill('{ Architecture state }', subject).text).toBe('Target');
     expect(fill('{Description}', subject).text).toBe('Sends the nightly batch');
-    expect(fill('Sends {request data} as {identity}', subject)).toEqual({
+    expect(fill('Sends {source to target data} as {identity}', subject)).toEqual({
       text: 'Sends Seed orders as Made-up service account',
       unknown: [],
     });
@@ -63,17 +63,21 @@ describe('fillLabel', () => {
   });
 
   it('gives nothing for a missing or empty value, closing up the spaces around it', () => {
-    const subject = relation({ requestData: 'Orders', identity: '   ' });
-    expect(fill('{Identity} {Request Data}', subject).text).toBe('Orders');
-    expect(fill('{Request Data} {Identity}', subject).text).toBe('Orders');
-    expect(fill('Sends  {Identity}  {Request Data}', subject).text).toBe('Sends Orders');
-    expect(fill('{Request Data}{Identity}{Request Data}', subject).text).toBe('OrdersOrders');
+    const subject = relation({ sourceToTargetData: 'Orders', identity: '   ' });
+    expect(fill('{Identity} {Source to Target Data}', subject).text).toBe('Orders');
+    expect(fill('{Source to Target Data} {Identity}', subject).text).toBe('Orders');
+    expect(fill('Sends  {Identity}  {Source to Target Data}', subject).text).toBe('Sends Orders');
+    expect(fill('{Source to Target Data}{Identity}{Source to Target Data}', subject).text).toBe(
+      'OrdersOrders',
+    );
     expect(fill('as {Identity Context} {Identity}', subject).text).toBe('as');
     expect(fill('{Identity} {Identity Context}', subject)).toEqual({ text: '', unknown: [] });
   });
 
   it('leaves the spaces typed between other parts as they are', () => {
-    expect(fill('A  B {Request Data}', relation({ requestData: 'C' })).text).toBe('A  B C');
+    expect(fill('A  B {Source to Target Data}', relation({ sourceToTargetData: 'C' })).text).toBe(
+      'A  B C',
+    );
   });
 
   it('gives nothing for a list or an object, which has no one value', () => {
@@ -90,7 +94,9 @@ describe('fillLabel', () => {
 
   it('knows custom metadata names the model uses, though this relationship has none', () => {
     expect(
-      fill('{protocol} {Request Data}', relation({ requestData: 'Orders' }), ['protocol']),
+      fill('{protocol} {Source to Target Data}', relation({ sourceToTargetData: 'Orders' }), [
+        'protocol',
+      ]),
     ).toEqual({
       text: 'Orders',
       unknown: [],
@@ -103,48 +109,63 @@ describe('fillLabel', () => {
       architectureState: 'Current',
       metadata: { description: 'Holds it' },
     };
-    expect(fill('{Request Data} {Description}', contains)).toEqual({
-      text: '{Request Data} Holds it',
-      unknown: ['Request Data'],
+    expect(fill('{Source to Target Data} {Description}', contains)).toEqual({
+      text: '{Source to Target Data} Holds it',
+      unknown: ['Source to Target Data'],
     });
     // A Contains can hold such a key as custom metadata, which reads by its own name and the
     // standard one.
-    const kept = { ...contains, metadata: { requestData: 'Kept' } };
-    expect(fill('{requestData}', kept).text).toBe('Kept');
-    expect(fill('{Request Data}', kept).text).toBe('Kept');
+    const kept = { ...contains, metadata: { sourceToTargetData: 'Kept' } };
+    expect(fill('{sourceToTargetData}', kept).text).toBe('Kept');
+    expect(fill('{Source to Target Data}', kept).text).toBe('Kept');
   });
 
-  it('knows Data no longer: it is Request Data and Response Data', () => {
-    const subject = relation({ requestData: 'Orders', responseData: 'Order ids' });
-    expect(fill('{Request Data} -> {Response Data}', subject).text).toBe('Orders -> Order ids');
-    expect(fill('{request  DATA}/{ response data }', subject).text).toBe('Orders/Order ids');
+  it('knows Data no longer: it is Source to target data and Target to source data', () => {
+    const subject = relation({ sourceToTargetData: 'Orders', targetToSourceData: 'Order ids' });
+    expect(fill('{Source to Target Data} -> {Target to Source Data}', subject).text).toBe(
+      'Orders -> Order ids',
+    );
+    expect(fill('{source to target  DATA}/{ target to source data }', subject).text).toBe(
+      'Orders/Order ids',
+    );
+    // The older names are names no more.
+    expect(fill('{Request Data}', subject)).toEqual({
+      text: '{Request Data}',
+      unknown: ['Request Data'],
+    });
     expect(fill('{Data}', subject)).toEqual({ text: '{Data}', unknown: ['Data'] });
     // Data kept from before reads by its own name, as custom metadata does.
-    expect(fill('{Data}', relation({ data: 'Old', requestData: 'New' })).text).toBe('Old');
+    expect(fill('{Data}', relation({ data: 'Old', sourceToTargetData: 'New' })).text).toBe('Old');
   });
 
-  it('fills in the values of Request Data and Response Data joined by ", "', () => {
+  it('fills in the values of Source to target data and Target to source data joined by ", "', () => {
     const subject = relation({
-      requestData: ['Orders', ' Invoices ', '', 'Order\n lines'],
-      responseData: ['Order ids'],
+      sourceToTargetData: ['Orders', ' Invoices ', '', 'Order\n lines'],
+      targetToSourceData: ['Order ids'],
     });
-    expect(fill('Sends {Request Data}, gets {Response Data}', subject).text).toBe(
+    expect(fill('Sends {Source to Target Data}, gets {Target to Source Data}', subject).text).toBe(
       'Sends Orders, Invoices, Order lines, gets Order ids',
     );
     // An empty list, or one of blanks, gives nothing, and the spaces around it close up.
-    expect(fill('Sends {Request Data} now', relation({ requestData: [] })).text).toBe('Sends now');
-    expect(fill('{Response Data}', relation({ responseData: ['  '] })).text).toBe('');
+    expect(
+      fill('Sends {Source to Target Data} now', relation({ sourceToTargetData: [] })).text,
+    ).toBe('Sends now');
+    expect(fill('{Target to Source Data}', relation({ targetToSourceData: ['  '] })).text).toBe('');
     // A single text, as stored before, is one value; another shape gives nothing.
-    expect(fill('{Request Data}', relation({ requestData: 'Orders' })).text).toBe('Orders');
-    expect(fill('{Request Data}', relation({ requestData: { a: 1 } })).text).toBe('');
+    expect(fill('{Source to Target Data}', relation({ sourceToTargetData: 'Orders' })).text).toBe(
+      'Orders',
+    );
+    expect(fill('{Source to Target Data}', relation({ sourceToTargetData: { a: 1 } })).text).toBe(
+      '',
+    );
     // Kept on a Contains, a list reads by both names too.
     const kept: LabelSubject = {
       type: 'Contains',
       architectureState: 'Current',
-      metadata: { requestData: ['Kept', 'Too'] },
+      metadata: { sourceToTargetData: ['Kept', 'Too'] },
     };
-    expect(fill('{Request Data}', kept).text).toBe('Kept, Too');
-    expect(fill('{requestData}', kept).text).toBe('Kept, Too');
+    expect(fill('{Source to Target Data}', kept).text).toBe('Kept, Too');
+    expect(fill('{sourceToTargetData}', kept).text).toBe('Kept, Too');
   });
 
   it('never reads the type or internal keys', () => {
@@ -156,23 +177,26 @@ describe('fillLabel', () => {
   });
 
   it('gives literal braces for {{ and }}', () => {
-    const subject = relation({ requestData: 'Orders' });
-    expect(fill('{{Request Data}}', subject).text).toBe('{Request Data}');
-    expect(fill('{{{Request Data}}}', subject).text).toBe('{Orders}');
+    const subject = relation({ sourceToTargetData: 'Orders' });
+    expect(fill('{{Source to Target Data}}', subject).text).toBe('{Source to Target Data}');
+    expect(fill('{{{Source to Target Data}}}', subject).text).toBe('{Orders}');
     expect(fill('a {{ b }} c', subject).text).toBe('a { b } c');
-    expect(fill('{{Request Data}', subject).text).toBe('{Request Data}');
+    expect(fill('{{Source to Target Data}', subject).text).toBe('{Source to Target Data}');
   });
 
   it('leaves braces that open or close nothing as typed', () => {
-    const subject = relation({ requestData: 'Orders' });
-    expect(fill('{Request Data', subject)).toEqual({ text: '{Request Data', unknown: [] });
-    expect(fill('Request Data}', subject).text).toBe('Request Data}');
+    const subject = relation({ sourceToTargetData: 'Orders' });
+    expect(fill('{Source to target data', subject)).toEqual({
+      text: '{Source to target data',
+      unknown: [],
+    });
+    expect(fill('Source to target data}', subject).text).toBe('Source to target data}');
     expect(fill('{} and { }', subject)).toEqual({ text: '{} and { }', unknown: [] });
-    expect(fill('{a{Request Data}', subject).text).toBe('{aOrders');
+    expect(fill('{a{Source to Target Data}', subject).text).toBe('{aOrders');
   });
 
   it('leaves a label without braces unchanged', () => {
-    expect(fill('reads  from', relation({ requestData: 'x' }))).toEqual({
+    expect(fill('reads  from', relation({ sourceToTargetData: 'x' }))).toEqual({
       text: 'reads  from',
       unknown: [],
     });
@@ -180,15 +204,15 @@ describe('fillLabel', () => {
 
   it('keeps values that look like markup as text', () => {
     const subject = relation({
-      requestData: '<img src=x onerror=alert(1)>',
-      identity: '{Request Data}',
+      sourceToTargetData: '<img src=x onerror=alert(1)>',
+      identity: '{Source to Target Data}',
       protocol: '<b>&amp;</b>',
     });
-    expect(fill('{Request Data} {protocol}', subject).text).toBe(
+    expect(fill('{Source to Target Data} {protocol}', subject).text).toBe(
       '<img src=x onerror=alert(1)> <b>&amp;</b>',
     );
     // A value is never filled in again.
-    expect(fill('{Identity}', subject).text).toBe('{Request Data}');
+    expect(fill('{Identity}', subject).text).toBe('{Source to Target Data}');
   });
 
   it('takes linear time on a long label full of braces', () => {
@@ -210,8 +234,8 @@ describe('displayLabel', () => {
           source: 'a',
           target: 'b',
           relation: 'Relation',
-          label: '{Request Data} {protocol}',
-          metadata: { requestData: 'Orders' },
+          label: '{Source to Target Data} {protocol}',
+          metadata: { sourceToTargetData: 'Orders' },
         },
         {
           id: 'r2',
@@ -250,8 +274,8 @@ describe('labelPropertyNames', () => {
     ).toEqual([
       'Identity',
       'Identity Context',
-      'Request Data',
-      'Response Data',
+      'Source to Target Data',
+      'Target to Source Data',
       'Architecture state',
       'Description',
       'protocol',

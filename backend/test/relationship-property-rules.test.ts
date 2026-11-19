@@ -50,8 +50,11 @@ describe('the rules for names, keys and options', () => {
     expect(propertyNameProblem('Cost  CENTRE', definitions)).toBe(
       "There's already a property called “Cost centre”.",
     );
+    expect(propertyNameProblem('source to target data', definitions)).toBe(
+      '“Source to target data” is a standard property.',
+    );
     expect(propertyNameProblem('request data', definitions)).toBe(
-      '“Request Data” is a standard property.',
+      '“Request Data” is the older name of Source to target data.',
     );
     expect(propertyNameProblem('Direction', definitions)).toBe(
       '“Direction” is used on the relationship form already.',

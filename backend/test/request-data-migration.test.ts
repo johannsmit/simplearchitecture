@@ -16,7 +16,8 @@ import { pgliteDb, type TestDb } from './pglite.js';
 
 // Data becomes Request Data: migration 012 on made-up data, and the same rule for files and
 // imports. Reading today also turns a single text in Request Data into a list (migration 013's
-// rule, tested on its own): `asRead` gives that step for the cases here.
+// rule) and names the lists by direction (migration 018's), each tested on its own: `asRead` gives
+// those steps for the cases here.
 
 const author: ModelAuthor = { id: 'oid-made-up', name: 'Made-up author' };
 const all = loadMigrations().filter((migration) => migration.version <= '012');
@@ -102,21 +103,29 @@ const cases: [Record<string, unknown>, unknown][] = [
   ]),
 ];
 
+const directionKeys: Record<string, string> = {
+  requestData: 'sourceToTargetData',
+  responseData: 'targetToSourceData',
+};
+
 /**
  * Metadata as reading it today gives it: a single text in Request Data or Response Data as a list,
- * a blank one gone.
+ * a blank one gone, and each under its key named by direction.
  */
 const asRead = (metadata: unknown): unknown => {
   if (typeof metadata !== 'object' || metadata === null) return metadata;
   return Object.fromEntries(
     Object.entries(metadata).flatMap(([key, value]): [string, unknown][] => {
-      if ((key !== 'requestData' && key !== 'responseData') || typeof value !== 'string') {
-        return [[key, value]];
-      }
-      return value.trim() === '' ? [] : [[key, [value]]];
+      const named = directionKeys[key] ?? key;
+      if (named === key || typeof value !== 'string') return [[named, value]];
+      return value.trim() === '' ? [] : [[named, [value]]];
     }),
   );
 };
+
+/** A label as reading a file today gives it: {Request Data} named by direction too. */
+const labelRead = (label: unknown): unknown =>
+  typeof label === 'string' ? label.replaceAll('{Request Data}', '{Source to Target Data}') : label;
 
 const document = (): JgfDocument =>
   ({
@@ -293,7 +302,9 @@ describe('older files and imports', () => {
     const { document: converted, dataConverted } = convertOlderTypes(document());
     const edges = (converted as JgfDocument).graph.edges ?? [];
     expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => asRead(after)));
-    expect(edges.map((e) => e.label ?? null)).toEqual(cases.map(([stored]) => labelAfter(stored)));
+    expect(edges.map((e) => e.label ?? null)).toEqual(
+      cases.map(([stored]) => labelRead(labelAfter(stored))),
+    );
     const changed = cases.filter(
       ([stored, after]) =>
         JSON.stringify(stored.metadata ?? null) !== JSON.stringify(after) ||
@@ -306,7 +317,7 @@ describe('older files and imports', () => {
     const stored = edge('x', { label: '{Data}', metadata: { data: 'Flour' } });
     expect(convertedEdge(stored, false)).toEqual({
       ...stored,
-      metadata: { requestData: ['Flour'] },
+      metadata: { sourceToTargetData: ['Flour'] },
     });
   });
 
@@ -327,25 +338,34 @@ describe('older files and imports', () => {
     expect(validation.warnings.map((issue) => [issue.code, issue.message])).toEqual([
       [
         'older-relationship-types',
-        'Document: 1 relationship with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Request Data.',
+        'Document: 1 relationship with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Source to target data.',
       ],
       [
         'older-data-property',
-        'Document: 2 relationships with Data, or with {Data} in the label, converted: Data is now Request Data.',
+        'Document: 2 relationships with Data, or with {Data} in the label, converted: Data is now Source to target data.',
+      ],
+      [
+        'older-data-direction',
+        'Document: 1 relationship with Request Data or Response Data, or with them in the label, converted: Request Data is now Source to target data, Response Data is now Target to source data.',
       ],
     ]);
     const edges = (stored as JgfDocument).graph.edges ?? [];
     expect(edges.map((e: JgfEdge) => [e.id, e.label, e.metadata])).toEqual([
-      ['d', undefined, { requestData: ['Flour'] }],
-      ['l', '{Request Data}', undefined],
-      ['f', 'Loaves', { requestData: ['Loaves'] }],
-      ['t', undefined, { requestData: ['Flour'] }],
+      ['d', undefined, { sourceToTargetData: ['Flour'] }],
+      ['l', '{Source to Target Data}', undefined],
+      ['f', 'Loaves', { sourceToTargetData: ['Loaves'] }],
+      ['t', undefined, { sourceToTargetData: ['Flour'] }],
     ]);
   });
 
   it('leave a document without Data as it is', () => {
     const today = { graph: { nodes, edges: [edge('t', { label: '{{Data}}' })] } };
-    expect(convertOlderTypes(today)).toEqual({ document: today, converted: 0, dataConverted: 0 });
+    expect(convertOlderTypes(today)).toEqual({
+      document: today,
+      converted: 0,
+      dataConverted: 0,
+      directionConverted: 0,
+    });
   });
 
   it('rewrite only {Data}, in linear time', () => {

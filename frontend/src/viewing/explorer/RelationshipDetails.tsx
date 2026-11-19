@@ -1,5 +1,6 @@
 import {
   canBeTwoWay,
+  dataListNames,
   dataValuesOf,
   definedPropertiesOf,
   displayLabel,
@@ -15,6 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Icon } from '../../icons';
 import { EdgeSample, relationshipTypeLine, StateBadge, TypeMark } from '../../metamodel-ui';
+import { DataListLabel } from '../../modelling/DataListLabel';
 import { nameOf, relationshipSentence } from '../../modelling/relationships';
 import { Description, MetadataValue, PropertyValue } from './DetailsPanel';
 
@@ -53,9 +55,11 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   const label = displayLabel(relationship, graph);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
-  // A Relation's own properties (Identity to Response Data); elsewhere such keys stay custom
+  // A Relation's own properties (Identity to Target to source data); elsewhere such keys stay custom
   // metadata.
   const texts = relationProperties.filter((key) => hasStandardEdgeProperty(key, relationship.type));
+  const lists = texts.filter(isRelationDataProperty);
+  const listNames = dataListNames(graph, relationship.source, relationship.target);
   // A Relation's defined properties, by name, always; on a Contains such values are custom.
   const defined = definedPropertiesOf(relationship.type, graph.relationshipProperties);
   const definedKeys = new Set(defined.map((definition) => definition.key));
@@ -160,20 +164,38 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
               <StateBadge state={state} />
             </dd>
           </div>
-          {texts.map((key) => (
-            <div key={key}>
-              <dt>{standardProperties[key].label}</dt>
-              <dd>
-                {isRelationDataProperty(key) ? (
-                  <DataValues label={standardProperties[key].label} value={metadata[key]} />
-                ) : (
+          {texts
+            .filter((key) => !isRelationDataProperty(key))
+            .map((key) => (
+              <div key={key}>
+                <dt>{standardProperties[key].label}</dt>
+                <dd>
                   <PropertyValue
                     row={{ key, label: standardProperties[key].label, value: metadata[key] }}
                   />
-                )}
+                </dd>
+              </div>
+            ))}
+          {lists.length > 0 && (
+            // One Data row: each list under its name, built from the ends.
+            <div>
+              <dt>Data</dt>
+              <dd>
+                <dl className="props is-stacked">
+                  {lists.map((key) => (
+                    <div key={key}>
+                      <dt>
+                        <DataListLabel name={listNames[key]} />
+                      </dt>
+                      <dd>
+                        <DataValues label={listNames[key].full} value={metadata[key]} />
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
               </dd>
             </div>
-          ))}
+          )}
           {defined.map((definition) => (
             <div key={definition.key}>
               <dt>{definition.name}</dt>
@@ -244,7 +266,7 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
 }
 
 /**
- * Request Data or Response Data: its values, in their order, or "Not set". A value of another shape
+ * A list of data: its values, in their order, or "Not set". A value of another shape
  * (kept from an import, with a warning) shows as it is stored.
  */
 function DataValues({ label, value }: { label: string; value: unknown }) {

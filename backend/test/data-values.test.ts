@@ -7,7 +7,7 @@ import {
 } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
 
-// The values of Request Data and Response Data, read and compared one way everywhere. Made-up
+// The values of the two lists of data, read and compared one way everywhere. Made-up
 // data only.
 
 describe('dataValuesOf', () => {

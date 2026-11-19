@@ -278,8 +278,8 @@ describe('Admin-only definition changes', () => {
     expect(await refused({ name: 'identity' })).toEqual([
       { field: 'name', message: '“Identity” is a standard property.' },
     ]);
-    expect(await refused({ key: 'requestData' })).toEqual([
-      { field: 'key', message: "“requestData” is a standard property's key." },
+    expect(await refused({ key: 'sourceToTargetData' })).toEqual([
+      { field: 'key', message: "“sourceToTargetData” is a standard property's key." },
     ]);
     for (const key of ['type', 'simplearchitecture:x', 'data', 'informationFlow']) {
       expect(await refused({ key })).toEqual([

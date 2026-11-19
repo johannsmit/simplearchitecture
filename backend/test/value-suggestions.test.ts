@@ -164,30 +164,32 @@ describe('relationshipPropertyValues', () => {
     }
   });
 
-  it('offers Request Data and Response Data the values of both', () => {
+  it('offers Source to target data and Target to source data the values of both', () => {
     const graph = buildModelGraph(
       model({}, [
-        edge('r1', { requestData: 'Orders' }),
-        edge('r2', { responseData: 'Orders' }),
-        edge('r3', { responseData: 'Order ids' }),
-        edge('r4', { requestData: 'Invoices', responseData: 'Orders' }),
+        edge('r1', { sourceToTargetData: 'Orders' }),
+        edge('r2', { targetToSourceData: 'Orders' }),
+        edge('r3', { targetToSourceData: 'Order ids' }),
+        edge('r4', { sourceToTargetData: 'Invoices', targetToSourceData: 'Orders' }),
       ]),
     );
     const values = relationshipPropertyValues(graph);
-    expect(values.get('requestData')).toEqual(['Orders', 'Invoices', 'Order ids']);
-    expect(values.get('responseData')).toEqual(values.get('requestData'));
-    expect(relationshipPropertyValues(buildModelGraph(model({}))).has('requestData')).toBe(false);
+    expect(values.get('sourceToTargetData')).toEqual(['Orders', 'Invoices', 'Order ids']);
+    expect(values.get('targetToSourceData')).toEqual(values.get('sourceToTargetData'));
+    expect(relationshipPropertyValues(buildModelGraph(model({}))).has('sourceToTargetData')).toBe(
+      false,
+    );
   });
 
   it('offers each value of the lists, most used first, skipping blanks and line breaks', () => {
     const graph = buildModelGraph(
       model({}, [
-        edge('r1', { requestData: ['Orders', 'Invoices'] }),
-        edge('r2', { responseData: ['Orders', '  ', 'Two\nlines', 7] }),
-        edge('r3', { requestData: [], responseData: { odd: true } }),
+        edge('r1', { sourceToTargetData: ['Orders', 'Invoices'] }),
+        edge('r2', { targetToSourceData: ['Orders', '  ', 'Two\nlines', 7] }),
+        edge('r3', { sourceToTargetData: [], targetToSourceData: { odd: true } }),
       ]),
     );
-    expect(relationshipPropertyValues(graph).get('responseData')).toEqual([
+    expect(relationshipPropertyValues(graph).get('targetToSourceData')).toEqual([
       'Orders',
       '7',
       'Invoices',
@@ -240,9 +242,9 @@ describe('metadata names', () => {
     const graph = buildModelGraph(
       model({ c: node({ zone: 'element' }) }, [
         edge('e1', { protocol: 'REST', architectureState: 'Target', description: 'd' }),
-        edge('e2', { protocol: 'SOAP', requestData: 'Orders', functions: ['f'] }),
+        edge('e2', { protocol: 'SOAP', sourceToTargetData: 'Orders', functions: ['f'] }),
         // Data kept from before is never offered as a name: the key is reserved.
-        edge('e4', { data: 'Old', requestData: 'New', responseData: 'x' }),
+        edge('e4', { data: 'Old', sourceToTargetData: 'New', targetToSourceData: 'x' }),
         edge('e3', { owningTeam: 'Web', type: 'odd' }),
       ]),
     );

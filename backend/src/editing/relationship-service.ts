@@ -9,10 +9,13 @@ import {
   canBeTwoWay,
   hasStandardEdgeProperty,
   isEdgeType,
+  isOlderDataKey,
   isRelationDataProperty,
   isRelationProperty,
   maxDataValueLength,
   maxDataValues,
+  olderDataKeys,
+  relationDataProperties,
   relationProperties,
   repeatedDataValue,
   retiredDataKey,
@@ -65,7 +68,7 @@ import {
 
 /**
  * Adding, changing (ends, type, Architecture state, description, label, direction, Identity,
- * Identity Context, Request Data, Response Data) and deleting one relationship of a stored model, beside
+ * Identity Context, the two lists of data) and deleting one relationship of a stored model, beside
  * ElementService and through the same store change: one transaction under the model's row lock, the
  * counts and list cache kept, one audit row.
  *
@@ -81,6 +84,9 @@ import {
  *   that gains one gets a new version (`viewsChanged`). `reverse`
  *   can't come with a new end: the client sends a reversed relationship with a new end as its new
  *   `source` and `target`, so there is one way to read the request.
+ * - Reversing a Relation swaps its two lists of data along with its ends, so the same data flows
+ *   between the same two elements (two-way too). A list sent with `reverse` is the list after the
+ *   swap. New ends sent already reversed are taken as they are: the client swaps the lists then.
  * - Update and delete carry the relationship's version as read; another one is a conflict.
  * - Metadata takes a Relation's defined properties and keys the relationship holds already; no new
  *   key, for anyone (`metadataKeyProblem`). The definitions are read, and the ones set share-locked,
@@ -109,8 +115,12 @@ const dataListMessage = 'Must be a list of texts.';
 const reverseWithEndsMessage =
   "Reverse can't be sent with a new source or target: send the new source and target instead.";
 
+/** Why an older key of a list of data can't be sent: it was renamed by direction. */
+const olderDataKeyMessage = (key: keyof typeof olderDataKeys): string =>
+  `${key} is no longer used: send ${olderDataKeys[key].key}.`;
+
 /**
- * Request Data or Response Data: the whole list, each value trimmed, in the order sent. No blank
+ * A list of data: the whole list, each value trimmed, in the order sent. No blank
  * value, none twice (ignoring case), and at most `maxDataValues`. A value's length is checked
  * against what is stored (`dataValueProblems`): one stored already may be longer.
  */
@@ -165,15 +175,17 @@ const metadataSchema = z
       const problem =
         key === retiredInformationFlowKey
           ? 'This key is reserved.'
-          : // Removing one kept from before (where Request Data had a value) is fine.
+          : // Removing one kept from before (where the key it became had a value) is fine.
             key === retiredDataKey && record[key] !== null
-            ? 'This key is reserved: Data is now Request Data and Response Data.'
-            : key === 'description' ||
-                key === 'architectureState' ||
-                // Removing one kept as custom metadata (on a Contains) is fine.
-                (isRelationProperty(key) && record[key] !== null)
-              ? 'Set this in its own field.'
-              : reservedKeyProblem(key);
+            ? 'This key is reserved: Data is now sourceToTargetData and targetToSourceData.'
+            : isOlderDataKey(key) && record[key] !== null
+              ? olderDataKeyMessage(key)
+              : key === 'description' ||
+                  key === 'architectureState' ||
+                  // Removing one kept as custom metadata (on a Contains) is fine.
+                  (isRelationProperty(key) && record[key] !== null)
+                ? 'Set this in its own field.'
+                : reservedKeyProblem(key);
       if (problem !== undefined) ctx.addIssue({ code: 'custom', message: problem, path: [key] });
     }
   });
@@ -243,8 +255,11 @@ const updateRelationshipSchema = z.strictObject({
   twoWay: z.boolean({ error: 'Must be true or false.' }).optional(),
   identity: z.string({ error: 'Must be text.' }).nullable().optional(),
   identityContext: z.string({ error: 'Must be text.' }).nullable().optional(),
-  requestData: dataListSchema.nullable().optional(),
-  responseData: dataListSchema.nullable().optional(),
+  sourceToTargetData: dataListSchema.nullable().optional(),
+  targetToSourceData: dataListSchema.nullable().optional(),
+  // The older keys, renamed by direction: refused with a message that names the new one.
+  requestData: z.never({ error: olderDataKeyMessage('requestData') }).optional(),
+  responseData: z.never({ error: olderDataKeyMessage('responseData') }).optional(),
   metadata: metadataSchema.optional(),
 });
 
@@ -479,11 +494,23 @@ export class RelationshipService {
             if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
             apply(metadata, key, value, `metadata.${key}`, changed);
           }
-          // Identity and Identity Context: trimmed text, and blank removes the key. Request Data and
-          // Response Data: the whole list, and an empty one removes the key. A change to a type
-          // without them removes them.
+          // Identity and Identity Context: trimmed text, and blank removes the key. The lists of
+          // data: the whole list, and an empty one removes the key. A change to a type without them
+          // removes them.
           const fits = (key: (typeof relationProperties)[number]) =>
             !isEdgeType(relation) || hasStandardEdgeProperty(key, relation);
+          // Reversing (an element to itself has nothing to reverse) swaps the two lists with the
+          // ends, so the same data flows between the same two elements. A list sent with it is the
+          // list after the swap, checked against what was stored on the other side.
+          const reversing = request.reverse === true && source !== target;
+          const [forward, backward] = relationDataProperties;
+          if (reversing && fits(forward) && fits(backward)) {
+            const had = { ...metadata };
+            const valueOf = (key: string) => (Object.hasOwn(had, key) ? had[key] : null);
+            apply(metadata, forward, valueOf(backward), forward, changed);
+            apply(metadata, backward, valueOf(forward), backward, changed);
+          }
+          const listsBefore: Entries = { ...metadata };
           for (const key of relationProperties) {
             const sent = request[key];
             if (sent === undefined) {
@@ -503,7 +530,7 @@ export class RelationshipService {
                 issues.push({ field: key, message: valueTooLong });
               }
             } else if (value !== null && isRelationDataProperty(key)) {
-              const problem = dataValueProblem(value, before?.[key]);
+              const problem = dataValueProblem(value, listsBefore[key]);
               if (problem !== undefined) issues.push({ field: key, message: problem });
             }
             apply(metadata, key, empty ? null : value, key, changed);
@@ -527,8 +554,7 @@ export class RelationshipService {
             twoWay = false;
           }
           if (twoWay !== wasTwoWay) changed.push('directed');
-          // A relationship from an element to itself has nothing to reverse.
-          const reversed = request.reverse === true && source !== target;
+          const reversed = reversing;
           if (reversed) {
             [source, target] = [target, source];
             changed.push('source', 'target');
@@ -572,7 +598,8 @@ export class RelationshipService {
             edge,
             ...(moved.length > 0 ? { endsIntoViews: true } : {}),
           } as const;
-          return plan(write, document, action, actor, changed);
+          // A list swapped by Reverse and then sent is one change of that field.
+          return plan(write, document, action, actor, [...new Set(changed)]);
         },
         { propertyKeys: Object.keys(request.metadata ?? {}) },
       );

@@ -447,8 +447,8 @@ describe('through the routes', () => {
           relation: 'Relation',
           label: 'Orders',
           metadata: {
-            requestData: ['Orders', 'Customer ids'],
-            responseData: ['Order ids'],
+            sourceToTargetData: ['Orders', 'Customer ids'],
+            targetToSourceData: ['Order ids'],
             identity: 'made-up-client',
             protocol: 'REST',
           },
@@ -465,7 +465,7 @@ describe('through the routes', () => {
           source: 'a',
           target: 'b',
           relation: 'Relation',
-          metadata: { requestData: 7 },
+          metadata: { sourceToTargetData: 7 },
         },
         {
           id: 'two',
@@ -481,7 +481,7 @@ describe('through the routes', () => {
           source: 'a',
           target: 'd',
           relation: 'Contains',
-          metadata: { requestData: ['Kept on a Contains'] },
+          metadata: { sourceToTargetData: ['Kept on a Contains'] },
         },
       ],
     },
@@ -560,13 +560,13 @@ describe('through the routes', () => {
       [body.model.id],
     );
     expect(rows).toEqual([
-      { relation: 'Relation', metadata: { requestData: ['L'] }, directed: false },
+      { relation: 'Relation', metadata: { sourceToTargetData: ['L'] }, directed: false },
       { relation: 'Relation', metadata: { protocol: 'REST' }, directed: null },
       { relation: 'Contains', metadata: null, directed: null },
     ]);
   });
 
-  it('Request Data is Modeller-only, a list of texts only, and audited by name; Information flow and Data are refused', async () => {
+  it('Source to target data is Modeller-only, a list of texts only, and audited by name; Information flow and Data are refused', async () => {
     const seeded = await PostgresModelStore.open(db, quiet);
     const { id } = await seeded.save(
       model([
@@ -584,15 +584,20 @@ describe('through the routes', () => {
       idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) }),
     );
     expect(
-      (await call(app, 'PATCH', patch, undefined, { version: 1, requestData: 'x' })).statusCode,
+      (await call(app, 'PATCH', patch, undefined, { version: 1, sourceToTargetData: 'x' }))
+        .statusCode,
     ).toBe(401);
     expect((await call(app, 'POST', post, undefined, relation)).statusCode).toBe(401);
     await app.close();
 
     const viewer = await signedIn(['Viewer']);
     expect(
-      (await call(viewer.target, 'PATCH', patch, viewer.cookie, { version: 1, requestData: 'x' }))
-        .statusCode,
+      (
+        await call(viewer.target, 'PATCH', patch, viewer.cookie, {
+          version: 1,
+          sourceToTargetData: 'x',
+        })
+      ).statusCode,
     ).toBe(403);
     expect((await call(viewer.target, 'POST', post, viewer.cookie, relation)).statusCode).toBe(403);
     await viewer.target.close();
@@ -602,16 +607,20 @@ describe('through the routes', () => {
     for (const value of [true, 1, 'x', {}, [''], [1], ['x', 'X']]) {
       const refused = await call(target, 'PATCH', patch, cookie, {
         version: 1,
-        requestData: value,
+        sourceToTargetData: value,
       });
       expect(refused.statusCode, JSON.stringify(value)).toBe(422);
-      expect(refused.json<{ fields: { field: string }[] }>().fields[0]?.field).toBe('requestData');
+      expect(refused.json<{ fields: { field: string }[] }>().fields[0]?.field).toBe(
+        'sourceToTargetData',
+      );
     }
     for (const body of [
       { version: 1, informationFlow: true },
       { version: 1, metadata: { informationFlow: true } },
       { version: 1, metadata: { data: 'x' } },
       { version: 1, data: 'x' },
+      { version: 1, requestData: ['x'] },
+      { version: 1, metadata: { responseData: ['x'] } },
     ]) {
       expect((await call(target, 'PATCH', patch, cookie, body)).statusCode).toBe(422);
     }
@@ -619,7 +628,7 @@ describe('through the routes', () => {
     expect(onPost.statusCode).toBe(422);
     const onContains = await call(target, 'PATCH', `/api/models/${id}/relationships/c`, cookie, {
       version: 1,
-      responseData: ['x'],
+      targetToSourceData: ['x'],
     });
     expect(onContains.statusCode).toBe(422);
 
@@ -643,14 +652,14 @@ describe('through the routes', () => {
     await insertDefinitions(db, definitionsForKeys(['secretish'], []));
     const saved = await call(target, 'PATCH', patch, cookie, {
       version: 1,
-      requestData: ['made-up-data'],
+      sourceToTargetData: ['made-up-data'],
       metadata: { secretish: 'made-up-value' },
     });
     expect(saved.statusCode).toBe(200);
     const [audit] = await db.query<{ details: { fields: string[] } }>(
       `select details from audit where relationship_id = 'r' order by id desc limit 1`,
     );
-    expect(audit?.details.fields.sort()).toEqual(['metadata.secretish', 'requestData']);
+    expect(audit?.details.fields.sort()).toEqual(['metadata.secretish', 'sourceToTargetData']);
     expect(JSON.stringify(audit)).not.toContain('made-up-value');
     expect(JSON.stringify(audit)).not.toContain('made-up-data');
     expect(logs.join('\n')).not.toContain('made-up-value');

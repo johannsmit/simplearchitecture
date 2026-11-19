@@ -51,8 +51,8 @@ describe('samples/sample-insurance.jgf.json', () => {
       expect(relations.some((edge) => typeof edge.metadata?.[key] === 'string')).toBe(true);
       expect(relations.some((edge) => edge.metadata?.[key] === undefined)).toBe(true);
     }
-    // Request Data and Response Data are lists, some with more than one value.
-    for (const key of ['requestData', 'responseData']) {
+    // Source to target data and Target to source data are lists, some with more than one value.
+    for (const key of ['sourceToTargetData', 'targetToSourceData']) {
       const lists = relations.map((edge) => edge.metadata?.[key]).filter(Array.isArray);
       expect(lists.length).toBeGreaterThan(0);
       expect(lists.some((list) => list.length > 1)).toBe(true);

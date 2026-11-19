@@ -118,7 +118,7 @@ function definedValues(
 }
 
 /**
- * Identity and Identity Context (text), and Request Data and Response Data (lists of texts), on a
+ * Identity and Identity Context (text), and the two lists of data (lists of texts), on a
  * Relation, when set (as the canvas reads them).
  */
 function relationTexts(

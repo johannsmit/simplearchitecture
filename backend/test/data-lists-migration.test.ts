@@ -239,11 +239,23 @@ describe('migration 013', () => {
   }, 120_000);
 });
 
+/** Metadata as reading it today gives it: the two lists under their keys named by direction. */
+const named = (metadata: unknown): unknown => {
+  if (typeof metadata !== 'object' || metadata === null) return metadata;
+  const keys: Record<string, string> = {
+    requestData: 'sourceToTargetData',
+    responseData: 'targetToSourceData',
+  };
+  return Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) => [keys[key] ?? key, value]),
+  );
+};
+
 describe('reading a file or an import', () => {
   it('follows the same rule as the migration', () => {
     const { document: converted } = convertOlderTypes(document());
     const edges = (converted as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => after));
+    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => named(after)));
   });
 
   it('leaves the input unchanged, and a document of lists as it is', () => {
@@ -251,7 +263,14 @@ describe('reading a file or an import', () => {
     const copy = structuredClone(input);
     convertOlderTypes(input);
     expect(input).toEqual(copy);
-    const today = { graph: { nodes, edges: [edge('t', { metadata: { requestData: ['A'] } })] } };
-    expect(convertOlderTypes(today)).toEqual({ document: today, converted: 0, dataConverted: 0 });
+    const today = {
+      graph: { nodes, edges: [edge('t', { metadata: { sourceToTargetData: ['A'] } })] },
+    };
+    expect(convertOlderTypes(today)).toEqual({
+      document: today,
+      converted: 0,
+      dataConverted: 0,
+      directionConverted: 0,
+    });
   });
 });

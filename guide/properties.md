@@ -1,6 +1,6 @@
 # Properties defined by an Admin
 
-An Admin defines the extra properties that relationships have, on **Admin → Properties**. They show and work like the standard properties (Identity, Request Data and the others), on every Relation in every model, so everyone uses the same names in the same way. They apply to relationships of the type Relation only; elements are unchanged and still take custom metadata.
+An Admin defines the extra properties that relationships have, on **Admin → Properties**. They show and work like the standard properties (Identity, Source to target data and the others), on every Relation in every model, so everyone uses the same names in the same way. They apply to relationships of the type Relation only; elements are unchanged and still take custom metadata.
 
 ## Who can do what
 
@@ -31,7 +31,7 @@ Before this version, Modellers could add any custom metadata to a relationship. 
 
 ## On a relationship
 
-On a Relation's form in Modelling, the properties follow Response Data, in name order, always: a text property is a field that offers the values it has in the model, a choice a list with "Not set" first. Leave a field empty, or pick Not set, to give a relationship no value. The details panel shows them after the standard properties, with "Not set" where there is no value.
+On a Relation's form in Modelling, the properties follow the data lists, in name order, always: a text property is a field that offers the values it has in the model, a choice a list with "Not set" first. Leave a field empty, or pick Not set, to give a relationship no value. The details panel shows them after the standard properties, with "Not set" where there is no value.
 
 The form has no **Add field**: new properties are added by an Admin. A value kept on a Contains (see below) can be changed or removed, but no new key can be added to any relationship, by anyone; the server refuses it too.
 
