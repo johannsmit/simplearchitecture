@@ -1,12 +1,4 @@
-import {
-  catalogTabs,
-  isOlderDataKey,
-  olderDataKeys,
-  type CatalogTab,
-} from '@simplearchitecture/shared';
-
-/** What the older Information Flow viewpoint shows today: Data (both lists of data). */
-const olderFlowKey = 'data';
+import { catalogTabs, type CatalogTab } from '@simplearchitecture/shared';
 
 /**
  * URLs of the explorer, in Viewing (read-only) and Modelling (editing). Both spaces use the same
@@ -83,23 +75,6 @@ export function viewSearchCleaned(params: URLSearchParams): string | undefined {
   return text === '' ? '' : `?${text}`;
 }
 
-/**
- * An address from an older version named a fixed viewpoint. `viewpoint=information-flow` reads as
- * Data selected (where Information flow went), and any other value as nothing more selected. The
- * search to rewrite the address with (without it), or undefined when it has none. "?" unless empty.
- */
-export function withoutOldViewpoint(params: URLSearchParams): string | undefined {
-  const old = params.get('viewpoint');
-  if (old === null) return undefined;
-  const next = new URLSearchParams(params);
-  next.delete('viewpoint');
-  if (old.toLowerCase() === 'information-flow' && !next.getAll('show').includes(olderFlowKey)) {
-    next.append('show', olderFlowKey);
-  }
-  const text = next.toString();
-  return text === '' ? '' : `?${text}`;
-}
-
 /** Most properties a viewpoint can select, and the longest name read from an address. */
 export const maxShownProperties = 20;
 export const maxShownKeyLength = 100;
@@ -107,14 +82,10 @@ export const maxShownKeyLength = 100;
 /**
  * The relationship properties a viewpoint shows, from the address (`show=protocol&show=auth`). Only
  * the address holds them, so a viewpoint can be shared as a link: a property name is model content,
- * so it never goes in the browser's storage. An address from before the lists of data were named by
- * direction (`show=requestData`) reads as the key it became.
+ * so it never goes in the browser's storage.
  */
 export function readShownProperties(params: URLSearchParams): string[] {
-  const keys = params
-    .getAll('show')
-    .filter((key) => key !== '' && key.length <= maxShownKeyLength)
-    .map((key) => (isOlderDataKey(key) ? olderDataKeys[key].key : key));
+  const keys = params.getAll('show').filter((key) => key !== '' && key.length <= maxShownKeyLength);
   return [...new Set(keys)].slice(0, maxShownProperties);
 }
 

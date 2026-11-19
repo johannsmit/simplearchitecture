@@ -1,7 +1,7 @@
 {
   "name": "@simplearchitecture/backend",
   "private": true,
-  "version": "0.59.0",
+  "version": "0.60.0",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
@@ -9,22 +9,21 @@
     "build": "node -e \"process.getBuiltinModule('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json && node -e \"process.getBuiltinModule('node:fs').writeFileSync('dist/build-info.json', JSON.stringify({ commit: process.env.SOURCE_COMMIT ?? '' }) + '\\n')\"",
     "start": "node --env-file-if-exists=../.env dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "db:migrate": "tsx --env-file-if-exists=../.env src/db/migrate-cli.ts",
-    "db:import-files": "tsx --env-file-if-exists=../.env src/db/import-files-cli.ts"
+    "db:migrate": "tsx --env-file-if-exists=../.env src/db/migrate-cli.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
     "@fastify/helmet": "^13.2.0",
     "@modelcontextprotocol/server": "2.4.0",
-    "fast-xml-parser": "^5.11.2",
-    "fastify": "^5.12.7",
+    "fast-xml-parser": "^5.12.1",
+    "fastify": "^5.12.8",
     "helmet": "^8.3.0",
-    "openid-client": "^6.8.8",
+    "openid-client": "^6.9.0",
     "pg": "^8.23.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.13",
+    "@electric-sql/pglite": "^0.5.16",
     "@types/pg": "^8.23.1",
     "oauth2-mock-server": "^9.3.0",
     "tsx": "^4.23.15"

@@ -1,6 +1,5 @@
 import {
   brandingConflictMessage,
-  brandingUnavailableMessage,
   logoMediaTypes,
   logoTooLargeMessage,
   logoTypeMessage,
@@ -25,21 +24,11 @@ import { inspectImage } from './image.js';
  * The organisation's colours and logo (Admin → Branding): the rules live here, so the REST routes
  * and a future MCP server behave the same. Input is `unknown` (or raw bytes) and checked here.
  *
- * - Branding needs PostgreSQL. Without it, `get` gives the neutral look (version 0) and every
- *   change throws BrandingUnavailableError.
  * - Every change carries the version read; another one is a conflict (ConflictError).
  * - A refused change stores nothing. Every stored change bumps the version and writes one audit
  *   row in the same transaction, with the changed field names only (never colours or bytes). A
  *   change that changes nothing stores and audits nothing.
  */
-
-/** Branding needs PostgreSQL. User-safe message. */
-export class BrandingUnavailableError extends Error {
-  override name = 'BrandingUnavailableError';
-  constructor() {
-    super(brandingUnavailableMessage);
-  }
-}
 
 /** The logo isn't a PNG, JPEG or WebP file (by its bytes), or was sent as another type. */
 export class LogoTypeError extends Error {
@@ -64,8 +53,6 @@ export type BrandingAuditAction =
 export function logoUrl(version: number): string {
   return `/api/branding/logo?v=${version}`;
 }
-
-const neutral: Branding = { primary: null, secondary: null, logoUrl: null, version: 0 };
 
 const colourMessage = 'Enter a colour as # and six hexadecimal digits, for example #1a6fb0.';
 const colourSchema = z
@@ -95,7 +82,8 @@ const insertAudit = `insert into audit (action, user_id, user_name, details)
   values ($1, $2, $3, $4::text::jsonb)`;
 
 function toBranding(row: Row | undefined): Branding {
-  if (row === undefined) return { ...neutral, version: 1 };
+  // The neutral look until a change makes the row.
+  if (row === undefined) return { primary: null, secondary: null, logoUrl: null, version: 1 };
   return {
     primary: row.primary_colour,
     secondary: row.secondary_colour,
@@ -138,32 +126,20 @@ function mediaType(contentType: string | undefined): string {
 }
 
 export class BrandingService {
-  readonly #db: Db | undefined;
+  readonly #db: Db;
 
-  constructor(db: Db | undefined) {
+  constructor(db: Db) {
     this.#db = db;
   }
 
-  /** Whether branding can be changed (there is a database). */
-  get available(): boolean {
-    return this.#db !== undefined;
-  }
-
-  #database(): Db {
-    if (this.#db === undefined) throw new BrandingUnavailableError();
-    return this.#db;
-  }
-
-  /** The current branding; the neutral look (version 0) without a database. */
+  /** The current branding. */
   async get(): Promise<Branding> {
-    if (this.#db === undefined) return neutral;
     const [row] = await this.#db.query<Row>(`select ${rowColumns} from branding where id = 1`);
     return toBranding(row);
   }
 
-  /** The stored logo, or undefined when there is none (or no database). */
+  /** The stored logo, or undefined when there is none. */
   async getLogo(): Promise<StoredLogo | undefined> {
-    if (this.#db === undefined) return undefined;
     const [row] = await this.#db.query<{
       logo: Uint8Array | null;
       logo_type: string | null;
@@ -175,7 +151,7 @@ export class BrandingService {
 
   /** Sets both colours (`#rrggbb`, any case, stored in lower case; null removes one). */
   async setColours(input: unknown, actor: ModelAuthor): Promise<Branding> {
-    const db = this.#database();
+    const db = this.#db;
     const request = parse(coloursSchema, input, 'the colours');
     return this.#change(db, request.version, 'branding-colours-changed', actor, (current) => {
       const write: Write = { set: {}, fields: [] };
@@ -201,7 +177,7 @@ export class BrandingService {
     query: unknown,
     actor: ModelAuthor,
   ): Promise<Branding> {
-    const db = this.#database();
+    const db = this.#db;
     const { version } = parse(deleteSchema, query, 'the logo');
     if (!isLogoType(mediaType(contentType))) throw new LogoTypeError();
     if (bytes.length > maxLogoBytes) throw new LogoTooLargeError();
@@ -230,7 +206,7 @@ export class BrandingService {
 
   /** Removes the logo. `query` carries the version (`{ version }`). */
   async removeLogo(query: unknown, actor: ModelAuthor): Promise<Branding> {
-    const db = this.#database();
+    const db = this.#db;
     const { version } = parse(deleteSchema, query, 'the logo');
     return this.#change(db, version, 'branding-logo-removed', actor, (current) =>
       current.has_logo
@@ -241,7 +217,7 @@ export class BrandingService {
 
   /** Back to the neutral look: no colours and no logo. `query` carries the version. */
   async reset(query: unknown, actor: ModelAuthor): Promise<Branding> {
-    const db = this.#database();
+    const db = this.#db;
     const { version } = parse(deleteSchema, query, 'the branding');
     return this.#change(db, version, 'branding-reset', actor, (current) => {
       const write: Write = { set: {}, fields: [] };

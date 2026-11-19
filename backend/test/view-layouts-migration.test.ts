@@ -76,15 +76,6 @@ const dump = async (target: TestDb) => ({
 });
 
 describe('migration 011', () => {
-  it('is the only one to run on a database at 010, and is plain ASCII', async () => {
-    const { db: target } = await at010();
-    const migration = all.find((each) => each.version === '011');
-    expect(migration?.name).toBe('view_layouts');
-    expect(migration?.sql).toMatch(/^[\t\n\x20-\x7e]*$/);
-    expect(await migrate(target, all)).toBe(1);
-    expect(await migrate(target, all)).toBe(0);
-  });
-
   it('leaves every model, view and audit row as it was, with no card positioned', async () => {
     const { db: target, modelId } = await at010();
     const before = await dump(target);

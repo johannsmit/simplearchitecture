@@ -1,14 +1,13 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { OAuth2Server } from 'oauth2-mock-server';
 import { buildApp, type AppOptions } from '../src/app.js';
 import type { Config } from '../src/config.js';
+import { DatabaseService } from '../src/db/service.js';
 import { loadOefMapping } from '../src/oef/mapping-config.js';
+import { createTestDb, resetTestDb, testConnection, type TestDb } from './pglite.js';
 
 export const webOrigin = 'http://localhost:5173';
 export const clientId = '11111111-2222-3333-4444-555555555555';
@@ -30,16 +29,8 @@ export const testConfig: Config = {
   WEB_ORIGIN: webOrigin,
   AUTH_REDIRECT_URI: 'http://localhost:3000/auth/callback',
   COOKIE_SECURE: true,
-  // Never the real data/: buildTestApp gives each app its own temporary DATA_DIR. Used directly,
-  // this path can't be created, so the app refuses to start instead of writing anywhere.
-  DATA_DIR: '/dev/null/use-buildTestApp',
   DATABASE_WAIT_SECONDS: 0,
 };
-
-/** A new, empty temporary directory for models. */
-export function tempDataDir(): string {
-  return mkdtempSync(join(tmpdir(), 'sa-models-'));
-}
 
 /**
  * The OEF mapping defaults, pinned for tests. config/oef-mapping.json can change at any time
@@ -50,31 +41,38 @@ export const agreedMappingPath = fileURLToPath(
 );
 export const agreedMapping = loadOefMapping(agreedMappingPath);
 
+let shared: Promise<TestDb> | undefined;
+
 /**
- * Builds the app with the test config and the pinned OEF mapping. Unless the test sets DATA_DIR
- * or a model store, models go to a temporary directory that is removed when the app closes.
+ * One PGlite database for the test file (a worker's module state), created on first use and
+ * emptied for each app built on it. The process ends with the file, so it is never closed here.
+ */
+export function sharedTestDb(): Promise<TestDb> {
+  shared ??= createTestDb();
+  return shared;
+}
+
+const silentDatabaseLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
+
+/**
+ * Builds the app with the test config and the pinned OEF mapping. Unless the test passes its own
+ * database or a DATABASE_URL (which the app then connects to), the app runs on PostgreSQL as it
+ * does in development and the image: the file's shared PGlite database, emptied first.
  */
 export async function buildTestApp(
   overrides: Partial<Config> = {},
   options: AppOptions = {},
 ): Promise<FastifyInstance> {
-  const ownDataDir =
-    overrides.DATA_DIR === undefined && options.modelStore === undefined
-      ? tempDataDir()
-      : undefined;
-  const app = await buildApp(
-    { ...testConfig, ...(ownDataDir === undefined ? {} : { DATA_DIR: ownDataDir }), ...overrides },
-    {
-      oefMapping: agreedMapping,
-      ...options,
-    },
-  );
-  if (ownDataDir !== undefined) {
-    app.addHook('onClose', () => {
-      rmSync(ownDataDir, { recursive: true, force: true });
-    });
+  let database = options.database;
+  if (database === undefined && overrides.DATABASE_URL === undefined) {
+    const db = await sharedTestDb();
+    await resetTestDb(db);
+    database = DatabaseService.using(db, testConnection, silentDatabaseLog);
   }
-  return app;
+  return buildApp(
+    { ...testConfig, ...overrides },
+    { oefMapping: agreedMapping, ...options, ...(database === undefined ? {} : { database }) },
+  );
 }
 
 /**

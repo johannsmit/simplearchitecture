@@ -29,8 +29,8 @@ export const defaultSessionTimeouts: SessionTimeouts = {
 };
 
 /**
- * Server-side sessions. The browser only holds the random session id. In memory without a
- * database; in PostgreSQL with one (PostgresSessionStore), so a restart signs nobody out.
+ * Server-side sessions. The browser only holds the random session id. Kept in PostgreSQL
+ * (PostgresSessionStore), so a restart signs nobody out.
  */
 export interface SessionStore {
   readonly timeouts: SessionTimeouts;
@@ -47,62 +47,4 @@ export interface SessionStore {
 /** A new random session id (256 bits). */
 export function newSessionId(): string {
   return randomBytes(32).toString('base64url');
-}
-
-/** Sessions in memory: lost when the API restarts. */
-export class MemorySessionStore implements SessionStore {
-  readonly #sessions = new Map<string, Session>();
-
-  constructor(
-    readonly timeouts: SessionTimeouts = defaultSessionTimeouts,
-    private readonly now: () => number = Date.now,
-  ) {}
-
-  create(user: SessionUser): Promise<Session> {
-    this.#sweep();
-    const time = this.now();
-    const session: Session = { id: newSessionId(), user, createdAt: time, lastSeenAt: time };
-    this.#sessions.set(session.id, session);
-    return Promise.resolve(session);
-  }
-
-  touch(id: string): Promise<Session | undefined> {
-    const session = this.#sessions.get(id);
-    if (!session) return Promise.resolve(undefined);
-    const time = this.now();
-    if (isExpired(session, time, this.timeouts)) {
-      this.#sessions.delete(id);
-      return Promise.resolve(undefined);
-    }
-    session.lastSeenAt = time;
-    return Promise.resolve(session);
-  }
-
-  destroy(id: string): Promise<Session | undefined> {
-    const session = this.#sessions.get(id);
-    this.#sessions.delete(id);
-    return Promise.resolve(session);
-  }
-
-  close(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  get size(): number {
-    return this.#sessions.size;
-  }
-
-  /** Drops expired sessions so memory doesn't grow with abandoned sign-ins. */
-  #sweep(): void {
-    const time = this.now();
-    for (const [id, session] of this.#sessions) {
-      if (isExpired(session, time, this.timeouts)) this.#sessions.delete(id);
-    }
-  }
-}
-
-function isExpired(session: Session, time: number, timeouts: SessionTimeouts): boolean {
-  return (
-    time - session.lastSeenAt >= timeouts.idleMs || time - session.createdAt >= timeouts.absoluteMs
-  );
 }

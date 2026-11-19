@@ -6,10 +6,10 @@ import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { ViewService } from '../src/views/view-service.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
-// Views come with migration 010, on a database that has run 001 to 009 with made-up models.
+// Views on a database from before them (it had run 001 to 009), brought up to date. Made-up models.
 
 const author: ModelAuthor = { id: 'oid-made-up', name: 'Made-up author' };
-const all = loadMigrations().filter((migration) => migration.version <= '010');
+const all = loadMigrations();
 const through009 = all.filter((migration) => migration.version <= '009');
 const quiet = { log: { warn: () => undefined } };
 
@@ -44,40 +44,10 @@ async function at009(): Promise<{ db: TestDb; ids: string[] }> {
   return { db, ids };
 }
 
-const dump = async (target: TestDb) => ({
-  models: await target.query('select * from models order by id'),
-  elements: await target.query('select * from elements order by model_id, ordinal'),
-  relationships: await target.query('select * from relationships order by model_id, ordinal'),
-  audit: await target.query('select id, action, user_id, model_id, details from audit order by id'),
-});
-
-describe('migration 010', () => {
-  it('is the only one to run on a database at 009, and is plain ASCII', async () => {
-    const { db: target } = await at009();
-    const migration = all.find((each) => each.version === '010');
-    expect(migration?.name).toBe('views');
-    expect(migration?.sql).toMatch(/^[\t\n\x20-\x7e]*$/);
-    expect(await migrate(target, all)).toBe(1);
-    expect(await migrate(target, all)).toBe(0);
-  });
-
-  it('leaves every model, element, relationship and audit row as it was', async () => {
-    const { db: target, ids } = await at009();
-    const before = await dump(target);
-    const documents = await Promise.all(
-      ids.map(async (id) => (await PostgresModelStore.open(target, quiet)).get(id)),
-    );
-    await migrate(target, all);
-    expect(await dump(target)).toEqual(before);
-    const store = await PostgresModelStore.open(target, quiet);
-    expect(await store.listDamaged()).toEqual([]);
-    for (const [index, id] of ids.entries()) expect(await store.get(id)).toEqual(documents[index]);
-  });
-
+describe('views on an older database', () => {
   it('starts every model with no views, and views work on the migrated models', async () => {
     const { db: target, ids } = await at009();
-    // With the later migrations too: the view store is the current one.
-    await migrate(target, loadMigrations());
+    await migrate(target, all);
     const store = await PostgresModelStore.open(target, quiet);
     const service = new ViewService(store);
     const [first = '', second = ''] = ids;

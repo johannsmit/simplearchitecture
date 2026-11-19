@@ -1,5 +1,4 @@
 import {
-  editingUnavailableMessage,
   prototypeKeyMessage,
   type DeletedElementResult,
   type ElementChangeResult,
@@ -75,16 +74,10 @@ afterEach(async () => {
   app = undefined;
 });
 
-async function signedInAs(
-  roles: string[],
-  withDatabase = true,
-): Promise<{ target: FastifyInstance; cookie: string }> {
+async function signedInAs(roles: string[]): Promise<{ target: FastifyInstance; cookie: string }> {
   app = await buildTestApp(
     { LOG_LEVEL: 'trace' },
-    idpOptions(
-      idp,
-      withDatabase ? { database: DatabaseService.using(db, testConnection, silent) } : {},
-    ),
+    idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) }),
   );
   withClaims(idp, { roles, ...user });
   const { sessionCookie } = await signIn(app);
@@ -278,20 +271,6 @@ describe('element routes: editing', () => {
     ]);
     for (const res of statuses) expect(res.json()).not.toHaveProperty('stack');
     expect(await auditCount()).toBe(0);
-  });
-});
-
-describe('element routes without a database', () => {
-  it('says editing is not available', async () => {
-    const { target, cookie } = await signedInAs(['Modeller'], false);
-    const list = await call(target, 'GET', '/api/models', { cookie });
-    expect(list.json<ModelListResponse>().editable).toBe(false);
-    const res = await call(target, 'POST', `/api/models/${unknownModel}/elements`, {
-      cookie,
-      body: { type: 'Other', name: 'A' },
-    });
-    expect(res.statusCode).toBe(501);
-    expect(res.json()).toMatchObject({ statusCode: 501, message: editingUnavailableMessage });
   });
 });
 

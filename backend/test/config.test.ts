@@ -34,7 +34,6 @@ describe('loadConfig', () => {
       AUTH_REDIRECT_URI: 'http://localhost:3000/auth/callback',
       COOKIE_SECURE: true,
       DATABASE_WAIT_SECONDS: 60,
-      DATA_DIR: 'data',
       OIDC_ROLES_CLAIM: 'roles',
       OIDC_ROLE_ADMIN: 'Admin',
       OIDC_ROLE_MODELLER: 'Modeller',
@@ -306,7 +305,6 @@ describe('loadConfig', () => {
         COOKIE_SECURE: false,
         LOG_LEVEL: 'info',
         DATABASE_WAIT_SECONDS: 60,
-        DATA_DIR: 'data',
       });
     });
 
@@ -418,7 +416,6 @@ describe('loadConfig', () => {
         COOKIE_SECURE: true,
         LOG_LEVEL: 'info',
         DATABASE_WAIT_SECONDS: 60,
-        DATA_DIR: 'data',
       });
     });
 

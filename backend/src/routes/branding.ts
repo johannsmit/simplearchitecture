@@ -13,7 +13,6 @@ import type {
   onRequestAsyncHookHandler,
 } from 'fastify';
 import {
-  BrandingUnavailableError,
   LogoTooLargeError,
   LogoTypeError,
   type BrandingAuditAction,
@@ -46,9 +45,6 @@ async function logoSizeCheck(request: FastifyRequest, reply: FastifyReply) {
 }
 
 function brandingRefused(reply: FastifyReply, error: unknown): FastifyReply {
-  if (error instanceof BrandingUnavailableError) {
-    return reply.code(501).send(errorBody(501, error.message));
-  }
   if (error instanceof LogoTypeError) return reply.code(415).send(errorBody(415, error.message));
   if (error instanceof LogoTooLargeError) {
     return reply.code(413).send(errorBody(413, error.message));

@@ -2,14 +2,8 @@ import type { ApiError } from './api.js';
 import type { JgfNode, ValidationIssue } from './jgf.js';
 import type { NodeType } from './metamodel.js';
 
-/**
- * Editing one element of a stored model (Modelling). Editing needs PostgreSQL: without a database
- * the routes answer 501 with `editingUnavailableMessage`, and `GET /api/models` says
- * `editable: false`.
- */
+/** Editing one element of a stored model (Modelling). */
 
-export const editingUnavailableMessage =
-  'Modelling is read-only without a database. Ask an Admin to set up PostgreSQL.';
 export const elementConflictMessage =
   'Someone else changed this element after you opened it. Reload it to see their change. Nothing was saved.';
 

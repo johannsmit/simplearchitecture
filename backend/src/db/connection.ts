@@ -1,7 +1,9 @@
 /**
  * The PostgreSQL connection from DATABASE_URL. Parsed here (not by the driver), so the rules are
- * explicit: TLS with a verified certificate for every host but this machine, and nothing in the
- * URL that could weaken that. Messages never contain the URL or any part of it.
+ * explicit: TLS with a verified certificate, unless the URL asks for a plain connection with
+ * `sslmode=disable` to this machine or to a host with a one-word name (a Compose or Kubernetes
+ * service, such as `db`), which can't be a host on the internet. Nothing else in the URL can weaken
+ * that. Messages never contain the URL or any part of it.
  */
 export interface DatabaseConnection {
   host: string;
@@ -18,13 +20,25 @@ export type ParsedDatabaseUrl =
 
 const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
 const tlsModes = new Set(['require', 'verify-ca', 'verify-full']);
-const plainModes = new Set(['disable', 'allow', 'prefer', 'no-verify']);
+// Weaker than verified TLS, but not a plain connection asked for: always refused.
+const weakModes = new Set(['allow', 'prefer', 'no-verify']);
+// One DNS label with a letter in it. Not all digits or hex: a resolver may read `3221225994` or
+// `0xc000020a` as an IPv4 address.
+const singleLabel = /^(?!0x[0-9a-f]+$)(?=[0-9-]*[a-z])[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i;
 const urlShape =
   'must be a URL like postgres://user:password@host:5432/database?sslmode=verify-full';
 
 export function isLocalHost(host: string): boolean {
   return localHosts.has(host);
 }
+
+/** Where a plain connection may go: this machine, or a host with a one-word name. */
+function mayBePlain(host: string): boolean {
+  return isLocalHost(host) || singleLabel.test(host);
+}
+
+const plainRule =
+  'may ask for a plain connection (sslmode=disable) only to localhost or a one-word host name such as a Compose service; for any other host, use TLS with a verified certificate: sslmode=verify-full, or leave sslmode out';
 
 export function parseDatabaseUrl(value: string): ParsedDatabaseUrl {
   const fail = (message: string): ParsedDatabaseUrl => ({ ok: false, message });
@@ -56,14 +70,19 @@ export function parseDatabaseUrl(value: string): ParsedDatabaseUrl {
     return fail('supports one parameter only: sslmode');
   }
   const sslmode = url.searchParams.get('sslmode');
-  if (sslmode !== null && !tlsModes.has(sslmode) && !plainModes.has(sslmode)) {
+  if (
+    sslmode !== null &&
+    !tlsModes.has(sslmode) &&
+    !weakModes.has(sslmode) &&
+    sslmode !== 'disable'
+  ) {
     return fail('has an unknown sslmode (use verify-full)');
   }
-  const local = isLocalHost(host);
-  if (!local && sslmode !== null && plainModes.has(sslmode)) {
-    return fail(
-      'must use TLS with a verified certificate for a host other than localhost: use sslmode=verify-full or leave sslmode out',
-    );
+  if (
+    sslmode !== null &&
+    (weakModes.has(sslmode) || (sslmode === 'disable' && !mayBePlain(host)))
+  ) {
+    return fail(plainRule);
   }
   return {
     ok: true,
@@ -73,8 +92,8 @@ export function parseDatabaseUrl(value: string): ParsedDatabaseUrl {
       database,
       user,
       password,
-      // Off for this machine unless asked for; always on (and verified) for any other host.
-      tls: local ? sslmode !== null && tlsModes.has(sslmode) : true,
+      // Always on, and verified, unless sslmode=disable asked for a plain connection it allows.
+      tls: sslmode !== 'disable',
     },
   };
 }

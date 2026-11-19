@@ -229,9 +229,7 @@ const mappingSchema = z.strictObject({
 });
 
 export type OefMapping = z.infer<typeof mappingSchema>;
-export type FoldRule = z.infer<typeof foldRule>;
 export type RelationshipRule = z.infer<typeof relationshipRule>;
-export type PropertyMapping = z.infer<typeof propertyMapping>;
 
 export class OefMappingError extends Error {
   override name = 'OefMappingError';

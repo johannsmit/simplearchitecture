@@ -4,10 +4,11 @@ import type {
   StoredView,
   ViewCardLayout,
 } from '@simplearchitecture/shared';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
 import { modeller, renderAt, stubApi, type Handler } from './helpers';
+import { settle } from './settle';
 
 // A Tidy up that hasn't finished is dropped when the canvas changes (another view, the Nest
 // switch): nothing is saved for the new canvas, and it opens as it normally would. Made-up data:
@@ -147,13 +148,6 @@ function placeOf(id: string) {
     ?.closest<HTMLElement>('.react-flow__node');
   const match = /translate\(([-\d.]+)px, ?([-\d.]+)px\)/.exec(node?.style.transform ?? '');
   return { x: Number(match?.[1]), y: Number(match?.[2]) };
-}
-
-/** Lets any layout or save that might have started finish (ELK runs in-process in the tests). */
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  });
 }
 
 /** The next layout waits until `answer()` is called; the ones after it run at once. */

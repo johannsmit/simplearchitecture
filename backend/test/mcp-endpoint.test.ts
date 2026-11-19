@@ -203,6 +203,29 @@ describe('POST /mcp: who may call it', () => {
     expect((await mcp(target, undefined, 'ping', {}, bad)).statusCode).toBe(429);
   });
 
+  it('never counts an expired token it issued against the refused-token limit', async () => {
+    const { target, tokens } = await connected();
+    // An hour later: the access token has expired, and the agent hasn't refreshed yet.
+    await db.query(
+      "update mcp_tokens set expires_at = now() - interval '1 hour' where kind = 'access'",
+    );
+    for (let i = 0; i <= refusedTokensPerMinute; i++) {
+      const res = await mcp(target, tokens.access_token, 'ping');
+      expect(res.statusCode).toBe(401);
+      expect(res.headers['www-authenticate']).toContain('error="invalid_token"');
+    }
+    // Tokens it doesn't recognise still count, from the same address.
+    const bad = { authorization: 'Bearer sa_at_madeupmadeupmadeupmadeupmadeupmadeupmad' };
+    for (let i = 0; i < refusedTokensPerMinute; i++) {
+      expect((await mcp(target, undefined, 'ping', {}, bad)).statusCode).toBe(401);
+    }
+    expect((await mcp(target, undefined, 'ping', {}, bad)).statusCode).toBe(429);
+  });
+
+  it('allows 300 unrecognised tokens a minute per address', () => {
+    expect(refusedTokensPerMinute).toBe(300);
+  });
+
   it('answers GET and DELETE with 405 (no event stream), after the token check', async () => {
     const { target, tokens } = await connected();
     for (const method of ['GET', 'DELETE'] as const) {

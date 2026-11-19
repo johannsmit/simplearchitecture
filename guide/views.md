@@ -19,7 +19,7 @@ The view holds exactly what the canvas draws: every card and every relationship 
 
 Pick a view in the **Views** list, or on the model's start page. A view's address can be shared as a link.
 
-A view opens as it was left: each card in its place and at its width, and each line on its saved route. The depth, Show Viewpoints and the legend's switches aren't saved in a view. A view has no focused element and no depth, and brings in no containers of its own: a card is drawn inside another only when the view holds both.
+A view opens as it was left: each card in its place and at its width, and each line on its saved route. The depth, **Show Viewpoints** and the legend's switches aren't saved in a view. A view has no focused element and no depth, and brings in no containers of its own: a card is drawn inside another only when the view holds both.
 
 Double-click a card, or press `Enter` on it, to leave the view and explore that element; Back returns to the view. **Close view** goes to the model's start page.
 
@@ -37,13 +37,13 @@ Views can be grouped in folders, one level deep. A folder is a name on the views
 - **Move a view later:** drag it with the mouse in the Views list, onto a folder (or any view in it), onto a view without a folder to take it out, or onto **New folder…**. `Esc` cancels the drag. There is no keyboard way to move a view after it is saved.
 - **Rename a folder:** the pencil on its header, or `F2`. It is renamed on all its views at once, for everyone.
 
-A new or renamed folder can't take the name of another folder: folders are never merged. To put a view in an existing folder, drag it there. Moving a view to another folder doesn't count as a change to the view.
+A new or renamed folder can't take the name of another folder: folders are never merged. To put a view in an existing folder, drag it there.
 
 ## Change a view (Modelling)
 
 Every change is saved at once: the bar above the view says "Saving…", then "Saved". There is no Save button.
 
-- Adding an element to the canvas (Add to canvas, dragging a row from the element list, a card's related elements, or a new element) adds it to the view, with its relationships to the elements already in it. A relationship drawn between two cards of the view is added too.
+- Adding an element to the canvas (**Add to canvas**, dragging a row from the element list, a card's related elements, or a new element) adds it to the view, with its relationships to the elements already in it. A relationship drawn between two cards of the view is added too.
 - The **×** on a card takes it out of the view, with its relationships and the cards drawn inside it.
 - Relationships aren't taken out one by one. To hide them all, switch **Show relationships** off in the legend.
 - **Rename** and **Delete** are on the bar above the view. Deleting a view can't be undone.
@@ -82,7 +82,7 @@ The view keeps the route: when a card at one end moves later, only the stretch a
 
 ### Tidy relations
 
-The small arrow next to **Tidy up** opens a menu with **Tidy relations**; `T` on the canvas does the same. Tidy relations moves no card. It draws every line again from where its cards are now, dropping the routes given by hand and by Tidy up. In a view in Modelling, the result is saved. It can't be chosen while Show relationships is off.
+**Tidy relations** ([The canvas](canvas.md#layout-tidy-up-and-tidy-relations) says how) draws every line again without moving a card, dropping the routes moved by hand. In a view in Modelling, the result is saved.
 
 ## When the model changes
 

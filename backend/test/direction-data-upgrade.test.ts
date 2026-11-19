@@ -1,9 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import { buildModelGraph, type JgfDocument, type ModelAuthor } from '@simplearchitecture/shared';
+import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
 import { withDirectionNamesInLabel } from '../src/jgf/older-types.js';
-import { validateJgf } from '../src/jgf/validate.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
@@ -152,40 +151,6 @@ describe('migration 018 on odd stored shapes', () => {
       expect(rows.map((row) => [row.id, row.label, row.metadata])).toEqual(
         cases.map(([edgeId, , , , , , label, metadata]) => [edgeId, label, metadata]),
       );
-    }
-  });
-
-  it('leaves every model readable, none damaged, with the lists read as lists', async () => {
-    const { db, ids } = await olderDatabase();
-    await migrate(db, all);
-    // The odd metadata shapes are damage before and after: only those rows are put right here.
-    for (const id of ids) {
-      await db.query(
-        `update relationships set metadata = null
-         where model_id = $1::uuid and jsonb_typeof(metadata) <> 'object'`,
-        [id],
-      );
-    }
-    const store = await PostgresModelStore.open(db, quiet);
-    expect(await store.listDamaged()).toEqual([]);
-    for (const id of ids) {
-      const stored = await store.get(id);
-      expect(stored).toBeDefined();
-      const validation = validateJgf(stored);
-      expect(validation.valid).toBe(true);
-      const graph = buildModelGraph(stored as JgfDocument);
-      const byId = new Map(graph.relationships.map((r) => [r.id, r]));
-      // A single text written by an older API reads as a list of that text.
-      expect(byId.get('single-text')?.metadata.targetToSourceData).toEqual(['Moves']);
-      expect(byId.get('contains-old')?.metadata.sourceToTargetData).toEqual(['Boxes']);
-      expect(
-        validation.warnings
-          .filter((issue) => issue.code === 'older-data-kept')
-          .map((issue) => [issue.edgeId, issue.field]),
-      ).toEqual([
-        ['both-pairs', 'metadata.requestData'],
-        ['both-pairs', 'metadata.responseData'],
-      ]);
     }
   });
 

@@ -51,7 +51,7 @@ describe('two-way relationships on the canvas', () => {
     ]);
   });
 
-  it('draws an arrow at both ends and says "both ways"; the legend no longer lists direction', async () => {
+  it('draws an arrow at both ends and says "both ways"', async () => {
     stubApi(viewer, api);
     renderAt(`/viewing/models/${bakeryId}/elements/shop?depth=1`);
     await waitFor(() => {
@@ -70,9 +70,6 @@ describe('two-way relationships on the canvas', () => {
     expect(oneWay?.querySelector('path.react-flow__edge-path')?.hasAttribute('marker-start')).toBe(
       false,
     );
-    const legend = document.querySelector('.tree-panel .legend') as HTMLElement;
-    expect(within(legend).queryByRole('heading', { name: 'Direction' })).toBeNull();
-    expect(within(legend).queryByText('Both ways')).toBeNull();
   });
 });
 

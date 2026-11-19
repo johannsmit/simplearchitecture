@@ -43,9 +43,10 @@ describe('the Docker Compose example', () => {
     for (const name of productionSettings.filter((name) => name !== 'DATABASE_URL')) {
       expect(block).toContain(`${name}: \${${name}:?Set ${name} in .env}`);
     }
-    // The database is reached on the shared network's loopback, with the password from .env.
+    // The database is reached by its service name, with the password from .env, without TLS: the
+    // one plain connection the app allows besides localhost.
     expect(block).toContain(
-      'DATABASE_URL: postgres://simplearchitecture:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@127.0.0.1:5432/simplearchitecture',
+      'DATABASE_URL: postgres://simplearchitecture:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/simplearchitecture?sslmode=disable',
     );
   });
 
@@ -55,10 +56,11 @@ describe('the Docker Compose example', () => {
     for (const [name, value] of settings) expect(value, name).toMatch(/^<[^<>]+>$/);
   });
 
-  it('runs PostgreSQL 17 on a named volume, the image the container test uses', () => {
+  it('runs PostgreSQL 17 on a named volume, the image the container test and CI use', () => {
     const pinned = /postgres:17\.[\w.-]+@sha256:[0-9a-f]{64}/.exec(compose)?.[0];
     expect(pinned).toBeDefined();
     expect(read('deploy/test-container.sh')).toContain(`pg_image=${pinned ?? ''}`);
+    expect(read('.github/workflows/ci.yml')).toContain(`image: ${pinned ?? ''}`);
     expect(service('db')).toContain('- db-data:/var/lib/postgresql/data');
     expect(compose).toMatch(/^volumes:\n {2}db-data:/m);
   });
@@ -70,27 +72,27 @@ describe('the Docker Compose example', () => {
     expect(app).toContain("fetch('http://127.0.0.1:8080/api/health')");
   });
 
-  it('publishes one port, from the settings, on this machine only', () => {
+  it("publishes one port, the app's, from the settings, on this machine only", () => {
     expect(compose.match(/^ {4}ports:/gm)).toHaveLength(1);
-    expect(service('network')).toContain('- 127.0.0.1:${APP_PORT:?Set APP_PORT in .env}:8080');
+    expect(service('app')).toContain('- 127.0.0.1:${APP_PORT:?Set APP_PORT in .env}:8080');
   });
 
-  it("leaves no unnamed volume: the holder covers the image's declared volume with a tmpfs", () => {
-    expect(service('network')).toContain('tmpfs: [/var/lib/postgresql/data]');
-    expect(service('network')).not.toMatch(/^ {4}volumes:/m);
+  it('runs the app read-only, with no privileges', () => {
+    const app = service('app');
+    expect(app).toContain('read_only: true');
+    expect(app).toContain('cap_drop: [ALL]');
+    expect(app).toContain('security_opt: [no-new-privileges:true]');
   });
 
-  it('runs the app and the network holder read-only, with no privileges', () => {
-    for (const name of ['app', 'network']) {
-      const text = service(name);
-      expect(text).toContain('read_only: true');
-      expect(text).toContain('cap_drop: [ALL]');
-      expect(text).toContain('security_opt: [no-new-privileges:true]');
-    }
-  });
-
-  it('puts the app and the database in the network held apart, so either can restart alone', () => {
-    for (const name of ['app', 'db'])
-      expect(service(name)).toContain('network_mode: service:network');
+  it('has just the app and the database, on the network Compose makes for them', () => {
+    const services = compose.slice(
+      compose.indexOf('\nservices:\n'),
+      compose.indexOf('\nvolumes:\n'),
+    );
+    expect([...services.matchAll(/^ {2}([a-z-]+):$/gm)].map((match) => match[1])).toEqual([
+      'db',
+      'app',
+    ]);
+    expect(compose).not.toContain('network_mode');
   });
 });

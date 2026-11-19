@@ -13,19 +13,12 @@ import {
   type ModelAuthor,
 } from '@simplearchitecture/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  ConflictError,
-  EditingUnavailableError,
-  NotFoundError,
-  RejectedError,
-} from '../src/editing/common.js';
+import { ConflictError, NotFoundError, RejectedError } from '../src/editing/common.js';
 import { ElementService } from '../src/editing/element-service.js';
 import { RelationshipService } from '../src/editing/relationship-service.js';
-import { FileModelStore } from '../src/storage/file-model-store.js';
 import { ViewFullError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { ViewLimitError, ViewService } from '../src/views/view-service.js';
-import { tempDataDir } from './helpers.js';
 import { createTestDb, resetTestDb, type TestDb } from './pglite.js';
 
 const modeller: ModelAuthor = { id: 'oid-made-up-modeller', name: 'Made-up Modeller' };
@@ -2035,29 +2028,6 @@ describe('line routes', () => {
       details: { fields: ['layout'], cards: 2, routes: 1 },
     });
     expect(JSON.stringify(rows.at(-1)?.details)).not.toMatch(/290|222|r1/);
-  });
-});
-
-describe('without a database', () => {
-  it('refuses every call: views need PostgreSQL', async () => {
-    const files = await FileModelStore.open(tempDataDir(), quiet);
-    const id = (await files.save(bakery, modeller)).id;
-    const withoutDb = new ViewService(files);
-    expect(withoutDb.available).toBe(false);
-    for (const promise of [
-      withoutDb.listViews(id),
-      withoutDb.listViewsHolding(id, 'baker'),
-      withoutDb.getView(id, id),
-      withoutDb.createView(id, { name: 'X', elementIds: [] }, modeller),
-      withoutDb.renameView(id, id, { version: 1, name: 'X' }, modeller),
-      withoutDb.replaceContents(id, id, { version: 1, elementIds: [] }, modeller),
-      withoutDb.replaceLayout(id, id, { version: 1, cards: [] }, modeller),
-      withoutDb.deleteView(id, id, { version: '1' }, modeller),
-      withoutDb.moveView(id, id, { folder: 'X' }, modeller),
-      withoutDb.renameFolder(id, { from: 'X', to: 'Y' }, modeller),
-    ]) {
-      expect(await refusal(promise)).toBeInstanceOf(EditingUnavailableError);
-    }
   });
 });
 

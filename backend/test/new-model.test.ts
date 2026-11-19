@@ -1,5 +1,3 @@
-import { readdirSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import {
   maxModelNameLength,
   type ApiError,
@@ -19,7 +17,6 @@ import { validateJgf } from '../src/jgf/validate.js';
 import { newModelBodyLimit } from '../src/limits.js';
 import { emptyModel, ModelService } from '../src/models/model-service.js';
 import { newModelsPerMinute, tooManyNewModelsMessage } from '../src/rate-limit.js';
-import { FileModelStore } from '../src/storage/file-model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import {
   buildTestApp,
@@ -27,7 +24,6 @@ import {
   idpOptions,
   signIn,
   startMockIdp,
-  tempDataDir,
   webOrigin,
   withClaims,
 } from './helpers.js';
@@ -42,7 +38,6 @@ const url = '/api/models/new';
 let idp: OAuth2Server;
 let db: TestDb;
 let app: FastifyInstance | undefined;
-let dataDir: string;
 
 beforeAll(async () => {
   idp = await startMockIdp();
@@ -55,7 +50,6 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  dataDir = join(tempDataDir(), 'models');
   await resetTestDb(db);
 });
 
@@ -63,30 +57,28 @@ afterEach(async () => {
   idp.service.removeAllListeners('beforeTokenSigning');
   await app?.close();
   app = undefined;
-  rmSync(dirname(dataDir), { recursive: true, force: true });
 });
 
 interface Start {
   roles?: string[];
-  database?: boolean;
   maxModels?: number;
   logs?: boolean;
 }
 
-/** The app on the file store (default) or PGlite, signed in with `roles` unless undefined. */
+/** The app on PGlite, signed in with `roles` unless undefined. */
 async function start(options: Start = {}): Promise<{ target: FastifyInstance; cookie: string }> {
   const modelStore =
     options.maxModels === undefined
       ? undefined
-      : await FileModelStore.open(dataDir, {
+      : await PostgresModelStore.open(db, {
           log: { warn: () => undefined },
           maxModels: options.maxModels,
         });
   app = await buildTestApp(
-    { DATA_DIR: dataDir, ...(options.logs ? { LOG_LEVEL: 'trace' as const } : {}) },
+    options.logs ? { LOG_LEVEL: 'trace' as const } : {},
     idpOptions(idp, {
       ...(modelStore === undefined ? {} : { modelStore }),
-      ...(options.database ? { database: DatabaseService.using(db, testConnection, silent) } : {}),
+      database: DatabaseService.using(db, testConnection, silent),
     }),
   );
   if (options.roles === undefined) return { target: app, cookie: '' };
@@ -124,7 +116,8 @@ async function list(target: FastifyInstance, cookie: string): Promise<ModelListR
   return res.json<ModelListResponse>();
 }
 
-const storedFiles = () => readdirSync(dataDir).filter((name) => name.endsWith('.json'));
+const storedIds = async () =>
+  (await db.query<{ id: string }>('select id from models')).map((row) => row.id);
 
 describe('POST /api/models/new', () => {
   it('creates an empty, valid model for an Admin: 201, listed at once', async () => {
@@ -143,8 +136,6 @@ describe('POST /api/models/new', () => {
 
     const listed = await list(target, cookie);
     expect(listed.models).toEqual([model]);
-    // The file store can't edit, as for every other model.
-    expect(listed.editable).toBe(false);
 
     const read = await target.inject({
       method: 'GET',
@@ -184,7 +175,7 @@ describe('POST /api/models/new', () => {
     const { target } = await start();
     const res = await post(target);
     expect(res.statusCode).toBe(401);
-    expect(storedFiles()).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it.each([[['Viewer']], [['Modeller']], [['Viewer', 'Modeller']], [[]]])(
@@ -194,7 +185,7 @@ describe('POST /api/models/new', () => {
       const res = await post(target, { cookie });
       expect(res.statusCode).toBe(403);
       expect(res.json<ApiError>().message).toBe('You do not have access to this resource');
-      expect(storedFiles()).toEqual([]);
+      expect(await storedIds()).toEqual([]);
     },
   );
 
@@ -234,7 +225,7 @@ describe('POST /api/models/new', () => {
       const rejected = res.json<ElementRejected>();
       expect(rejected.message).toBe('The change is not valid. Nothing was saved.');
       expect(rejected.fields).toEqual([{ field, message }]);
-      expect(storedFiles()).toEqual([]);
+      expect(await storedIds()).toEqual([]);
     },
   );
 
@@ -253,7 +244,7 @@ describe('POST /api/models/new', () => {
       expect(res.statusCode, String(origin)).toBe(403);
       expect(res.json<ApiError>().message).toBe('Request origin not allowed');
     }
-    expect(storedFiles()).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it('takes JSON only: 415 for other media types, 400 for broken JSON, 413 over the body limit', async () => {
@@ -273,7 +264,7 @@ describe('POST /api/models/new', () => {
     );
     const large = JSON.stringify({ name: 'n'.repeat(newModelBodyLimit) });
     expect((await post(target, { cookie, body: large })).statusCode).toBe(413);
-    expect(storedFiles()).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it('answers 409 when the store is full', async () => {
@@ -281,7 +272,7 @@ describe('POST /api/models/new', () => {
     expect((await post(target, { cookie })).statusCode).toBe(201);
     const res = await post(target, { cookie });
     expect(res.statusCode).toBe(409);
-    expect(storedFiles()).toHaveLength(1);
+    expect(await storedIds()).toHaveLength(1);
   });
 
   it('has its own rate limit, apart from the upload budget', async () => {
@@ -293,7 +284,7 @@ describe('POST /api/models/new', () => {
     expect(refused.statusCode).toBe(429);
     expect(refused.json<ApiError>().message).toBe(tooManyNewModelsMessage);
     expect(refused.headers['retry-after']).toBe('60');
-    expect(storedFiles()).toHaveLength(newModelsPerMinute);
+    expect(await storedIds()).toHaveLength(newModelsPerMinute);
     // The upload budget is untouched.
     const upload = await target.inject({
       method: 'POST',
@@ -331,7 +322,7 @@ describe('POST /api/models/new', () => {
 
 describe('a new model with PostgreSQL', () => {
   it('is stored, listed as editable, and takes its first element', async () => {
-    const { target, cookie } = await start({ roles: ['Admin'], database: true });
+    const { target, cookie } = await start({ roles: ['Admin'] });
     const res = await post(target, { cookie });
     expect(res.statusCode).toBe(201);
     const { model } = res.json<NewModelResult>();

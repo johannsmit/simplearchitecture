@@ -34,7 +34,7 @@ describe('dev service worker cleanup', () => {
     const response = { setHeader: vi.fn(), end: vi.fn() };
     const next = vi.fn();
     middleware()(
-      { url: `${serviceWorkerPath}?v=1` } as IncomingMessage,
+      { url: `${serviceWorkerPath}?v=1` } as unknown as IncomingMessage,
       response as unknown as ServerResponse,
       next,
     );
@@ -57,7 +57,11 @@ describe('dev service worker cleanup', () => {
     const next = vi.fn();
     const response = { setHeader: vi.fn(), end: vi.fn() };
     for (const url of ['/', '/viewing', '/sw.js.map', '/src/main.tsx', '/api/models']) {
-      middleware()({ url } as IncomingMessage, response as unknown as ServerResponse, next);
+      middleware()(
+        { url } as unknown as IncomingMessage,
+        response as unknown as ServerResponse,
+        next,
+      );
     }
     expect(next).toHaveBeenCalledTimes(5);
     expect(response.end).not.toHaveBeenCalled();

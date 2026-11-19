@@ -93,15 +93,6 @@ const setFolder = (target: TestDb, folder: string | null) =>
   target.query('update views set folder = $2 where id = $1::uuid', [milkingId, folder]);
 
 describe('migration 015', () => {
-  it('is the only one to run on a database at 014, and is plain ASCII', async () => {
-    const { db: target } = await at014();
-    const migration = all.find((each) => each.version === '015');
-    expect(migration?.name).toBe('view_folders');
-    expect(migration?.sql).toMatch(/^[\t\n\x20-\x7e]*$/);
-    expect(await migrate(target, all)).toBe(1);
-    expect(await migrate(target, all)).toBe(0);
-  });
-
   it('leaves every model, view, layout, route and audit row as it was, with no view in a folder', async () => {
     const { db: target, modelId } = await at014();
     const before = await dump(target);

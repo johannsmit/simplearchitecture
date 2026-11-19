@@ -69,11 +69,6 @@ export function writeViewsOpen(open: boolean): void {
   writePref('views-open', String(open));
 }
 
-/** The fixed viewpoint older versions remembered means nothing now, so it is dropped. */
-export function dropOldViewpoint(): void {
-  writePref('viewpoint', null);
-}
-
 /** "Nest contained elements" in the legend: on unless switched off. */
 export function readNestContained(): boolean {
   return readBooleanPref('nest-contained', true);

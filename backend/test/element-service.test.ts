@@ -6,17 +6,14 @@ import {
 } from '@simplearchitecture/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
-  EditingUnavailableError,
   ElementConflictError,
   ElementNotFoundError,
   ElementRejectedError,
   ElementService,
 } from '../src/editing/element-service.js';
 import { validateJgf } from '../src/jgf/validate.js';
-import { FileModelStore } from '../src/storage/file-model-store.js';
 import { ModelTooLargeError, ModelUnreadableError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
-import { tempDataDir } from './helpers.js';
 import { createTestDb, resetTestDb, type TestDb } from './pglite.js';
 
 const modeller: ModelAuthor = { id: 'oid-made-up-modeller', name: 'Made-up Modeller' };
@@ -111,29 +108,9 @@ async function rejection(promise: Promise<unknown>): Promise<ElementRejectedErro
   return error;
 }
 
-describe('ElementService without a database', () => {
-  it('is not editable, and every call says so', async () => {
-    const store = await FileModelStore.open(tempDataDir(), { log: { warn: () => undefined } });
-    const service = new ElementService(store);
-    expect(service.editable).toBe(false);
-    const id = '0b6f8d55-1c1e-4b7e-9a51-6c1c2f4f2d10';
-    await expect(service.getElement(id, 'x')).rejects.toThrow(EditingUnavailableError);
-    await expect(service.addElement(id, { type: 'Other', name: 'A' }, modeller)).rejects.toThrow(
-      EditingUnavailableError,
-    );
-    await expect(service.updateElement(id, 'x', { version: 1 }, modeller)).rejects.toThrow(
-      EditingUnavailableError,
-    );
-    await expect(service.deleteElement(id, 'x', { version: 1 }, modeller)).rejects.toThrow(
-      EditingUnavailableError,
-    );
-  });
-});
-
 describe('ElementService on PostgreSQL: add', () => {
   it('adds an element last, with a server id and version 1, and one audit row', async () => {
     const { store, service, modelId } = await setup();
-    expect(service.editable).toBe(true);
     const result = await service.addElement(
       modelId,
       {

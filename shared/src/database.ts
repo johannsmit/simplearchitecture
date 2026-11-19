@@ -3,7 +3,7 @@
  * `DATABASE_URL`; the password and the URL itself are never part of any response.
  */
 export interface DatabaseStatus {
-  /** False when `DATABASE_URL` isn't set: models are stored as files in `DATA_DIR`. */
+  /** Always true: the API doesn't start without `DATABASE_URL`. */
   configured: boolean;
   /** The API could run a query just now. */
   connected: boolean;

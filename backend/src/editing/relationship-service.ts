@@ -45,12 +45,11 @@ import {
   maxRelationshipDescriptionLength,
   maxRelationshipLabelLength,
 } from '../limits.js';
-import type { EditableModel, ElementStore, ModelStore } from '../storage/model-store.js';
+import type { EditableModel, ModelStore } from '../storage/model-store.js';
 import {
   apply,
   ConflictError,
   deleteSchema,
-  EditingUnavailableError,
   isEntries,
   issueId,
   keyProblem,
@@ -358,18 +357,12 @@ export class RelationshipService {
     this.#store = store;
   }
 
-  #elements(): ElementStore {
-    const elements = this.#store.elements;
-    if (elements === undefined) throw new EditingUnavailableError();
-    return elements;
-  }
-
   /** One relationship with its version, for the editing form. */
   async getRelationship(
     modelId: string,
     relationshipId: string,
   ): Promise<RelationshipChangeResult> {
-    const model = await this.#elements().read(modelId);
+    const model = await this.#store.elements.read(modelId);
     if (model === undefined) throw new NotFoundError('model');
     const { edge, version } = currentRelationship(model, relationshipId);
     return {
@@ -384,7 +377,7 @@ export class RelationshipService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<RelationshipChangeResult> {
-    const elements = this.#elements();
+    const elements = this.#store.elements;
     const request = parse(newRelationshipSchema, input);
     const id = randomUUID();
     const metadata: Entries = {
@@ -433,7 +426,7 @@ export class RelationshipService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<RelationshipChangeResult> {
-    const elements = this.#elements();
+    const elements = this.#store.elements;
     const request = parse(updateRelationshipSchema, input);
     if (
       request.reverse === true &&
@@ -625,7 +618,7 @@ export class RelationshipService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<DeletedRelationshipResult> {
-    const elements = this.#elements();
+    const elements = this.#store.elements;
     const { version } = parse(deleteSchema, input);
     let nesting: NestingChange[] = [];
     const applied = await elements.change(modelId, (model) => {

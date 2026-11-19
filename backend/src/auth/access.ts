@@ -99,14 +99,13 @@ export function refuseForeignOrigin(webOrigin: string): onRequestAsyncHookHandle
  * without a `config.access` declaration fails at registration, so nothing is served by accident.
  * `loadSession` runs on non-public routes only, so public requests (e.g. /api/health) never extend
  * a session's idle timeout. The guard comes before a route's own hooks (rate limits, body checks),
- * so a blocked request costs nothing. `mcpGuard` checks the access token on 'mcp' routes; without
- * one, such a route fails at registration.
+ * so a blocked request costs nothing. `mcpGuard` checks the access token on 'mcp' routes.
  */
 export function enforceAccessOnAllRoutes(
   app: FastifyInstance,
   webOrigin: string,
   loadSession: onRequestAsyncHookHandler,
-  mcpGuard?: onRequestAsyncHookHandler,
+  mcpGuard: onRequestAsyncHookHandler,
 ): void {
   const originCheck = requireSameOrigin(webOrigin);
   const foreignOriginCheck = refuseForeignOrigin(webOrigin);
@@ -120,12 +119,8 @@ export function enforceAccessOnAllRoutes(
     const existing = routeOptions.onRequest;
     const own = existing === undefined ? [] : Array.isArray(existing) ? existing : [existing];
     let guards: onRequestAsyncHookHandler[];
-    if (access === 'mcp') {
-      if (mcpGuard === undefined) {
-        throw new Error(`Route ${routeOptions.url} needs the MCP token check, which isn't set up`);
-      }
-      guards = [foreignOriginCheck, mcpGuard];
-    } else if (access === 'public') guards = [originCheck];
+    if (access === 'mcp') guards = [foreignOriginCheck, mcpGuard];
+    else if (access === 'public') guards = [originCheck];
     else if (access === 'oauth') guards = [foreignOriginCheck, loadSession];
     else guards = [originCheck, loadSession, requireAccess(access)];
     // A new array: Fastify copies GET options for the implicit HEAD route, so never mutate.

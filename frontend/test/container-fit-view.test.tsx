@@ -5,10 +5,11 @@ import type {
   ViewCardLayout,
   ViewLineRoute,
 } from '@simplearchitecture/shared';
-import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { linePath } from '../src/viewing/explorer/canvas/edgeLine';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { settle } from './settle';
 
 // In a view, every container is just big enough for the cards inside it: it opens so, and fits
 // again when a card inside it is dropped. Made-up data: a made-up pumping site.
@@ -170,12 +171,6 @@ function startOf(label: RegExp) {
       .match(/-?\d+(?:\.\d+)?/g)
       ?.map(Number) ?? [];
   return { x, y };
-}
-
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  });
 }
 
 async function open(view: StoredView, role = modeller, space = 'modelling') {

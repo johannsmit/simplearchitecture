@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { DatabaseStatus, DatabaseTestResult } from '@simplearchitecture/shared';
 import type { FastifyPluginAsync } from 'fastify';
 import type { DatabaseService } from '../db/service.js';
@@ -29,9 +28,8 @@ export function databaseRoutes(database: DatabaseService, now: () => number): Fa
       async (request, reply) => {
         const session = request.session;
         if (!session) throw new Error('database route reached without a session');
-        // Keyed by a hash of the session id, so the raw id is kept in one place only.
-        const key = createHash('sha256').update(session.id).digest('hex');
-        if (!limiter.allow(key)) {
+        // Per person, as the other limits: a new sign-in gives no new budget.
+        if (!limiter.allow(session.user.id)) {
           return reply.code(429).send(errorBody(429, tooManyTestsMessage));
         }
         const result = await database.test();

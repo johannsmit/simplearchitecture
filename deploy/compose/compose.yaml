@@ -2,40 +2,18 @@
 # file, fill it in, then run `docker compose up -d` here. See guide/docker-compose.md. Every
 # setting comes from .env; nothing secret is in this file.
 #
-# The app and the database share one network, held by the small `network` service, so the app
-# reaches PostgreSQL on 127.0.0.1 without TLS (for any other host it asks for TLS with a verified
-# certificate). Either of them can restart on its own. The app's port is published there: put your
-# https proxy in front of it, as the app expects one, at https://<APP_DOMAIN>.
+# The app reaches PostgreSQL as `db` on the project's own network, without TLS: it allows a plain
+# connection only when DATABASE_URL asks for one (sslmode=disable), and only to a host with a
+# one-word name like this or to localhost. The database's port isn't published. The app's port is,
+# on this machine only: put your https proxy in front of it, as the app expects one, at
+# https://<APP_DOMAIN>.
 name: simplearchitecture
 
-# PostgreSQL 17, pinned by tag and digest. A new major version needs a dump and restore.
-x-postgres-image: &postgres-image postgres:17.11-alpine3.24@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
-
 services:
-  # Only holds the shared network; it does nothing else, so it never needs to restart.
-  network:
-    image: *postgres-image
-    command: [sleep, infinity]
-    init: true
-    user: '65534:65534'
-    restart: unless-stopped
-    read_only: true
-    # The image declares a volume here; an empty tmpfs stops Docker adding an unnamed one each time.
-    tmpfs: [/var/lib/postgresql/data]
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    # The app's port, on this machine only, for the https proxy. Never expose it to the internet.
-    ports:
-      - 127.0.0.1:${APP_PORT:?Set APP_PORT in .env}:8080
-
   db:
-    image: *postgres-image
+    # PostgreSQL 17, pinned by tag and digest. A new major version needs a dump and restore.
+    image: postgres:17.11-alpine3.24@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
-    network_mode: service:network
-    depends_on:
-      network:
-        condition: service_started
-        restart: true
     environment:
       POSTGRES_USER: simplearchitecture
       POSTGRES_DB: simplearchitecture
@@ -53,20 +31,19 @@ services:
     # A version, never latest (there is none): upgrade by changing SIMPLEARCHITECTURE_VERSION.
     image: ghcr.io/johannsmit/simplearchitecture:${SIMPLEARCHITECTURE_VERSION:?Set SIMPLEARCHITECTURE_VERSION in .env}
     restart: unless-stopped
-    network_mode: service:network
     depends_on:
-      network:
-        condition: service_started
-        restart: true
       db:
         condition: service_healthy
+    # The app's port, on this machine only, for the https proxy. Never expose it to the internet.
+    ports:
+      - 127.0.0.1:${APP_PORT:?Set APP_PORT in .env}:8080
     # The app writes nothing to its file system and needs no privileges.
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env}
-      DATABASE_URL: postgres://simplearchitecture:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@127.0.0.1:5432/simplearchitecture
+      DATABASE_URL: postgres://simplearchitecture:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/simplearchitecture?sslmode=disable
       OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER in .env}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID in .env}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET in .env}

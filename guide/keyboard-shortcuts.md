@@ -12,21 +12,21 @@ Each key has one row per table. Two keys share a row only when they do opposite 
 
 ## Canvas
 
-These keys work when the canvas, not the catalog, is shown. They wait while focus is in Show Viewpoints. `N` and `R` work in Modelling only.
+These keys work when the canvas, not the catalog, is shown. They wait while focus is in **Show Viewpoints**. `N` and `R` work in Modelling only.
 
-| Key              | What it does                                                                                                                                                                                                    |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `↑` `↓` `←` `→`  | Moves the selection to the nearest card in that direction                                                                                                                                                       |
-| `Shift` + arrows | Pans the canvas                                                                                                                                                                                                 |
-| `Enter`          | Focuses the selected card's element; in a view, leaves the view for it                                                                                                                                          |
-| `Esc`            | Cancels a line being drawn, or a bend being dragged, and saves nothing. Otherwise closes the open relationship (the panel goes back to the element), or returns from the cards or Show Viewpoints to the canvas |
-| `1` `2` `3`      | Sets the depth (not in a view)                                                                                                                                                                                  |
-| `+` `-`          | Zooms in or out                                                                                                                                                                                                 |
-| `0`              | Fits everything in view                                                                                                                                                                                         |
-| `M`              | Starts moving the selected card (see the next table)                                                                                                                                                            |
-| `T`              | Tidy relations: draws every line again from where the cards are, lines moved by hand included; no card moves. In a view in Modelling, it is saved                                                               |
-| `N`              | Modelling: a new element at the centre of the canvas; in an open view, it is added to the view                                                                                                                  |
-| `R`              | Modelling, on a card: adds a relationship from this element (opens Add relationship)                                                                                                                            |
+| Key              | What it does                                                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `↑` `↓` `←` `→`  | Moves the selection to the nearest card in that direction                                                                                                                                                           |
+| `Shift` + arrows | Pans the canvas                                                                                                                                                                                                     |
+| `Enter`          | Focuses the selected card's element; in a view, leaves the view for it                                                                                                                                              |
+| `Esc`            | Cancels a line being drawn, or a bend being dragged, and saves nothing. Otherwise closes the open relationship (the panel goes back to the element), or returns from the cards or **Show Viewpoints** to the canvas |
+| `1` `2` `3`      | Sets the depth (not in a view)                                                                                                                                                                                      |
+| `+` (or `=`) `-` | Zooms in or out                                                                                                                                                                                                     |
+| `0`              | Fits everything in view                                                                                                                                                                                             |
+| `M`              | Starts moving the selected card (see the next table)                                                                                                                                                                |
+| `T`              | [Tidy relations](canvas.md#layout-tidy-up-and-tidy-relations): draws every line again; no card moves                                                                                                                |
+| `N`              | Modelling: a new element at the centre of the canvas; in an open view, it is added to the view                                                                                                                      |
+| `R`              | Modelling, on a card: adds a relationship from this element (opens **Add relationship**)                                                                                                                            |
 
 `Tab` from a card reaches its remove button (×), then its related elements pill.
 
@@ -48,7 +48,7 @@ The list that a card's related elements pill opens.
 | Key          | What it does                   |
 | ------------ | ------------------------------ |
 | `↑` `↓`      | Moves through the list         |
-| `Home` `End` | Moves through the list         |
+| `Home` `End` | First or last element          |
 | `Enter`      | Adds the element to the canvas |
 | `Esc`        | Closes the list                |
 | `Tab`        | Closes the list and moves on   |
@@ -69,6 +69,19 @@ The keys go through the visible rows, elements listed under a container included
 | `*`               | Opens all type groups                                                                         |
 | A letter          | Jumps to the next row whose name starts with it                                               |
 | `Esc`             | In the search: clears it                                                                      |
+
+## Filter
+
+The filter next to the element search: first a list of properties, then the values of the one you open.
+
+| Key          | What it does                                                                                 |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| `↑` `↓`      | Previous or next property, or value. In a property's search box, `↓` goes to the first value |
+| `Home` `End` | First or last property                                                                       |
+| `→`          | On a property, shows its values                                                              |
+| `←`          | On a value, goes back to the properties                                                      |
+| `Space`      | On a value, picks it or takes it out of the filter                                           |
+| `Esc`        | Closes the filter                                                                            |
 
 ## Views list
 
@@ -123,7 +136,7 @@ The details panel's form for an element or a relationship.
 | `Ctrl` + `Enter` | Saves the element or relationship, from anywhere in the form, a text box and From and To included |
 | `Esc`            | Asks "Discard changes?" when there are unsaved changes                                            |
 
-`Enter` in a one-line field never saves.
+`Enter` in a one-line field never saves. In Viewing, `Esc` in a relationship's details goes back to its element.
 
 ## New element, New relationship and Add relationship
 
@@ -131,7 +144,7 @@ The details panel's form for an element or a relationship.
 | ------- | ---------------------------------------------------------------------------------------------- |
 | `Enter` | Creates the element, or adds the relationship. In a search list, picks the highlighted element |
 | `Esc`   | Closes without creating or adding; in a search with text, clears the text first                |
-| `↑` `↓` | In the Add relationship search, moves through the matching elements                            |
+| `↑` `↓` | In the **Add relationship** search, moves through the matching elements                        |
 
 ## From and To (a relationship's ends)
 
@@ -158,10 +171,10 @@ In a name or value field that offers suggestions, in a relationship's label afte
 
 The suggestion keys above, and:
 
-| Key     | What it does                                                                                                                                                              |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Enter` | In the box, adds the highlighted suggestion, or what is typed, as a value (it doesn't save). On a value's ×, removes that value; focus moves to the next ×, or to the box |
-| `Tab`   | Moves to the values' × buttons                                                                                                                                            |
+| Key             | What it does                                                                                                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enter`         | In the box, adds the highlighted suggestion, or what is typed, as a value (it doesn't save). On a value's ×, removes that value; focus moves to the × that takes its place, the one before it, or the box |
+| `Shift` + `Tab` | From the box, moves back to the values' × buttons, which come before it                                                                                                                                   |
 
 ## Panel resize handles
 
@@ -169,6 +182,17 @@ The suggestion keys above, and:
 | ------- | --------------------------------- |
 | `←` `→` | Makes the panel narrower or wider |
 | `Enter` | Resets the panel's width          |
+
+## Menus and dialogs
+
+The theme menu, the menu of the small arrow next to **Tidy up**, and every dialog.
+
+| Key          | What it does                                        |
+| ------------ | --------------------------------------------------- |
+| `↑` `↓`      | In a menu, previous or next item                    |
+| `Home` `End` | In a menu, first or last item                       |
+| `Esc`        | Closes the menu or dialog without changing anything |
+| `Tab`        | In a menu, closes it and moves on                   |
 
 ## Admin → Properties dialogs
 

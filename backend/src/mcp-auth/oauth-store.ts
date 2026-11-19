@@ -1,6 +1,6 @@
 import { roles as knownRoles, type Role } from '@simplearchitecture/shared';
 import type { Db, Queryable } from '../db/db.js';
-import { neverUsedClientLifetimeMs, unusedClientLifetimeMs } from './rules.js';
+import { endedTokenMemoryMs, neverUsedClientLifetimeMs, unusedClientLifetimeMs } from './rules.js';
 
 /**
  * The OAuth server's tables (migration 008), and nothing else: the rules are in oauth-service.ts.
@@ -401,14 +401,26 @@ export class OAuthStore {
   }
 
   /** The live connection of a live access token, or undefined. */
-  async findByAccessToken(hash: string, at: number): Promise<StoredConnection | undefined> {
-    const [row] = await this.db.query<ConnectionRow & { last_used_at: Date | null }>(
-      `select c.id, c.client_id, c.user_id, c.user_roles, c.resource, c.expires_at, c.last_used_at
+  /**
+   * The live connection an access token belongs to; `'ended'` for a token of ours that has expired
+   * or whose connection has ended (both are kept a while, see endedTokenMemoryMs); undefined for
+   * a token that isn't ours.
+   */
+  async findByAccessToken(
+    hash: string,
+    at: number,
+  ): Promise<StoredConnection | 'ended' | undefined> {
+    const [row] = await this.db.query<
+      ConnectionRow & { last_used_at: Date | null; token_expires_at: Date }
+    >(
+      `select c.id, c.client_id, c.user_id, c.user_roles, c.resource, c.expires_at, c.last_used_at,
+         t.expires_at as token_expires_at
        from mcp_tokens t join mcp_connections c on c.id = t.connection_id
-       where t.hash = $1 and t.kind = 'access' and t.expires_at > $2 and c.expires_at > $2`,
-      [hash, new Date(at)],
+       where t.hash = $1 and t.kind = 'access'`,
+      [hash],
     );
     if (row === undefined) return undefined;
+    if (row.token_expires_at.getTime() <= at || row.expires_at.getTime() <= at) return 'ended';
     // "Last used" for the list of connected agents, to the minute: not a write on every call.
     if (row.last_used_at === null || row.last_used_at.getTime() <= at - 60_000) {
       await this.db.query('update mcp_connections set last_used_at = $2 where id = $1', [
@@ -464,11 +476,11 @@ export class OAuthStore {
     }));
   }
 
-  /** Ends one of the user's connections (its tokens go with it). Whether there was one. */
-  async endConnection(userId: string, connectionId: string): Promise<boolean> {
+  /** Ends one of the user's live connections (its tokens go with it). Whether there was one. */
+  async endConnection(userId: string, connectionId: string, at: number): Promise<boolean> {
     const rows = await this.db.query<{ id: string }>(
-      'delete from mcp_connections where id = $1 and user_id = $2 returning id',
-      [connectionId, userId],
+      'delete from mcp_connections where id = $1 and user_id = $2 and expires_at > $3 returning id',
+      [connectionId, userId, new Date(at)],
     );
     return rows.length > 0;
   }
@@ -529,12 +541,14 @@ export class OAuthStore {
       await tx.query('delete from mcp_codes where expires_at <= $1', [
         new Date(at - 60 * 60 * 1000),
       ]);
+      // Kept a day after they end, so the MCP guard still knows the tokens as its own.
+      const forgotten = new Date(at - endedTokenMemoryMs);
       await tx.query("delete from mcp_tokens where kind = 'access' and expires_at <= $1", [
-        new Date(at),
+        forgotten,
       ]);
       const connections = await tx.query<{ id: string }>(
         'delete from mcp_connections where expires_at <= $1 returning id',
-        [new Date(at)],
+        [forgotten],
       );
       const clients = await tx.query<{ id: string }>(
         `delete from mcp_clients cl

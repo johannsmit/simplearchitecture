@@ -15,8 +15,8 @@ import { storedDocument, untitledModelName } from '../src/storage/stored-model.j
 import { agreedMapping } from './helpers.js';
 
 /**
- * The behaviour every ModelStore shares, run against the file store and the PostgreSQL store.
- * Store-specific behaviour (files, permissions, rows) is tested next to each store.
+ * The behaviour the ModelStore interface promises, run against the PostgreSQL store. Its rows and
+ * migrations are tested in postgres-model-store.test.ts.
  */
 export interface StoreHarness {
   open(options?: {
@@ -164,6 +164,13 @@ export function describeModelStoreContract(name: string, setup: () => StoreHarne
       expect((await store.list()).map((summary) => summary.name)).toContain(long.name);
     });
 
+    it('counts an empty model as 0 nodes and 0 edges', async () => {
+      const store = await harness.open();
+      const summary = await store.save({ graph: {} }, author);
+      expect(summary).toMatchObject({ nodeCount: 0, edgeCount: 0, name: untitledModelName });
+      expect(await store.get(summary.id)).toMatchObject({ graph: { id: summary.id } });
+    });
+
     it('lists summaries newest first, also from a store opened later', async () => {
       let time = Date.UTC(2026, 0, 1);
       const store = await harness.open({ now: () => (time += 1000) });
@@ -261,6 +268,29 @@ export function describeModelStoreContract(name: string, setup: () => StoreHarne
         expect(refused.every((result) => result.reason instanceof ModelStoreFullError)).toBe(true);
         expect(await store.list()).toHaveLength(5);
       });
+    });
+
+    it('keeps a consistent state when saves, deletes and reads interleave', async () => {
+      const store = await harness.open();
+      const first = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => store.save(model(`Old ${i}`), author)),
+      );
+      const [deleted, added, lists] = await Promise.all([
+        Promise.all(first.map((summary) => store.delete(summary.id))),
+        Promise.all(Array.from({ length: 10 }, (_, i) => store.save(model(`New ${i}`), author))),
+        Promise.all(Array.from({ length: 10 }, () => store.list())),
+      ]);
+      expect(deleted.every((result) => result !== undefined)).toBe(true);
+      for (const list of lists) {
+        // Each list sees whole models only, never a half-written one.
+        for (const summary of list) expect(summary.nodeCount).toBe(6);
+      }
+      const final = await store.list();
+      expect(final.map((summary) => summary.id).sort()).toEqual(
+        added.map((summary) => summary.id).sort(),
+      );
+      expect(await store.listDamaged()).toEqual([]);
+      expect(harness.warnings()).toEqual([]);
     });
 
     it('deletes a model once when two deletes race, and keeps working after a failed save', async () => {

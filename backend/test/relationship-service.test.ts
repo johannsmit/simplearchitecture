@@ -5,20 +5,13 @@ import {
   type ModelAuthor,
 } from '@simplearchitecture/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  ConflictError,
-  EditingUnavailableError,
-  NotFoundError,
-  RejectedError,
-} from '../src/editing/common.js';
+import { ConflictError, NotFoundError, RejectedError } from '../src/editing/common.js';
 import { ElementService } from '../src/editing/element-service.js';
 import { RelationshipService } from '../src/editing/relationship-service.js';
 import { validateJgf } from '../src/jgf/validate.js';
 import { insertDefinitions } from '../src/properties/property-store.js';
-import { FileModelStore } from '../src/storage/file-model-store.js';
 import { ModelNotStorableError, ModelTooLargeError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
-import { tempDataDir } from './helpers.js';
 import { createTestDb, resetTestDb, type TestDb } from './pglite.js';
 
 const modeller: ModelAuthor = { id: 'oid-made-up-modeller', name: 'Made-up Modeller' };
@@ -784,15 +777,6 @@ describe('RelationshipService: with elements and stores', () => {
       modeller,
     );
     expect(await edgesOf(store, modelId)).toHaveLength(1);
-  });
-
-  it('is unavailable without a database', async () => {
-    const files = await FileModelStore.open(tempDataDir(), { log: { warn: () => undefined } });
-    const service = new RelationshipService(files);
-    await expect(service.getRelationship('x', 'y')).rejects.toThrow(EditingUnavailableError);
-    await expect(service.addRelationship('x', {}, modeller)).rejects.toThrow(
-      EditingUnavailableError,
-    );
   });
 });
 

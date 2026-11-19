@@ -185,13 +185,6 @@ export function convertedDataLists(edge: unknown): unknown {
   return { ...edge, metadata: next };
 }
 
-/** The edge in today's types and properties; the same object when there is nothing to convert. */
-export function convertedEdge(edge: unknown, labels = true): unknown {
-  return convertedDataLists(
-    convertedDirections(convertedData(convertedEdgeType(edge), labels), labels),
-  );
-}
-
 /** The edge with the older types and Information flow converted (to Data, as migration 009 does). */
 export function convertedEdgeType(edge: unknown): unknown {
   if (!isPlainObject(edge)) return edge;

@@ -12,7 +12,7 @@ Choose **New element** at the top of the element list, type a name, pick a type 
 
 - press `N` on the canvas, for a new element at its centre;
 - double-click empty canvas, for a new element there;
-- draw a line from a card's handle and drop it on empty canvas, for **New element here**, with the relationship.
+- draw a line from a card's handle and drop it on empty canvas: **New element** opens there, and the relationship follows.
 
 In an open view, a new element is added to the view. If an element with the name you type exists already, **Add to canvas** brings that one onto the canvas instead.
 
@@ -78,7 +78,7 @@ The label is stored as typed, so a JSON Graph Format export keeps the braces.
 - An element can't be related to itself.
 - A Contains can't make a loop, and the same Contains can't be there twice.
 - An element may be in two containers, with a warning. It is drawn inside the first.
-- A Contains changed between cards already on the canvas shows as a line, or stops nesting, until you choose Tidy up.
+- A Contains changed between cards already on the canvas shows as a line, or stops nesting, until you choose **Tidy up**.
 
 ## Saving
 

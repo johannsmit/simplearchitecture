@@ -194,7 +194,7 @@ export function oidcClientAuth(config: ClientAuthSettings): OidcClientAuth {
 
 /**
  * Tests only (NODE_ENV=test): everything can be set, so the suite can run the real server on a
- * free port, with file storage and without a database. Development and the image read a fixed set.
+ * free port. Development and the image read a fixed set.
  */
 const testSchema = z
   .object({
@@ -211,13 +211,12 @@ const testSchema = z
       .min(0)
       .max(5)
       .default(0),
-    // Without it, models are files in DATA_DIR and sessions are in memory.
+    // Optional here only: tests hand buildApp a database of their own (PGlite). The API doesn't
+    // start without one.
     DATABASE_URL: databaseUrl.optional(),
     ...databaseAuthSettings,
     // How long startup waits for an unreachable database (e.g. one still starting) before giving up.
     DATABASE_WAIT_SECONDS: z.coerce.number().int().min(0).max(600).default(60),
-    // Where models are stored, one JSON file each. Relative to the repo root.
-    DATA_DIR: z.string().default('data'),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
@@ -369,7 +368,7 @@ function sharedSettingsFor(federated: boolean) {
 }
 
 // Fixed in development and in the image.
-const fixed = { LOG_LEVEL: 'info', DATABASE_WAIT_SECONDS: 60, DATA_DIR: 'data' } as const;
+const fixed = { LOG_LEVEL: 'info', DATABASE_WAIT_SECONDS: 60 } as const;
 
 const portSetting = z
   .string(required)

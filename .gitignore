@@ -29,5 +29,5 @@ npm-debug.log*
 # Model exports hold real company data: never commit them, wherever they end up
 graph-export.json
 
-# Stored models (DATA_DIR): real company data, never commit
+# Model files stored by older versions: real company data, never commit
 /data/

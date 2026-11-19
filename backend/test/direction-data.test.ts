@@ -344,13 +344,6 @@ describe('labels', () => {
     expect(names).not.toContain('data');
     expect(names).not.toContain('requestData');
   });
-
-  it('leave an older name as an unknown one', () => {
-    expect(fillLabel('{Request Data}', subject)).toEqual({
-      text: '{Request Data}',
-      unknown: ['Request Data'],
-    });
-  });
 });
 
 describe('suggestions and viewpoints', () => {

@@ -1,4 +1,4 @@
-# Simple Architecture Metamodel
+# SimpleArchitecture Metamodel
 ## Nodes
 The metamodel contains the following node types:
 - Stakeholder node: This node is depicted in yellow as user icon and is reserved for any stakeholders or users. A Stakeholder that is an AI Agent (see Kind below) is depicted the same way, with a robot icon in place of the user icon.
@@ -14,7 +14,7 @@ Nodes will contain standard metadata properties:
 - Description
 
 **Stakeholder nodes:**
-- Kind (Options: Human, AI Agent). Stored as `"stakeholderKind"`. A Stakeholder without Kind is Human. A stored value that isn't one of the options is a validation warning (it may have been custom metadata before Kind became standard): it is kept as it is and read as Human.
+- Kind (Options: Human, AI Agent). Stored as `"stakeholderKind"`. A Stakeholder without Kind is Human. A stored value that isn't one of the options is a validation warning: it is kept as it is and read as Human.
 
 **Business nodes:**
 - Owning team
@@ -28,11 +28,11 @@ Nodes will contain standard metadata properties:
 **Application nodes:**
 - Sourcing (Option: Build, Buy)
 
-Custom metadata is allowed to be added as needed
+Custom metadata is allowed to be added as needed.
 
 ## Edges
 The metamodel contains the following edge types:
-- Relation edge: This edge is depicted with a solid-line arrow and is used for any relation between elements, such as integration, hosting or serving a business process. A label or custom metadata can say what kind of relation it is.
+- Relation edge: This edge is depicted with a solid-line arrow and is used for any relation between elements, such as integration, hosting or serving a business process. A label or its properties can say what kind of relation it is.
 - Contains edge: This edge is reserved for an element that contains another element. By default, the target element is depicted nested inside the source element.
 
 Several Relation edges may link the same two elements in the same direction.
@@ -55,12 +55,12 @@ On a two-way edge, the source is the end stored as `source`. Reversing an edge s
 
 Identity, Identity Context, Source to target data and Target to source data are optional and apply to Relation edges only. On a Contains edge, such a key is a validation warning, and the value is kept as it is.
 
-Source to target data and Target to source data each hold zero or more values, in the order they were added; the same value is never there twice, ignoring case, and an empty text is not a value. A single text (as stored before they were lists) is read as a list of that one value. Any other value that isn't a list of texts is a validation warning, and is kept as it is.
+Source to target data and Target to source data each hold zero or more values, in the order they were added; the same value is never there twice, ignoring case, and an empty text is not a value. A single text is read as a list of that one value. Any other value that isn't a list of texts is a validation warning, and is kept as it is.
 
-Custom metadata is allowed to be added to any edge as needed
+Custom metadata isn't added to edges freely. Further properties of Relation edges are defined by an Admin in the app; every Relation edge has them, and none is required. Importing a model whose edges hold other keys adds those keys as such properties.
 
 ## Viewpoints
-A viewpoint is a selection of relationship properties: Architecture state, Identity, Identity Context, Data or any custom metadata found on the model's edges.
+A viewpoint is a selection of relationship properties: Architecture state, Identity, Identity Context, Data or a property an Admin defined.
 - Data is one choice for both data lists. An edge shows each list on a line of its own, starting with an arrow pointing the way its data flows on the canvas, the values joined by ", ", leaving out an empty list. On one relationship, the lists are named after its ends ("Order system to Warehouse", "Warehouse to Order system").
 - With nothing selected, an edge shows its label, or nothing. An edge never shows its type name.
 - With properties selected, an edge that has at least one of them shows their values instead of its label. Any other edge is grayed out.

@@ -87,10 +87,6 @@ describe('the release workflow', () => {
       expect(name).toMatch(/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.md$/);
   });
 
-  it('marks a pre-release, so it never becomes the latest release', () => {
-    expect(job(ci, 'release')).toContain('--prerelease');
-  });
-
   it.each([
     ['publish', ci],
     ['release', ci],

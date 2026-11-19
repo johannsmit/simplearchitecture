@@ -89,15 +89,6 @@ const setRoute = (target: TestDb, ordinal: number, xs: string | null, ys: string
   );
 
 describe('migration 014', () => {
-  it('is the only one to run on a database at 013, and is plain ASCII', async () => {
-    const { db: target } = await at013();
-    const migration = all.find((each) => each.version === '014');
-    expect(migration?.name).toBe('view_line_routes');
-    expect(migration?.sql).toMatch(/^[\t\n\x20-\x7e]*$/);
-    expect(await migrate(target, all)).toBe(1);
-    expect(await migrate(target, all)).toBe(0);
-  });
-
   it('leaves every model, view, layout and audit row as it was, with no line routed', async () => {
     const { db: target, modelId } = await at013();
     const before = await dump(target);

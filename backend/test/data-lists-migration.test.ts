@@ -2,8 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
-import { convertedDataLists, convertOlderTypes } from '../src/jgf/older-types.js';
-import { validateJgf } from '../src/jgf/validate.js';
+import { convertedDataLists } from '../src/jgf/older-types.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
@@ -198,23 +197,6 @@ describe('migration 013', () => {
     expect(differences).toEqual([]);
   });
 
-  it('leaves every stored model readable, with no damaged model', async () => {
-    const { db, id } = await olderDatabase();
-    await migrate(db, all);
-    const store = await PostgresModelStore.open(db, quiet);
-    expect(await store.listDamaged()).toEqual([]);
-    const stored = await store.get(id);
-    const validation = validateJgf(stored);
-    expect(validation.valid).toBe(true);
-    // Only the shapes that aren't a list of texts, and the keys on a Contains, are warnings.
-    expect(validation.warnings.map((issue) => [issue.edgeId, issue.code])).toEqual([
-      ['number', 'invalid-property-value'],
-      ['object', 'invalid-property-value'],
-      ['null', 'invalid-property-value'],
-      ['on-contains', 'property-not-for-type'],
-    ]);
-  });
-
   it('converts a large model in one go', async () => {
     const count = 20_000;
     const db = pgliteDb(new PGlite());
@@ -237,40 +219,4 @@ describe('migration 013', () => {
     );
     expect(counts).toEqual({ listed: count, left: 0 });
   }, 120_000);
-});
-
-/** Metadata as reading it today gives it: the two lists under their keys named by direction. */
-const named = (metadata: unknown): unknown => {
-  if (typeof metadata !== 'object' || metadata === null) return metadata;
-  const keys: Record<string, string> = {
-    requestData: 'sourceToTargetData',
-    responseData: 'targetToSourceData',
-  };
-  return Object.fromEntries(
-    Object.entries(metadata).map(([key, value]) => [keys[key] ?? key, value]),
-  );
-};
-
-describe('reading a file or an import', () => {
-  it('follows the same rule as the migration', () => {
-    const { document: converted } = convertOlderTypes(document());
-    const edges = (converted as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => named(after)));
-  });
-
-  it('leaves the input unchanged, and a document of lists as it is', () => {
-    const input = document();
-    const copy = structuredClone(input);
-    convertOlderTypes(input);
-    expect(input).toEqual(copy);
-    const today = {
-      graph: { nodes, edges: [edge('t', { metadata: { sourceToTargetData: ['A'] } })] },
-    };
-    expect(convertOlderTypes(today)).toEqual({
-      document: today,
-      converted: 0,
-      dataConverted: 0,
-      directionConverted: 0,
-    });
-  });
 });

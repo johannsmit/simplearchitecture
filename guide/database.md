@@ -35,11 +35,10 @@ If the server, or its cloud provider, has a firewall, allow the container host's
 DATABASE_URL=postgres://simplearchitecture:<password>@db.example.com:5432/simplearchitecture?sslmode=verify-full
 ```
 
-- For any host other than `localhost` or `127.0.0.1`, the app always uses TLS and verifies the server's certificate and host name. It refuses to start if `sslmode` asks for less (`disable`, `allow`, `prefer` or `no-verify`). Use `sslmode=verify-full`, or leave `sslmode` out.
+- The app uses TLS and verifies the server's certificate and host name. Use `sslmode=verify-full`, or leave `sslmode` out.
+- A plain connection, without TLS, needs `sslmode=disable`, and the app allows it only to the same machine (`localhost`, `127.0.0.1` or `::1`) or to a host with a one-word name, such as the `db` service in [Docker Compose](docker-compose.md). For any other host it refuses to start, as it does for `allow`, `prefer` and `no-verify`.
 - The server's certificate must come from a public certificate authority, as on Azure Database for PostgreSQL and other managed services. A private certificate authority isn't supported.
-- `sslmode` is the only parameter the URL may have.
-- A password with special characters must be percent-encoded in the URL. A password from `openssl rand -hex 32` needs none.
-- The app never logs `DATABASE_URL` or the password, and never shows them.
+- `sslmode` is the only parameter the URL may have. A password with special characters must be percent-encoded; one from `openssl rand -hex 32` needs none.
 
 Keep `DATABASE_URL` in the host's secret store: it holds the password. On Azure, the app can also sign in to the database with Entra ID instead of a password: see [Azure examples](azure.md#database-sign-in-with-entra-id-instead-of-a-password).
 

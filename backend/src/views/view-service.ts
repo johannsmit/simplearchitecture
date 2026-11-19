@@ -24,7 +24,6 @@ import { z } from 'zod';
 import {
   ConflictError,
   deleteSchema,
-  EditingUnavailableError,
   issueId,
   NotFoundError,
   parse as parseRequest,
@@ -50,7 +49,6 @@ import type {
   ViewChangeState,
   ViewName,
   ViewRecord,
-  ViewStore,
   ViewWrite,
   ModelStore,
 } from '../storage/model-store.js';
@@ -480,20 +478,9 @@ export class ViewService {
     this.#store = store;
   }
 
-  /** Whether views can be stored (the store is PostgreSQL). */
-  get available(): boolean {
-    return this.#store.views !== undefined;
-  }
-
-  #views(): ViewStore {
-    const views = this.#store.views;
-    if (views === undefined) throw new EditingUnavailableError();
-    return views;
-  }
-
   /** The model's views, by name. */
   async listViews(modelId: string): Promise<ViewListResponse> {
-    const views = await this.#views().list(modelId);
+    const views = await this.#store.views.list(modelId);
     if (views === undefined) throw new NotFoundError('model');
     return { views: byName(views) };
   }
@@ -503,7 +490,7 @@ export class ViewService {
    * no such element. An id no element can have is held by no view.
    */
   async listViewsHolding(modelId: string, elementId: string): Promise<ViewListResponse> {
-    const store = this.#views();
+    const store = this.#store.views;
     const possible = elementId.length <= maxElementIdLength && !unstorable.test(elementId);
     const views = await (possible ? store.listHolding(modelId, elementId) : store.list(modelId));
     if (views === undefined) throw new NotFoundError('model');
@@ -511,14 +498,14 @@ export class ViewService {
   }
 
   async getView(modelId: string, viewId: string): Promise<ViewResult> {
-    const found = await this.#views().get(modelId, viewId);
+    const found = await this.#store.views.get(modelId, viewId);
     if (found === 'no-model') throw new NotFoundError('model');
     if (found === 'no-view') throw new NotFoundError('view');
     return { view: storedView(found) };
   }
 
   async createView(modelId: string, input: unknown, actor: ModelAuthor): Promise<ViewResult> {
-    const views = this.#views();
+    const views = this.#store.views;
     const request = parse(newViewSchema, input);
     const elementIds = unique(request.elementIds);
     const requested = request.relationshipIds === undefined ? [] : unique(request.relationshipIds);
@@ -551,7 +538,7 @@ export class ViewService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<RenamedViewResult> {
-    const views = this.#views();
+    const views = this.#store.views;
     const request = parse(renameSchema, input);
     try {
       const changed = await views.change(
@@ -584,7 +571,7 @@ export class ViewService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<ViewResult> {
-    const views = this.#views();
+    const views = this.#store.views;
     const request = parse(contentsSchema, input);
     const elementIds = unique(request.elementIds);
     const requested =
@@ -632,7 +619,7 @@ export class ViewService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<ViewResult> {
-    const views = this.#views();
+    const views = this.#store.views;
     const request = parse(layoutSchema, input);
     try {
       const changed = await views.change(
@@ -667,7 +654,7 @@ export class ViewService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<MovedViewResult & { changed: string[] }> {
-    const views = this.#views();
+    const views = this.#store.views;
     const request = parse(moveSchema, input);
     const newFolder = request.newFolder === true;
     const asked = checkedFolder(request.folder, newFolder);
@@ -704,7 +691,7 @@ export class ViewService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<RenamedViewFolderResult & { changed: string[] }> {
-    const views = this.#views();
+    const views = this.#store.views;
     const request = parse(renameFolderSchema, input);
     const from = request.from.trim();
     const to = checkedFolder(request.to, true) as string;
@@ -741,7 +728,7 @@ export class ViewService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<DeletedViewResult> {
-    const views = this.#views();
+    const views = this.#store.views;
     const { version } = parse(deleteSchema, input);
     const changed = await views.change(
       modelId,

@@ -55,14 +55,14 @@ Outside a view, positions and widths are never saved: they last until the canvas
 
 ## Layout: Tidy up and Tidy relations
 
-The canvas lays itself out automatically only when it is new: when you open an element or a view, reload the page, change the depth or switch Nest contained elements. After that, cards stay where they are.
+The canvas lays itself out automatically only when it is new: when you open an element or a view, reload the page, change the depth or switch **Nest contained elements**. After that, cards stay where they are.
 
 - **Tidy up** lays the whole canvas out again. It places cards by their relationships: lines point down from the element they start at, with as few crossings as it finds.
-- **Tidy relations**, in the menu of the small arrow next to Tidy up (or `T`), moves no card. It draws every line again from where the cards are now, including lines moved by hand.
+- **Tidy relations**, in the menu of the small arrow next to **Tidy up** (or `T`), moves no card. It draws every line again from where the cards are now, including lines moved by hand. It can't be chosen while **Show relationships** is off.
 
 Lines follow the cards: when you move a card, its lines find the shortest right-angled way round the other cards. Where two cards face each other with room between them, the line runs straight.
 
-If the automatic layout fails or takes too long, it stops and the canvas says so. You can go on working: the cards are placed simply, or, after a failed Tidy up, stay where they were. Try Tidy up again, or show fewer elements.
+If the automatic layout fails or takes too long, it stops and the canvas says so. You can go on working: the cards are placed simply, or, after a failed **Tidy up**, stay where they were. Try **Tidy up** again, or show fewer elements.
 
 ## Zoom and pan
 

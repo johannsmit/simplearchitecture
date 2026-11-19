@@ -40,10 +40,7 @@ export interface ModelSummary {
 /** Response body of `GET /api/models`. Newest first. */
 export interface ModelListResponse {
   models: ModelSummary[];
-  /**
-   * Whether elements can be edited (Modelling). False without a database: the file store is
-   * read-only for editing.
-   */
+  /** Whether elements can be edited (Modelling). Always true: the API needs a database. */
   editable: boolean;
 }
 

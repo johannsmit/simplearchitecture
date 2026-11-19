@@ -24,7 +24,7 @@ The repository's `deploy/compose/` folder holds `compose.yaml` and `example.env`
 
 4. Put an https proxy in front, such as Caddy or nginx, that serves `https://<APP_DOMAIN>`, forwards to `127.0.0.1:<APP_PORT>` and sets `X-Forwarded-For` and `X-Forwarded-Proto`. The port is open to this machine only: never expose it directly (see [Behind the https proxy](hosting.md#behind-the-https-proxy)).
 
-Then open `https://<APP_DOMAIN>` and sign in. To try the app with made-up data, sign in as an Admin and import `samples/sample-insurance.jgf.json` (from the repository) on **Admin → Models**.
+Then open `https://<APP_DOMAIN>` and sign in. To try it with made-up data, import [the sample model](import-and-export.md#try-it-with-the-sample-model).
 
 ## The settings file
 
@@ -44,7 +44,7 @@ Write each value without quotes, and with no comment after it. Compose stops wit
 
 ## How it runs
 
-- The app and PostgreSQL share one network, so the app reaches the database on `127.0.0.1`. Either can restart on its own.
+- The app reaches PostgreSQL as `db` on the network Compose makes for this folder, without TLS (`sslmode=disable`): the traffic never leaves the machine. The database's port isn't published.
 - The app runs with a read-only file system, no Linux capabilities and no new privileges.
 - Both have health checks, and the app starts only once the database is ready.
 - The app's port is published on `127.0.0.1` only, for your https proxy.

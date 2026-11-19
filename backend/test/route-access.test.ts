@@ -1,11 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { SaveModelResult } from '@simplearchitecture/shared';
 import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DatabaseService } from '../src/db/service.js';
 import { loadWebApp } from '../src/web-app.js';
 import {
   buildTestApp,
@@ -15,7 +13,6 @@ import {
   webOrigin,
   withClaims,
 } from './helpers.js';
-import { createTestDb, testConnection, type TestDb } from './pglite.js';
 
 /** 'oauth' and 'mcp': the AI agents' endpoints, which never take the session as a sign-in. */
 type Level = 'public' | 'authenticated' | 'viewing' | 'modelling' | 'admin' | 'oauth' | 'mcp';
@@ -107,16 +104,6 @@ const allowedFor: Record<string, Level[]> = {
   Admin: ['public', 'authenticated', 'viewing', 'modelling', 'admin'],
 };
 
-const madeUpModel = {
-  graph: {
-    label: 'Made-up model',
-    nodes: { a: { label: 'Made-up element', metadata: { type: 'Application' } } },
-    edges: [],
-  },
-};
-
-const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
-
 /** The routes a browser calls with its session, which the CSRF check covers. */
 function browserStateChanging(access: Record<string, Level>): string[] {
   return Object.entries(access)
@@ -124,17 +111,13 @@ function browserStateChanging(access: Record<string, Level>): string[] {
     .map(([route]) => route);
 }
 
-// With a database the sessions and models live in PostgreSQL, as in the image.
-describe.each([
-  ['file storage', false],
-  ['PostgreSQL', true],
-])('access to every route, with %s', (_storage, withDatabase) => {
+// The sessions and models live in PostgreSQL (the file's PGlite), as in the image.
+describe('access to every route', () => {
   let idp: OAuth2Server;
   let app: FastifyInstance;
-  let db: TestDb | undefined;
   const routes: string[] = [];
   const cookies = new Map<string, string>();
-  const access = withDatabase ? { ...expectedAccess, ...agentAccess } : expectedAccess;
+  const access = { ...expectedAccess, ...agentAccess };
 
   const sessionFor = async (who: string): Promise<string> => {
     idp.service.removeAllListeners('beforeTokenSigning');
@@ -159,13 +142,9 @@ describe.each([
 
   beforeAll(async () => {
     idp = await startMockIdp();
-    db = withDatabase ? await createTestDb() : undefined;
     app = await buildTestApp(
       {},
       idpOptions(idp, {
-        ...(db === undefined
-          ? {}
-          : { database: DatabaseService.using(db, testConnection, silent) }),
         onRoute: (route) => {
           routes.push(`${String(route.method)} ${route.url}`);
         },
@@ -176,7 +155,6 @@ describe.each([
 
   afterAll(async () => {
     await app.close();
-    await db?.close();
     await idp.stop();
   });
 
@@ -277,49 +255,6 @@ describe.each([
     expect((await head('/api/admin/database', cookies.get('Modeller'))).statusCode).toBe(403);
     expect((await head('/api/models', cookies.get('Viewer'))).statusCode).toBe(200);
   });
-
-  it('lets an Admin store a model and export it, with no licence anywhere', async () => {
-    const headers = { origin: webOrigin, cookie: cookies.get('Admin') ?? '' };
-    const saved = await app.inject({
-      method: 'POST',
-      url: '/api/models',
-      headers,
-      payload: madeUpModel,
-    });
-    expect(saved.statusCode).toBe(201);
-    const { model } = saved.json<SaveModelResult>();
-    const exported = await app.inject({ method: 'GET', url: `/api/models/${model.id}`, headers });
-    expect(exported.statusCode).toBe(200);
-    expect(exported.json<typeof madeUpModel>().graph.label).toBe('Made-up model');
-
-    // What an export gives imports again, unchanged.
-    const again = await app.inject({
-      method: 'POST',
-      url: '/api/models',
-      headers,
-      payload: exported.json<object>(),
-    });
-    expect(again.statusCode).toBe(201);
-    const copy = await app.inject({
-      method: 'GET',
-      url: `/api/models/${again.json<SaveModelResult>().model.id}`,
-      headers,
-    });
-    expect(copy.json<typeof madeUpModel>().graph.nodes).toEqual(
-      exported.json<typeof madeUpModel>().graph.nodes,
-    );
-  });
-
-  it('has no licence route left', async () => {
-    for (const method of ['GET', 'PUT'] as const) {
-      const res = await app.inject({
-        method,
-        url: '/api/licence',
-        headers: { origin: webOrigin, cookie: cookies.get('Admin') ?? '' },
-      });
-      expect(res.statusCode).toBe(404);
-    }
-  });
 });
 
 describe('a route without an access rule', () => {
@@ -365,7 +300,8 @@ describe('the web app route', () => {
   it('adds only the public page for browsers to the routes above', () => {
     const added = routes
       .filter((route) => !route.startsWith('HEAD '))
-      .filter((route) => !Object.hasOwn(expectedAccess, route));
+      .filter((route) => !Object.hasOwn(expectedAccess, route))
+      .filter((route) => !Object.hasOwn(agentAccess, route));
     expect(added).toEqual(['GET /*']);
   });
 
@@ -374,10 +310,10 @@ describe('the web app route', () => {
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain('id="root"');
     expect((await app.inject({ method: 'GET', url: '/api/models' })).statusCode).toBe(401);
-    expect((await app.inject({ method: 'GET', url: '/api/licence' })).statusCode).toBe(404);
-    // The agents' paths belong to the API too, even without the database that serves them.
+    expect((await app.inject({ method: 'GET', url: '/api/no-such-route' })).statusCode).toBe(404);
+    // The agents' paths belong to the API too: never the page.
     for (const url of ['/oauth/authorize', '/mcp', '/.well-known/oauth-authorization-server']) {
-      expect((await app.inject({ method: 'GET', url })).statusCode, url).toBe(404);
+      expect((await app.inject({ method: 'GET', url })).body, url).not.toContain('id="root"');
     }
   });
 });

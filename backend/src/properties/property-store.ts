@@ -149,13 +149,13 @@ export async function auditProperty(
 /**
  * Defines every custom key on these relationships (JGF edges) that isn't defined yet, as a text
  * property from models named after its key, and says which, with the number of values each has
- * here. For a model being stored (an import), in its transaction. With an actor (an import by an
- * Admin), each gets an audit row.
+ * here. For a model being stored (an import), in its transaction. Each gets an audit row naming
+ * the actor.
  */
 export async function defineKeysOf(
   tx: Queryable,
   edges: readonly { metadata?: unknown }[],
-  actor?: ModelAuthor,
+  actor: ModelAuthor,
 ): Promise<AddedRelationshipProperty[]> {
   // Nothing to look at: no lock taken.
   if (newRelationshipKeys(edges, () => false).length === 0) return [];
@@ -169,7 +169,7 @@ export async function defineKeysOf(
     existing,
   );
   await insertDefinitions(tx, added);
-  for (const definition of actor === undefined ? [] : added) {
+  for (const definition of added) {
     await auditProperty(tx, 'property-added', actor, {
       key: definition.key,
       fields: ['name', 'key', 'kind'],

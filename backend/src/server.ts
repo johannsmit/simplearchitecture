@@ -12,7 +12,6 @@ import { MigrationError } from './db/migrate.js';
 import { DatabaseStartError, failureMessages } from './db/service.js';
 import { loadOefMapping, OefMappingError, type OefMapping } from './oef/mapping-config.js';
 import { resolveFromRepoRoot } from './paths.js';
-import { ModelStoreError } from './storage/model-store.js';
 import { loadWebApp, WebAppError } from './web-app.js';
 
 let config: Config;
@@ -52,11 +51,7 @@ try {
     app.log.warn(replaced, 'setting no longer read: ignored, set its replacement');
   }
 } catch (error) {
-  if (
-    error instanceof ModelStoreError ||
-    error instanceof DatabaseStartError ||
-    error instanceof MigrationError
-  ) {
+  if (error instanceof DatabaseStartError || error instanceof MigrationError) {
     console.error(`API not started. ${error.message}`);
     process.exit(1);
   }

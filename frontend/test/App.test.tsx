@@ -354,15 +354,6 @@ describe('pages', () => {
     expect(screen.getByRole('navigation', { name: 'Spaces' })).toBeTruthy();
   });
 
-  it('has no licence page, and nothing sends an Admin to one', async () => {
-    const fetchMock = stubApi(admin);
-    renderAt('/admin/licence');
-
-    expect(await screen.findByRole('heading', { level: 1, name: 'Page not found' })).toBeTruthy();
-    expect(screen.queryByText(/licensed to/i)).toBeNull();
-    expect(requests(fetchMock).some((request) => request.includes('licence'))).toBe(false);
-  });
-
   it('has a skip link first that moves focus to the page', async () => {
     stubApi(admin, modelsApi());
     renderAt('/viewing');

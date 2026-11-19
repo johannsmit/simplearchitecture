@@ -19,7 +19,6 @@ import { z } from 'zod';
 import type { Db, Queryable } from '../db/db.js';
 import {
   ConflictError,
-  EditingUnavailableError,
   NotFoundError,
   parse as parseRequest,
   RejectedError,
@@ -89,24 +88,19 @@ interface UsageRow {
 const trimmed = (options: readonly string[]): string[] => options.map((option) => option.trim());
 
 export class PropertyService {
-  readonly #db: Db | undefined;
+  readonly #db: Db;
 
-  constructor(db: Db | undefined) {
+  constructor(db: Db) {
     this.#db = db;
   }
 
-  #database(): Db {
-    if (this.#db === undefined) throw new EditingUnavailableError();
-    return this.#db;
-  }
-
-  /** Every defined property, by name. None without a database. */
+  /** Every defined property, by name. */
   async list(): Promise<RelationshipPropertyDefinition[]> {
-    return this.#db === undefined ? [] : readDefinitions(this.#db);
+    return readDefinitions(this.#db);
   }
 
   async create(input: unknown, actor: ModelAuthor): Promise<RelationshipPropertyDefinition> {
-    const db = this.#database();
+    const db = this.#db;
     const request = parse(newSchema, input);
     return db.transaction(async (tx) => {
       await lockPropertyChanges(tx);
@@ -139,7 +133,7 @@ export class PropertyService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<RelationshipPropertyDefinition> {
-    const db = this.#database();
+    const db = this.#db;
     const key = keyOf(query);
     const request = parse(updateSchema, input);
     return db.transaction(async (tx) => {
@@ -208,7 +202,7 @@ export class PropertyService {
    * `query`: `{ key }`.
    */
   async delete(query: unknown, actor: ModelAuthor): Promise<DeletedRelationshipPropertyResult> {
-    const db = this.#database();
+    const db = this.#db;
     const key = keyOf(query);
     return db.transaction(async (tx) => {
       await lockPropertyChanges(tx);
@@ -259,7 +253,7 @@ export class PropertyService {
    * value, the most used values, and the labels using its name. For the Admin page.
    */
   async usage(): Promise<RelationshipPropertyUsage[]> {
-    const db = this.#database();
+    const db = this.#db;
     const definitions = await readDefinitions(db);
     const counts = await db.query<UsageRow>(
       `select d.key,

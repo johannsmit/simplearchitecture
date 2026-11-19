@@ -3,6 +3,7 @@ import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-l
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { settle } from './settle';
 
 // The canvas is laid out only by Tidy up and for a new canvas: adding or taking off cards, and
 // any change to relationships or elements, leaves every other card where it is. Made-up data.
@@ -28,6 +29,14 @@ function drop(id: string, clientX: number, clientY: number) {
   fireEvent(canvasEl(), event);
 }
 
+/** The canvas's pan and zoom, from React Flow's viewport transform. */
+function viewport(): { x: number; y: number; zoom: number } {
+  const transform =
+    canvasEl().querySelector<HTMLElement>('.react-flow__viewport')?.style.transform ?? '';
+  const match = /translate\(([-\d.]+)px, ?([-\d.]+)px\) scale\(([-\d.]+)\)/.exec(transform);
+  return { x: Number(match?.[1] ?? 0), y: Number(match?.[2] ?? 0), zoom: Number(match?.[3] ?? 1) };
+}
+
 /** Each card's place on the canvas (React Flow's transform), by element id. */
 function positions(): Map<string, string> {
   return new Map(cardIds().map((id) => [id, nodeOf(id)?.style.transform ?? '']));
@@ -43,13 +52,6 @@ function boxOf(id: string) {
     width: parseFloat(node.style.width),
     height: parseFloat(node.style.height),
   };
-}
-
-/** Lets any layout that might have started finish (ELK runs in-process in the tests). */
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  });
 }
 
 /** The cards that were there before are exactly where they were. */
@@ -207,15 +209,18 @@ describe.each(['viewing', 'modelling'] as const)('on a focus canvas in %s', (spa
 
   it('lands a row dragged from the list where it was dropped, moving no other card', async () => {
     const before = await openBakery(space, 'shop', aroundShop);
+    const view = viewport();
     drop('lonely', 1500, 900);
     await waitFor(() => {
       expect(card('lonely')).not.toBeNull();
     });
     await settle();
     expectUnmoved(before);
-    // The jsdom canvas has no size, so its view is unscaled at first: flow position = pointer,
-    // less the card's grip offset, when nothing is there.
-    expect(boxOf('lonely')).toMatchObject({ x: 1440, y: 878 });
+    // Where the pointer was on the canvas (the jsdom canvas sits at 0, 0), less the card's grip
+    // offset, when nothing is there.
+    const box = boxOf('lonely');
+    expect(box.x).toBeCloseTo((1500 - view.x) / view.zoom - 60, 6);
+    expect(box.y).toBeCloseTo((900 - view.y) / view.zoom - 22, 6);
     expectNoOverlapWith('lonely', aroundShop);
   });
 

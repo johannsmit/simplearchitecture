@@ -5,18 +5,11 @@ import type {
   ViewCardLayout,
   ViewLineRoute,
 } from '@simplearchitecture/shared';
-import {
-  act,
-  cleanup,
-  createEvent,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
 import { apiError, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { settle } from './settle';
 
 // Tidy relations: every card stays where it is, and every line is drawn again from the cards,
 // lines moved by hand too. Made-up data: a small orchard.
@@ -187,13 +180,6 @@ const layoutSaves = (calls: Call[]) => calls.filter((call) => call.url.endsWith(
 const changes = (calls: Call[]) => calls.filter((call) => call.method !== 'GET');
 const linesSwitch = () =>
   screen.getByRole<HTMLInputElement>('switch', { name: 'Show relationships' });
-
-/** Lets any layout or save that might have started finish (ELK runs in-process in the tests). */
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  });
-}
 
 async function openView(
   space: 'viewing' | 'modelling',

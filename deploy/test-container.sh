@@ -61,7 +61,7 @@ docker run --rm --entrypoint sh "$image" -c \
 pass "the app user can't write to /app"
 
 # --- A throwaway database. The app shares its network, so it reaches the database on 127.0.0.1
-#     (any other host needs TLS) and the published port is set here. ---
+#     (a plain connection, asked for with sslmode=disable) and the published port is set here. ---
 docker run -d --name "$db" -p "127.0.0.1:$port:8080" \
   -e POSTGRES_USER=sa -e POSTGRES_DB=sa -e POSTGRES_PASSWORD="$password" "$pg_image" >/dev/null
 for _ in $(seq 60); do
@@ -74,7 +74,7 @@ before=$(listening "$db")
 # --- The app, as a host should run it ---
 docker run -d --name "$app" --network "container:$db" \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
-  -e DATABASE_URL="postgres://sa:$password@127.0.0.1:5432/sa" \
+  -e DATABASE_URL="postgres://sa:$password@127.0.0.1:5432/sa?sslmode=disable" \
   -e OIDC_ISSUER=https://idp.example.test/tenant-a \
   -e OIDC_CLIENT_ID=11111111-2222-3333-4444-555555555555 \
   -e OIDC_CLIENT_SECRET="$(openssl rand -hex 24)" \

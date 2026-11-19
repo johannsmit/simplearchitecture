@@ -152,7 +152,7 @@ const elementUrl = (id: string) => `/api/models/${modelId}/elements/${id}`;
 const storedMetadata = async (id: string) =>
   (await store.get(modelId))?.graph.nodes?.[id]?.metadata;
 
-// Made up: a workshop, as an earlier version (or db:import-files) stored it, with odd names.
+// Made up: a workshop, as an earlier version stored it, with odd names.
 const workshop: JgfDocument = {
   graph: {
     label: 'Made-up workshop',

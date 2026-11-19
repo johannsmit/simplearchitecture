@@ -4,9 +4,10 @@ import type {
   StoredView,
   ViewCardLayout,
 } from '@simplearchitecture/shared';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { settle } from './settle';
 
 // The automatic layout (a new canvas, Tidy up) places cards by their relationships alone: an
 // element's type sets no row, on a focus canvas, in a view and inside a container. Each line here
@@ -123,12 +124,6 @@ function boxOf(id: string) {
     width: parseFloat(node.style.width),
     height: parseFloat(node.style.height),
   };
-}
-
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  });
 }
 
 /** Each line's source card is wholly above its target card. */

@@ -194,8 +194,15 @@ describe('a click on a line or its label', () => {
     const label = await labelOf(await line(/Gateway/));
     const viewport = () =>
       canvas().querySelector<HTMLElement>('.react-flow__viewport')?.style.transform;
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const before = viewport();
+    // Until the fit after the layout has stopped moving the view, so only the drag can move it.
+    let before = viewport();
+    for (let tries = 0; tries < 30; tries++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      if (viewport() === before && tries > 1) break;
+      before = viewport();
+    }
     pressAndMove(label, { x: 100, y: 100 }, { x: 130, y: 120 });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(viewport()).not.toBe(before);

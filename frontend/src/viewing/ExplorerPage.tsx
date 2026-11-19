@@ -69,7 +69,6 @@ import { ElementTree } from './explorer/ElementTree';
 import { Legend } from './explorer/Legend';
 import { RelationshipDetails } from './explorer/RelationshipDetails';
 import {
-  dropOldViewpoint,
   panels,
   parseDepth,
   readDepth,
@@ -116,7 +115,6 @@ import {
   spaceHome,
   readShownProperties,
   shownPropertiesSearch,
-  withoutOldViewpoint,
   type ExplorerSpace,
   type ExplorerView,
 } from './paths';
@@ -655,12 +653,6 @@ function Explorer({
   const details = usePanel('details');
   const [rememberedDepth, setRememberedDepth] = useState(readDepth);
   const depth = parseDepth(params.get('depth')) ?? rememberedDepth;
-  // An address or a preference from an older version: its fixed viewpoint is read once and goes.
-  useEffect(dropOldViewpoint, []);
-  useEffect(() => {
-    const search = withoutOldViewpoint(params);
-    if (search !== undefined) void navigate(`${shownPath}${search}`, { replace: true });
-  }, [navigate, params, shownPath]);
   // The relationship properties the lines show. Only the address holds them.
   const shownAsked = useMemo(() => readShownProperties(params), [params]);
   const [nest, setNest] = useState(readNestContained);

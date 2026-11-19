@@ -63,7 +63,7 @@ All pages are listed in [the guide](guide/README.md).
 - **Hosting:** [Run with Docker Compose](guide/docker-compose.md), [Hosting the image](guide/hosting.md), [Sign-in and roles](guide/sign-in.md), [Azure examples](guide/azure.md), [Database](guide/database.md)
 - **For IT and security teams:** [Security overview](guide/security-overview.md), including how to verify a release
 - **Building from source:** [Development](guide/development.md)
-- **Release notes:** [guide/releases/](guide/releases/)
+- **Release notes:** [Release notes](guide/releases/), one page per version
 
 ## Licence
 

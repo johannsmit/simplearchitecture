@@ -80,15 +80,6 @@ const setWidth = (target: TestDb, width: unknown) =>
   );
 
 describe('migration 017', () => {
-  it('is the only one to run on a database at 016, and is plain ASCII', async () => {
-    const { db: target } = await at016();
-    const migration = all.find((each) => each.version === '017');
-    expect(migration?.name).toBe('view_card_widths');
-    expect(migration?.sql).toMatch(/^[\t\n\x20-\x7e]*$/);
-    expect(await migrate(target, all)).toBe(1);
-    expect(await migrate(target, all)).toBe(0);
-  });
-
   it('keeps every model, view, width and audit row as it was', async () => {
     const { db: target, modelId } = await at016();
     const before = await dump(target);

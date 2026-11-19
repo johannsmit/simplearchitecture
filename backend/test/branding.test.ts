@@ -1,5 +1,4 @@
 import {
-  brandingUnavailableMessage,
   logoTooLargeMessage,
   logoTypeMessage,
   maxLogoBytes,
@@ -54,17 +53,16 @@ afterEach(async () => {
 const withDb = () =>
   idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) });
 
-async function signedOut(withDatabase = true): Promise<FastifyInstance> {
-  app = await buildTestApp({}, withDatabase ? withDb() : idpOptions(idp));
+async function signedOut(): Promise<FastifyInstance> {
+  app = await buildTestApp({}, withDb());
   return app;
 }
 
 async function signedInAs(
   roles: string[],
-  withDatabase = true,
   logLevel: 'silent' | 'info' = 'silent',
 ): Promise<{ target: FastifyInstance; cookie: string }> {
-  app = await buildTestApp({ LOG_LEVEL: logLevel }, withDatabase ? withDb() : idpOptions(idp));
+  app = await buildTestApp({ LOG_LEVEL: logLevel }, withDb());
   withClaims(idp, { roles, ...user });
   const { sessionCookie } = await signIn(app);
   return { target: app, cookie: sessionCookie };
@@ -172,7 +170,7 @@ describe('branding routes: access', () => {
 
 describe('branding routes: changes', () => {
   it('sets the colours, the logo, removes the logo and resets, with one audit row each', async () => {
-    const { target, cookie } = await signedInAs(['Admin'], true, 'info');
+    const { target, cookie } = await signedInAs(['Admin'], 'info');
     const logs = captureLogs(target);
 
     const colours = await call(target, 'PUT', '/api/admin/branding', {
@@ -410,22 +408,5 @@ describe('branding routes: serving the logo (hostile input)', () => {
     expect(res.headers['content-type']).toMatch(/^application\/json/);
     const head = await target.inject({ method: 'HEAD', url: '/api/branding/logo' });
     expect(head.statusCode).toBe(404);
-  });
-});
-
-describe('branding routes without a database', () => {
-  it('serves the neutral look, and says branding needs a database', async () => {
-    const { target, cookie } = await signedInAs(['Admin'], false);
-    const res = await target.inject({ method: 'GET', url: '/api/branding' });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ primary: null, secondary: null, logoUrl: null, version: 0 });
-    expect((await target.inject({ method: 'GET', url: '/api/branding/logo' })).statusCode).toBe(
-      404,
-    );
-    for (const [method, url, opts] of adminRoutes) {
-      const change = await call(target, method, url, { ...opts, cookie });
-      expect(change.statusCode, `${method} ${url}`).toBe(501);
-      expect(change.json<{ message: string }>().message).toBe(brandingUnavailableMessage);
-    }
   });
 });

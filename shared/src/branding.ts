@@ -1,13 +1,9 @@
-/**
- * The organisation's branding (Admin → Branding): a primary and a secondary colour and a logo.
- * Branding needs PostgreSQL; without a database everyone sees the neutral look and the Admin
- * routes answer 501 with `brandingUnavailableMessage`.
- */
+/** The organisation's branding (Admin → Branding): a primary and a secondary colour and a logo. */
 
 /**
  * Response body of `GET /api/branding` (public, also signed out) and of every Admin change.
  * Colours are `#rrggbb` in lower case, or null for the neutral look. `logoUrl` changes with the
- * version, so the logo can be cached for long. `version` is 0 without a database.
+ * version, so the logo can be cached for long.
  */
 export interface Branding {
   primary: string | null;
@@ -33,8 +29,6 @@ export const maxLogoBytes = 300 * 1024;
 /** Largest logo width and height (pixels). */
 export const maxLogoPixels = 1024;
 
-export const brandingUnavailableMessage =
-  'Branding needs a database. Ask your administrator to set up PostgreSQL.';
 export const brandingConflictMessage =
   'Someone else changed the branding after you opened it. Reload to see their change. Nothing was saved.';
 export const logoTypeMessage = 'The logo must be a PNG, JPEG or WebP image.';

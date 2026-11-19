@@ -4,8 +4,7 @@ import type { JgfEdge, ValidationIssue } from './jgf.js';
 import type { ArchitectureState, EdgeType } from './metamodel.js';
 
 /**
- * Editing one relationship (JGF edge) of a stored model (Modelling). Like elements, this needs
- * PostgreSQL: without a database the routes answer 501 with `editingUnavailableMessage`.
+ * Editing one relationship (JGF edge) of a stored model (Modelling).
  *
  * Only relationships with an id can be addressed (JGF edge ids are optional; an imported edge
  * without one is read-only). Rules for changes made in Modelling (stored models are

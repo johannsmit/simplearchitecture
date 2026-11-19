@@ -1,17 +1,12 @@
-import { readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
+import type { ModelAuthor } from '@simplearchitecture/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { loadMigrations, migrate, MigrationError } from '../src/db/migrate.js';
+import { loadMigrations, migrate } from '../src/db/migrate.js';
 import { sampleModel } from '../src/jgf/sample.js';
-import { FileModelStore } from '../src/storage/file-model-store.js';
-import { importFileModels } from '../src/storage/import-files.js';
 import { ModelNotStorableError, ModelStoreFullError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { describeModelStoreContract, model } from './model-store-contract.js';
 import { createTestDb, pgliteDb, resetTestDb, type TestDb } from './pglite.js';
 import { PGlite } from '@electric-sql/pglite';
-import { tempDataDir } from './helpers.js';
 
 const author: ModelAuthor = { id: 'oid-0002', name: 'Made-up Admin' };
 
@@ -150,63 +145,81 @@ describe('migrations', () => {
   });
 
   it('refuses a changed migration and one the API does not know', async () => {
-    const [first] = loadMigrations();
+    const [first, ...rest] = loadMigrations();
     if (!first) throw new Error('no migrations');
-    await expect(migrate(db, [{ ...first, checksum: 'changed' }])).rejects.toThrow(MigrationError);
+    await expect(migrate(db, [{ ...first, checksum: 'changed' }, ...rest])).rejects.toThrow(
+      /Migration 001 was changed after it was applied/,
+    );
     await expect(migrate(db, [])).rejects.toThrow(/doesn't know/);
   });
-});
 
-describe('moving the file store into PostgreSQL', () => {
-  it('imports every valid model with its id and data, skips them next time, and keeps the files', async () => {
-    const parent = tempDataDir();
-    const dir = join(parent, 'models');
+  it('runs only the missing ones: each on the database before it runs alone, once', async () => {
+    const all = loadMigrations();
+    const fresh = pgliteDb(new PGlite());
     try {
-      let time = Date.UTC(2026, 5, 1);
-      const files = await FileModelStore.open(dir, {
-        log: { warn: () => undefined },
-        now: () => (time += 1000),
-      });
-      const one = await files.save(sampleModel, author);
-      const two = await files.save(model('Made-up second'), author);
-      const store = await open();
-
-      const counts = await importFileModels(files, store);
-      expect(counts).toEqual({
-        found: 2,
-        imported: 2,
-        skipped: 0,
-        damaged: 0,
-        failed: 0,
-        elements: one.nodeCount + two.nodeCount,
-        relationships: one.edgeCount + two.edgeCount,
-      });
-      expect(await store.list()).toEqual(await files.list());
-      expect(await store.get(one.id)).toStrictEqual(await files.get(one.id));
-
-      const again = await importFileModels(files, await open());
-      expect(again).toMatchObject({ found: 2, imported: 0, skipped: 2, failed: 0 });
-      expect(readdirSync(dir).sort()).toEqual([`${one.id}.json`, `${two.id}.json`].sort());
+      for (let count = 1; count <= all.length; count += 1) {
+        expect(await migrate(fresh, all.slice(0, count)), all[count - 1]?.name).toBe(1);
+      }
+      expect(await migrate(fresh, all)).toBe(0);
     } finally {
-      rmSync(parent, { recursive: true, force: true });
+      await fresh.close();
     }
   });
 
-  it('counts damaged files and models that do not fit, and imports the rest', async () => {
-    const parent = tempDataDir();
-    const dir = join(parent, 'models');
-    try {
-      const files = await FileModelStore.open(dir, { log: { warn: () => undefined } });
-      await files.save(sampleModel, author);
-      await files.save(model('Second'), author);
-      const damaged: JgfDocument = { graph: { edges: 5 as unknown as [] } };
-      const { writeFileSync } = await import('node:fs');
-      writeFileSync(join(dir, `${crypto.randomUUID()}.json`), JSON.stringify(damaged));
+  // These have run on real databases: the API refuses to start if an applied migration changes, so
+  // a change is caught here first. Add a migration's checksum once it has run on a live database.
+  it('keeps the migrations that have run on live databases byte for byte', () => {
+    expect(
+      Object.fromEntries(
+        loadMigrations()
+          .filter((migration) => migration.version <= '010')
+          .map((migration) => [migration.version, migration.checksum]),
+      ),
+    ).toEqual({
+      '001': '884ce0e35691243ced77707d4f8123fa8339ec1254b103fa8a9b2e0627099bbf',
+      '002': 'e819fde833f1a754ada6014d135e2451305a7c62b14309cd374e5b0063b1cfc8',
+      '003': '238e13ee87fea6c3fffcc2d15256f493ade710d002fff1284ffe42b4109f38e0',
+      '004': '792ec9ac2ccd20ee39e4a985ea9a2b22d7870cc01ec23aef4c5dbc9281492559',
+      '005': '66a1fedabbb997ca83a4d788238445abc8184be214a3e75fa1aa229d27d36a54',
+      '006': '385114328467c2e9f7fbeae0da3d626bb79b44ad2408a4977544463487df26a3',
+      '007': '6cff1698afdaa979c5c096c3074c7afd57536d1a09b5be39369dd752958945df',
+      '008': '8cc0418be59558762b22fc78392f910658f8364ab25a5b520c230985b77ff7cd',
+      '009': '0cfe834707ec8d880b8d651a26fe31ba60bf307364b8d1e6f34e9b2c0d8bf03a',
+      '010': '665de022cca5d739207dc7d7a94ec0c4a39b79d58a389a33f470c8119669d229',
+    });
+  });
 
-      const counts = await importFileModels(files, await open({ maxModels: 1 }));
-      expect(counts).toMatchObject({ found: 3, imported: 1, damaged: 1, failed: 1 });
+  // From 010 on; 004 and 008 hold an arrow and have run, so they can't change.
+  it('keeps every migration file from 010 on plain ASCII', () => {
+    const later = loadMigrations().filter((migration) => migration.version >= '010');
+    expect(later.length).toBeGreaterThan(0);
+    for (const migration of later)
+      expect(migration.sql, migration.name).toMatch(/^[\t\n\x20-\x7e]*$/);
+  });
+
+  it('rolls back every pending migration when a later one fails, and runs clean afterwards', async () => {
+    const all = loadMigrations();
+    const fresh = pgliteDb(new PGlite());
+    try {
+      await migrate(fresh, all.slice(0, 5));
+      await fresh.query(
+        `insert into models (id, name, created_at, created_by_id, created_by_name, node_count,
+         edge_count, graph, metadata, has_nodes, has_edges)
+       values ('11111111-1111-4111-8111-111111111111', 'Made-up', '2026-10-01', 'oid-1', 'Made-up',
+         0, 0, '{}', '{}', false, false)`,
+      );
+      const failing = { version: '999', name: 'made_up_failure', sql: 'select 1/0', checksum: 'x' };
+      await expect(migrate(fresh, [...all, failing])).rejects.toThrow();
+      const applied = await fresh.query('select version from schema_migrations');
+      expect(applied).toHaveLength(5);
+      const [licence] = await fresh.query<{ present: boolean }>(
+        "select to_regclass('licence') is not null as present",
+      );
+      expect(licence?.present).toBe(true);
+      expect(await migrate(fresh, all)).toBe(all.length - 5);
+      expect(await fresh.query('select id from models')).toHaveLength(1);
     } finally {
-      rmSync(parent, { recursive: true, force: true });
+      await fresh.close();
     }
   });
 });

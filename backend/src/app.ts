@@ -13,12 +13,7 @@ import { AboutService, loadAbout } from './about/about-service.js';
 import { registerAuth } from './auth/auth.js';
 import { OidcClient } from './auth/oidc.js';
 import { PostgresSessionStore } from './auth/postgres-sessions.js';
-import {
-  defaultSessionTimeouts,
-  MemorySessionStore,
-  type SessionStore,
-  type SessionTimeouts,
-} from './auth/sessions.js';
+import { defaultSessionTimeouts, type SessionTimeouts } from './auth/sessions.js';
 import { oidcClientAuth, type Config } from './config.js';
 import { DatabaseService } from './db/service.js';
 import { errorBody } from './errors.js';
@@ -36,13 +31,11 @@ import { PropertyService } from './properties/property-service.js';
 import { viewRoutes } from './routes/views.js';
 import { modelRoutes } from './routes/models.js';
 import { spaceRoutes } from './routes/spaces.js';
-import { resolveDataDir } from './storage/data-dir.js';
 import { webAppRoutes } from './web-app.js';
 import { BrandingService } from './branding/branding-service.js';
 import { ElementService } from './editing/element-service.js';
 import { RelationshipService } from './editing/relationship-service.js';
 import { ViewService } from './views/view-service.js';
-import { FileModelStore } from './storage/file-model-store.js';
 import type { ModelStore } from './storage/model-store.js';
 import { PostgresModelStore } from './storage/postgres-model-store.js';
 import { ModelService } from './models/model-service.js';
@@ -71,11 +64,11 @@ export interface AppOptions {
   onRoute?: (route: { method: string | string[]; url: string }) => void;
   /** The validated OEF mapping. Without it, buildApp loads it (OEF_MAPPING_PATH or the default). */
   oefMapping?: OefMapping;
-  /** Where models are stored. Without it: PostgreSQL with a database, otherwise DATA_DIR. */
+  /** Where models are stored. Without it: PostgreSQL, in the database. */
   modelStore?: ModelStore;
   /**
-   * An open, migrated database (tests: PGlite). Without it, buildApp connects with DATABASE_URL
-   * when it is set. The caller closes a database it passes in.
+   * An open, migrated database (tests: PGlite). Without it, buildApp connects with DATABASE_URL.
+   * The caller closes a database it passes in.
    */
   database?: DatabaseService;
   /** The built web app (see web-app.ts), served for every path outside /api and /auth. */
@@ -271,23 +264,12 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
     return reply.code(statusCode).send(errorBody(statusCode, message));
   });
 
-  // With DATABASE_URL: PostgreSQL for models and sessions, migrated before the API listens.
-  // Throws DatabaseStartError or MigrationError, so the API doesn't start.
-  const database =
-    options.database ??
-    (config.DATABASE_URL === undefined
-      ? DatabaseService.notConfigured()
-      : await DatabaseService.connect(config, app.log));
+  // PostgreSQL for models and sessions, migrated before the API listens. Throws
+  // DatabaseStartError (DATABASE_URL missing too) or MigrationError, so the API doesn't start.
+  const database = options.database ?? (await DatabaseService.connect(config, app.log));
   if (options.database === undefined) app.addHook('onClose', () => database.close());
-  const db = database.db;
-  app.log.info({ storage: db === undefined ? 'files' : 'postgres' }, 'model storage');
-
-  // Throws ModelStoreError when DATA_DIR can't be used, so the API doesn't start.
-  const modelStore =
-    options.modelStore ??
-    (db === undefined
-      ? await FileModelStore.open(resolveDataDir(config.DATA_DIR), { log: app.log })
-      : await PostgresModelStore.open(db, { log: app.log }));
+  const { db } = database;
+  const modelStore = options.modelStore ?? (await PostgresModelStore.open(db, { log: app.log }));
 
   if (options.onRoute) {
     const { onRoute } = options;
@@ -296,17 +278,12 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
     });
   }
 
-  // AI agents (MCP) connect through the app's own OAuth server, which needs PostgreSQL.
-  const oauth =
-    db === undefined
-      ? undefined
-      : new OAuthService({ db, webOrigin: config.WEB_ORIGIN, now, log: app.log });
-  if (oauth !== undefined) {
-    oauth.startSweeping();
-    app.addHook('onClose', () => {
-      oauth.close();
-    });
-  }
+  // AI agents (MCP) connect through the app's own OAuth server.
+  const oauth = new OAuthService({ db, webOrigin: config.WEB_ORIGIN, now, log: app.log });
+  oauth.startSweeping();
+  app.addHook('onClose', () => {
+    oauth.close();
+  });
 
   // 3. Auth: sessions, the CSRF check and the access guard on every route, and /auth/*.
   const oidc = new OidcClient({
@@ -317,21 +294,15 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
     allowInsecureRequests: options.allowInsecureOidcRequests ?? false,
   });
   const timeouts = options.sessionTimeouts ?? defaultSessionTimeouts;
-  let sessions: SessionStore;
-  if (db === undefined) {
-    sessions = new MemorySessionStore(timeouts, now);
-  } else {
-    const stored = new PostgresSessionStore(db, { timeouts, now, log: app.log });
-    stored.startSweeping();
-    sessions = stored;
-  }
+  const sessions = new PostgresSessionStore(db, { timeouts, now, log: app.log });
+  sessions.startSweeping();
   app.addHook('onClose', () => sessions.close());
   await registerAuth(app, {
     config,
     oidc,
     sessions,
     now,
-    ...(oauth === undefined ? {} : { mcpGuard: mcpTokenGuard(oauth, now) }),
+    mcpGuard: mcpTokenGuard(oauth, now),
   });
 
   // 4. Routes. Each declares its access rule (see auth/access.ts).
@@ -360,23 +331,21 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   await app.register(viewRoutes(new ViewService(modelStore)));
   await app.register(databaseRoutes(database, now));
   await app.register(brandingRoutes(new BrandingService(db), uploads));
-  if (oauth !== undefined) {
-    await app.register(
-      oauthRoutes({
-        service: oauth,
-        webOrigin: config.WEB_ORIGIN,
-        now,
-      }),
-    );
-    await app.register(agentRoutes(oauth));
-    await app.register(
-      mcpRoutes({
-        service: new McpReadService(modelStore, properties),
-        resource: oauth.addresses.resource,
-        now,
-      }),
-    );
-  }
+  await app.register(
+    oauthRoutes({
+      service: oauth,
+      webOrigin: config.WEB_ORIGIN,
+      now,
+    }),
+  );
+  await app.register(agentRoutes(oauth));
+  await app.register(
+    mcpRoutes({
+      service: new McpReadService(modelStore, properties),
+      resource: oauth.addresses.resource,
+      now,
+    }),
+  );
   if (options.extraRoutes) await app.register(options.extraRoutes);
   // Last: the web app answers only what no API route does.
   if (options.webApp) await app.register(webAppRoutes(options.webApp));

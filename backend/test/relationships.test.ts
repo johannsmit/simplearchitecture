@@ -1,6 +1,5 @@
 import {
   definitionsForKeys,
-  editingUnavailableMessage,
   maxViewElements,
   type DeletedRelationshipResult,
   type ElementConflict,
@@ -80,16 +79,10 @@ afterEach(async () => {
   app = undefined;
 });
 
-async function signedInAs(
-  roles: string[],
-  withDatabase = true,
-): Promise<{ target: FastifyInstance; cookie: string }> {
+async function signedInAs(roles: string[]): Promise<{ target: FastifyInstance; cookie: string }> {
   app = await buildTestApp(
     { LOG_LEVEL: 'trace' },
-    idpOptions(
-      idp,
-      withDatabase ? { database: DatabaseService.using(db, testConnection, silent) } : {},
-    ),
+    idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) }),
   );
   withClaims(idp, { roles, ...user });
   const { sessionCookie } = await signIn(app);
@@ -513,18 +506,6 @@ describe('relationship routes: new ends', () => {
       edge: { source: 'baker', target: 'oven' },
     });
     expect(await auditRows()).toEqual([]);
-  });
-});
-
-describe('relationship routes without a database', () => {
-  it('says editing is not available', async () => {
-    const { target, cookie } = await signedInAs(['Modeller'], false);
-    const res = await call(target, 'POST', `/api/models/${unknownModel}/relationships`, {
-      cookie,
-      body: { source: 'a', target: 'b', type: 'Relation' },
-    });
-    expect(res.statusCode).toBe(501);
-    expect(res.json()).toMatchObject({ statusCode: 501, message: editingUnavailableMessage });
   });
 });
 

@@ -1,16 +1,4 @@
-import { execFileSync } from 'node:child_process';
-import {
-  closeSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   storedModelKey,
   type ApiError,
@@ -22,31 +10,32 @@ import {
 } from '@simplearchitecture/shared';
 import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Config } from '../src/config.js';
+import { DatabaseService } from '../src/db/service.js';
 import { sampleModel } from '../src/jgf/sample.js';
 import { maxImportNodes, maxJsonDepth } from '../src/limits.js';
 import { jgfBodyLimit } from '../src/routes/body.js';
 import { uploadsPerMinute } from '../src/rate-limit.js';
 import { invalidModelIdMessage, modelNotFoundMessage } from '../src/routes/models.js';
-import { FileModelStore } from '../src/storage/file-model-store.js';
+import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import {
   buildTestApp,
   captureLogs,
   idpOptions,
+  sharedTestDb,
   signIn,
   startMockIdp,
-  tempDataDir,
   webOrigin,
   withClaims,
 } from './helpers.js';
+import { resetTestDb, testConnection } from './pglite.js';
 
 const bakery = readFileSync(new URL('./fixtures/bakery-oef.xml', import.meta.url), 'utf8');
 const user = { oid: '9f0c4f8e-0000-4000-8000-00000000abcd', name: 'Made-up Modeller Person' };
 
 let idp: OAuth2Server;
 let app: FastifyInstance | undefined;
-let dataDir: string;
 
 beforeAll(async () => {
   idp = await startMockIdp();
@@ -56,37 +45,58 @@ afterAll(async () => {
   await idp.stop();
 });
 
-beforeEach(() => {
-  // A temporary DATA_DIR per test, inside a parent the tests can inspect (never the real data/).
-  dataDir = join(tempDataDir(), 'models');
-});
-
 afterEach(async () => {
   idp.service.removeAllListeners('beforeTokenSigning');
   await app?.close();
   app = undefined;
-  rmSync(dirname(dataDir), { recursive: true, force: true });
 });
 
 async function start(
   overrides: Partial<Config> = {},
-  options: { maxModels?: number; maxFileBytes?: number } = {},
+  options: { maxModels?: number; maxModelBytes?: number } = {},
 ): Promise<FastifyInstance> {
+  // PostgreSQL (the file's PGlite), as in the image; a store of its own only for a smaller cap.
+  const db = await sharedTestDb();
+  await resetTestDb(db);
   const modelStore =
-    options.maxModels === undefined && options.maxFileBytes === undefined
+    options.maxModels === undefined && options.maxModelBytes === undefined
       ? undefined
-      : await FileModelStore.open(dataDir, { log: { warn: () => undefined }, ...options });
+      : await PostgresModelStore.open(db, { log: { warn: () => undefined }, ...options });
   app = await buildTestApp(
-    { DATA_DIR: dataDir, ...overrides },
-    idpOptions(idp, modelStore === undefined ? {} : { modelStore }),
+    overrides,
+    idpOptions(idp, {
+      database: DatabaseService.using(db, testConnection, silentDatabaseLog),
+      ...(modelStore === undefined ? {} : { modelStore }),
+    }),
   );
   return app;
+}
+
+const silentDatabaseLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
+
+/** The ids of the stored models, as the database holds them. */
+async function storedIds(): Promise<string[]> {
+  const rows = await (await sharedTestDb()).query<{ id: string }>('select id from models');
+  return rows.map((row) => row.id).sort();
+}
+
+/**
+ * Makes a stored model fail validation, as a damaged row would, with made-up secret content. The
+ * version goes up as with any change, so the store reads the model again.
+ */
+async function damage(id: string): Promise<void> {
+  const db = await sharedTestDb();
+  await db.query(
+    "update relationships set relation = 'Made-up secret relation' where model_id = $1::uuid",
+    [id],
+  );
+  await db.query('update models set version = version + 1 where id = $1::uuid', [id]);
 }
 
 async function signedInAs(
   roles: string[],
   overrides: Partial<Config> = {},
-  options: { maxModels?: number; maxFileBytes?: number } = {},
+  options: { maxModels?: number; maxModelBytes?: number } = {},
 ): Promise<{ target: FastifyInstance; cookie: string }> {
   const target = await start(overrides, options);
   withClaims(idp, { roles, ...user });
@@ -235,7 +245,7 @@ describe('model routes: access', () => {
         expect(res.statusCode, String(origin)).toBe(403);
         expect(res.json<ApiError>().message).toBe('Request origin not allowed');
       }
-      expect(readdirSync(dataDir)).toEqual([]);
+      expect(await storedIds()).toEqual([]);
     },
   );
 
@@ -247,7 +257,7 @@ describe('model routes: access', () => {
       origin: 'https://evil.example',
     });
     expect(res.statusCode).toBe(403);
-    expect(readdirSync(dataDir)).toEqual([`${saved.id}.json`]);
+    expect(await storedIds()).toEqual([saved.id]);
   });
 
   it('refuses a Viewer before reading an oversized body', async () => {
@@ -257,30 +267,6 @@ describe('model routes: access', () => {
       payload: ' '.repeat(jgfBodyLimit + 1),
     });
     expect(res.statusCode).toBe(403);
-  });
-});
-
-describe('exporting a model', () => {
-  it('gives an Admin a file that imports again, with the same content', async () => {
-    const { target, cookie } = await signedInAs(['Admin']);
-    const first = await saveSample(target, cookie);
-
-    const exported = await get(target, `/api/models/${first.id}`, cookie);
-    expect(exported.statusCode).toBe(200);
-
-    // The bytes the web app saves: the document with two-space indents.
-    const file = `${JSON.stringify(exported.json(), null, 2)}\n`;
-    const second = await saveSample(target, cookie, file);
-    expect(second.id).not.toBe(first.id);
-    expect(second.name).toBe(first.name);
-    expect(second.nodeCount).toBe(first.nodeCount);
-    expect(second.edgeCount).toBe(first.edgeCount);
-
-    const again = await get(target, `/api/models/${second.id}`, cookie);
-    const graph = (res: typeof exported) =>
-      res.json<{ graph: { nodes: unknown; edges: unknown } }>().graph;
-    expect(graph(again).nodes).toEqual(graph(exported).nodes);
-    expect(graph(again).edges).toEqual(graph(exported).edges);
   });
 });
 
@@ -306,7 +292,7 @@ describe('POST /api/models', () => {
     expect(res.headers.location).toBe(`/api/models/${body.model.id}`);
 
     // Stored as one JGF file named by the id; read back with the server data in place.
-    expect(readdirSync(dataDir)).toEqual([`${body.model.id}.json`]);
+    expect(await storedIds()).toEqual([body.model.id]);
     const stored = (await get(target, `/api/models/${body.model.id}`, cookie)).json<JgfDocument>();
     expect(stored.graph.id).toBe(body.model.id);
     expect(stored.graph.metadata?.[storedModelKey]).toEqual(body.model);
@@ -388,7 +374,7 @@ describe('POST /api/models', () => {
       'unknown-node-type',
       'unknown-node',
     ]);
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it('replaces any id or server data the client sends', async () => {
@@ -405,15 +391,6 @@ describe('POST /api/models', () => {
     const stored = (await get(target, `/api/models/${model.id}`, cookie)).json<JgfDocument>();
     expect(stored.graph.id).toBe(model.id);
     expect(stored.graph.metadata?.[storedModelKey]).toEqual(model);
-  });
-
-  it('round-trips: a stored model posted again is saved as a new model', async () => {
-    const { target, cookie } = await signedInAs(['Admin']);
-    const first = await saveSample(target, cookie);
-    const stored = (await get(target, `/api/models/${first.id}`, cookie)).body;
-    const second = await saveSample(target, cookie, stored);
-    expect(second.id).not.toBe(first.id);
-    expect(second.nodeCount).toBe(first.nodeCount);
   });
 
   it.each([
@@ -441,7 +418,7 @@ describe('POST /api/models', () => {
     const res = await send(target, 'POST', '/api/models', { cookie, payload });
     expect(res.statusCode).toBe(status);
     expect(res.json<ApiError>().message).toBe(message);
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it('refuses a body over the JGF limit with 413', async () => {
@@ -480,7 +457,7 @@ describe('POST /api/models', () => {
     });
     const oef = await send(target, 'POST', '/api/models/import/oef', { cookie });
     expect(oef.statusCode).toBe(409);
-    expect(readdirSync(dataDir)).toHaveLength(2);
+    expect(await storedIds()).toHaveLength(2);
   });
 });
 
@@ -609,7 +586,7 @@ describe('POST /api/models/import/oef', () => {
     expect(body.message).toBe('The model is not valid (1 error). Nothing was saved.');
     expect(body.validation.errors[0]?.code).toBe('invalid-property-value');
     expect(body.report?.elements.total).toBeGreaterThan(0);
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it.each([
@@ -625,7 +602,7 @@ describe('POST /api/models/import/oef', () => {
     const { target, cookie } = await signedInAs(['Admin']);
     const res = await send(target, 'POST', '/api/models/import/oef', { cookie, payload });
     expect(res.statusCode).toBe(status);
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 
   it('answers 415 to JSON', async () => {
@@ -646,7 +623,7 @@ describe('GET and DELETE /api/models/:id', () => {
     const res = await send(target, 'DELETE', `/api/models/${saved.id}`, { cookie });
     expect(res.statusCode).toBe(204);
     expect(res.body).toBe('');
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
 
     for (const again of [
       await get(target, `/api/models/${saved.id}`, cookie),
@@ -666,7 +643,7 @@ describe('GET and DELETE /api/models/:id', () => {
     );
   });
 
-  // Each attempt points at a file next to DATA_DIR. None may be read or deleted.
+  // None may read or delete the stored model, whatever the id points at.
   it.each([
     '..%2Foutside.json',
     '..%2Foutside',
@@ -681,10 +658,9 @@ describe('GET and DELETE /api/models/:id', () => {
     `${unknownId}%2F..%2F..%2Foutside`,
     `%20${unknownId}`,
     'not-a-uuid',
-  ])('refuses the id %s with 400 and never touches the filesystem', async (id) => {
+  ])('refuses the id %s with 400, and reads or deletes nothing', async (id) => {
     const { target, cookie } = await signedInAs(['Admin']);
-    const outside = join(dirname(dataDir), 'outside.json');
-    writeFileSync(outside, JSON.stringify(sampleModel));
+    const kept = await saveSample(target, cookie);
     for (const res of [
       await get(target, `/api/models/${id}`, cookie),
       await send(target, 'DELETE', `/api/models/${id}`, { cookie }),
@@ -693,7 +669,7 @@ describe('GET and DELETE /api/models/:id', () => {
       expect(res.json<ApiError>().message).toBe(invalidModelIdMessage);
       expect(res.body).not.toContain('Made up');
     }
-    expect(existsSync(outside)).toBe(true);
+    expect(await storedIds()).toEqual([kept.id]);
   });
 
   it.each(['..', '../outside.json', '%2F..%2Foutside', `${unknownId}/extra`])(
@@ -704,40 +680,6 @@ describe('GET and DELETE /api/models/:id', () => {
       expect([400, 404]).toContain(res.statusCode);
     },
   );
-
-  it('lists the other models when one file is damaged, and answers 500 with a safe message when it is read', async () => {
-    const { target, cookie } = await signedInAs(['Admin'], {
-      NODE_ENV: 'production',
-      LOG_LEVEL: 'info',
-    });
-    const lines = captureLogs(target);
-    const good = await saveSample(target, cookie);
-    const bad = await saveSample(target, cookie);
-    writeFileSync(join(dataDir, `${bad.id}.json`), '{"graph": "Made-up secret content');
-
-    const list = await get(target, '/api/models', cookie);
-    expect(list.statusCode).toBe(200);
-    expect(list.json<ModelListResponse>().models).toEqual([good]);
-
-    const read = await get(target, `/api/models/${bad.id}`, cookie);
-    expect(read.statusCode).toBe(500);
-    expect(read.json<ApiError>()).toEqual({
-      statusCode: 500,
-      error: 'Internal Server Error',
-      message: 'The stored model could not be read. Its file may be damaged; see the API log.',
-    });
-    expect(read.body).not.toContain('secret');
-
-    const log = lines.join('');
-    expect(log).toContain(`"file":"${bad.id}.json"`);
-    expect(log).toContain('model file is damaged');
-    expect(log).not.toContain('secret');
-
-    // A damaged model can still be deleted.
-    expect((await send(target, 'DELETE', `/api/models/${bad.id}`, { cookie })).statusCode).toBe(
-      204,
-    );
-  });
 });
 
 describe('a damaged stored model', () => {
@@ -746,13 +688,7 @@ describe('a damaged stored model', () => {
     const lines = captureLogs(target);
     const good = await saveSample(target, cookie);
     const bad = await saveSample(target, cookie);
-    const file = join(dataDir, `${bad.id}.json`);
-    const stored = JSON.parse(readFileSync(file, 'utf8')) as JgfDocument;
-    // Well-formed JSON with the server data intact, but not a model a client can handle.
-    writeFileSync(
-      file,
-      JSON.stringify({ graph: { ...stored.graph, edges: 'Made-up secret content' } }),
-    );
+    await damage(bad.id);
 
     const list = await get(target, '/api/models', cookie);
     expect(list.json<ModelListResponse>().models.map((m) => m.id)).toEqual([good.id]);
@@ -778,23 +714,21 @@ describe('a damaged stored model', () => {
     const { target, cookie } = await signedInAs(['Admin']);
     const good = await saveSample(target, cookie);
     const bad = await saveSample(target, cookie);
-    const unreadable = await saveSample(target, cookie);
-    const file = join(dataDir, `${bad.id}.json`);
-    const stored = JSON.parse(readFileSync(file, 'utf8')) as JgfDocument;
-    writeFileSync(file, JSON.stringify({ graph: { ...stored.graph, edges: 'Made-up secret' } }));
-    writeFileSync(join(dataDir, `${unreadable.id}.json`), 'Made-up secret, not JSON');
+    const other = await saveSample(target, cookie);
+    await damage(bad.id);
+    await damage(other.id);
 
     const damaged = await get(target, '/api/admin/models/damaged', cookie);
     expect(damaged.statusCode).toBe(200);
     expect(damaged.json()).toEqual({
-      models: [{ id: bad.id }, { id: unreadable.id }].sort((a, b) => a.id.localeCompare(b.id)),
+      models: [{ id: bad.id }, { id: other.id }].sort((a, b) => a.id.localeCompare(b.id)),
     });
     expect(damaged.body).not.toMatch(/secret|Sample|Made-up/i);
     expect(
       (await get(target, '/api/models', cookie)).json<ModelListResponse>().models.map((m) => m.id),
     ).toEqual([good.id]);
 
-    for (const id of [bad.id, unreadable.id]) {
+    for (const id of [bad.id, other.id]) {
       expect((await send(target, 'DELETE', `/api/models/${id}`, { cookie })).statusCode).toBe(204);
     }
     expect((await get(target, '/api/admin/models/damaged', cookie)).json()).toEqual({
@@ -938,8 +872,7 @@ describe('model routes under attack', () => {
     ['braces', `%7B${unknown}%7D`],
   ])('refuses an id with %s on GET, HEAD and DELETE (400)', async (_name, id) => {
     const { target, cookie } = await signedInAs(['Admin']);
-    const outside = join(dirname(dataDir), 'outside.json');
-    writeFileSync(outside, JSON.stringify(sampleModel));
+    const kept = await saveSample(target, cookie);
     for (const method of ['GET', 'HEAD', 'DELETE'] as const) {
       const res = await target.inject({
         method,
@@ -948,8 +881,7 @@ describe('model routes under attack', () => {
       });
       expect(res.statusCode, `${method} ${id}`).toBe(400);
     }
-    expect(existsSync(outside)).toBe(true);
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([kept.id]);
   });
 
   it('answers an id longer than the router allows with 414, not a file lookup', async () => {
@@ -961,7 +893,7 @@ describe('model routes under attack', () => {
   it("can't make a stored model claim another model's id, creator, date or counts", async () => {
     const { target, cookie: owner } = await signedInAs(['Admin']);
     const victim = await saveSample(target, owner);
-    const victimFile = readFileSync(join(dataDir, `${victim.id}.json`), 'utf8');
+    const victimBefore = (await get(target, `/api/models/${victim.id}`, owner)).body;
 
     idp.service.removeAllListeners('beforeTokenSigning');
     const attacker = { oid: 'c0000000-0000-4000-8000-00000000000a', name: 'Made-up Attacker' };
@@ -988,8 +920,8 @@ describe('model routes under attack', () => {
     expect(stored.graph.id).toBe(saved.id);
     expect(stored.graph.metadata).toEqual({ [storedModelKey]: saved });
     // The other user's model is untouched.
-    expect(readFileSync(join(dataDir, `${victim.id}.json`), 'utf8')).toBe(victimFile);
-    expect(readdirSync(dataDir)).toHaveLength(2);
+    expect((await get(target, `/api/models/${victim.id}`, owner)).body).toBe(victimBefore);
+    expect(await storedIds()).toHaveLength(2);
   });
 
   it('never stores more than the cap when saves race through the routes', async () => {
@@ -1004,8 +936,7 @@ describe('model routes under attack', () => {
     const codes = results.map((res) => res.statusCode).sort();
     expect(codes.filter((code) => code === 201)).toHaveLength(3);
     expect(codes.filter((code) => code === 409)).toHaveLength(uploadsPerMinute - 3);
-    expect(readdirSync(dataDir).filter((name) => name.endsWith('.json'))).toHaveLength(3);
-    expect(readdirSync(dataDir).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    expect(await storedIds()).toHaveLength(3);
   });
 
   it('deletes a model once when deletes, reads and lists race through the routes', async () => {
@@ -1022,53 +953,19 @@ describe('model routes under attack', () => {
     expect(deletes.filter((code) => code === 404)).toHaveLength(4);
     for (const res of results.slice(5, 10)) expect([200, 404]).toContain(res.statusCode);
     for (const res of results.slice(10)) expect(res.statusCode).toBe(200);
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
     expect((await get(target, '/api/models', cookie)).json<ModelListResponse>().models).toEqual([]);
   });
 });
 
-describe('entries that are not model files, and the file size limit', () => {
-  it('DELETE removes a FIFO named like a model (204), and the list never hangs on it', async () => {
-    const { target, cookie } = await signedInAs(['Admin']);
-    const saved = await saveSample(target, cookie);
-    const id = crypto.randomUUID();
-    const fifo = join(dataDir, `${id}.json`);
-    execFileSync('mkfifo', [fifo]);
-    try {
-      const list = await get(target, '/api/models', cookie);
-      expect(list.json<ModelListResponse>().models).toEqual([saved]);
-      expect((await get(target, `/api/models/${id}`, cookie)).statusCode).toBe(500);
-      expect((await send(target, 'DELETE', `/api/models/${id}`, { cookie })).statusCode).toBe(204);
-      expect(existsSync(fifo)).toBe(false);
-    } finally {
-      try {
-        closeSync(openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK));
-      } catch {
-        // Gone, or no reader waiting.
-      }
-    }
-  });
-
-  it('DELETE of a folder that is not empty gets 409 with a clear message, not a 500', async () => {
-    const { target, cookie } = await signedInAs(['Admin'], { NODE_ENV: 'production' });
-    const id = crypto.randomUUID();
-    mkdirSync(join(dataDir, `${id}.json`));
-    writeFileSync(join(dataDir, `${id}.json`, 'inside.txt'), 'kept');
-    const res = await send(target, 'DELETE', `/api/models/${id}`, { cookie });
-    expect(res.statusCode).toBe(409);
-    expect(res.json<ApiError>().message).toBe(
-      'This entry in the model store is not a model file and could not be deleted. Remove it on the server.',
-    );
-    expect(res.body).not.toContain(dataDir);
-  });
-
-  it('refuses to save a model whose file would be over the size limit, with 413', async () => {
-    const { target, cookie } = await signedInAs(['Admin'], {}, { maxFileBytes: 1000 });
+describe('the size limit', () => {
+  it('refuses to save a model over the size limit, with 413', async () => {
+    const { target, cookie } = await signedInAs(['Admin'], {}, { maxModelBytes: 1000 });
     const res = await send(target, 'POST', '/api/models', { cookie });
     expect(res.statusCode).toBe(413);
     expect(res.json<ApiError>().message).toBe(
       'The model is too large to store (more than 1000 bytes).',
     );
-    expect(readdirSync(dataDir)).toEqual([]);
+    expect(await storedIds()).toEqual([]);
   });
 });

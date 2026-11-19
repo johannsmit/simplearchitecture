@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { linePath } from '../src/viewing/explorer/canvas/edgeLine';
 import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
 import { apiError, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { settle } from './settle';
 
 // A view keeps its cards where they were put: only the person's moves, resizes, adds, removes and
 // Tidy up save the layout; a layout or a placement the canvas made on its own saves nothing.
@@ -224,13 +225,6 @@ function boxOf(id: string) {
     width: parseFloat(node.style.width),
     height: parseFloat(node.style.height),
   };
-}
-
-/** Lets any layout or save that might have started finish (ELK runs in-process in the tests). */
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  });
 }
 
 async function open(space: 'viewing' | 'modelling', view: StoredView) {

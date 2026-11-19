@@ -2,7 +2,6 @@ import type { ApiError, ElementConflict, RelationshipRejected } from '@simplearc
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ConflictError,
-  EditingUnavailableError,
   NotFoundError,
   RejectedError,
   rejectedMessage,
@@ -58,9 +57,6 @@ export function refused(reply: FastifyReply, error: unknown): FastifyReply {
       missing: error.what,
     };
     return reply.code(404).send(body);
-  }
-  if (error instanceof EditingUnavailableError) {
-    return reply.code(501).send(errorBody(501, error.message));
   }
   if (error instanceof ModelNotStorableError || error instanceof ViewFullError) {
     const body: RelationshipRejected = {

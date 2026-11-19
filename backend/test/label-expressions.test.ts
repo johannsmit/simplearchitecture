@@ -120,24 +120,6 @@ describe('fillLabel', () => {
     expect(fill('{Source to Target Data}', kept).text).toBe('Kept');
   });
 
-  it('knows Data no longer: it is Source to target data and Target to source data', () => {
-    const subject = relation({ sourceToTargetData: 'Orders', targetToSourceData: 'Order ids' });
-    expect(fill('{Source to Target Data} -> {Target to Source Data}', subject).text).toBe(
-      'Orders -> Order ids',
-    );
-    expect(fill('{source to target  DATA}/{ target to source data }', subject).text).toBe(
-      'Orders/Order ids',
-    );
-    // The older names are names no more.
-    expect(fill('{Request Data}', subject)).toEqual({
-      text: '{Request Data}',
-      unknown: ['Request Data'],
-    });
-    expect(fill('{Data}', subject)).toEqual({ text: '{Data}', unknown: ['Data'] });
-    // Data kept from before reads by its own name, as custom metadata does.
-    expect(fill('{Data}', relation({ data: 'Old', sourceToTargetData: 'New' })).text).toBe('Old');
-  });
-
   it('fills in the values of Source to target data and Target to source data joined by ", "', () => {
     const subject = relation({
       sourceToTargetData: ['Orders', ' Invoices ', '', 'Order\n lines'],

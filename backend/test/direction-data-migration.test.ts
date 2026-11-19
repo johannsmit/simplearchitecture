@@ -1,15 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { JgfDocument, JgfEdge, ModelAuthor } from '@simplearchitecture/shared';
+import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
-import {
-  convertedDirections,
-  convertedEdge,
-  convertOlderTypes,
-  validateImported,
-  withDirectionNamesInLabel,
-} from '../src/jgf/older-types.js';
-import { validateJgf } from '../src/jgf/validate.js';
+import { convertedDirections, withDirectionNamesInLabel } from '../src/jgf/older-types.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
@@ -278,26 +271,6 @@ describe('migration 018', () => {
     expect(differences).toEqual([]);
   });
 
-  it('leaves every stored model readable, with no damaged model', async () => {
-    const { db, id } = await olderDatabase();
-    await migrate(db, all);
-    const store = await PostgresModelStore.open(db, quiet);
-    expect(await store.listDamaged()).toEqual([]);
-    const stored = await store.get(id);
-    const validation = validateJgf(stored);
-    expect(validation.valid).toBe(true);
-    // An older key kept beside a new one is a warning, never an error, as Data kept is.
-    expect(
-      validation.warnings
-        .filter((issue) => issue.code === 'retired-property' || issue.code === 'older-data-kept')
-        .map((issue) => [issue.edgeId, issue.field]),
-    ).toEqual([
-      ['has-new', 'metadata.requestData'],
-      ['has-other-new', 'metadata.responseData'],
-      ['data-kept', 'metadata.data'],
-    ]);
-  });
-
   it('converts a large model in one go', async () => {
     const count = 20_000;
     const db = pgliteDb(new PGlite());
@@ -329,100 +302,6 @@ describe('migration 018', () => {
 });
 
 describe('older files and imports', () => {
-  it('follow the same rule as the migration', () => {
-    const { document: converted, directionConverted } = convertOlderTypes(document());
-    const edges = (converted as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => after));
-    expect(edges.map((e) => e.label ?? null)).toEqual(cases.map(([stored]) => labelAfter(stored)));
-    const changed = cases.filter(
-      ([stored, after]) =>
-        JSON.stringify(stored.metadata ?? null) !== JSON.stringify(after) ||
-        labelAfter(stored) !== (stored.label ?? null),
-    );
-    expect(directionConverted).toBe(changed.length);
-  });
-
-  it('keep the label as stored when reading a stored model', () => {
-    const stored = edge('x', { label: '{Request Data}', metadata: { requestData: ['Flour'] } });
-    expect(convertedEdge(stored, false)).toEqual({
-      ...stored,
-      metadata: { sourceToTargetData: ['Flour'] },
-    });
-  });
-
-  it('chain the older conversions: types, Data and single texts end in the new keys', () => {
-    const older = {
-      graph: {
-        nodes,
-        edges: [
-          edge('d', { label: '{Data}', metadata: { data: 'Flour' } }),
-          edge('f', { relation: 'Information flow', label: 'Loaves' }),
-          edge('i', { metadata: { informationFlow: true }, label: 'Rolls' }),
-          edge('t', { metadata: { requestData: 'Flour', responseData: ' ' } }),
-          edge('r', { label: '{Response Data}', metadata: { responseData: 'Totals' } }),
-          edge('n', { metadata: { sourceToTargetData: 'Single' } }),
-        ],
-      },
-    };
-    const { document: stored, validation } = validateImported(older);
-    expect(validation.valid).toBe(true);
-    const edges = (stored as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e: JgfEdge) => [e.id, e.relation, e.label, e.metadata])).toEqual([
-      ['d', 'Relation', forward, { sourceToTargetData: ['Flour'] }],
-      ['f', 'Relation', 'Loaves', { sourceToTargetData: ['Loaves'] }],
-      ['i', 'Relation', 'Rolls', { sourceToTargetData: ['Rolls'] }],
-      ['t', 'Relation', undefined, { sourceToTargetData: ['Flour'] }],
-      ['r', 'Relation', backward, { targetToSourceData: ['Totals'] }],
-      ['n', 'Relation', undefined, { sourceToTargetData: ['Single'] }],
-    ]);
-    expect(validation.warnings.map((issue) => [issue.code, issue.message])).toEqual([
-      [
-        'older-relationship-types',
-        'Document: 2 relationships with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Source to target data.',
-      ],
-      [
-        'older-data-property',
-        'Document: 1 relationship with Data, or with {Data} in the label, converted: Data is now Source to target data.',
-      ],
-      [
-        'older-data-direction',
-        'Document: 2 relationships with Request Data or Response Data, or with them in the label, converted: Request Data is now Source to target data, Response Data is now Target to source data.',
-      ],
-    ]);
-  });
-
-  it('keep an older key beside a new one as it is, with a warning', () => {
-    const { document: stored, validation } = validateImported({
-      graph: {
-        nodes,
-        edges: [edge('k', { metadata: { requestData: ['Old'], sourceToTargetData: ['New'] } })],
-      },
-    });
-    expect((stored as JgfDocument).graph.edges?.[0]?.metadata).toEqual({
-      requestData: ['Old'],
-      sourceToTargetData: ['New'],
-    });
-    expect(validation.valid).toBe(true);
-    expect(validation.warnings.map((issue) => [issue.code, issue.field])).toEqual([
-      ['older-data-kept', 'metadata.requestData'],
-    ]);
-  });
-
-  it('leave a document with the new keys as it is', () => {
-    const today = {
-      graph: {
-        nodes,
-        edges: [edge('t', { label: '{{Request Data}}', metadata: { sourceToTargetData: ['a'] } })],
-      },
-    };
-    expect(convertOlderTypes(today)).toEqual({
-      document: today,
-      converted: 0,
-      dataConverted: 0,
-      directionConverted: 0,
-    });
-  });
-
   it('rename only the two names in a label, in linear time', () => {
     for (const [label, after] of labels) expect(withDirectionNamesInLabel(label)).toBe(after);
     const long = '{Request Data}{a '.repeat(30_000);

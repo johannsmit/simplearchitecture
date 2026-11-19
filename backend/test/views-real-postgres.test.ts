@@ -49,7 +49,7 @@ describe.skipIf(url === undefined)('a moved line, on a real PostgreSQL server', 
     idp = await startMockIdp();
     const config = { DATABASE_URL: url, DATABASE_WAIT_SECONDS: 5 };
     seed = await DatabaseService.connect(config, silent);
-    const store = await PostgresModelStore.open(seed.db as NonNullable<DatabaseService['db']>, {
+    const store = await PostgresModelStore.open(seed.db, {
       log: { warn: () => undefined },
     });
     modelId = (await store.save(quay, { id: 'oid-seed', name: 'Made-up Seeder' })).id;
@@ -57,7 +57,7 @@ describe.skipIf(url === undefined)('a moved line, on a real PostgreSQL server', 
 
   afterAll(async () => {
     if (modelId !== undefined) {
-      await seed?.db?.query('delete from models where id = $1::uuid', [modelId]);
+      await seed?.db.query('delete from models where id = $1::uuid', [modelId]);
     }
     await seed?.close();
     await idp.stop();

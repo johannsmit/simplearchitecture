@@ -42,7 +42,7 @@ The image reads **ten settings, all required**. Set them as environment variable
 
 How to get the provider's values is in [Sign-in and roles](sign-in.md), and for Microsoft Entra ID in [Azure examples](azure.md#microsoft-entra-id).
 
-If one of the ten is missing or invalid, the container refuses to start. Its log names the settings that are wrong, never their values. Other settings aren't read. The log names the few it recognises but doesn't use, such as `FRONTEND_PORT`, which only development reads.
+If one of the ten is missing or invalid, the container refuses to start. Its log names the settings that are wrong, never their values. Other settings aren't read.
 
 **Optional settings,** for hosts that need them; a standard host sets none:
 

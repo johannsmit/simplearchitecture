@@ -36,12 +36,12 @@ export const maxSourceIdLength = 200;
 export const jgfBodyLimit = 5 * 1024 * 1024;
 
 /**
- * Largest model file the store writes or reads (bytes): twice the JGF body limit, so a model
- * imported from a large OEF file still fits. A larger file is never read into memory.
+ * Largest model the store saves, as JSON (bytes): twice the JGF body limit, so a model imported
+ * from a large OEF file still fits.
  */
-export const maxModelFileBytes = 2 * jgfBodyLimit;
+export const maxModelBytes = 2 * jgfBodyLimit;
 
-/** How many model files the store reads at once (at startup and when listing). */
+/** How many models the store reads at once (when listing). */
 export const modelReadConcurrency = 4;
 
 /**

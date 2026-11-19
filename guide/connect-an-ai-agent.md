@@ -14,7 +14,7 @@ The app works like other MCP services: you give the agent one address, sign in w
 
 ## Claude on claude.ai and Claude Desktop
 
-Claude Desktop and the mobile apps use the connectors you add on claude.ai, so add it once there. On a Free, Pro, Max or Ultra plan:
+Claude Desktop and the mobile apps use the connectors you add on claude.ai, so add it once there. Claude's screens change from time to time, so yours may differ a little from these steps. On a personal plan:
 
 1. In Claude, go to **Customize** > **Connectors** and click **Add custom connector**.
 2. Enter a name (for example SimpleArchitecture) and the address, `https://<your app's domain>/mcp`.
@@ -23,9 +23,7 @@ Claude Desktop and the mobile apps use the connectors you add on claude.ai, so a
 5. Your browser opens the app. Sign in if it asks, check the consent page (see below) and click **Allow**.
 6. Back in Claude, the connector shows as connected. In a chat, turn it on under **+** > **Connectors** and ask about your models.
 
-On a Team or Enterprise plan, an Owner adds the connector for the organisation under **Organization settings** > **Connectors** (**Add**, then **Custom**, type **Web**), with the same address and settings. Each member then goes to **Customize** > **Connectors**, finds the connector with the **Custom** label, and clicks **Connect**: everyone signs in as themselves.
-
-On the Free plan, you can add one custom connector.
+On an organisation's plan, an Owner adds the connector for the organisation under **Organization settings** > **Connectors** (**Add**, then **Custom**, type **Web**), with the same address and settings. Each member then goes to **Customize** > **Connectors**, finds the connector with the **Custom** label, and clicks **Connect**: everyone signs in as themselves.
 
 ## Claude Code
 
@@ -51,7 +49,7 @@ Before an agent connects, the app shows who is asking and what the agent may do:
 - **Sends you back**: the address your browser returns to. The app checks this. For claude.ai and Claude Desktop it is `claude.ai`; for Claude Code it is "an app on this computer".
 - What the agent can do: read the models you can see in Viewing, and nothing else.
 
-Click **Allow** only if you started connecting this agent yourself, just now. If not, click **Deny**. (Allow works a second after the page shows, so a stray click can't allow it.)
+Click **Allow** only if you started connecting this agent yourself, just now. If not, click **Deny**.
 
 ## What the agent can ask
 
@@ -77,7 +75,7 @@ A connection lasts **7 days from the moment you allowed it**. Then the agent ask
 
 ## Disconnect
 
-- **In the app:** account menu > **Connected apps** > **Disconnect**. It stops at once. Each time you allowed an agent is its own row, so the same agent can appear twice.
+- **In the app:** account menu → **Connected apps** → **Disconnect**. It stops at once. Each time you allowed an agent is its own row, so the same agent can appear twice.
 - **In Claude:** remove the connector under **Customize** > **Connectors**. In Claude Code, run `claude mcp logout simplearchitecture` (which also ends the connection in the app), then `claude mcp remove simplearchitecture`.
 - **Admins** can end any user's connections, or all of them, under **Admin → Connected apps**.
 

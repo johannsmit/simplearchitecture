@@ -1,16 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { JgfDocument, JgfEdge, ModelAuthor } from '@simplearchitecture/shared';
+import type { JgfDocument, ModelAuthor } from '@simplearchitecture/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate } from '../src/db/migrate.js';
 import {
   convertedData,
-  convertedEdge,
   convertedEdgeType,
-  convertOlderTypes,
-  validateImported,
   withRequestDataInLabel,
 } from '../src/jgf/older-types.js';
-import { validateJgf } from '../src/jgf/validate.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { pgliteDb, type TestDb } from './pglite.js';
 
@@ -102,30 +98,6 @@ const cases: [Record<string, unknown>, unknown][] = [
     { requestData: 'Flour' },
   ]),
 ];
-
-const directionKeys: Record<string, string> = {
-  requestData: 'sourceToTargetData',
-  responseData: 'targetToSourceData',
-};
-
-/**
- * Metadata as reading it today gives it: a single text in Request Data or Response Data as a list,
- * a blank one gone, and each under its key named by direction.
- */
-const asRead = (metadata: unknown): unknown => {
-  if (typeof metadata !== 'object' || metadata === null) return metadata;
-  return Object.fromEntries(
-    Object.entries(metadata).flatMap(([key, value]): [string, unknown][] => {
-      const named = directionKeys[key] ?? key;
-      if (named === key || typeof value !== 'string') return [[named, value]];
-      return value.trim() === '' ? [] : [[named, [value]]];
-    }),
-  );
-};
-
-/** A label as reading a file today gives it: {Request Data} named by direction too. */
-const labelRead = (label: unknown): unknown =>
-  typeof label === 'string' ? label.replaceAll('{Request Data}', '{Source to Target Data}') : label;
 
 const document = (): JgfDocument =>
   ({
@@ -241,26 +213,6 @@ describe('migration 012', () => {
     expect(differences).toEqual([]);
   });
 
-  it('leaves every stored model readable, with no damaged model', async () => {
-    const { db, id } = await olderDatabase();
-    await migrate(db, all);
-    const store = await PostgresModelStore.open(db, quiet);
-    expect(await store.listDamaged()).toEqual([]);
-    const stored = await store.get(id);
-    const validation = validateJgf(stored);
-    expect(validation.valid).toBe(true);
-    // Data kept beside Request Data is a warning, never an error.
-    expect(
-      validation.warnings
-        .filter((issue) => issue.code === 'retired-property')
-        .map((issue) => issue.edgeId),
-    ).toEqual(['has-request']);
-    const edges = stored?.graph.edges ?? [];
-    expect(edges.filter((e) => e.metadata?.data !== undefined).map((e) => e.id)).toEqual([
-      'has-request',
-    ]);
-  });
-
   it('converts a large model in one go', async () => {
     const count = 20_000;
     const db = pgliteDb(new PGlite());
@@ -298,76 +250,6 @@ function sorted(value: unknown): unknown {
 }
 
 describe('older files and imports', () => {
-  it('follow the same rule as the migration', () => {
-    const { document: converted, dataConverted } = convertOlderTypes(document());
-    const edges = (converted as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e) => e.metadata ?? null)).toEqual(cases.map(([, after]) => asRead(after)));
-    expect(edges.map((e) => e.label ?? null)).toEqual(
-      cases.map(([stored]) => labelRead(labelAfter(stored))),
-    );
-    const changed = cases.filter(
-      ([stored, after]) =>
-        JSON.stringify(stored.metadata ?? null) !== JSON.stringify(after) ||
-        labelAfter(stored) !== (stored.label ?? null),
-    );
-    expect(dataConverted).toBe(changed.length);
-  });
-
-  it('keep the label as stored when reading a stored model', () => {
-    const stored = edge('x', { label: '{Data}', metadata: { data: 'Flour' } });
-    expect(convertedEdge(stored, false)).toEqual({
-      ...stored,
-      metadata: { sourceToTargetData: ['Flour'] },
-    });
-  });
-
-  it('note the conversion in the report, once per relationship', () => {
-    const older = {
-      graph: {
-        nodes,
-        edges: [
-          edge('d', { metadata: { data: 'Flour' } }),
-          edge('l', { label: '{Data}' }),
-          edge('f', { relation: 'Information flow', label: 'Loaves' }),
-          edge('t', { metadata: { requestData: 'Flour' } }),
-        ],
-      },
-    };
-    const { document: stored, validation } = validateImported(older);
-    expect(validation.valid).toBe(true);
-    expect(validation.warnings.map((issue) => [issue.code, issue.message])).toEqual([
-      [
-        'older-relationship-types',
-        'Document: 1 relationship with the older type Information flow or Integration, or with Information flow, converted to a Relation. A labelled Information flow keeps its label as Source to target data.',
-      ],
-      [
-        'older-data-property',
-        'Document: 2 relationships with Data, or with {Data} in the label, converted: Data is now Source to target data.',
-      ],
-      [
-        'older-data-direction',
-        'Document: 1 relationship with Request Data or Response Data, or with them in the label, converted: Request Data is now Source to target data, Response Data is now Target to source data.',
-      ],
-    ]);
-    const edges = (stored as JgfDocument).graph.edges ?? [];
-    expect(edges.map((e: JgfEdge) => [e.id, e.label, e.metadata])).toEqual([
-      ['d', undefined, { sourceToTargetData: ['Flour'] }],
-      ['l', '{Source to Target Data}', undefined],
-      ['f', 'Loaves', { sourceToTargetData: ['Loaves'] }],
-      ['t', undefined, { sourceToTargetData: ['Flour'] }],
-    ]);
-  });
-
-  it('leave a document without Data as it is', () => {
-    const today = { graph: { nodes, edges: [edge('t', { label: '{{Data}}' })] } };
-    expect(convertOlderTypes(today)).toEqual({
-      document: today,
-      converted: 0,
-      dataConverted: 0,
-      directionConverted: 0,
-    });
-  });
-
   it('rewrite only {Data}, in linear time', () => {
     for (const [label, after] of labels) expect(withRequestDataInLabel(label)).toBe(after);
     const long = '{Data}{a '.repeat(30_000);

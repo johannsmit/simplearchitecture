@@ -8,13 +8,13 @@ They apply to relationships of the type Relation only. Elements are unchanged: M
 
 - **Admins** add, edit and delete properties on Admin → Properties.
 - **Modellers and Admins** fill them in on a Relation's form in Modelling.
-- **Everyone with a role** sees them in the relationship's details panel, in Show Viewpoints and in labels.
+- **Everyone with a role** sees them in the relationship's details panel, in **Show Viewpoints** and in labels.
 
 ## Admin → Properties
 
 The page lists the properties by name, with each one's key, its kind ("Text", or "Choice · 3 options") and how many relationships hold a value, in how many models. Below them, **Standard properties of a Relation** lists the ones the metamodel sets: no property can use their names or keys.
 
-**+ New property** asks for:
+**New property** asks for:
 
 - **Name:** what people see, such as "Cost centre". It is also how a label uses the property: `{Cost centre}`. At most 60 characters, without `{` or `}`, and not the name of another property or a standard one.
 - **Key:** what models and JGF files store the values under, such as `costCentre`. It follows the name until you type in it. At most 100 characters.

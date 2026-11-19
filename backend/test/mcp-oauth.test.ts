@@ -7,6 +7,7 @@ import {
   accessTokenLifetimeMs,
   codeLifetimeMs,
   connectionLifetimeMs,
+  endedTokenMemoryMs,
   maxRegisteredClients,
   neverUsedClientLifetimeMs,
   unusedClientLifetimeMs,
@@ -157,12 +158,6 @@ describe('metadata', () => {
     });
     expect(as.json()).not.toHaveProperty('client_id_metadata_document_supported');
     expect(as.json()).not.toHaveProperty('scopes_supported');
-  });
-
-  it('is not there without a database', async () => {
-    app = await buildTestApp({}, idpOptions(idp));
-    const res = await app.inject({ method: 'GET', url: '/.well-known/oauth-authorization-server' });
-    expect(res.statusCode).toBe(404);
   });
 });
 
@@ -765,6 +760,46 @@ describe('storage and logs', () => {
     expect(await ids()).toEqual([connected]);
   });
 
+  it('knows an expired access token as its own for a day after it ends, then forgets it', async () => {
+    const { target, cookie } = await signedIn();
+    const { tokens } = await connect(target, cookie);
+    const service = new OAuthService({ db, webOrigin, now, log: silent });
+    const check = async () => (await service.checkAccessToken(tokens.access_token)).kind;
+
+    expect(await check()).toBe('valid');
+    time += accessTokenLifetimeMs;
+    expect(await check()).toBe('ended');
+    time += endedTokenMemoryMs - 1;
+    await service.sweep();
+    expect(await check()).toBe('ended');
+    time += 1;
+    await service.sweep();
+    expect(await check()).toBe('unknown');
+  });
+
+  it("knows the last token of an ended connection as its own for a day, and can't disconnect it", async () => {
+    const { target, cookie } = await signedIn();
+    const { clientId, tokens } = await connect(target, cookie);
+    const service = new OAuthService({ db, webOrigin, now, log: silent });
+    const [connection] = await db.query<{ id: string }>('select id from mcp_connections');
+    // Refreshed half an hour before the connection ends: the new token ends with it.
+    time += connectionLifetimeMs - 30 * 60_000;
+    const refreshed = await form(target, '/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: tokens.refresh_token,
+    });
+    const last = refreshed.json<Tokens>().access_token;
+    time += 30 * 60_000;
+    await service.sweep();
+    expect((await service.checkAccessToken(last)).kind).toBe('ended');
+    expect(await service.listConnections(user.oid)).toEqual([]);
+    expect(await service.disconnect(user.oid, connection?.id ?? '')).toBe(false);
+    time += endedTokenMemoryMs;
+    await service.sweep();
+    expect((await service.checkAccessToken(last)).kind).toBe('unknown');
+  });
+
   it('keeps a client that got a token for 30 days after its last use', async () => {
     const { target, cookie } = await signedIn();
     // Registered and connected in the same millisecond: it still counts as used.
@@ -773,13 +808,14 @@ describe('storage and logs', () => {
     const count = async (table: string) =>
       (await db.query<{ count: number }>(`select count(*)::int as count from ${table}`))[0]?.count;
 
-    time += connectionLifetimeMs - 1;
+    // An ended connection is kept a day, so its tokens are still known as the app's own.
+    time += connectionLifetimeMs + endedTokenMemoryMs - 1;
     expect(await service.sweep()).toEqual({ connections: 0, clients: 0 });
     time += 1;
     expect(await service.sweep()).toEqual({ connections: 1, clients: 0 });
     expect(await count('mcp_tokens')).toBe(0);
     expect(await count('mcp_clients')).toBe(1);
-    time += unusedClientLifetimeMs - connectionLifetimeMs;
+    time += unusedClientLifetimeMs - connectionLifetimeMs - endedTokenMemoryMs;
     expect(await service.sweep()).toEqual({ connections: 0, clients: 0 });
     // Its last use was moved a millisecond past its registration.
     time += 1;

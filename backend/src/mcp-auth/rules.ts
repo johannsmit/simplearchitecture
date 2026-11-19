@@ -14,6 +14,11 @@ export const unusedClientLifetimeMs = 30 * 24 * 60 * 60 * 1000;
  * registrations nobody finished don't pile up.
  */
 export const neverUsedClientLifetimeMs = 60 * 60 * 1000;
+/**
+ * An access token and its connection are kept this long after they end, so a call with a token
+ * that has just expired is still known as one of ours (401, never counted as a guess).
+ */
+export const endedTokenMemoryMs = 24 * 60 * 60 * 1000;
 /** How often expired codes, tokens, connections and unused clients are removed. */
 export const oauthSweepIntervalMs = 10 * 60 * 1000;
 

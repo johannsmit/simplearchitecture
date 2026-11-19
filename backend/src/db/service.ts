@@ -23,13 +23,12 @@ import {
 /** How long Test connection waits. */
 export const connectionTestTimeoutMs = 5_000;
 
-export const notConfiguredMessage = 'Not configured: using file storage.';
 export const connectedMessage = 'Connected to the database.';
 
 /** The only texts a failed test can show: driver messages can contain the host or the user. */
 export const failureMessages: Record<DatabaseFailure, string> = {
   unreachable: "Can't reach the database server. Check the host, the port and the firewall.",
-  tls: 'The secure (TLS) connection failed. Check the server certificate.',
+  tls: 'The secure (TLS) connection failed. Check the server certificate. A database without TLS on this machine or in Docker Compose needs sslmode=disable in DATABASE_URL.',
   auth: 'The database refused the sign-in. Check the user and password in DATABASE_URL.',
   identity:
     "Entra ID gave no token for the database. Check AZURE_CLIENT_ID, AZURE_TENANT_ID and the identity's federated credential.",
@@ -131,21 +130,16 @@ export interface DatabaseLogger {
 export type ConnectionInfo = Omit<DatabaseConnection, 'password'>;
 
 /**
- * The database behind the API, if any: its status and the connection test for Admin → Database.
- * Routes (and later the MCP server) call this; they never touch the driver.
+ * The database behind the API: its status and the connection test for Admin → Database. Routes
+ * (and later the MCP server) call this; they never touch the driver.
  */
 export class DatabaseService {
   private constructor(
-    readonly db: Db | undefined,
-    readonly connection: ConnectionInfo | undefined,
+    readonly db: Db,
+    readonly connection: ConnectionInfo,
     readonly migrations: readonly Migration[],
-    private readonly log: DatabaseLogger | undefined,
+    private readonly log: DatabaseLogger,
   ) {}
-
-  /** No DATABASE_URL: file storage. */
-  static notConfigured(migrations: readonly Migration[] = loadMigrations()): DatabaseService {
-    return new DatabaseService(undefined, undefined, migrations, undefined);
-  }
 
   /** An already open (and migrated) database, e.g. PGlite in tests. */
   static using(
@@ -206,27 +200,9 @@ export class DatabaseService {
     return new DatabaseService(db, connection, migrations, log);
   }
 
-  get configured(): boolean {
-    return this.db !== undefined;
-  }
-
   async status(): Promise<DatabaseStatus> {
     const total = this.migrations.length;
     const { db, connection } = this;
-    if (db === undefined || connection === undefined) {
-      return {
-        configured: false,
-        connected: false,
-        host: null,
-        port: null,
-        database: null,
-        user: null,
-        tls: false,
-        tlsVerified: false,
-        serverVersion: null,
-        migrations: { applied: null, total },
-      };
-    }
     const shown = {
       configured: true,
       host: connection.host,
@@ -261,7 +237,6 @@ export class DatabaseService {
 
   /** Opens a fresh connection and runs `select 1`. The message is always one of the fixed texts. */
   async test(): Promise<DatabaseTestResult> {
-    if (this.db === undefined) return { ok: false, message: notConfiguredMessage };
     try {
       await this.db.ping(connectionTestTimeoutMs);
       return { ok: true, message: connectedMessage };
@@ -272,14 +247,14 @@ export class DatabaseService {
   }
 
   async close(): Promise<void> {
-    await this.db?.close();
+    await this.db.close();
   }
 
   /** Logs the kind of failure and its code only, never the driver's message. */
   #logFailure(error: unknown, message: string): DatabaseFailure {
     const failure = classifyDatabaseError(error);
     const code = error instanceof DatabaseError ? error.code : undefined;
-    this.log?.warn({ failure, ...(code === undefined ? {} : { code }) }, message);
+    this.log.warn({ failure, ...(code === undefined ? {} : { code }) }, message);
     return failure;
   }
 }

@@ -15,7 +15,7 @@ import {
   readDefinitions,
 } from '../properties/property-store.js';
 import { validateJgf } from '../jgf/validate.js';
-import { maxModelFileBytes, maxStoredModels, modelReadConcurrency } from '../limits.js';
+import { maxModelBytes, maxStoredModels, modelReadConcurrency } from '../limits.js';
 import {
   isModelId,
   ModelNotStorableError,
@@ -39,7 +39,6 @@ import {
   mapLimited,
   newestFirst,
   newSummary,
-  recordedSummary,
   storedDocument,
   unstorable,
   type StoreLogger,
@@ -51,7 +50,7 @@ export interface PostgresModelStoreOptions {
   now?: () => number;
   /** Most models the store holds (tests). Default: maxStoredModels. */
   maxModels?: number;
-  /** Largest stored model as JSON, in bytes (tests). Default: maxModelFileBytes, as for files. */
+  /** Largest stored model as JSON, in bytes (tests). Default: maxModelBytes. */
   maxModelBytes?: number;
 }
 
@@ -429,7 +428,7 @@ export class PostgresModelStore implements ModelStore {
     this.#log = options.log;
     this.#now = options.now ?? Date.now;
     this.#maxModels = options.maxModels ?? maxStoredModels;
-    this.#maxBytes = options.maxModelBytes ?? maxModelFileBytes;
+    this.#maxBytes = options.maxModelBytes ?? maxModelBytes;
     this.views = new PostgresViewStore(db, this.#now);
   }
 
@@ -465,7 +464,6 @@ export class PostgresModelStore implements ModelStore {
   ): Promise<ModelSummary> {
     const summary = newSummary(randomUUID(), document, createdBy, this.#now());
     const stored = storedDocument(document, summary);
-    // The same limit as a model file, so a model fits whichever store holds it.
     if (Buffer.byteLength(JSON.stringify(stored), 'utf8') > this.#maxBytes) {
       throw new ModelTooLargeError(this.#maxBytes);
     }
@@ -481,31 +479,6 @@ export class PostgresModelStore implements ModelStore {
     this.#cache.set(summary.id, { version: 1, summary });
     if (added.length > 0) options.onNewProperties?.(added);
     return summary;
-  }
-
-  /**
-   * Moves a model from the file store: keeps its id and stored data. Skips a model that is
-   * already here. Throws as `save` does.
-   */
-  async importStored(document: JgfDocument): Promise<'imported' | 'exists'> {
-    const id = document.graph.id ?? '';
-    const summary = isModelId(id) ? recordedSummary(document, id) : undefined;
-    if (summary === undefined) throw new Error('not a stored model');
-    const stored = storedDocument(document, summary);
-    if (Buffer.byteLength(JSON.stringify(stored), 'utf8') > this.#maxBytes) {
-      throw new ModelTooLargeError(this.#maxBytes);
-    }
-    if (!isStorable(stored)) throw new ModelNotStorableError();
-    return this.#db.transaction(async (tx) => {
-      await tx.query('select pg_advisory_xact_lock($1::bigint)', [saveLock]);
-      const [present] = await tx.query('select 1 from models where id = $1::uuid', [id]);
-      if (present) return 'exists';
-      await this.#checkRoom(tx);
-      const rows = toRows(stored);
-      await this.#insert(tx, summary, rows);
-      await defineKeysOf(tx, rows.relationships);
-      return 'imported';
-    });
   }
 
   async delete(id: string): Promise<DeletedModel | undefined> {

@@ -11,6 +11,8 @@ const maxKeys = 10_000;
  */
 export class RateLimiter {
   readonly #calls = new Map<string, number[]>();
+  #nextSweep = Number.NEGATIVE_INFINITY;
+  #sweeps = 0;
 
   constructor(
     private readonly limit: number,
@@ -22,15 +24,19 @@ export class RateLimiter {
   allow(key: string): boolean {
     const time = this.now();
     const since = time - this.windowMs;
-    if (this.#calls.size > 1_000) {
+    // Expired keys go at most once a window: a pass over every key on each call would make each
+    // request cost more the more senders there are.
+    if (this.#calls.size > 1_000 && time >= this.#nextSweep) {
       for (const [other, times] of this.#calls) {
         if ((times.at(-1) ?? 0) <= since) this.#calls.delete(other);
       }
-      // Still full of live keys: drop the oldest (a Map keeps insertion order).
-      for (const other of this.#calls.keys()) {
-        if (this.#calls.size <= maxKeys) break;
-        this.#calls.delete(other);
-      }
+      this.#nextSweep = time + this.windowMs;
+      this.#sweeps += 1;
+    }
+    // Still full of live keys: drop the oldest (a Map keeps insertion order).
+    for (const other of this.#calls.keys()) {
+      if (this.#calls.size < maxKeys) break;
+      this.#calls.delete(other);
     }
     const recent = (this.#calls.get(key) ?? []).filter((at) => at > since);
     if (recent.length >= this.limit) {
@@ -45,6 +51,11 @@ export class RateLimiter {
   /** How many keys are kept (tests). */
   get size(): number {
     return this.#calls.size;
+  }
+
+  /** How many times expired keys were cleared out (tests). */
+  get sweeps(): number {
+    return this.#sweeps;
   }
 }
 
@@ -78,7 +89,7 @@ export function rateLimit(
  * Sign-in starts (`/auth/login`) and callbacks (`/auth/callback`) per client IP address per
  * minute, each counted on its own. Over it, the browser goes to `/?signin=busy`.
  */
-export const signInsPerMinute = 10;
+export const signInsPerMinute = 60;
 export const signInBusyPath = '/?signin=busy';
 
 /** Uploads (model imports and checks, the logo) per signed-in user per minute, all together. */

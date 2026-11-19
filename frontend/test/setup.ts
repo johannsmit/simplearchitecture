@@ -22,10 +22,24 @@ configure({
   },
 });
 
-// The canvas runs ELK in a web worker in the browser; tests run the same ELK in-process.
+// The canvas runs ELK in a web worker in the browser; tests run the same ELK in-process. Each
+// layout is counted while it runs, so `settle()` (test/settle.ts) can wait until none is left.
 vi.mock('../src/viewing/explorer/canvas/elkEngine', async () => {
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+  const { layoutsInFlight } = await import('./settle');
   const elk = new ELK();
+  const layout = elk.layout.bind(elk);
+  elk.layout = ((...args: Parameters<typeof layout>) => {
+    const running = layout(...args);
+    layoutsInFlight.started += 1;
+    layoutsInFlight.running.add(running);
+    void running
+      .catch(() => undefined)
+      .finally(() => {
+        layoutsInFlight.running.delete(running);
+      });
+    return running;
+  }) as typeof elk.layout;
   return { getElk: () => elk };
 });
 

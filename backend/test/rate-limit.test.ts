@@ -31,6 +31,19 @@ describe('RateLimiter', () => {
     expect(limiter.allow('a')).toBe(true);
   });
 
+  it('clears out expired keys at most once a window, not on every call', () => {
+    let time = 0;
+    const limiter = new RateLimiter(1, 60_000, () => time);
+    for (let i = 0; i < 2_000; i += 1) limiter.allow(`old-${i}`);
+    expect(limiter.sweeps).toBe(1);
+    time = 60_001;
+    for (let i = 0; i < 2_000; i += 1) limiter.allow(`new-${i}`);
+    // One more, on the first call of the new window: the old keys went, the new ones stay.
+    expect(limiter.sweeps).toBe(2);
+    expect(limiter.size).toBe(2_000);
+    expect(limiter.allow('new-0')).toBe(false);
+  });
+
   it('keeps memory bounded when many different keys arrive at once', () => {
     const limiter = new RateLimiter(1, 60_000, () => 0);
     for (let i = 0; i < 25_000; i += 1) limiter.allow(`key-${i}`);
@@ -71,13 +84,14 @@ function expectSignInBusy(res: LightMyRequestResponse) {
 }
 
 describe('sign-in starts (/auth/login)', () => {
-  it(`allows ${signInsPerMinute} per minute per client address, then sends to the busy page`, async () => {
+  // 60, not fewer: everyone behind one address (an office or a VPN) shares the count.
+  it('allows 60 per minute per client address, then sends to the busy page', async () => {
     let time = 1_000_000;
     const target = (app = await buildTestApp({}, idpOptions(idp, { now: () => time })));
     const login = (remoteAddress: string) =>
       target.inject({ method: 'GET', url: '/auth/login?returnTo=/viewing/made-up', remoteAddress });
 
-    for (let i = 0; i < signInsPerMinute; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       expect((await login('192.0.2.10')).statusCode).toBe(302);
     }
     // Nothing from the request (here returnTo) goes into the redirect.
@@ -105,12 +119,12 @@ describe('sign-in starts (/auth/login)', () => {
 });
 
 describe('sign-in callbacks (/auth/callback)', () => {
-  it(`allows ${signInsPerMinute} per minute per client address, counted apart from the starts`, async () => {
+  it('allows 60 per minute per client address, counted apart from the starts', async () => {
     const target = (app = await buildTestApp({}, idpOptions(idp)));
     const send = (url: string) =>
       target.inject({ method: 'GET', url, remoteAddress: '192.0.2.20' });
     // Without a login cookie each one fails (to the sign-in failed page), but still counts.
-    for (let i = 0; i < signInsPerMinute; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       expect((await send('/auth/callback?code=made-up&state=made-up')).statusCode).toBe(302);
     }
     expectSignInBusy(await send('/auth/callback?code=made-up&state=made-up'));

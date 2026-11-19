@@ -8,12 +8,7 @@ import { ConfigError, loadConfig, loadDatabaseConfig } from '../src/config.js';
 import { parseDatabaseUrl } from '../src/db/connection.js';
 import { classifyDatabaseError, DatabaseError } from '../src/db/db.js';
 import { loadMigrations } from '../src/db/migrate.js';
-import {
-  connectedMessage,
-  DatabaseService,
-  failureMessages,
-  notConfiguredMessage,
-} from '../src/db/service.js';
+import { connectedMessage, DatabaseService, failureMessages } from '../src/db/service.js';
 import { tooManyTestsMessage } from '../src/routes/database.js';
 import {
   buildTestApp,
@@ -62,7 +57,7 @@ describe('DATABASE_URL', () => {
         tls: true,
       },
     });
-    const local = parseDatabaseUrl('postgresql://me:p%40ss@localhost/dev');
+    const local = parseDatabaseUrl('postgresql://me:p%40ss@localhost/dev?sslmode=disable');
     expect(local).toMatchObject({
       ok: true,
       connection: { tls: false, password: 'p@ss', port: 5432 },
@@ -76,6 +71,41 @@ describe('DATABASE_URL', () => {
       ok: true,
       connection: { tls: true },
     });
+  });
+
+  it.each([
+    ['localhost', 'postgres://me@localhost/dev'],
+    ['127.0.0.1', 'postgres://me@127.0.0.1/dev'],
+    ['::1', 'postgres://me@[::1]/dev'],
+    ['a Compose service', 'postgres://me@db/dev'],
+  ])(
+    'uses verified TLS for %s unless sslmode=disable asks for a plain connection',
+    (_name, url) => {
+      expect(parseDatabaseUrl(url)).toMatchObject({ ok: true, connection: { tls: true } });
+      expect(parseDatabaseUrl(`${url}?sslmode=verify-full`)).toMatchObject({
+        ok: true,
+        connection: { tls: true },
+      });
+      expect(parseDatabaseUrl(`${url}?sslmode=disable`)).toMatchObject({
+        ok: true,
+        connection: { tls: false },
+      });
+    },
+  );
+
+  it.each([
+    ['a host with a domain', `${madeUpUrl}?sslmode=disable`],
+    ['an IP address', 'postgres://me@192.0.2.10/dev?sslmode=disable'],
+    ['an IPv6 address', 'postgres://me@[2001:db8::10]/dev?sslmode=disable'],
+    ['an address written as one number', 'postgres://me@3221225994/dev?sslmode=disable'],
+    ['an address written in hex', 'postgres://me@0xc000020a/dev?sslmode=disable'],
+    ['sslmode=prefer on this machine', 'postgres://me@localhost/dev?sslmode=prefer'],
+    ['sslmode=allow to a Compose service', 'postgres://me@db/dev?sslmode=allow'],
+    ['sslmode=no-verify on this machine', 'postgres://me@127.0.0.1/dev?sslmode=no-verify'],
+  ])('refuses a plain connection to %s', (_name, value) => {
+    const parsed = parseDatabaseUrl(value);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.ok ? '' : parsed.message).toContain('sslmode=disable');
   });
 
   it.each([
@@ -321,28 +351,6 @@ describe('the API with PostgreSQL', () => {
       expect(logs.join('\n')).not.toContain(password);
     });
 
-    it('says when there is no database: file storage', async () => {
-      app = await buildTestApp({}, idpOptions(idp));
-      const cookie = await signedInAs(['Admin'], app);
-      const status = await app.inject({
-        method: 'GET',
-        url: '/api/admin/database',
-        headers: { cookie },
-      });
-      expect(status.json<DatabaseStatus>()).toMatchObject({
-        configured: false,
-        connected: false,
-        host: null,
-        migrations: { applied: null, total: loadMigrations().length },
-      });
-      const test = await app.inject({
-        method: 'POST',
-        url: '/api/admin/database/test',
-        headers: { cookie, origin: webOrigin },
-      });
-      expect(test.json<DatabaseTestResult>()).toEqual({ ok: false, message: notConfiguredMessage });
-    });
-
     it('is for Admins only', async () => {
       app = await start();
       const signedOut = await app.inject({ method: 'GET', url: '/api/admin/database' });
@@ -388,6 +396,15 @@ describe('the API with PostgreSQL', () => {
       });
       expect(limited.statusCode).toBe(429);
       expect(limited.json<{ message: string }>().message).toBe(tooManyTestsMessage);
+      // Per person: signing in again gives no new budget.
+      const again = await signedInAs(['Admin'], app);
+      expect(again).not.toBe(cookie);
+      const afterSignIn = await app.inject({
+        method: 'POST',
+        url: '/api/admin/database/test',
+        headers: { cookie: again, origin: webOrigin },
+      });
+      expect(afterSignIn.statusCode).toBe(429);
     });
 
     it.each([

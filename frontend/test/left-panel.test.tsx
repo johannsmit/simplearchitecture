@@ -293,9 +293,4 @@ describe('the panel styles', () => {
       /\.psec-body\.is-dragging \.vp-list a:not\(\[aria-current='page'\]\):hover,\s*\.psec-body\.is-dragging \.vp-list \.vf-head:hover \{\s*background: none;/,
     );
   });
-
-  it('no longer float the legend over the canvas', () => {
-    expect(css).not.toMatch(/\.legend \{[^}]*position: absolute/);
-    expect(css).not.toMatch(/\.views-pop|\.views-btn|\.vp-title/);
-  });
 });

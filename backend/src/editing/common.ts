@@ -1,6 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
-  editingUnavailableMessage,
   elementConflictMessage,
   isPrototypeKey,
   nodeTypeKey,
@@ -24,14 +23,6 @@ import type {
  * What the element and relationship editing services share: the errors the routes translate, the
  * input parsing and the plan handed to the store. Messages are user-safe and fixed.
  */
-
-/** Editing needs PostgreSQL; the file store is read-only for editing. User-safe message. */
-export class EditingUnavailableError extends Error {
-  override name = 'EditingUnavailableError';
-  constructor() {
-    super(editingUnavailableMessage);
-  }
-}
 
 export type Missing =
   'model' | 'element' | 'relationship' | 'source' | 'target' | 'view' | 'folder' | 'property';

@@ -278,7 +278,6 @@ export {
 } from './imported-keys.js';
 export type { DatabaseStatus, DatabaseTestResult } from './database.js';
 export {
-  editingUnavailableMessage,
   elementConflictMessage,
   isPrototypeKey,
   prototypeKey,
@@ -356,7 +355,6 @@ export {
 } from './relationship-rules.js';
 export {
   brandingConflictMessage,
-  brandingUnavailableMessage,
   logoMediaTypes,
   logoTooLargeMessage,
   logoTypeMessage,

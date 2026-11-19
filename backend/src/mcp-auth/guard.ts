@@ -3,8 +3,11 @@ import type { FastifyReply, FastifyRequest, onRequestAsyncHookHandler } from 'fa
 import { RateLimiter } from '../rate-limit.js';
 import type { OAuthService } from './oauth-service.js';
 
-/** Refused tokens per client address per minute, before more are even looked up. */
-export const refusedTokensPerMinute = 30;
+/**
+ * Unrecognised tokens per client address per minute; past it, 429. A token the app issued that
+ * has expired doesn't count: agents send those every hour before refreshing.
+ */
+export const refusedTokensPerMinute = 300;
 
 /**
  * The access check on the MCP endpoint: only the app's own access tokens, sent as
@@ -36,8 +39,15 @@ export function mcpTokenGuard(service: OAuthService, now: () => number): onReque
     const header = request.headers.authorization;
     if (header === undefined) return challenge(reply);
     const match = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/i.exec(header);
-    const auth = match?.[1] === undefined ? undefined : await service.verifyAccessToken(match[1]);
-    if (auth === undefined) {
+    const check =
+      match?.[1] === undefined
+        ? { kind: 'unknown' as const }
+        : await service.checkAccessToken(match[1]);
+    if (check.kind === 'ended') {
+      request.log.info('mcp access token expired');
+      return challenge(reply, 'invalid_token');
+    }
+    if (check.kind === 'unknown') {
       if (!refusals.allow(request.ip)) {
         request.log.warn('mcp token refusals over the limit');
         return reply.code(429).header('retry-after', '60').send({
@@ -48,6 +58,7 @@ export function mcpTokenGuard(service: OAuthService, now: () => number): onReque
       request.log.info('mcp access token refused');
       return challenge(reply, 'invalid_token');
     }
+    const auth = check.auth;
     if (!spacesForRoles(auth.roles).includes('viewing')) {
       request.log.info({ userId: auth.userId }, 'mcp access refused: no role');
       return reply.code(403).send({

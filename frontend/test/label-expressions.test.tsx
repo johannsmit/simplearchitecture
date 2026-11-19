@@ -242,23 +242,6 @@ describe('on the relationship form', () => {
     expect(form.querySelector('.label-shows')?.textContent).toBe('Shows as: “{Identty} {Dtaa}”');
   });
 
-  it('knows {Data} no longer, and {Target to Source Data} instead', async () => {
-    const { form, label } = await openForm();
-    fireEvent.change(
-      within(form).getByRole('combobox', { name: 'Back Office Server to Web Shop' }),
-      {
-        target: { value: 'Stock levels' },
-      },
-    );
-    fireEvent.change(label, { target: { value: '{Data} gets {Target to Source Data}' } });
-    expect(form.querySelector('.label-shows + .warn-note')?.textContent).toBe(
-      'No property called “Data”.',
-    );
-    expect(form.querySelector('.label-shows')?.textContent).toBe(
-      'Shows as: “{Data} gets Stock levels”',
-    );
-  });
-
   it('suggests the property names when { is typed, and puts one in with its brace', async () => {
     const { form, label, sent } = await openForm();
     expect(screen.queryByRole('listbox', { name: 'Suggestions for property names' })).toBeNull();

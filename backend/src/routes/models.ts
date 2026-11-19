@@ -31,12 +31,10 @@ import type { ModelService } from '../models/model-service.js';
 import type { OefMapping } from '../oef/mapping-config.js';
 import {
   isModelId,
-  ModelNotDeletableError,
   ModelNotStorableError,
   ModelStoreFullError,
   ModelTooLargeError,
   ModelUnreadableError,
-  type DeletedModel,
   type ModelStore,
 } from '../storage/model-store.js';
 import {
@@ -195,8 +193,7 @@ export interface ModelRouteOptions {
 
 /**
  * Stored models. Viewing lists and reads them; only Admin creates, saves, imports and deletes
- * them. The `:id` is checked to be a UUID before the store sees it, so it can never name another
- * file.
+ * them. The `:id` is checked to be a UUID before the store sees it.
  *
  * Model errors (the JGF is well-formed but breaks the metamodel) get 422 with the validation
  * result: the client can show the issue list. A body that can't be parsed gets 400, a body over
@@ -215,11 +212,11 @@ export function modelRoutes({
 
     app.get<{ Reply: ModelListResponse }>('/api/models', { config: viewing }, async () => ({
       models: await store.list(),
-      // Editing needs PostgreSQL. Only the yes or no: never any connection details.
-      editable: store.elements !== undefined,
+      // Always true now that the API needs a database; the web app still reads it.
+      editable: true,
     }));
 
-    // Damaged or unreadable model files: ids only, for Admins, so they can be deleted.
+    // Damaged or unreadable models: ids only, for Admins, so they can be deleted.
     app.get<{ Reply: DamagedModelListResponse }>(
       '/api/admin/models/damaged',
       { config: admin },
@@ -237,7 +234,7 @@ export function modelRoutes({
           document = await store.get(id);
         } catch (error) {
           if (error instanceof ModelUnreadableError) {
-            // The store has logged the file name and the reason. The message is user-safe.
+            // The store has logged the id and the reason. The message is user-safe.
             return reply.code(500).send(errorBody(500, error.message));
           }
           throw error;
@@ -345,16 +342,7 @@ export function modelRoutes({
       async (request, reply) => {
         const { id } = request.params;
         if (!isModelId(id)) return reply.code(400).send(errorBody(400, invalidModelIdMessage));
-        let deleted: DeletedModel | undefined;
-        try {
-          deleted = await store.delete(id);
-        } catch (error) {
-          if (error instanceof ModelNotDeletableError) {
-            // The store has logged the file name and the reason. The message is user-safe.
-            return reply.code(409).send(errorBody(409, error.message));
-          }
-          throw error;
-        }
+        const deleted = await store.delete(id);
         if (deleted === undefined) {
           return reply.code(404).send(errorBody(404, modelNotFoundMessage));
         }

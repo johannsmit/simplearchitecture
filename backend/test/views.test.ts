@@ -1,5 +1,4 @@
 import {
-  editingUnavailableMessage,
   maxViewElements,
   viewConflictMessage,
   type DeletedViewResult,
@@ -88,16 +87,10 @@ afterEach(async () => {
   app = undefined;
 });
 
-async function signedInAs(
-  roles: string[],
-  withDatabase = true,
-): Promise<{ target: FastifyInstance; cookie: string }> {
+async function signedInAs(roles: string[]): Promise<{ target: FastifyInstance; cookie: string }> {
   app = await buildTestApp(
     { LOG_LEVEL: 'trace' },
-    idpOptions(
-      idp,
-      withDatabase ? { database: DatabaseService.using(db, testConnection, silent) } : {},
-    ),
+    idpOptions(idp, { database: DatabaseService.using(db, testConnection, silent) }),
   );
   withClaims(idp, { roles, ...user });
   const { sessionCookie } = await signIn(app);
@@ -841,31 +834,5 @@ describe('the views an element is used in', () => {
   it('a person without a role gets 403', async () => {
     const { target, cookie } = await signedInAs([]);
     expect((await call(target, 'GET', usedIn('crane'), { cookie })).statusCode).toBe(403);
-  });
-});
-
-describe('without a database', () => {
-  it('answers 501: views need PostgreSQL', async () => {
-    const { target, cookie } = await signedInAs(['Admin'], false);
-    for (const url of [
-      `/api/models/${unknownId}/views`,
-      `/api/models/${unknownId}/elements/crane/views`,
-    ]) {
-      const res = await call(target, 'GET', url, { cookie });
-      expect(res.statusCode).toBe(501);
-      expect(res.json<{ message: string }>().message).toBe(editingUnavailableMessage);
-    }
-    for (const res of [
-      await call(target, 'PUT', `/api/models/${unknownId}/views/${unknownId}/folder`, {
-        cookie,
-        body: { folder: 'X' },
-      }),
-      await call(target, 'PATCH', `/api/models/${unknownId}/view-folders`, {
-        cookie,
-        body: { from: 'X', to: 'Y' },
-      }),
-    ]) {
-      expect(res.statusCode).toBe(501);
-    }
   });
 });

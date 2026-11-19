@@ -2,7 +2,6 @@ import { brandingConflictMessage, maxLogoBytes } from '@simplearchitecture/share
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   BrandingService,
-  BrandingUnavailableError,
   LogoTooLargeError,
   LogoTypeError,
 } from '../src/branding/branding-service.js';
@@ -43,26 +42,6 @@ const storedRow = async () =>
       'select logo, logo_type, version from branding',
     )
   )[0];
-
-describe('BrandingService without a database', () => {
-  it('gives the neutral look, and refuses every change', async () => {
-    const none = new BrandingService(undefined);
-    expect(none.available).toBe(false);
-    expect(await none.get()).toEqual({ primary: null, secondary: null, logoUrl: null, version: 0 });
-    expect(await none.getLogo()).toBeUndefined();
-    const colours = { primary: '#123456', secondary: null, version: 1 };
-    await expect(none.setColours(colours, admin)).rejects.toBeInstanceOf(BrandingUnavailableError);
-    await expect(none.setLogo(png(), 'image/png', { version: 1 }, admin)).rejects.toBeInstanceOf(
-      BrandingUnavailableError,
-    );
-    await expect(none.removeLogo({ version: 1 }, admin)).rejects.toBeInstanceOf(
-      BrandingUnavailableError,
-    );
-    await expect(none.reset({ version: 1 }, admin)).rejects.toBeInstanceOf(
-      BrandingUnavailableError,
-    );
-  });
-});
 
 describe('BrandingService: storage', () => {
   it('starts neutral at version 1 in a migrated database (the row comes from migration 004)', async () => {

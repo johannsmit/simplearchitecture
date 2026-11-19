@@ -10,8 +10,7 @@ import type { ModelAuthor } from './models.js';
  * the canvas when the view opens. A view can be in one folder (one level of folders): a folder is
  * only a name on its views, so there are no empty folders. Viewer and higher list and open views;
  * Modeller and higher create, rename, change, lay out, put in folders and delete them. Every view
- * is visible to everyone who can see the model. Views need PostgreSQL: without a database the
- * routes answer 501 with `editingUnavailableMessage`.
+ * is visible to everyone who can see the model.
  *
  * Deleting an element or a relationship from the model removes it from every view, and deleting a
  * model deletes its views. Views aren't part of the JGF export or import.

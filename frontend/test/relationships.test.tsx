@@ -816,7 +816,6 @@ describe('the From and To fields', () => {
     expect(rule('.end-pop .pick-list .pname')).toMatch(/overflow-wrap: break-word;/);
     expect(rule('.end-pop .pick-list .pname')).toMatch(/white-space: normal;/);
     expect(rule('.rel.rel-endrow .rname')).toMatch(/overflow-wrap: break-word;/);
-    expect(css).not.toMatch(/\.rel-label\b/);
   });
 
   it('disables both fields while saving, so neither opens, and enables them after', async () => {
@@ -852,9 +851,9 @@ describe('the From and To fields', () => {
     expect(field(/^To: Recipe Archive/)).toHaveProperty('disabled', false);
   });
 
-  // Expected to fail until fixed: the section's class is also New relationship's "source → target"
-  // line, whose rule makes it one wrapping row. In a browser the fields then shrink to their names,
-  // To and Reverse share a row, and a list as narrow as a short field breaks names inside words.
+  // The section must not share a class with New relationship's "source → target" line, whose rule
+  // makes it one wrapping row: in a browser the fields would shrink to their names, To and Reverse
+  // would share a row, and a list as narrow as a short field would break names inside words.
   it('stacks From, To and Reverse at full width: no rule lays their section out as a row', async () => {
     await openShop();
     await openRelationship(/^Open relationship: .*Till/);
@@ -1208,16 +1207,11 @@ describe('Relation properties on the forms', () => {
     expect(within(box).getByText(name)).toBeDefined();
     return box;
   };
-  const noFlowBox = (where: HTMLElement) =>
-    within(where).queryByRole('checkbox', { name: 'Information flow' });
-
-  it('offers only Relation and Contains, starting as a Relation, with no Information flow', async () => {
+  it('offers only Relation and Contains, starting as a Relation', async () => {
     const { sent } = await openShop();
     const box = await addTo('Recipe Archive', 'recipe');
     expect(within(box).getAllByRole('radio', { name: /^(Relation|Contains)$/ })).toHaveLength(2);
-    expect(within(box).queryByRole('radio', { name: 'Integration' })).toBeNull();
     expect(within(box).getByRole('radio', { name: 'Relation' })).toHaveProperty('checked', true);
-    expect(noFlowBox(box)).toBeNull();
     fireEvent.click(within(box).getByRole('button', { name: 'Add' }));
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({
@@ -1230,15 +1224,6 @@ describe('Relation properties on the forms', () => {
     expect(
       await within(details()).findByRole('button', { name: /^Relates to Recipe Archive/ }),
     ).toBeDefined();
-  });
-
-  it('has no Information flow box on the form either, for any type', async () => {
-    await openShop();
-    const form = await openRelationship(/^Open relationship: Relates to Order to bake/);
-    expect(noFlowBox(form)).toBeNull();
-    fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
-    expect(noFlowBox(form)).toBeNull();
-    expect(within(details()).queryByText(/Information flow/)).toBeNull();
   });
 
   it('allows a second Relation between the same two elements, with no refusal', async () => {

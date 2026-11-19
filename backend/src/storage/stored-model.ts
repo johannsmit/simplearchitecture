@@ -4,7 +4,6 @@ import {
   type ModelAuthor,
   type ModelSummary,
 } from '@simplearchitecture/shared';
-import { z } from 'zod';
 import { countJgf } from '../jgf/validate.js';
 import { maxModelNameLength, maxSourceIdLength } from '../limits.js';
 
@@ -22,17 +21,6 @@ export const unstorable =
 export interface StoreLogger {
   warn(details: object, message: string): void;
 }
-
-// Unknown fields are ignored (and dropped), so a model written by a newer version still reads.
-export const summarySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  createdAt: z.string(),
-  createdBy: z.object({ id: z.string(), name: z.string() }),
-  nodeCount: z.number().int().nonnegative(),
-  edgeCount: z.number().int().nonnegative(),
-  sourceId: z.string().optional(),
-});
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -96,16 +84,6 @@ export function storedDocument(document: JgfDocument, summary: ModelSummary): Jg
       metadata: Object.fromEntries([[storedModelKey, summary], ...clientMetadata]),
     },
   };
-}
-
-/** The summary recorded in a stored document, or undefined when it has none for this id. */
-export function recordedSummary(document: unknown, id: string): ModelSummary | undefined {
-  const graph = isPlainObject(document) ? document.graph : undefined;
-  if (!isPlainObject(graph) || graph.id !== id || !isPlainObject(graph.metadata)) return undefined;
-  const parsed = summarySchema.safeParse(graph.metadata[storedModelKey]);
-  if (!parsed.success || parsed.data.id !== id) return undefined;
-  const { sourceId, ...summary } = parsed.data;
-  return sourceId === undefined ? summary : { ...summary, sourceId };
 }
 
 /** Newest first, then by id: the order of every model list. */

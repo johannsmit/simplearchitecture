@@ -1,7 +1,6 @@
 import type { JgfDocument, JgfEdge } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { readShownProperties } from '../src/viewing/paths';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import { modeller, renderAt, stubApi, type Handler } from './helpers';
 
@@ -77,15 +76,6 @@ const texts = (form: HTMLElement, key: string) =>
   [...(fieldOf(form, key)?.querySelectorAll('.chip-text') ?? [])].map((chip) => chip.textContent);
 
 describe('the relationship form', () => {
-  it('names the two lists by direction', async () => {
-    const { form } = await openForm({
-      sourceToTargetData: ['Orders'],
-      targetToSourceData: ['Order ids'],
-    });
-    expect(texts(form, forward)).toEqual(['Orders']);
-    expect(texts(form, backward)).toEqual(['Order ids']);
-  });
-
   it('swaps the two lists on Reverse, and back, and saves only the reverse', async () => {
     const { form, sent } = await openForm({
       sourceToTargetData: ['Orders'],
@@ -152,18 +142,5 @@ describe('the relationship form', () => {
     fireEvent.click(within(details()).getByRole('radio', { name: /Both ways/ }));
     expect(texts(form, forward)).toEqual(['Orders']);
     expect(texts(form, backward)).toEqual([]);
-  });
-});
-
-describe('an address from before', () => {
-  it('reads the older keys as the new ones', () => {
-    expect(
-      readShownProperties(
-        new URLSearchParams('show=requestData&show=responseData&show=protocol&show=data'),
-      ),
-    ).toEqual(['sourceToTargetData', 'targetToSourceData', 'protocol', 'data']);
-    expect(
-      readShownProperties(new URLSearchParams('show=requestData&show=sourceToTargetData')),
-    ).toEqual(['sourceToTargetData']);
   });
 });

@@ -99,6 +99,10 @@ export type DecisionResult =
   /** Allow from a user whose roles don't open Viewing: refused, and the request is kept. */
   | { kind: 'not-allowed' };
 
+/** What an access token sent to `/mcp` is: see OAuthService.checkAccessToken. */
+export type AccessTokenCheck =
+  { kind: 'valid'; auth: McpAuth } | { kind: 'ended' } | { kind: 'unknown' };
+
 export interface TokenResult {
   status: 200 | 400 | 401;
   body: object;
@@ -620,19 +624,25 @@ export class OAuthService {
   }
 
   /**
-   * Whom an access token is for, or undefined when it is unknown, expired, revoked, from an ended
-   * connection or for another address. The roles are those of the sign-in.
+   * Whom an access token is for (`valid`, with the roles of the sign-in); `ended` for one of ours
+   * that has expired, or whose connection has ended or is for another address; `unknown` for
+   * anything else, which the guard counts as a guess.
    */
-  async verifyAccessToken(token: string): Promise<McpAuth | undefined> {
-    if (!isSecretOf('access', token)) return undefined;
+  async checkAccessToken(token: string): Promise<AccessTokenCheck> {
+    if (!isSecretOf('access', token)) return { kind: 'unknown' };
     const connection = await this.#store.findByAccessToken(hashSecret(token), this.#now());
-    if (connection === undefined || connection.resource !== this.addresses.resource)
-      return undefined;
+    if (connection === undefined) return { kind: 'unknown' };
+    if (connection === 'ended' || connection.resource !== this.addresses.resource) {
+      return { kind: 'ended' };
+    }
     return {
-      userId: connection.userId,
-      roles: connection.roles,
-      clientId: connection.clientId,
-      connectionId: connection.id,
+      kind: 'valid',
+      auth: {
+        userId: connection.userId,
+        roles: connection.roles,
+        clientId: connection.clientId,
+        connectionId: connection.id,
+      },
     };
   }
 
@@ -644,7 +654,7 @@ export class OAuthService {
   /** Disconnects one of the user's agents: its tokens stop working at once. Whether it existed. */
   async disconnect(userId: string, connectionId: string): Promise<boolean> {
     if (!/^[0-9a-f-]{36}$/.test(connectionId)) return false;
-    const ended = await this.#store.endConnection(userId, connectionId);
+    const ended = await this.#store.endConnection(userId, connectionId, this.#now());
     if (ended) {
       this.#log.info({ audit: 'mcp-disconnected', userId, connectionId }, 'mcp agent disconnected');
     }

@@ -13,9 +13,8 @@ import type {
 } from '@simplearchitecture/shared';
 
 /**
- * Where models live: JGF files (FileModelStore) or PostgreSQL (PostgresModelStore). The routes
- * use only this interface. Methods never trust their input: an id that isn't a model id is simply
- * not found.
+ * Where models live (PostgresModelStore). The routes use only this interface. Methods never trust
+ * their input: an id that isn't a model id is simply not found.
  */
 export interface ModelStore {
   /**
@@ -24,8 +23,8 @@ export interface ModelStore {
    */
   list(): Promise<ModelSummary[]>;
   /**
-   * Ids of the model files that can't be read or are damaged (left out of `list`), sorted. For
-   * Admins, so they can delete them: never any content.
+   * Ids of the models that can't be read or are damaged (left out of `list`), sorted. For Admins,
+   * so they can delete them: never any content.
    */
   listDamaged(): Promise<string[]>;
   /** The stored model, or undefined when there is none. Throws ModelUnreadableError. */
@@ -35,26 +34,19 @@ export interface ModelStore {
    * replaces anything the document says about them; the document's own `graph.id` is kept as
    * `sourceId`. Throws ModelStoreFullError, ModelTooLargeError or ModelNotStorableError.
    *
-   * A store with property definitions (PostgreSQL) defines every custom key on the model's
-   * relationships that isn't defined yet, in the same transaction (`SaveOptions`).
+   * Defines every custom key on the model's relationships that isn't defined yet, in the same
+   * transaction (`SaveOptions`).
    */
   save(document: JgfDocument, createdBy: ModelAuthor, options?: SaveOptions): Promise<ModelSummary>;
-  /**
-   * Removes a model, or an entry with a model's name that isn't a model file. Undefined when there
-   * is none. Throws ModelNotDeletableError when such an entry can't be removed.
-   */
+  /** Removes a model, damaged or not. Undefined when there is none. */
   delete(id: string): Promise<DeletedModel | undefined>;
   /**
-   * Element and relationship editing (Modelling). Absent when the store can't edit (the file
-   * store): editing needs PostgreSQL. The editing services hold the rules; the store only reads
-   * and writes.
+   * Element and relationship editing (Modelling). The editing services hold the rules; the store
+   * only reads and writes.
    */
-  readonly elements?: ElementStore;
-  /**
-   * Views of a model. Absent when the store can't hold them (the file store): views need
-   * PostgreSQL. The view service holds the rules; the store only reads and writes.
-   */
-  readonly views?: ViewStore;
+  readonly elements: ElementStore;
+  /** Views of a model. The view service holds the rules; the store only reads and writes. */
+  readonly views: ViewStore;
 }
 
 export interface SaveOptions {
@@ -285,7 +277,7 @@ export interface DeletedModel {
   summary: ModelSummary | undefined;
 }
 
-// Ids are lower-case version 4 UUIDs (crypto.randomUUID). Nothing else ever reaches a file path.
+// Ids are lower-case version 4 UUIDs (crypto.randomUUID). Nothing else reaches a query.
 const modelIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export function isModelId(id: string): boolean {
@@ -300,8 +292,7 @@ export class ModelStoreFullError extends Error {
   }
 }
 
-export const modelUnreadableMessage =
-  'The stored model could not be read. Its file may be damaged; see the API log.';
+export const modelUnreadableMessage = 'The stored model could not be read. See the API log.';
 export const modelDamagedMessage =
   "The stored model is damaged: it doesn't pass validation, so it can't be shown. See the API log.";
 
@@ -319,7 +310,7 @@ export class ModelUnreadableError extends Error {
   }
 }
 
-/** The model is too large to store (its file would be over the read limit). User-safe message. */
+/** The model is too large to store. The message is user-safe. */
 export class ModelTooLargeError extends Error {
   override name = 'ModelTooLargeError';
   constructor(readonly maxBytes: number) {
@@ -351,22 +342,4 @@ export class ModelNotStorableError extends Error {
       "The model contains text that can't be stored (a NUL character or a broken Unicode character). Remove it and try again.",
     );
   }
-}
-
-/**
- * The entry for this id isn't a model file (e.g. a non-empty folder someone put in DATA_DIR) and
- * couldn't be removed. The message is user-safe.
- */
-export class ModelNotDeletableError extends Error {
-  override name = 'ModelNotDeletableError';
-  constructor(readonly id: string) {
-    super(
-      'This entry in the model store is not a model file and could not be deleted. Remove it on the server.',
-    );
-  }
-}
-
-/** The store can't be used (e.g. DATA_DIR is not a writable directory). For startup only. */
-export class ModelStoreError extends Error {
-  override name = 'ModelStoreError';
 }

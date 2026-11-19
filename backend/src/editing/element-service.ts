@@ -30,12 +30,11 @@ import {
   maxMetadataEntries,
   maxPropertyValueLength,
 } from '../limits.js';
-import type { EditableModel, ElementStore, ModelStore } from '../storage/model-store.js';
+import type { EditableModel, ModelStore } from '../storage/model-store.js';
 import {
   apply,
   ConflictError,
   deleteSchema,
-  EditingUnavailableError,
   isEntries,
   issueId,
   keyProblem,
@@ -55,7 +54,6 @@ import {
 // The names the element routes and tests know.
 export {
   ConflictError as ElementConflictError,
-  EditingUnavailableError,
   NotFoundError as ElementNotFoundError,
   RejectedError as ElementRejectedError,
   rejectedMessage as elementRejectedMessage,
@@ -239,20 +237,9 @@ export class ElementService {
     this.#store = store;
   }
 
-  /** Whether elements can be edited (the store is PostgreSQL). */
-  get editable(): boolean {
-    return this.#store.elements !== undefined;
-  }
-
-  #elements(): ElementStore {
-    const elements = this.#store.elements;
-    if (elements === undefined) throw new EditingUnavailableError();
-    return elements;
-  }
-
   /** One element with its version, for the editing form. */
   async getElement(modelId: string, elementId: string): Promise<ElementChangeResult> {
-    const model = await this.#elements().read(modelId);
+    const model = await this.#store.elements.read(modelId);
     if (model === undefined) throw new ElementNotFoundError('model');
     const { node, version } = currentElement(model, elementId);
     return {
@@ -266,7 +253,7 @@ export class ElementService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<ElementChangeResult> {
-    const elements = this.#elements();
+    const elements = this.#store.elements;
     const request = parse(newElementSchema, input);
     const { type } = request;
     const fields = ['name', 'type'];
@@ -304,7 +291,7 @@ export class ElementService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<ElementChangeResult> {
-    const elements = this.#elements();
+    const elements = this.#store.elements;
     const request = parse(updateElementSchema, input);
     let node: JgfNode | undefined;
     let warnings: ValidationIssue[] = [];
@@ -393,7 +380,7 @@ export class ElementService {
     input: unknown,
     actor: ModelAuthor,
   ): Promise<DeletedElementResult> {
-    const elements = this.#elements();
+    const elements = this.#store.elements;
     const { version } = parse(deleteSchema, input);
     let unnested: string[] = [];
     const applied = await elements.change(modelId, (model) => {

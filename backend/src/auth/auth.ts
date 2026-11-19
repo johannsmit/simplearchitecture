@@ -27,8 +27,8 @@ export interface AuthDependencies {
   oidc: OidcClient;
   sessions: SessionStore;
   now: () => number;
-  /** Checks the access token on the MCP endpoint (see mcp-auth/). Without it, there is none. */
-  mcpGuard?: onRequestAsyncHookHandler;
+  /** Checks the access token on the MCP endpoint (see mcp-auth/). */
+  mcpGuard: onRequestAsyncHookHandler;
 }
 
 interface CookieNames {
