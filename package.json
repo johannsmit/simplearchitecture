@@ -1,7 +1,7 @@
 {
   "name": "simplearchitecture",
   "private": true,
-  "version": "0.58.0",
+  "version": "0.59.0",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "workspaces": [
@@ -19,6 +19,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:links": "node deploy/check-doc-links.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -68,6 +77,14 @@ describe('the release workflow', () => {
 
   it('keeps the condition that skips GitHub attestations on a private repository', () => {
     expect(publish.match(/if: vars\.SKIP_ATTESTATIONS != 'true'/g)).toHaveLength(2);
+  });
+
+  it('finds the release notes as guide/releases/<tag>.md, which are named as release tags', () => {
+    expect(job(ci, 'release')).toContain('guide/releases/$TAG.md');
+    const notes = readdirSync(join(repoRoot, 'guide', 'releases'));
+    expect(notes.length).toBeGreaterThan(0);
+    for (const name of notes)
+      expect(name).toMatch(/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.md$/);
   });
 
   it('marks a pre-release, so it never becomes the latest release', () => {
@@ -263,6 +280,141 @@ describe('deploy/add-version-tags.sh', () => {
     expect(job(ci, 'publish')).toContain(
       'bash deploy/add-version-tags.sh "$IMAGE" "$DIGEST" "$TAGS"',
     );
+  });
+});
+
+describe('deploy/check-release-tag.mjs', () => {
+  const script = join(repoRoot, 'deploy', 'check-release-tag.mjs');
+  const workspaces = ['shared', 'backend', 'frontend'];
+
+  /** A made-up repository: the root and workspace package files, and the lockfile. */
+  function repository(versions: Partial<Record<string, string>> = {}, all = '0.60.0'): string {
+    const root = tempFolder();
+    const version = (name: string) => versions[name] ?? all;
+    const write = (path: string, value: unknown) => {
+      writeFileSync(join(root, path), `${JSON.stringify(value, null, 2)}\n`);
+    };
+    write('package.json', { name: 'made-up', version: version('package.json'), workspaces });
+    for (const name of workspaces) {
+      mkdirSync(join(root, name));
+      write(`${name}/package.json`, { name: `@made-up/${name}`, version: version(name) });
+    }
+    write('package-lock.json', {
+      name: 'made-up',
+      version: version('lockfile'),
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'made-up', version: version('lockfile root'), workspaces },
+        ...Object.fromEntries(
+          workspaces.map((name) => [name, { version: version(`lockfile ${name}`) }]),
+        ),
+        ...Object.fromEntries(
+          workspaces.map((name) => [`node_modules/@made-up/${name}`, { link: true }]),
+        ),
+      },
+    });
+    return root;
+  }
+
+  function check(tag: string, root: string) {
+    const run = spawnSync(process.execPath, [script, tag, root], { encoding: 'utf8' });
+    return { status: run.status, output: `${run.stdout}${run.stderr}` };
+  }
+
+  it('passes a tag that is exactly v and the version', () => {
+    const result = check('v0.60.0', repository());
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('v0.60.0 matches the version 0.60.0');
+  });
+
+  it('refuses a tag for another version, naming both', () => {
+    const result = check('v0.61.0', repository());
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('::error::');
+    expect(result.output).toContain('v0.61.0');
+    expect(result.output).toContain('0.60.0');
+    expect(result.output).toContain('Nothing was published');
+  });
+
+  it.each([
+    ['a pre-release', 'v0.60.0-rc.1'],
+    ['build metadata', 'v0.60.0+build.1'],
+    ['no v', '0.60.0'],
+    ['a capital V', 'V0.60.0'],
+    ['a shortened version', 'v0.60'],
+    ['a leading zero', 'v0.060.0'],
+    ['a space', 'v0.60.0 '],
+  ])('refuses a tag with %s, even when the package files agree', (_name, tag) => {
+    const result = check(tag, repository());
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('::error::');
+    expect(result.output).toContain("isn't a release tag");
+  });
+
+  it('refuses a pre-release tag whose version the package files also have', () => {
+    expect(check('v0.60.0-rc.1', repository({}, '0.60.0-rc.1')).status).toBe(1);
+  });
+
+  it.each([
+    ['a workspace package file', 'backend', 'backend/package.json'],
+    ['the lockfile', 'lockfile', 'package-lock.json'],
+    ["the lockfile's root package", 'lockfile root', 'package-lock.json'],
+    ["the lockfile's workspace entry", 'lockfile frontend', 'package-lock.json'],
+  ])('refuses any tag when %s disagrees, naming the file', (_name, key, file) => {
+    const root = repository({ [key]: '0.59.0' });
+    for (const tag of ['v0.60.0', 'v0.59.0']) {
+      const result = check(tag, root);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain("The package files don't agree on the version");
+      expect(result.output).toContain(file);
+      expect(result.output).toContain('0.59.0');
+    }
+  });
+
+  it('refuses when a package file is missing or has no version', () => {
+    const missing = repository();
+    rmSync(join(missing, 'shared', 'package.json'));
+    const noVersion = repository();
+    writeFileSync(join(noVersion, 'frontend', 'package.json'), '{"name":"made-up"}\n');
+    for (const [root, file] of [
+      [missing, 'shared/package.json'],
+      [noVersion, 'frontend/package.json'],
+    ] as const) {
+      const result = check('v0.60.0', root);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(file);
+    }
+  });
+
+  it('refuses a run with no tag', () => {
+    const run = spawnSync(process.execPath, [script], { encoding: 'utf8' });
+    expect(run.status).toBe(1);
+  });
+
+  it("passes this repository's own version", () => {
+    const version = (JSON.parse(read('package.json')) as { version: string }).version;
+    expect(spawnSync(process.execPath, [script, `v${version}`], { encoding: 'utf8' }).status).toBe(
+      0,
+    );
+  });
+
+  it('runs first in the publish job, before the sign-in to the registry and any push', () => {
+    const publish = job(ci, 'publish');
+    const checked = publish.indexOf('node deploy/check-release-tag.mjs "$TAG"');
+    expect(checked).toBeGreaterThan(publish.indexOf('actions/checkout'));
+    for (const later of [
+      'docker/login-action',
+      'push-by-digest=true',
+      'docker/setup-qemu-action',
+    ]) {
+      expect(publish.indexOf(later)).toBeGreaterThan(checked);
+    }
+    expect(publish).toContain('TAG: ${{ github.ref_name }}');
+  });
+
+  it('runs only in the publish job, so a push to main or a pull request is not affected', () => {
+    expect(ci.match(/check-release-tag\.mjs/g)).toHaveLength(1);
+    for (const name of ['check', 'image']) expect(job(ci, name)).not.toContain('check-release-tag');
   });
 });
 

@@ -96,7 +96,7 @@ interface ElementTreeProps {
 /**
  * Every element of the model grouped by node type (metamodel order), with search. An element
  * contained by one of the same type is listed under it (`elementListTree`). An ARIA tree with one
- * Tab stop; arrow keys, Home/End, Enter, `*` and type-ahead as in the README.
+ * Tab stop; arrow keys, Home/End, Enter, `*` and type-ahead as in guide/keyboard-shortcuts.md.
  */
 export function ElementTree({
   modelId,

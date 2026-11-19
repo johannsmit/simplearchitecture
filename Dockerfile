@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# One image: the API, which also serves the built web app (one origin). See the README,
-# "Hosting the image". Every setting comes from environment variables; nothing secret is in here.
+# One image: the API, which also serves the built web app (one origin). See guide/hosting.md.
+# Every setting comes from environment variables; nothing secret is in here.
 
 # Node 26 LTS on Alpine, pinned by tag and by digest (the multi-platform index), so Dependabot
 # updates both together (checked 2026-11-01). Named twice: the build stage runs on the build
@@ -22,8 +22,8 @@ COPY tsconfig.base.json ./
 COPY shared/ shared/
 COPY backend/ backend/
 COPY frontend/ frontend/
-# The commit the image is built from, shown to signed-in people with the version (README, "The
-# code version"). Optional: without it the app shows "unknown". Only hex is ever shown.
+# The commit the image is built from, named with the version (guide/development.md, "Building the
+# image yourself"). Optional: without it the app shows "unknown". Only hex is ever shown.
 ARG SOURCE_COMMIT=""
 RUN npm run build
 
@@ -65,7 +65,8 @@ LABEL org.opencontainers.image.licenses="LicenseRef-SimpleArchitecture"
 # npm, npx, corepack and yarn aren't used at runtime: removed, with any vulnerabilities in them.
 RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
     /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
-# Production fixes the port (8080) and everything else but the nine settings (README, Settings).
+# Production fixes the port (8080) and everything else but the ten settings
+# (guide/hosting.md#settings).
 ENV NODE_ENV=production
 WORKDIR /app
 # Owned by root and read-only to the app user: the app can't change its own code. Nothing is

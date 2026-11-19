@@ -9,7 +9,7 @@ set -euo pipefail
 image=${1:?Usage: $0 <image> <digest> <tags>}
 digest=${2:?Usage: $0 <image> <digest> <tags>}
 tags=${3:-}
-help='See "After a failed release run" in the README.'
+help='See "After a failed release run" in guide/development.md.'
 
 args=()
 while IFS= read -r tag; do

@@ -1,7 +1,7 @@
 {
   "name": "@simplearchitecture/frontend",
   "private": true,
-  "version": "0.58.0",
+  "version": "0.59.0",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {

@@ -38,6 +38,13 @@ export default defineConfig(
   },
 
   {
+    // Plain Node scripts run as is by CI (no build step, no dependencies).
+    files: ['deploy/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { globals: globals.node },
+  },
+
+  {
     files: ['backend/**/*.ts', 'shared/**/*.ts', '*.config.{js,ts}'],
     languageOptions: { globals: globals.node },
   },

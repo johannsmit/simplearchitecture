@@ -1,8 +1,9 @@
 # Checks every push to main and every pull request, and builds, checks and scans the image. In this
-# repository only (see the publish job's condition), a pushed version tag (v1.2.3) also publishes
-# the image to GitHub Container Registry: pushed by digest with no tag, then checked, tested,
-# scanned on both platforms, signed and attested, and only then tagged, so a failure in any of
-# those steps leaves no version tag. The SBOM and the scan results stay with a GitHub release.
+# repository only (see the publish job's condition), a pushed version tag (v1.2.3, exactly the
+# version in the package files) also publishes the image to GitHub Container Registry: pushed by
+# digest with no tag, then checked, tested, scanned on both platforms, signed and attested, and
+# only then tagged, so a failure in any of those steps leaves no version tag. The SBOM and the
+# scan results stay with a GitHub release.
 # Third-party actions and images are pinned by full commit SHA or digest (the comment names the
 # version). The only credential is the workflow's own GITHUB_TOKEN
 # (and its OIDC identity for the keyless signature); nothing secret is built into the image.
@@ -46,6 +47,9 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      # Every relative link and #anchor in the README, guide/ and metamodel/ resolves. Not a test, so
+      # a copy of the app with documents of its own still passes the tests.
+      - run: npm run check:links
       # High and critical advisories in what the image ships (production dependencies).
       - run: npm audit --omit=dev --audit-level=high
 
@@ -119,6 +123,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # First, so a tag that isn't exactly v and the version in the package files (v1.2.3, no
+      # pre-release) stops the run before the registry sign-in and any push. The runner's own Node.
+      - name: Check the tag against the version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node deploy/check-release-tag.mjs "$TAG"
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           image: ${{ env.BINFMT_IMAGE }}
@@ -290,7 +300,7 @@ jobs:
             # The release notes from guide/releases/<tag>.md when there is one, then the image line.
             {
               if [ -f "guide/releases/$TAG.md" ]; then cat "guide/releases/$TAG.md"; echo; fi
-              echo "Image: \`$IMAGE@$DIGEST\`. See the README, \"Verify a release\", to check its signature and SBOM."
+              echo "Image: \`$IMAGE@$DIGEST\`. To check its signature and SBOM, see [Verify a release](https://github.com/$GH_REPO/blob/$TAG/guide/security-overview.md#verify-a-release)."
             } > "$RUNNER_TEMP/notes.md"
             # A pre-release (v1.2.3-rc.1) never becomes the latest release, which the weekly scan reads.
             prerelease=()

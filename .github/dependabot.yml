@@ -1,7 +1,8 @@
 # Weekly update pull requests, grouped so there are few of them. Switch on Dependabot alerts and
 # security updates in the repository settings (Security → Code security). CI checks every pull
 # request like any other change. Not covered: the Trivy image in the workflows and the PostgreSQL
-# test image in deploy/test-container.sh (pinned by digest; update them by hand).
+# image in deploy/test-container.sh and deploy/compose/compose.yaml (pinned by digest; update them
+# by hand, the PostgreSQL one in both files at once).
 version: 2
 updates:
   - package-ecosystem: npm
