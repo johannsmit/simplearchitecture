@@ -172,7 +172,7 @@ describe('on the relationship form', () => {
     ]);
   });
 
-  it('follows Reverse and Change at once, keeping each list with its direction', async () => {
+  it('follows Reverse and a new To at once, keeping each list with its direction', async () => {
     const { form } = await openForm({
       opened: { sourceToTargetData: ['Orders'], targetToSourceData: ['Order ids'] },
     });
@@ -184,7 +184,7 @@ describe('on the relationship form', () => {
     expect(screen.getByText('Reversed. The data lists follow their ends.')).toBeTruthy();
     fireEvent.click(within(details()).getByRole('button', { name: 'Reverse direction' }));
     expect(screen.getByText('Reverse undone.')).toBeTruthy();
-    fireEvent.click(within(details()).getByRole('button', { name: /^Change To: Back Office/ }));
+    fireEvent.click(within(details()).getByRole('button', { name: /^To: Back Office/ }));
     fireEvent.click(
       within(within(details()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
     );

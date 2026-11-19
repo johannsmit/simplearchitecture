@@ -791,10 +791,6 @@
 }
 
 .canvas-overlay {
-  position: absolute;
-  top: 52px;
-  left: 50%;
-  z-index: 6;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -804,7 +800,6 @@
   background: var(--surface);
   box-shadow: var(--e1);
   font-size: 12.5px;
-  transform: translateX(-50%);
 }
 
 .canvas-overlay .spinner {
@@ -813,11 +808,6 @@
 }
 
 .canvas-notice {
-  position: absolute;
-  top: 52px;
-  left: 50%;
-  z-index: 5;
-  max-width: calc(100% - 32px);
   margin: 0;
   padding: 6px 12px;
   border: 1px solid var(--border);
@@ -826,7 +816,6 @@
   box-shadow: var(--e1);
   font-size: 12.5px;
   text-align: center;
-  transform: translateX(-50%);
 }
 
 /* Keyboard move mode hint: the card's name is cut at 200px. */
@@ -839,90 +828,134 @@
   vertical-align: bottom;
 }
 
-.canvas-overlay + .canvas-notice {
-  top: 92px;
-}
-
-/* Beside the open list of Show Viewpoints (260px wide, from 12px), so it never covers a notice. */
-.canvas:has(.line-props-pop) .canvas-notice {
-  left: 284px;
-  max-width: calc(100% - 296px);
-  transform: none;
-}
-
-/* No room beside it: under it instead (the list is at most 320px high, from 48px). */
-@media (max-width: 767px) {
-  .canvas:has(.line-props-pop) .canvas-notice {
-    top: 376px;
-    left: 12px;
-    max-width: calc(100% - 24px);
-  }
-}
-
-/* Show Viewpoints at the canvas's top left; the overlay and notices sit under. */
-.canvas-views {
+/*
+ * The canvas's top strip: Show Viewpoints at the top left, always open, and the notices beside it,
+ * centred in the space to its right. With less than 240px beside it, they wrap under it. It spans
+ * the canvas, so the panel's height can be a share of the canvas's; only its children take presses.
+ */
+.canvas-top {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  inset: 12px;
   z-index: 5;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 12px;
+  align-content: flex-start;
   align-items: flex-start;
-  max-width: calc(100% - 24px);
+  pointer-events: none;
 }
 
-/* Show Viewpoints: which relationship properties the lines show. */
+.canvas-top > * {
+  pointer-events: auto;
+}
+
+.canvas-notices {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  min-width: 240px;
+}
+
+/* Nothing to show: the column takes no presses, so the canvas under it can be used. */
+.canvas-top > .canvas-notices {
+  pointer-events: none;
+}
+
+.canvas-notices > * {
+  max-width: 100%;
+  pointer-events: auto;
+}
+
+/* Show Viewpoints: which relationship properties the lines show. A canvas control, like the zoom. */
 .line-props {
-  position: relative;
-}
-
-.line-props-btn {
-  box-shadow: var(--e1);
-  white-space: nowrap;
-}
-
-.line-props-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 20;
-  width: 260px;
-  max-width: calc(100vw - 32px);
-  max-height: 320px;
-  padding: 8px;
-  overflow-y: auto;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: max-content;
+  min-width: 160px;
+  max-width: 240px;
+  max-height: min(276px, 50%);
+  padding: 4px 0;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--surface-raised);
-  box-shadow: var(--e2);
+  background: var(--surface);
+  box-shadow: var(--e1);
 }
 
-.line-props-pop fieldset {
-  margin: 0;
-  padding: 0;
-  border: 0;
+.line-props-head {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  padding: 0 8px 0 10px;
 }
 
-.line-props-pop legend {
-  padding: 0 0 6px;
-  font-weight: 500;
+.line-props-head > span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.line-props-pop label {
+.line-props-head .linkbtn {
+  min-height: 24px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+/* Many choices scroll here; the header and the cap message stay. */
+.line-props-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.line-props-list label {
   display: flex;
   gap: 8px;
   align-items: center;
-  min-height: 28px;
-  overflow-wrap: anywhere;
+  min-height: 24px;
+  padding: 2px 10px;
+  font-size: 12.5px;
+  line-height: 16px;
+  overflow-wrap: break-word;
+  cursor: pointer;
 }
 
-.line-props-pop label:has(input:disabled) {
+.line-props-list label:hover {
+  background: var(--surface-2);
+}
+
+.line-props-list input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.line-props-list label:has(input:disabled) {
   color: var(--text-muted);
+  cursor: default;
 }
 
-.line-props-pop .linkbtn {
-  margin-top: 6px;
+.line-props-status {
+  flex: none;
+}
+
+.line-props-note {
+  margin: 0;
+  padding: 4px 10px 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* No Relations yet: the message right under the header. */
+.line-props-head + .line-props-note {
+  padding: 2px 10px 4px;
 }
 
 .edge-markers {
@@ -3613,60 +3646,171 @@ li.is-new {
   font-size: 12px;
 }
 
-/* An end with Change beside it (Modelling). */
-.end-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+/* The panel's ends (Viewing, and a relationship with no id): long names wrap at spaces. */
+.rel.rel-endrow .rname {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
-.end-row .rel-endrow {
+/*
+ * A relationship's ends on the form, From and To: fields in the form's look (they sit outside
+ * `.d-form`, so its input rules are written out here), each opening the element search under it.
+ */
+.end-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+}
+
+.end-label > span:first-child {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.end-anchor {
+  position: relative;
+}
+
+.end-field {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.end-field:hover:not(:disabled, [aria-expanded='true']) {
+  border-color: var(--text-muted);
+}
+
+.end-field:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.end-field[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.end-field[aria-invalid='true'] {
+  border-color: var(--critical);
+  box-shadow: inset 0 0 0 1px var(--critical);
+}
+
+.end-field:disabled {
+  cursor: default;
+}
+
+/* The type mark in an 18px slot, so both names start at the same place, on the first line. */
+.end-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 20px;
+}
+
+.end-missing {
+  display: inline-flex;
+  color: var(--warning);
+}
+
+.end-field .end-name {
   flex: 1;
   min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: manual;
 }
 
-.end-row .tag,
-.end-change {
+.end-field > .ico {
   flex: none;
+  margin-top: 2px;
+  color: var(--text-muted);
+  transition: transform var(--t-fast);
 }
 
-.end-change {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 12.5px;
+.end-field[aria-expanded='true'] > .ico {
+  transform: rotate(180deg);
 }
 
-/* The Change box: a search over the model's elements, under its end. */
-.end-pick {
-  display: grid;
-  gap: 4px;
-  margin: 4px 0 8px;
-  padding: 10px;
+.end-field:disabled > .ico {
+  opacity: 0.4;
+}
+
+/* The element search, floating under its field over what follows (as the value lists do). */
+.end-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 3;
+  padding: 6px;
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--surface-2);
+  background: var(--surface-raised);
+  box-shadow: var(--e2);
   font-size: 13px;
 }
 
-.end-pick > label {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.end-pick .pick-search input {
+.end-pop .pick-search input {
   border: 1px solid var(--field-border);
   background: var(--surface);
+}
+
+.end-pop .pick-list {
+  margin-top: 6px;
+  border: 0;
+  background: none;
+}
+
+.end-pop .pick-list [role='option'] {
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  line-height: 18px;
+}
+
+.end-pop .pick-list .pname {
+  overflow: visible;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+.end-pop .pick-list .swatch {
+  margin-top: 4px;
+}
+
+.end-pop .pick-list .rtype,
+.end-pop .pnote {
+  white-space: nowrap;
+}
+
+/* The form's ends section (not New relationship's `.rel-ends` line). */
+.end-section > .field-error,
+.end-section > .hint {
+  margin-top: 6px;
 }
 
 .reverse-row {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-top: 8px;
-}
-
-.rel-label {
-  margin: 8px 0 0;
-  font-size: 12.5px;
+  margin-top: 12px;
 }
 
 /* New element's name matches, each with Add to canvas. */

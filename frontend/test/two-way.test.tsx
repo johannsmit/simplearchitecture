@@ -108,10 +108,12 @@ describe('two-way relationships in the details panel', () => {
         name: 'Web Shop relates both ways to Back Office Server',
       }),
     ).toBeDefined();
-    expect(within(details()).getByRole('button', { name: /^Between: Web Shop/ })).toBeDefined();
+    // From and To on a two-way relationship too: From is the end stored as the source.
+    expect(within(details()).getByRole('button', { name: /^From: Web Shop/ })).toBeDefined();
     expect(
-      within(details()).getByRole('button', { name: /^And: Back Office Server/ }),
+      within(details()).getByRole('button', { name: /^To: Back Office Server/ }),
     ).toBeDefined();
+    expect(details().textContent).not.toMatch(/Between/);
     expect(within(details()).getByText('↔ Both ways')).toBeDefined();
   });
 });

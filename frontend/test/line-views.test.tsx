@@ -6,7 +6,7 @@ import {
   type JgfDocument,
   type JgfEdge,
 } from '@simplearchitecture/shared';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type * as Labels from '../src/viewing/explorer/canvas/labels';
 import {
@@ -63,10 +63,16 @@ const customerLine = () => line('Customer relates to Web Shop');
 const tillLine = () => line('Till relates to Web Shop');
 const labels = () =>
   [...document.querySelectorAll('.edge-label')].map((label) => label.textContent).sort();
-const button = () => screen.getByRole('button', { name: /^Show Viewpoints/ });
+/** Show Viewpoints: always open, so its choices are always there. */
+const viewpoints = () => screen.getByRole('group', { name: 'Show Viewpoints' });
+/** The names of the choices ticked. */
+const ticked = () =>
+  within(viewpoints())
+    .getAllByRole<HTMLInputElement>('checkbox')
+    .filter((box) => box.checked)
+    .map((box) => box.closest('label')?.textContent);
 const pick = (name: string) => {
-  if (button().getAttribute('aria-expanded') !== 'true') fireEvent.click(button());
-  fireEvent.click(screen.getByRole('checkbox', { name }));
+  fireEvent.click(within(viewpoints()).getByRole('checkbox', { name }));
 };
 
 async function open(show = '', document: JgfDocument = model) {
@@ -158,7 +164,7 @@ describe('a viewpoint on the canvas', () => {
       expect(labels()).toContain('Places orders');
     });
     expect(canvas().querySelectorAll('.is-grayed')).toHaveLength(0);
-    expect(button().textContent).toBe('Show Viewpoints');
+    expect(ticked()).toEqual([]);
   });
 
   it('shows the selected values in place of the label and grays out the rest', async () => {
@@ -174,7 +180,7 @@ describe('a viewpoint on the canvas', () => {
     expect(customerLine().classList.contains('is-grayed')).toBe(false);
     expect(tillLine().classList.contains('is-grayed')).toBe(true);
     expect(currentLocation()).toContain('show=protocol');
-    expect(button().textContent).toBe('Show Viewpoints: 1 selected');
+    expect(ticked()).toEqual(['protocol']);
 
     // One of several is enough, and values come in the list's order.
     pick('auth');
@@ -227,7 +233,7 @@ describe('a viewpoint on the canvas', () => {
     await waitFor(() => {
       expect(labels()).toContain('REST');
     });
-    expect(button().textContent).toBe('Show Viewpoints: 1 selected');
+    expect(ticked()).toEqual(['protocol']);
   });
 
   it('keeps the selection when moving to another element', async () => {
@@ -257,20 +263,21 @@ describe('a viewpoint on the canvas', () => {
     stubApi(viewer, api(empty));
     renderAt(at());
     await screen.findByRole('region', { name: /^Diagram:/ });
-    fireEvent.click(await screen.findByRole('button', { name: /^Show Viewpoints/ }));
-    expect(screen.getByText('No Relations in this model yet.')).toBeDefined();
+    expect(within(viewpoints()).getByText('No Relations in this model yet.')).toBeDefined();
+    expect(within(viewpoints()).queryByRole('checkbox')).toBeNull();
+    expect(within(viewpoints()).queryByRole('button', { name: 'Clear' })).toBeNull();
   });
 
-  it('closes with Esc, focus back on the button, without reaching the canvas’s own keys', async () => {
+  it('goes back to the canvas on Esc, without reaching the canvas’s own keys', async () => {
     await open();
-    fireEvent.click(button());
-    const box = screen.getByRole('group', { name: 'Relationship properties' });
+    const box = viewpoints();
     const before = currentLocation();
     fireEvent.keyDown(within(box).getAllByRole('checkbox')[0] as HTMLElement, { key: '3' });
     expect(currentLocation()).toBe(before);
     fireEvent.keyDown(within(box).getAllByRole('checkbox')[0] as HTMLElement, { key: 'Escape' });
-    expect(screen.queryByRole('group', { name: 'Relationship properties' })).toBeNull();
-    expect(document.activeElement).toBe(button());
+    // Always open: Esc leaves it in place and moves focus to the canvas.
+    expect(screen.getByRole('group', { name: 'Show Viewpoints' })).toBe(box);
+    expect(document.activeElement).toBe(canvas());
   });
 });
 
@@ -568,8 +575,9 @@ describe('Data in a viewpoint', () => {
 
   it('is one choice, Data, for both parts', async () => {
     await open();
-    fireEvent.click(button());
-    const choices = screen.getAllByRole('checkbox').map((box) => box.closest('label')?.textContent);
+    const choices = within(viewpoints())
+      .getAllByRole('checkbox')
+      .map((box) => box.closest('label')?.textContent);
     expect(choices).toContain('Data');
     expect(choices).not.toContain('Source to target data');
     expect(choices).not.toContain('Target to source data');
@@ -585,7 +593,7 @@ describe('the address', () => {
     await waitFor(() => {
       expect(labels()).toContain('REST');
     });
-    expect(button().textContent).toBe('Show Viewpoints: 1 selected');
+    expect(ticked()).toEqual(['protocol']);
     expect(document.querySelector('img[src="x"]')).toBeNull();
     pick('auth');
     await waitFor(() => {
@@ -644,16 +652,15 @@ describe('the address', () => {
       .map((key) => `&show=${key}`)
       .join('');
     await open(show, many);
-    expect(button().textContent).toBe('Show Viewpoints: 20 selected');
-    fireEvent.click(button());
+    expect(ticked()).toHaveLength(20);
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'k30' }).disabled).toBe(true);
     expect(
       screen.getByText('At most 20 properties at a time.').closest('[role="status"]'),
     ).not.toBeNull();
     // A ticked box can still be cleared, and that frees the others.
-    const ticked = screen.getByRole<HTMLInputElement>('checkbox', { name: 'k10' });
-    expect(ticked.disabled).toBe(false);
-    fireEvent.click(ticked);
+    const k10 = screen.getByRole<HTMLInputElement>('checkbox', { name: 'k10' });
+    expect(k10.disabled).toBe(false);
+    fireEvent.click(k10);
     await waitFor(() => {
       expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'k30' }).disabled).toBe(false);
     });
@@ -670,7 +677,6 @@ describe('the address', () => {
       },
     };
     await open('', document);
-    fireEvent.click(button());
     const box = screen.getByRole<HTMLInputElement>('checkbox', {
       name: `${long} (name too long to select)`,
     });
@@ -681,7 +687,6 @@ describe('the address', () => {
 describe('the selector for a keyboard user', () => {
   it('keeps focus on a box after ticking it', async () => {
     await open();
-    fireEvent.click(button());
     const box = screen.getByRole<HTMLInputElement>('checkbox', { name: 'protocol' });
     box.focus();
     fireEvent.click(box);
@@ -696,7 +701,6 @@ describe('the selector for a keyboard user', () => {
   // Clear removes itself while it has focus, so focus fell out of the list to the page.
   it('keeps focus in the selector after Clear', async () => {
     await open('&show=protocol');
-    fireEvent.click(button());
     const clear = screen.getByRole('button', { name: 'Clear' });
     clear.focus();
     fireEvent.click(clear);
@@ -704,16 +708,318 @@ describe('the selector for a keyboard user', () => {
       expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
     });
     expect(document.querySelector('.line-props')?.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(within(viewpoints()).getAllByRole('checkbox')[0]);
+  });
+});
+
+describe('Show Viewpoints, always open', () => {
+  const panel = () => screen.getByRole('group', { name: 'Show Viewpoints' });
+
+  it('shows its choices at once, with no button to open or close them', async () => {
+    await open();
+    expect(screen.queryByRole('button', { name: /^Show Viewpoints/ })).toBeNull();
+    const boxes = within(panel()).getAllByRole('checkbox');
+    expect(boxes.map((box) => box.closest('label')?.textContent)).toContain('protocol');
+    expect(panel().hasAttribute('aria-expanded')).toBe(false);
+    expect(within(panel()).queryByRole('button', { name: 'Clear' })).toBeNull();
+    // Nothing closes it: a press on the canvas and Tab out leave the choices where they are.
+    fireEvent.mouseDown(canvas());
+    fireEvent.blur(boxes[0] as HTMLElement, { relatedTarget: canvas() });
+    expect(within(panel()).getAllByRole('checkbox')).toHaveLength(boxes.length);
   });
 
-  it('closes when focus tabs out of it, and not when it moves inside', async () => {
+  it('has Clear in its header while anything is selected', async () => {
+    await open('&show=protocol');
+    const clear = within(panel()).getByRole('button', { name: 'Clear' });
+    expect(clear.closest('.line-props-head')).not.toBeNull();
+    expect(document.getElementById('sv-title')?.closest('.line-props-head')).toBe(
+      clear.closest('.line-props-head'),
+    );
+  });
+
+  it('moves focus to the canvas on Esc, with the selection unchanged', async () => {
+    await open('&show=protocol');
+    const box = within(panel()).getByRole('checkbox', { name: 'auth' });
+    box.focus();
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(document.activeElement).toBe(canvas());
+    expect(currentLocation()).toContain('show=protocol');
+    expect(
+      within(panel()).getByRole<HTMLInputElement>('checkbox', { name: 'protocol' }).checked,
+    ).toBe(true);
+  });
+
+  it('keeps the canvas keys waiting while focus is in it', async () => {
     await open();
-    fireEvent.click(button());
-    const box = screen.getByRole('checkbox', { name: 'protocol' });
-    fireEvent.blur(box, { relatedTarget: screen.getByRole('checkbox', { name: 'auth' }) });
-    expect(button().getAttribute('aria-expanded')).toBe('true');
-    fireEvent.blur(box, { relatedTarget: canvas() });
-    expect(button().getAttribute('aria-expanded')).toBe('false');
+    const box = within(panel()).getByRole('checkbox', { name: 'protocol' });
+    box.focus();
+    const before = currentLocation();
+    for (const key of ['3', 't', 'm', 'ArrowRight', '/']) fireEvent.keyDown(box, { key });
+    expect(currentLocation()).toBe(before);
+    expect(document.activeElement).toBe(box);
+  });
+
+  it('keeps the cap message outside the part that scrolls', async () => {
+    const metadata = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`k${10 + i}`, 'x']));
+    const many: JgfDocument = {
+      graph: {
+        ...model.graph,
+        edges: (model.graph.edges ?? []).map((edge) =>
+          edge.source === 'customer' ? { ...edge, metadata } : edge,
+        ),
+      },
+    };
+    const show = Object.keys(metadata)
+      .slice(0, 20)
+      .map((key) => `&show=${key}`)
+      .join('');
+    await open(show, many);
+    const note = within(panel()).getByText('At most 20 properties at a time.');
+    expect(note.closest('[role="status"]')).not.toBeNull();
+    expect(note.closest('.line-props-list')).toBeNull();
+    expect(
+      within(panel()).getByRole('checkbox', { name: 'k30' }).closest('.line-props-list'),
+    ).not.toBeNull();
+  });
+
+  it('shows the canvas notices beside it, in one column after it', async () => {
+    stubApi(viewer, api());
+    renderAt(`/viewing/models/${bakeryId}/elements/lonely?depth=1`);
+    const notice = await within(
+      await screen.findByRole('region', { name: /^Diagram:/ }),
+    ).findByText('No relationships. This element stands alone.');
+    const notices = notice.closest('.canvas-notices');
+    expect(notices).not.toBeNull();
+    expect(notices?.parentElement?.classList.contains('canvas-top')).toBe(true);
+    expect(panel().parentElement).toBe(notices?.parentElement);
+    expect(
+      panel().compareDocumentPosition(notices as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+describe('cards clear of Show Viewpoints', () => {
+  // jsdom has no layout: the panel gets the box it would have, 12px in from the corner (the canvas
+  // itself is at the screen's corner): as wide as its longest choice (160 to 240px), 24px a choice
+  // and at most 10 before its list scrolls.
+  const panelBox = () => {
+    const labels = [...document.querySelectorAll('.line-props-list label')];
+    const longest = Math.max(0, ...labels.map((label) => label.textContent.length));
+    const width = Math.min(240, Math.max(160, 40 + 6 * longest));
+    return { x: 12, y: 12, width, height: 32 + 24 * Math.min(labels.length, 10) };
+  };
+  /** The canvas's size: a laptop's, unless a test sets a smaller one before opening. */
+  let canvasSize = { width: 764, height: 560 };
+  beforeEach(() => {
+    canvasSize = { width: 764, height: 560 };
+    const real = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')
+      ?.value as (this: Element) => DOMRect;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (!this.classList.contains('line-props')) return real.call(this);
+        const { x, y, width, height } = panelBox();
+        return {
+          x,
+          y,
+          width,
+          height,
+          left: x,
+          top: y,
+          right: x + width,
+          bottom: y + height,
+        } as DOMRect;
+      });
+    // React Flow reads the canvas's size from its own box.
+    const size = (name: 'offsetWidth' | 'offsetHeight', pixels: () => number) => {
+      const real = Object.getOwnPropertyDescriptor(HTMLElement.prototype, name);
+      Object.defineProperty(HTMLElement.prototype, name, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.classList.contains('react-flow__renderer')
+            ? pixels()
+            : (real?.get?.call(this) as number);
+        },
+      });
+      onTestFinished(() => {
+        if (real) Object.defineProperty(HTMLElement.prototype, name, real);
+      });
+    };
+    size('offsetWidth', () => canvasSize.width);
+    size('offsetHeight', () => canvasSize.height);
+    onTestFinished(() => {
+      spy.mockRestore();
+    });
+  });
+
+  const transform = () =>
+    canvas().querySelector<HTMLElement>('.react-flow__viewport')?.style.transform ?? '';
+  /** Waits until the canvas's pan and zoom stop changing (a fit may still be running). */
+  async function settled() {
+    let before = transform();
+    for (let tries = 0; tries < 30; tries++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      });
+      const now = transform();
+      if (now === before && tries > 1) return;
+      before = now;
+    }
+  }
+  /** A card's box on the screen. */
+  const onScreen = (id: string) => {
+    const node = canvas()
+      .querySelector(`.card[data-element-id="${id}"]`)
+      ?.closest<HTMLElement>('.react-flow__node') as HTMLElement;
+    const [x = 0, y = 0] =
+      /translate\(([-\d.]+)px, ?([-\d.]+)px\)/.exec(node.style.transform)?.slice(1).map(Number) ??
+      [];
+    const [tx = 0, ty = 0] =
+      /translate\(([-\d.]+)px, ?([-\d.]+)px\)/.exec(transform())?.slice(1).map(Number) ?? [];
+    const zoom = Number(/scale\(([-\d.]+)\)/.exec(transform())?.[1] ?? 1);
+    const width = (parseFloat(node.style.width) || 168) * zoom;
+    const height = (parseFloat(node.style.height) || 44) * zoom;
+    return { left: tx + x * zoom, top: ty + y * zoom, width, height };
+  };
+  const underPanel = (box: ReturnType<typeof onScreen>) =>
+    box.left < panelBox().x + panelBox().width &&
+    box.left + box.width > panelBox().x &&
+    box.top < panelBox().y + panelBox().height &&
+    box.top + box.height > panelBox().y;
+  const ids = ['customer', 'ordering', 'shop', 'oven/planner #1', 'till', 'server'];
+
+  it('fits a small canvas with no card under the panel, also on 0', async () => {
+    canvasSize = { width: 420, height: 360 };
+    await open();
+    await settled();
+    for (const id of ids) expect(underPanel(onScreen(id)), id).toBe(false);
+    // Panned (80px a step) until a card is under it, then fitted again with 0.
+    const anyUnder = () => ids.some((id) => underPanel(onScreen(id)));
+    for (let step = 0; step < 8 && !anyUnder(); step++) {
+      fireEvent.keyDown(canvas(), { key: step % 2 ? 'ArrowDown' : 'ArrowRight', shiftKey: true });
+    }
+    expect(anyUnder()).toBe(true);
+    fireEvent.keyDown(canvas(), { key: '0' });
+    await settled();
+    for (const id of ids) expect(underPanel(onScreen(id)), id).toBe(false);
+  });
+
+  it('pans a card that gets keyboard focus out from under the panel', async () => {
+    await open();
+    await settled();
+    // Pan (80px a step) until the shop's card is under the panel.
+    const start = onScreen('shop');
+    const across = Math.ceil((start.left - (panelBox().x + panelBox().width - 20)) / 80);
+    const down = Math.ceil((start.top - (panelBox().y + panelBox().height - 20)) / 80);
+    for (let step = 0; step < Math.abs(across); step++) {
+      fireEvent.keyDown(canvas(), { key: across > 0 ? 'ArrowRight' : 'ArrowLeft', shiftKey: true });
+    }
+    for (let step = 0; step < Math.abs(down); step++) {
+      fireEvent.keyDown(canvas(), { key: down > 0 ? 'ArrowDown' : 'ArrowUp', shiftKey: true });
+    }
+    expect(underPanel(onScreen('shop'))).toBe(true);
+    const main = canvas().querySelector<HTMLElement>('.card[data-element-id="shop"] .card-main');
+    // Focus from a press of the pointer doesn't pan: the card is under the pointer.
+    fireEvent.pointerDown(main as HTMLElement);
+    act(() => {
+      main?.focus();
+    });
+    await settled();
+    expect(underPanel(onScreen('shop'))).toBe(true);
+    // Focus after a key does.
+    act(() => {
+      main?.blur();
+    });
+    fireEvent.keyDown(document.body, { key: 'Tab' });
+    act(() => {
+      main?.focus();
+    });
+    await settled();
+    expect(underPanel(onScreen('shop'))).toBe(false);
+  });
+
+  /** Watches what the canvas observes for size, so a test can say a box changed size. */
+  function watchSizes() {
+    const watched: { target: Element; tell: () => void }[] = [];
+    class Watching {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        const tell = () => {
+          const contentRect = { x: 0, y: 0, width: 1000, height: 700 } as DOMRectReadOnly;
+          this.callback([{ target, contentRect } as ResizeObserverEntry], this);
+        };
+        watched.push({ target, tell });
+        tell();
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', Watching);
+    return () => {
+      for (const { target, tell } of watched) {
+        if (target.classList.contains('line-props')) act(tell);
+      }
+    };
+  }
+
+  /** The canvas, with the defined properties answered only when the test lets them. */
+  async function openWithLateProperties() {
+    let answer = () => {};
+    const late = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const definitions = Array.from({ length: 24 }, (_, i) => ({
+      key: `made-up-${String(i)}`,
+      name: `Made-up property with a longer name ${String(i)}`,
+      kind: 'text',
+      fromModels: false,
+      version: 1,
+    }));
+    stubApi(
+      viewer,
+      ({ url }) =>
+        url === '/api/properties'
+          ? late.then(() => Response.json({ properties: definitions }))
+          : undefined,
+      api(),
+    );
+    renderAt(at());
+    await cardCount(6);
+    await settled();
+    return async () => {
+      answer();
+      await waitFor(() => {
+        expect(
+          document.querySelectorAll('.line-props input[type="checkbox"]').length,
+        ).toBeGreaterThan(20);
+      });
+    };
+  }
+
+  it('fits again when the panel grows before the canvas is moved', async () => {
+    const sizeChanged = watchSizes();
+    const properties = await openWithLateProperties();
+    for (const id of ids) expect(underPanel(onScreen(id)), id).toBe(false);
+    const before = transform();
+    await properties();
+    // Grown, the panel would cover cards where the first fit left them.
+    expect(ids.some((id) => underPanel(onScreen(id)))).toBe(true);
+    sizeChanged();
+    await settled();
+    expect(transform()).not.toBe(before);
+    for (const id of ids) expect(underPanel(onScreen(id)), id).toBe(false);
+  });
+
+  it('leaves the view alone when the panel grows after the canvas was moved', async () => {
+    const sizeChanged = watchSizes();
+    const properties = await openWithLateProperties();
+    fireEvent.keyDown(canvas(), { key: 'ArrowLeft', shiftKey: true });
+    await settled();
+    const moved = transform();
+    await properties();
+    sizeChanged();
+    await settled();
+    expect(transform()).toBe(moved);
   });
 });
 

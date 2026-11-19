@@ -119,6 +119,79 @@ export interface Box {
   height: number;
 }
 
+/** Room kept between Show Viewpoints and the cards a fit or keyboard focus puts beside it. */
+const panelClearance = 12;
+
+/** The padding of a fit, in pixels per side, as React Flow's `fitView` takes it. */
+export interface FitPadding {
+  top: `${number}px`;
+  right: `${number}px`;
+  bottom: `${number}px`;
+  left: `${number}px`;
+}
+
+const px = (pixels: number) => `${String(pixels)}px` as `${number}px`;
+
+/**
+ * The padding that fits the drawing (`bounds`, flow coordinates) on a canvas of `size` with every
+ * card clear of Show Viewpoints (`panel`, screen pixels from the canvas's top left). Of a fit below
+ * the panel and one beside it, the one with the larger zoom: a wide drawing loses nothing to a tall
+ * panel, and a tall one nothing to a wide panel. The other sides keep 6.5% (what a padding of 0.15
+ * gives). Without a panel to keep clear of, 6.5% all round.
+ */
+export function clearFitPadding(
+  bounds: Box,
+  size: { width: number; height: number },
+  panel: Box | undefined,
+  zoom: { min: number; max: number },
+): FitPadding {
+  const side = Math.floor(size.width * 0.065);
+  const end = Math.floor(size.height * 0.065);
+  const base = { top: end, right: side, bottom: end, left: side };
+  const inPixels = (padding: typeof base): FitPadding => ({
+    top: px(padding.top),
+    right: px(padding.right),
+    bottom: px(padding.bottom),
+    left: px(padding.left),
+  });
+  if (!panel || panel.width <= 0 || panel.height <= 0) return inPixels(base);
+  const below = { ...base, top: Math.max(end, panel.y + panel.height + panelClearance) };
+  const beside = { ...base, left: Math.max(side, panel.x + panel.width + panelClearance) };
+  const zoomWith = (padding: typeof base): number => {
+    const across = (size.width - padding.left - padding.right) / Math.max(1, bounds.width);
+    const down = (size.height - padding.top - padding.bottom) / Math.max(1, bounds.height);
+    return Math.min(zoom.max, Math.max(zoom.min, Math.min(across, down)));
+  };
+  return inPixels(zoomWith(beside) > zoomWith(below) ? beside : below);
+}
+
+/**
+ * The viewport panned so a card (`box`, flow coordinates) is no longer under Show Viewpoints
+ * (`panel`, screen pixels from the canvas's top left), down or right, whichever is the shorter
+ * way; undefined when nothing of it is under the panel.
+ */
+export function panClearOf(
+  box: Box,
+  viewport: Viewport,
+  panel: Box,
+  margin = panelClearance,
+): Viewport | undefined {
+  if (panel.width <= 0 || panel.height <= 0) return undefined;
+  const left = box.x * viewport.zoom + viewport.x;
+  const top = box.y * viewport.zoom + viewport.y;
+  const under =
+    left < panel.x + panel.width &&
+    left + box.width * viewport.zoom > panel.x &&
+    top < panel.y + panel.height &&
+    top + box.height * viewport.zoom > panel.y;
+  if (!under) return undefined;
+  const down = panel.y + panel.height + margin - top;
+  const right = panel.x + panel.width + margin - left;
+  return down <= right
+    ? { ...viewport, y: viewport.y + down }
+    : { ...viewport, x: viewport.x + right };
+}
+
 function overlaps(a: Box, b: Box): boolean {
   return (
     a.x < b.x + b.width + clearance &&

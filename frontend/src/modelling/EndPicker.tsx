@@ -14,30 +14,41 @@ const statusDelay = 500;
 
 interface EndPickerProps {
   graph: ModelGraph;
-  /** The end's caption on the form: From, To, Between or And. */
+  /** The end's caption on the form: From or To. */
   caption: string;
+  /** The list's id, which the field names as what it controls. */
+  listId: string;
+  /** What the search starts with: a character typed on the field, or nothing. */
+  initial?: string;
   /** The element the end shows now, and the one at the other end. */
   current: string;
   other: string;
   onPick: (element: ModelElement) => void;
-  /** Esc, or focus left the box: nothing picked. `refocus`: give the Change button the focus. */
+  /** Esc, or focus left the box: nothing picked. `refocus`: give the field the focus. */
   onClose: (refocus: boolean) => void;
 }
 
 /**
- * A relationship end's "Change" box: a search over the model's elements, by name, each with its
- * type. The keys are those of a value field's suggestions: no row starts highlighted, the arrows go
- * through the list, Enter picks the highlighted row, and Esc closes the box.
+ * The list of a relationship end's field (From or To): a search over the model's elements, by name,
+ * each with its type, floating under the field. The keys are those of a value field's suggestions:
+ * no row starts highlighted, the arrows go through the list, Enter picks the highlighted row, and
+ * Esc closes it. Focus leaving it (Tab, or a click elsewhere) closes it with nothing picked.
  */
 export function EndPicker(props: EndPickerProps) {
   const { graph, caption } = props;
   const id = useId();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(props.initial ?? '');
   const [active, setActive] = useState(-1);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    input.current?.focus();
+    const box = input.current;
+    if (!box) return;
+    box.focus();
+    // A character typed on the field: carry on typing after it.
+    box.setSelectionRange(box.value.length, box.value.length);
+    // It floats under the field: bring all of it into the details panel's view.
+    box.closest('.end-pop')?.scrollIntoView({ block: 'nearest' });
   }, []);
 
   const trimmed = query.trim();
@@ -50,7 +61,7 @@ export function EndPicker(props: EndPickerProps) {
   );
   const shown = options.slice(0, pickLimit);
   const highlighted = active >= 0 ? shown[active] : undefined;
-  const listId = `${id}-list`;
+  const listId = props.listId;
   const matches = options.length === 1 ? '1 match' : `${options.length} matches`;
   // Said once typing stops, as a value field's suggestions are.
   const [status, setStatus] = useState('');
@@ -73,12 +84,11 @@ export function EndPicker(props: EndPickerProps) {
 
   return (
     <div
-      className="end-pick"
+      className="end-pop"
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) props.onClose(false);
       }}
     >
-      <label htmlFor={`${id}-search`}>New element for “{caption}”</label>
       <div className="search pick-search">
         <Icon name="search" />
         <input
@@ -86,6 +96,7 @@ export function EndPicker(props: EndPickerProps) {
           id={`${id}-search`}
           type="text"
           role="combobox"
+          aria-label={`New element for ${caption}`}
           autoComplete="off"
           placeholder="Search elements…"
           aria-autocomplete="list"
@@ -120,7 +131,18 @@ export function EndPicker(props: EndPickerProps) {
           }}
         />
       </div>
-      <ul className="pick-list" id={listId} role="listbox" aria-label="Elements">
+      <ul
+        className="pick-list"
+        id={listId}
+        role="listbox"
+        aria-label="Elements"
+        // Never a Tab stop of its own (as a list that scrolls can be), so Tab from the search
+        // leaves it and closes it; a press on it (its scroll bar) keeps focus in the search.
+        tabIndex={-1}
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+      >
         <li role="presentation" className="pick-caption">
           {trimmed === '' ? 'All elements' : matches}
         </li>

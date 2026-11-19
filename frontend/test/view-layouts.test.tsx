@@ -503,7 +503,7 @@ describe('a relationship’s new end in a view', () => {
     );
     const form = await screen.findByRole('form', { name: /^Relationship / });
     const ends = within(panel).getByRole('region', { name: 'Ends' });
-    fireEvent.click(within(ends).getByRole('button', { name: 'Change To: Pump' }));
+    fireEvent.click(within(ends).getByRole('button', { name: /^To: Pump/ }));
     const search = within(ends).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'shed' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });
@@ -1277,7 +1277,7 @@ describe('moving a line', () => {
     );
     const form = await screen.findByRole('form', { name: /^Relationship / });
     const ends = within(panel).getByRole('region', { name: 'Ends' });
-    fireEvent.click(within(ends).getByRole('button', { name: 'Change To: Pump' }));
+    fireEvent.click(within(ends).getByRole('button', { name: /^To: Pump/ }));
     const search = within(ends).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'shed' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });

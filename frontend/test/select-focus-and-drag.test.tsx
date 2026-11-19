@@ -222,8 +222,10 @@ describe('relationship information in Viewing', () => {
     expect(within(panel).queryByText('sourceToTargetData')).toBeNull();
     expect(within(panel).getByText('archimateType')).toBeTruthy();
     expect(within(panel).getByText('Flow')).toBeTruthy();
-    // The label, and Source to target data (set from it where Information flow once was).
-    expect(within(panel).getAllByText(/Places orders/)).toHaveLength(2);
+    // Source to target data (set from the label where Information flow once was); the panel has
+    // no label line.
+    expect(within(panel).getAllByText(/Places orders/)).toHaveLength(1);
+    expect(panel.textContent).not.toContain('from the import');
     // No inputs, no Delete, no Open in Modelling.
     expect(panel.querySelector('input, textarea, select')).toBeNull();
     expect(within(panel).queryByRole('button', { name: 'Delete relationship' })).toBeNull();

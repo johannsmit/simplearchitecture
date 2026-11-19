@@ -5,7 +5,6 @@ import {
   dataListNames,
   dataValuesOf,
   definedPropertiesOf,
-  displayLabel,
   edgeTypes,
   hasStandardEdgeProperty,
   isRelationDataProperty,
@@ -42,11 +41,12 @@ import {
 } from 'react';
 import { ApiRequestError, deleteRelationship, getRelationship, updateRelationship } from '../api';
 import { Icon } from '../icons';
-import { EdgeSample, relationshipTypeLine, TypeMark } from '../metamodel-ui';
+import { EdgeSample, relationshipTypeLine } from '../metamodel-ui';
 import { MetadataValue } from '../viewing/explorer/DetailsPanel';
+import { EndLinks } from '../viewing/explorer/RelationshipDetails';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { Modal, UnsavedDialog } from './dialogs';
-import { EndPicker } from './EndPicker';
+import { EndField } from './EndField';
 import { customRow, metadataChanges, type CustomRow } from './draft';
 import type { EditorHandle, EditorState } from './ElementEditor';
 import { savedNoteMillis } from './ElementEditor';
@@ -103,8 +103,11 @@ interface Ends {
 
 type End = keyof Ends;
 
+/** The field of an end as the form shows it: From for the source as it will be saved. */
+const fieldIdOf = (end: End): string => (end === 'source' ? 'rf-from' : 'rf-to');
+
 interface Draft {
-  /** The ends as picked with Change, before Reverse: Reverse swaps them when saved. */
+  /** The ends as picked with From and To, before Reverse: Reverse swaps them when saved. */
   ends: Ends;
   type: EdgeType;
   state: ArchitectureState;
@@ -301,9 +304,10 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const self = source === target;
   // The lists of data, named after the ends as they will be saved.
   const listNames = dataListNames(graph, source, target);
-  // The Change box open for an end (as the form shows it: source first), if any.
-  const [picking, setPicking] = useState<End | null>(null);
-  // Which shown end was changed with Change: one that Reverse alone wouldn't show.
+  // The end whose list is open (as the form shows it: source first), with what its search started
+  // with, if any.
+  const [picking, setPicking] = useState<{ end: End; initial: string } | null>(null);
+  // Which shown end was picked with its field: one that Reverse alone wouldn't show.
   const reversedOnly: Ends = draft.reversed
     ? { source: base.ends.target, target: base.ends.source }
     : base.ends;
@@ -313,7 +317,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   };
   const changedEnd = (): End => (changedEnds.target ? 'target' : 'source');
   const savedSentence = relationshipSentence(graph, relationship);
-  const savedLabel = displayLabel(relationship, graph);
   // The relationship as the form holds it: what the Label's `{Name}` is filled in from.
   const labelSubject: LabelSubject = {
     type: draft.type,
@@ -457,11 +460,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     if (!dirty) return true;
     if (!canSave || saving) {
       if (clientProblem) {
-        const at = !endsProblem
-          ? 'rf-type'
-          : endsChanged
-            ? `rf-change-${changedEnd()}`
-            : 'rf-reverse';
+        const at = !endsProblem ? 'rf-type' : endsChanged ? fieldIdOf(changedEnd()) : 'rf-reverse';
         document.getElementById(at)?.focus();
       }
       return false;
@@ -469,6 +468,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     // Custom rows are keys the relationship holds, which can't be renamed: none blocks the form
     // (a blank one an import left included), and the server has the last word on a change.
     setSaving(true);
+    setPicking(null);
     setErrors(new Map());
     setDuplicateOf(undefined);
     setDeletedProperty(null);
@@ -654,11 +654,12 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
             text: `After saving, ${nameOf(graph, relationship.target)} is no longer nested in ${nameOf(graph, relationship.source)}; Tidy up redraws the canvas.`,
           }
         : undefined;
-  const [first, second] = draft.twoWay ? ['Between', 'And'] : ['From', 'To'];
-  const shownEnds: { end: End; caption: string; id: string }[] = [
-    { end: 'source', caption: first, id: source },
-    { end: 'target', caption: second, id: target },
+  // From and To always, also on a two-way relationship: From is the end saved as the source.
+  const shownEnds: { end: End; caption: 'From' | 'To'; id: string }[] = [
+    { end: 'source', caption: 'From', id: source },
+    { end: 'target', caption: 'To', id: target },
   ];
+  const endsError = endsProblem !== undefined || errors.has('ends');
   /** A picked element becomes this shown end: the end it is before Reverse swaps them. */
   const pickEnd = (end: End, picked: string) => {
     const slot: End = draft.reversed ? (end === 'source' ? 'target' : 'source') : end;
@@ -672,7 +673,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   };
   const closePicker = (end: End, refocus: boolean) => {
     setPicking(null);
-    if (refocus) requestAnimationFrame(() => document.getElementById(`rf-change-${end}`)?.focus());
+    if (refocus) requestAnimationFrame(() => document.getElementById(fieldIdOf(end))?.focus());
   };
   const shortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
   const fieldError = (slot: string) =>
@@ -726,135 +727,90 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
         </h2>
       </div>
 
-      {/* Outside the form, so Ctrl+Enter is handled here too. */}
-      <section aria-label="Ends" onKeyDown={editable ? saveKey : undefined}>
-        <h3>Ends</h3>
-        <ul className="rel-ends-list">
-          {shownEnds.map(({ end, caption, id }) => {
-            const shown = graph.elements.get(id);
-            const name = shown?.name || '(unnamed)';
-            return (
-              <li key={end}>
-                <div className="end-row">
-                  {shown ? (
-                    <button
-                      type="button"
-                      className="rel rel-endrow"
-                      aria-label={`${caption}: ${name}, ${shown.type}${changedEnds[end] ? ', changed, not saved yet' : ''}. Go to element`}
-                      onClick={() => {
-                        props.onFocusElement(shown.id);
-                      }}
-                    >
-                      <span className="rcap">{caption}</span>
-                      <TypeMark type={shown.type} metadata={shown.metadata} />
-                      <span className="rname">{name}</span>
-                      <span className="rtype">{shown.type}</span>
-                      <Icon name="chev-right" size="sm" />
-                    </button>
-                  ) : (
-                    <span className="rel rel-endrow">
-                      <span className="rcap">{caption}</span>
-                    </span>
-                  )}
-                  {editable && changedEnds[end] && (
-                    <span className="tag" aria-hidden="true">
-                      Changed
-                    </span>
-                  )}
-                  {editable && (
-                    <button
-                      id={`rf-change-${end}`}
-                      type="button"
-                      className="btn sm end-change"
-                      aria-label={`Change ${caption}: ${name}`}
-                      aria-expanded={picking === end}
-                      aria-describedby={
-                        endsProblem || errors.has('ends') ? 'rf-ends-error' : undefined
-                      }
-                      disabled={saving}
-                      onMouseDown={(event) => {
-                        // An open box stays focused, so this click closes it (no blur first).
-                        if (picking === end) event.preventDefault();
-                      }}
-                      onClick={(event) => {
-                        if (picking === end) event.currentTarget.focus();
-                        setPicking(picking === end ? null : end);
-                      }}
-                    >
-                      Change
-                    </button>
-                  )}
-                </div>
-                {picking === end && (
-                  <EndPicker
-                    graph={graph}
-                    caption={caption}
-                    current={id}
-                    other={end === 'source' ? target : source}
-                    onPick={(picked) => {
-                      pickEnd(end, picked.id);
-                      closePicker(end, true);
-                      props.onAnnounce(
-                        picked.id === id
-                          ? `${caption} stays ${name}.`
-                          : `${caption}: ${picked.name || '(unnamed)'}. Save to keep it.`,
-                      );
-                    }}
-                    onClose={(refocus) => {
-                      closePicker(end, refocus);
-                    }}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        {/* Reverse changes nothing on a two-way relationship. */}
-        {editable && !draft.twoWay && (
-          <div className="reverse-row">
-            <button
-              id="rf-reverse"
-              type="button"
-              className="btn"
-              aria-pressed={draft.reversed}
-              disabled={self || saving}
-              aria-describedby={endsProblem || errors.has('ends') ? 'rf-ends-error' : undefined}
-              onClick={() => {
-                setDraft(withReversed(draft, !draft.reversed));
-                if (dataProperties.some((key) => fits(draft.type, key))) {
+      {/* Outside the form, so Ctrl+Enter is handled here too. No visible heading: From and To
+          follow the relationship's heading. */}
+      <section className="end-section" aria-label="Ends" onKeyDown={editable ? saveKey : undefined}>
+        {!editable ? (
+          // Nothing can be picked without an id: the ends link to their elements, as in Viewing.
+          <EndLinks
+            graph={graph}
+            relationship={relationship}
+            onFocusElement={props.onFocusElement}
+          />
+        ) : (
+          <>
+            {shownEnds.map(({ end, caption, id }) => (
+              <EndField
+                key={end}
+                graph={graph}
+                id={fieldIdOf(end)}
+                caption={caption}
+                current={id}
+                other={end === 'source' ? target : source}
+                open={picking?.end === end ? picking.initial : null}
+                changed={changedEnds[end]}
+                invalid={endsError && changedEnds[end]}
+                describedBy={endsError ? 'rf-ends-error' : undefined}
+                disabled={saving}
+                onOpen={(initial) => {
+                  setPicking(initial === null ? null : { end, initial });
+                }}
+                onPick={(picked) => {
+                  pickEnd(end, picked.id);
+                  closePicker(end, true);
                   props.onAnnounce(
-                    draft.reversed
-                      ? 'Reverse undone.'
-                      : 'Reversed. The data lists follow their ends.',
+                    picked.id === id
+                      ? `${caption} stays ${nameOf(graph, id)}.`
+                      : `${caption}: ${picked.name || '(unnamed)'}. Save to keep it.`,
                   );
-                }
-              }}
-            >
-              <Icon name="arrow-left-right" size="sm" />
-              Reverse direction
-            </button>
-            {draft.reversed && <span className="tag">Reversed</span>}
-          </div>
-        )}
-        {self && editable && !pickedSelf && <p className="hint">Both ends are the same element.</p>}
-        {endsProblem && !errors.has('ends') && (
-          <p className="field-error" id="rf-ends-error">
-            <Icon name="alert" size="sm" />
-            {endsProblem.message}
-            {endsProblem.kind === 'duplicate' && (
-              <>
-                {' '}
-                <ShowIt id={endsProblem.duplicateOf} onShow={props.onShow} />
-              </>
+                }}
+                onClose={(refocus) => {
+                  closePicker(end, refocus);
+                }}
+              />
+            ))}
+            {endsProblem && !errors.has('ends') && (
+              <p className="field-error" id="rf-ends-error">
+                <Icon name="alert" size="sm" />
+                {endsProblem.message}
+                {endsProblem.kind === 'duplicate' && (
+                  <>
+                    {' '}
+                    <ShowIt id={endsProblem.duplicateOf} onShow={props.onShow} />
+                  </>
+                )}
+              </p>
             )}
-          </p>
-        )}
-        {fieldError('ends')}
-        {savedLabel !== undefined && (
-          <p className="rel-label">
-            <span className="muted">Label</span> “{savedLabel}”
-            <span className="muted"> · from the import</span>
-          </p>
+            {fieldError('ends')}
+            {self && !pickedSelf && <p className="hint">Both ends are the same element.</p>}
+            {/* Reverse changes nothing on a two-way relationship. */}
+            {!draft.twoWay && (
+              <div className="reverse-row">
+                <button
+                  id="rf-reverse"
+                  type="button"
+                  className="btn"
+                  aria-pressed={draft.reversed}
+                  disabled={self || saving}
+                  aria-describedby={endsError ? 'rf-ends-error' : undefined}
+                  onClick={() => {
+                    setDraft(withReversed(draft, !draft.reversed));
+                    if (dataProperties.some((key) => fits(draft.type, key))) {
+                      props.onAnnounce(
+                        draft.reversed
+                          ? 'Reverse undone.'
+                          : 'Reversed. The data lists follow their ends.',
+                      );
+                    }
+                  }}
+                >
+                  <Icon name="arrow-left-right" size="sm" />
+                  Reverse direction
+                </button>
+                {draft.reversed && <span className="tag">Reversed</span>}
+              </div>
+            )}
+          </>
         )}
       </section>
 

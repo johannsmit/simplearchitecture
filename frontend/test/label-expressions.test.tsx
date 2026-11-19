@@ -186,17 +186,18 @@ describe('in the details panel', () => {
     expect(row?.getAttribute('aria-label')).toContain(`"Places orders, Returns via ${markup}"`);
   });
 
-  it('shows the filled-in label of an open relationship in Viewing', async () => {
+  // The “Label … · from the import” line is gone from the panel; the label stays on its line.
+  it('keeps the filled-in label of an open relationship on the canvas, with no label line', async () => {
     await openAt('viewing');
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,
       })[0] as HTMLElement,
     );
-    const line = await within(details()).findByText(
-      (_, element) => element?.classList.contains('rel-label') === true,
-    );
-    expect(line.textContent).toContain('“svc-shop on”');
+    await within(details()).findByRole('heading', { name: /^Web Shop relates to/ });
+    expect(details().textContent).not.toContain('from the import');
+    expect(details().textContent).not.toContain('“svc-shop on”');
+    expect(labels()).toContain('svc-shop on');
   });
 });
 

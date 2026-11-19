@@ -127,7 +127,7 @@ describe('the relationship form', () => {
       targetToSourceData: ['Order ids'],
     });
     fireEvent.click(within(details()).getByRole('button', { name: 'Reverse direction' }));
-    fireEvent.click(within(details()).getByRole('button', { name: 'Change To: Web Shop' }));
+    fireEvent.click(within(details()).getByRole('button', { name: /^To: Web Shop/ }));
     fireEvent.click(
       within(within(details()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
     );

@@ -3,7 +3,6 @@ import {
   dataListNames,
   dataValuesOf,
   definedPropertiesOf,
-  displayLabel,
   hasStandardEdgeProperty,
   isRelationDataProperty,
   relationProperties,
@@ -52,7 +51,6 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   }, [focusHeading, onHeadingFocused]);
 
   const sentence = relationshipSentence(graph, relationship);
-  const label = displayLabel(relationship, graph);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
   // A Relation's own properties (Identity to Target to source data); elsewhere such keys stay custom
@@ -69,12 +67,7 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
         !ownRows.has(key) && !(texts as readonly string[]).includes(key) && !definedKeys.has(key),
     )
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  // A two-way relationship has no from and to: its ends are only in the order stored.
   const twoWay = relationship.twoWay === true;
-  const ends = [
-    [twoWay ? 'Between' : 'From', graph.elements.get(relationship.source)],
-    [twoWay ? 'And' : 'To', graph.elements.get(relationship.target)],
-  ] as const;
 
   return (
     <div
@@ -111,36 +104,9 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
         </h2>
       </div>
 
+      {/* No visible heading: From and To follow the relationship's heading. */}
       <section aria-label="Ends">
-        <h3>Ends</h3>
-        <ul className="rel-ends-list">
-          {ends.map(([caption, end]) =>
-            end ? (
-              <li key={caption}>
-                <button
-                  type="button"
-                  className="rel rel-endrow"
-                  aria-label={`${caption}: ${end.name || '(unnamed)'}, ${end.type}. Go to element`}
-                  onClick={() => {
-                    props.onFocusElement(end.id);
-                  }}
-                >
-                  <span className="rcap">{caption}</span>
-                  <TypeMark type={end.type} metadata={end.metadata} />
-                  <span className="rname">{end.name || '(unnamed)'}</span>
-                  <span className="rtype">{end.type}</span>
-                  <Icon name="chev-right" size="sm" />
-                </button>
-              </li>
-            ) : null,
-          )}
-        </ul>
-        {label !== undefined && (
-          <p className="rel-label">
-            <span className="muted">Label</span> “{label}”
-            <span className="muted"> · from the import</span>
-          </p>
-        )}
+        <EndLinks graph={graph} relationship={relationship} onFocusElement={props.onFocusElement} />
       </section>
 
       <section>
@@ -262,6 +228,45 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * A relationship's ends as links to their elements, From then To, also on a two-way relationship
+ * (From is the end stored as the source). Long names wrap at spaces.
+ */
+export function EndLinks(props: {
+  graph: ModelGraph;
+  relationship: Pick<ModelRelationship, 'source' | 'target'>;
+  onFocusElement: (id: string) => void;
+}) {
+  const ends = [
+    ['From', props.graph.elements.get(props.relationship.source)],
+    ['To', props.graph.elements.get(props.relationship.target)],
+  ] as const;
+  return (
+    <ul className="rel-ends-list">
+      {ends.map(([caption, end]) =>
+        end ? (
+          <li key={caption}>
+            <button
+              type="button"
+              className="rel rel-endrow"
+              aria-label={`${caption}: ${end.name || '(unnamed)'}, ${end.type}. Go to element`}
+              onClick={() => {
+                props.onFocusElement(end.id);
+              }}
+            >
+              <span className="rcap">{caption}</span>
+              <TypeMark type={end.type} metadata={end.metadata} />
+              <span className="rname">{end.name || '(unnamed)'}</span>
+              <span className="rtype">{end.type}</span>
+              <Icon name="chev-right" size="sm" />
+            </button>
+          </li>
+        ) : null,
+      )}
+    </ul>
   );
 }
 

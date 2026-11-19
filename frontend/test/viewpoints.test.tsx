@@ -31,7 +31,12 @@ function api(model: JgfDocument = bakeryModel): Handler {
 
 const canvas = () => screen.getByRole('region', { name: /^Diagram:/ });
 const details = () => screen.getByRole('complementary', { name: 'Details' });
-const button = () => screen.getByRole('button', { name: /^Show Viewpoints/ });
+/** The names of the choices ticked in Show Viewpoints (always open). */
+const ticked = () =>
+  within(screen.getByRole('group', { name: 'Show Viewpoints' }))
+    .getAllByRole<HTMLInputElement>('checkbox')
+    .filter((box) => box.checked)
+    .map((box) => box.closest('label')?.textContent);
 const lines = () =>
   [...canvas().querySelectorAll('.react-flow__edge')].map((edge) =>
     edge.getAttribute('aria-label'),
@@ -119,7 +124,7 @@ describe('links and memory from older versions', () => {
     await waitFor(() => {
       expect(currentLocation()).toBe(`${shop}&show=data`);
     });
-    expect(button().textContent).toBe('Show Viewpoints: 1 selected');
+    expect(ticked()).toEqual(['Data']);
     await waitFor(() => {
       expect(restingLabels()).toContainEqual(
         expect.stringMatching(/Customer to Web Shop: Places orders$/),
@@ -134,7 +139,7 @@ describe('links and memory from older versions', () => {
     await waitFor(() => {
       expect(currentLocation()).toBe(shop);
     });
-    expect(button().textContent).toBe('Show Viewpoints');
+    expect(ticked()).toEqual([]);
   });
 
   it('drops the stored preference', async () => {

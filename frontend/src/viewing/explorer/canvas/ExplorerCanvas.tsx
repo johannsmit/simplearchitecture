@@ -28,6 +28,7 @@ import {
   useUpdateNodeInternals,
   type ConnectionLineComponentProps,
   type EdgeTypes,
+  type FitViewOptions,
   type NodeChange,
   type NodeTypes,
 } from '@xyflow/react';
@@ -82,17 +83,21 @@ import {
 import {
   arrangeCards,
   clampToContainer,
+  clearFitPadding,
   fitContainers,
   dragThreshold,
   draggedPositions,
   isMoveKey,
   movedBy,
   moveStep,
+  panClearOf,
   panToKeepInView,
   pushedByContainer,
+  type Box,
   type Holding,
   type MovedPositions,
   type Point,
+  type Viewport,
 } from './positions';
 import { LineProperties } from './LineProperties';
 import {
@@ -135,13 +140,8 @@ import {
 const flowNodeTypes: NodeTypes = { element: ElementCard };
 const flowEdgeTypes: EdgeTypes = { relationship: RelationshipEdge };
 
-// The top is fixed: the selector's place doesn't grow with the canvas. The sides are what
-// a padding of 0.15 gives.
-const fitOptions = {
-  padding: { top: '56px', right: '6.5%', bottom: '6.5%', left: '6.5%' },
-  minZoom: 0.2,
-  maxZoom: 1.25,
-} as const;
+/** The zoom a fit may choose; its padding keeps the cards clear of Show Viewpoints. */
+const fitZoom = { min: 0.2, max: 1.25 } as const;
 
 /** A width set by hand, within the smallest and the widest a card's width can be set to. */
 function setWidth(width: number): number {
@@ -486,6 +486,78 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const [movingState, setMoving] = useState<Moving | null>(null);
   const editable = props.editable === true && props.modelId !== undefined;
   const store = useStoreApi();
+  /** Show Viewpoints, always open at the top left: fits and keyboard focus keep cards clear of it. */
+  const viewpoints = useRef<HTMLDivElement>(null);
+  /** Whether the last thing the person did was press the pointer (rather than a key). */
+  const pointerLast = useRef(false);
+  useEffect(() => {
+    const pointer = () => {
+      pointerLast.current = true;
+    };
+    const key = () => {
+      pointerLast.current = false;
+    };
+    window.addEventListener('pointerdown', pointer, true);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('pointerdown', pointer, true);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, []);
+  /** Show Viewpoints' box, in screen pixels from the canvas's top left. */
+  const viewpointsBox = useCallback((): Box | undefined => {
+    const host = section.current?.getBoundingClientRect();
+    const box = viewpoints.current?.getBoundingClientRect();
+    if (!host || !box) return undefined;
+    return { x: box.left - host.left, y: box.top - host.top, width: box.width, height: box.height };
+  }, []);
+  /**
+   * Show Viewpoints' size at the last fit, while the view is still as that fit left it; null once
+   * the person has panned, zoomed or moved anything since (or nothing was fitted yet).
+   */
+  const fittedPanel = useRef<{ width: number; height: number } | null>(null);
+  /** Fits the whole drawing, with every card clear of Show Viewpoints. */
+  const fit = useCallback(
+    (duration: number) => {
+      const { width, height } = store.getState();
+      const bounds = flow.getNodesBounds(flow.getNodes());
+      const panel = viewpointsBox();
+      fittedPanel.current = panel ? { width: panel.width, height: panel.height } : null;
+      const options: FitViewOptions<CardNode> = {
+        padding: clearFitPadding(bounds, { width, height }, panel, fitZoom),
+        minZoom: fitZoom.min,
+        maxZoom: fitZoom.max,
+        duration,
+      };
+      void flow.fitView(options);
+    },
+    [flow, store, viewpointsBox],
+  );
+  // Show Viewpoints can change size after a fit (its choices arrive late, or the cap message comes):
+  // fit again so no card ends up under it, unless the person has moved the view since.
+  useEffect(() => {
+    const panel = viewpoints.current;
+    if (!panel || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const fitted = fittedPanel.current;
+      const box = viewpointsBox();
+      if (!fitted || !box) return;
+      if (Math.abs(box.width - fitted.width) < 1 && Math.abs(box.height - fitted.height) < 1) {
+        return;
+      }
+      fit(reducedMotion() ? 0 : 200);
+    });
+    observer.observe(panel);
+    return () => {
+      observer.disconnect();
+    };
+  }, [fit, viewpointsBox]);
+  /** The person did something on the canvas (not in Show Viewpoints): the last fit no longer holds. */
+  const onCanvasInput = (event: { target: EventTarget }) => {
+    if (!(event.target instanceof Node && viewpoints.current?.contains(event.target))) {
+      fittedPanel.current = null;
+    }
+  };
   /** Drawing a relationship: from this element. Esc cancels (then the drop is ignored). */
   const drawing = useRef<{ source: string; cancelled: boolean } | null>(null);
   const [drawingFrom, setDrawingFrom] = useState<string | null>(null);
@@ -983,6 +1055,19 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   );
   // Positions on the canvas (cards inside containers are placed relative to them).
   const absolute = useMemo(() => absoluteBoxes(shown), [shown]);
+  /** The viewport panned so a box (flow coordinates) is clear of Show Viewpoints, if it isn't. */
+  const clearOfViewpointsAt = (box: Box, viewport: Viewport): Viewport | undefined => {
+    const panel = viewpointsBox();
+    return panel ? panClearOf(box, viewport, panel) : undefined;
+  };
+  /** The same for a card on the canvas, by element id. */
+  const clearOfViewpoints = (
+    id: string,
+    viewport: Viewport = flow.getViewport(),
+  ): Viewport | undefined => {
+    const at = absolute.get(id);
+    return at ? clearOfViewpointsAt(at, viewport) : undefined;
+  };
   // The cards as a line's ends see them: a Stakeholder's lines end on its circle, not its box.
   const endBoxes = useMemo(() => {
     const boxes = new Map<string, EndBox>();
@@ -1777,7 +1862,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       frame = requestAnimationFrame(() => {
         frame = requestAnimationFrame(() => {
           fitted.current = laid;
-          void flow.fitView({ ...fitOptions, duration: reducedMotion() ? 0 : 200 });
+          fit(reducedMotion() ? 0 : 200);
         });
       });
     }
@@ -1815,12 +1900,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [laid, flow, updateNodeInternals, graph, domIds, flowId, missing]);
+  }, [laid, flow, updateNodeInternals, graph, domIds, flowId, missing, fit]);
 
   useEffect(() => {
     if (!laid) return;
     const frame = requestAnimationFrame(() => {
-      void flow.fitView({ ...fitOptions, duration: 0 });
+      fit(0);
     });
     return () => {
       cancelAnimationFrame(frame);
@@ -1938,7 +2023,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     } else if (event.key === '-') {
       void flow.zoomOut({ duration: reducedMotion() ? 0 : 200 });
     } else if (event.key === '0') {
-      void flow.fitView({ ...fitOptions, duration: reducedMotion() ? 0 : 200 });
+      fit(reducedMotion() ? 0 : 200);
     } else if (event.key === 't' || event.key === 'T') {
       // Not while a card, its width or a bend is dragged, or a relationship is drawn.
       const busy = dragging || resizingCard || lineDrag !== null || drawingFrom !== null;
@@ -2016,7 +2101,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const box = section.current?.getBoundingClientRect();
       const offset = parent ? absolute.get(parent.id) : undefined;
       const at = { ...card, x: next.x + (offset?.x ?? 0), y: next.y + (offset?.y ?? 0) };
-      const viewport = box ? panToKeepInView(at, flow.getViewport(), box) : undefined;
+      const kept = box ? panToKeepInView(at, flow.getViewport(), box) : undefined;
+      // Never under Show Viewpoints either: the canvas pans instead.
+      const viewport = clearOfViewpointsAt(at, kept ?? flow.getViewport()) ?? kept;
       if (viewport) void flow.setViewport(viewport);
     } else if (event.key === 'Enter' || isMoveKey(event)) {
       // Enter must not also click the card (which would focus the element).
@@ -2035,6 +2122,15 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (id) {
       setActiveId(id);
       setHover({ kind: 'card', id });
+      // A card that gets keyboard focus is never hidden under Show Viewpoints. A click on a card
+      // half under it doesn't pan: the card is under the pointer, and may be about to be dragged.
+      if (!pointerLast.current) {
+        const viewport = clearOfViewpoints(id);
+        if (viewport) {
+          fittedPanel.current = null;
+          void flow.setViewport(viewport, { duration: reducedMotion() ? 0 : 200 });
+        }
+      }
     }
   };
 
@@ -2260,8 +2356,16 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     const at = absolute.get(id);
     if (!at) return;
     setActiveId(id);
-    void flow.setCenter(at.x + at.width / 2, at.y + at.height / 2, {
-      zoom: flow.getZoom(),
+    // Centred, at the same zoom, and clear of Show Viewpoints on a small canvas.
+    const { width, height } = store.getState();
+    const zoom = flow.getZoom();
+    const centred = {
+      x: width / 2 - (at.x + at.width / 2) * zoom,
+      y: height / 2 - (at.y + at.height / 2) * zoom,
+      zoom,
+    };
+    fittedPanel.current = null;
+    void flow.setViewport(clearOfViewpoints(id, centred) ?? centred, {
       duration: reducedMotion() ? 0 : 200,
     });
     if (focus) focusCardOf(id);
@@ -2297,6 +2401,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       id="canvas"
       className={`canvas${dragging ? ' is-dragging' : ''}${lineDrag ? ' is-bending' : ''}${dropTarget ? ' is-drop-target' : ''}${drawingFrom !== null ? ' is-drawing' : ''}${editable ? ' is-editable' : ''}`}
       tabIndex={-1}
+      onPointerDownCapture={onCanvasInput}
+      onWheelCapture={onCanvasInput}
+      onKeyDownCapture={onCanvasInput}
       onDoubleClick={(event) => {
         const target = event.target as HTMLElement;
         if (!editable || !target.closest('.react-flow__pane') || target.closest('.card')) return;
@@ -2427,39 +2534,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.3} color="var(--grid-dot)" />
       </ReactFlow>
 
-      {(pending || layoutError !== null) && (
-        <div className="canvas-overlay" role="status">
-          {layoutError === null ? (
-            <>
-              <span className="spinner" aria-hidden="true" />
-              Laying out…
-            </>
-          ) : (
-            layoutError
-          )}
-        </div>
-      )}
-      {props.notice ? (
-        <div className="canvas-notice view-notice" role="alert">
-          {props.notice}
-        </div>
-      ) : moving ? (
-        <p className="canvas-notice move-hint">
-          Moving &ldquo;<span className="move-name">{nameOf(moving.id)}</span>&rdquo;. Arrow keys
-          move it, Shift for bigger steps
-          {isResizable(moving.id) ? <>, Alt + &larr; &rarr; change its width</> : null}. Enter
-          drops, Esc cancels.
-        </p>
-      ) : (
-        (fullNotice ?? capNotice) && (
-          <p className="canvas-notice" role="status">
-            {fullNotice ?? capNotice}
-          </p>
-        )
-      )}
-      {!props.notice && !moving && !fullNotice && !capNotice && loneNotice && (
-        <p className="canvas-notice muted">{loneNotice}</p>
-      )}
       <p className="vh" aria-live="polite">
         {announcement}
       </p>
@@ -2597,19 +2671,61 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         </div>
       )}
 
-      <div className="canvas-views">
+      {/* Show Viewpoints at the top left, always open; the notices beside it, or under it when
+          there's no room beside it. */}
+      <div className="canvas-top">
         <LineProperties
+          ref={viewpoints}
           fields={props.lineFields}
           shown={props.shownProperties}
           onChange={props.onShownProperties}
         />
+        <div className="canvas-notices">
+          {(pending || layoutError !== null) && (
+            <div className="canvas-overlay" role="status">
+              {layoutError === null ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  Laying out…
+                </>
+              ) : (
+                layoutError
+              )}
+            </div>
+          )}
+          {props.notice ? (
+            <div className="canvas-notice view-notice" role="alert">
+              {props.notice}
+            </div>
+          ) : moving ? (
+            <p className="canvas-notice move-hint">
+              Moving &ldquo;<span className="move-name">{nameOf(moving.id)}</span>&rdquo;. Arrow
+              keys move it, Shift for bigger steps
+              {isResizable(moving.id) ? <>, Alt + &larr; &rarr; change its width</> : null}. Enter
+              drops, Esc cancels.
+            </p>
+          ) : (
+            (fullNotice ?? capNotice) && (
+              <p className="canvas-notice" role="status">
+                {fullNotice ?? capNotice}
+              </p>
+            )
+          )}
+          {!props.notice && !moving && !fullNotice && !capNotice && loneNotice && (
+            <p className="canvas-notice muted">{loneNotice}</p>
+          )}
+        </div>
       </div>
-      <ZoomControls />
+      <ZoomControls
+        onFit={() => {
+          fit(reducedMotion() ? 0 : 200);
+        }}
+      />
     </section>
   );
 }
 
-function ZoomControls() {
+function ZoomControls({ onFit }: { onFit: () => void }) {
   const flow = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
   const duration = () => (reducedMotion() ? 0 : 200);
@@ -2639,7 +2755,7 @@ function ZoomControls() {
         type="button"
         aria-label="Fit view"
         title="Fit view"
-        onClick={() => void flow.fitView({ ...fitOptions, duration: duration() })}
+        onClick={onFit}
       >
         <Icon name="fit" />
       </button>

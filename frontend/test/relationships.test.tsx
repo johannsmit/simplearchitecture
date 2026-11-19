@@ -285,7 +285,7 @@ describe('The relationship form', () => {
     );
     fireEvent.click(within(direction).getByRole('radio', { name: /Both ways/ }));
     expect(within(details()).queryByRole('button', { name: 'Reverse direction' })).toBeNull();
-    expect(within(details()).getByRole('button', { name: /^Between: Web Shop/ })).toBeDefined();
+    expect(within(details()).getByRole('button', { name: /^From: Web Shop/ })).toBeDefined();
 
     // Contains is always one way: the choice goes, and comes back as One way.
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
@@ -380,11 +380,11 @@ describe('changing a relationship’s ends', () => {
     });
     expect(onCanvas('lonely')).toBe(false);
     const form = await openRelationship(/^Open relationship: .*Till/);
-    const change = within(ends()).getByRole('button', { name: 'Change From: Till' });
+    const change = within(ends()).getByRole('button', { name: 'From: Till, Application' });
     expect(change.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(change);
     expect(change.getAttribute('aria-expanded')).toBe('true');
-    const search = within(ends()).getByRole('combobox', { name: 'New element for “From”' });
+    const search = within(ends()).getByRole('combobox', { name: 'New element for From' });
     expect(document.activeElement).toBe(search);
     // The whole model, with each element's type; the current end and the other one are marked.
     const list = within(ends()).getByRole('listbox', { name: 'Elements' });
@@ -404,7 +404,7 @@ describe('changing a relationship’s ends', () => {
     expect(within(ends()).queryByRole('combobox')).toBeNull();
     expect(
       within(ends()).getByRole('button', {
-        name: 'From: Recipe Archive, Other, changed, not saved yet. Go to element',
+        name: 'From: Recipe Archive, Other, changed, not saved yet',
       }),
     ).toBeDefined();
     expect(within(form).getByText('Unsaved changes')).toBeDefined();
@@ -414,7 +414,9 @@ describe('changing a relationship’s ends', () => {
     ).toBeDefined();
     await waitFor(() => {
       expect(document.activeElement).toBe(
-        within(ends()).getByRole('button', { name: 'Change From: Recipe Archive' }),
+        within(ends()).getByRole('button', {
+          name: 'From: Recipe Archive, Other, changed, not saved yet',
+        }),
       );
     });
     expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
@@ -441,14 +443,16 @@ describe('changing a relationship’s ends', () => {
     const { sent } = await openShop();
     await openRelationship(/^Open relationship: Relates to Back Office Server/);
     const patches = () => sent.filter((r) => r.method === 'PATCH');
-    const change = within(ends()).getByRole('button', { name: 'Change To: Back Office Server' });
+    const change = within(ends()).getByRole('button', {
+      name: 'To: Back Office Server, Infrastructure',
+    });
     fireEvent.click(change);
     const search = within(ends()).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'till' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     fireEvent.keyDown(search, { key: 'Enter' });
-    // Focus is back on Change; Enter there, and on Reverse direction, doesn't save.
-    const changed = within(ends()).getByRole('button', { name: 'Change To: Till' });
+    // Focus is back on the field; Enter there, and on Reverse direction, doesn't save.
+    const changed = within(ends()).getByRole('button', { name: /^To: Till, Application/ });
     fireEvent.keyDown(changed, { key: 'Enter' });
     fireEvent.keyDown(within(ends()).getByRole('button', { name: 'Reverse direction' }), {
       key: 'Enter',
@@ -469,12 +473,12 @@ describe('changing a relationship’s ends', () => {
     });
     expect(patches()[1]?.body).toEqual({ version: 2, reverse: true });
     await within(details()).findByRole('heading', { name: 'Till relates to Web Shop' });
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Web Shop' }));
+    fireEvent.click(within(ends()).getByRole('button', { name: /^To: Web Shop/ }));
     const again = within(ends()).getByRole('combobox');
     fireEvent.change(again, { target: { value: 'recipe' } });
     fireEvent.keyDown(again, { key: 'ArrowDown' });
     fireEvent.keyDown(again, { key: 'Enter' });
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change From: Till' }));
+    fireEvent.click(within(ends()).getByRole('button', { name: /^From: Till/ }));
     fireEvent.keyDown(within(ends()).getByRole('combobox'), { key: 'Enter', metaKey: true });
     await waitFor(() => {
       expect(patches()).toHaveLength(3);
@@ -482,10 +486,12 @@ describe('changing a relationship’s ends', () => {
     expect(patches()[2]?.body).toEqual({ version: 3, target: 'lonely' });
   });
 
-  it('closes the search on Esc with nothing changed and no question, focus back on Change', async () => {
+  it('closes the search on Esc with nothing changed and no question, focus back on the field', async () => {
     await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
-    const change = within(ends()).getByRole('button', { name: 'Change To: Back Office Server' });
+    const change = within(ends()).getByRole('button', {
+      name: 'To: Back Office Server, Infrastructure',
+    });
     fireEvent.click(change);
     const search = within(ends()).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'till' } });
@@ -507,7 +513,9 @@ describe('changing a relationship’s ends', () => {
   it('refuses both ends on the same element, at the ends, before anything is sent', async () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Back Office Server' }));
+    fireEvent.click(
+      within(ends()).getByRole('button', { name: 'To: Back Office Server, Infrastructure' }),
+    );
     fireEvent.click(
       within(within(ends()).getByRole('listbox')).getByRole('option', { name: /Web Shop/ }),
     );
@@ -526,11 +534,11 @@ describe('changing a relationship’s ends', () => {
     }
     fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
-      expect(document.activeElement?.id).toBe('rf-change-target');
+      expect(document.activeElement?.id).toBe('rf-to');
     });
     expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
     // Picking the server again undoes it.
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Web Shop' }));
+    fireEvent.click(within(ends()).getByRole('button', { name: /^To: Web Shop/ }));
     fireEvent.click(
       within(within(ends()).getByRole('listbox')).getByRole('option', {
         name: /Back Office Server/,
@@ -545,12 +553,12 @@ describe('changing a relationship’s ends', () => {
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
     fireEvent.click(within(ends()).getByRole('button', { name: 'Reverse direction' }));
     // Reversed: the server is now From and Web Shop To; the To end becomes the till.
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Web Shop' }));
+    fireEvent.click(within(ends()).getByRole('button', { name: /^To: Web Shop/ }));
     fireEvent.click(
       within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
     );
     expect(
-      within(ends()).getByRole('button', { name: /^From: Back Office Server, Infrastructure\. / }),
+      within(ends()).getByRole('button', { name: /^From: Back Office Server, Infrastructure$/ }),
     ).toBeDefined();
     expect(
       within(ends()).getByRole('button', { name: /^To: Till, Application, changed/ }),
@@ -577,7 +585,9 @@ describe('changing a relationship’s ends', () => {
         : undefined,
     );
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change To: Back Office Server' }));
+    fireEvent.click(
+      within(ends()).getByRole('button', { name: 'To: Back Office Server, Infrastructure' }),
+    );
     fireEvent.click(
       within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
     );
@@ -586,7 +596,7 @@ describe('changing a relationship’s ends', () => {
     expect(error.closest('.field-error')?.id).toBe('rf-ends-error');
     expect(
       within(ends())
-        .getByRole('button', { name: 'Change To: Till' })
+        .getByRole('button', { name: /^To: Till, Application, changed/ })
         .getAttribute('aria-describedby'),
     ).toBe('rf-ends-error');
   });
@@ -625,7 +635,7 @@ describe('changing a relationship’s ends', () => {
     });
     expect(row('Oven Planner').getAttribute('aria-expanded')).toBeNull();
     const form = await openRelationship(/^Open relationship: Contains Till/);
-    fireEvent.click(within(ends()).getByRole('button', { name: 'Change From: Web Shop' }));
+    fireEvent.click(within(ends()).getByRole('button', { name: /^From: Web Shop/ }));
     const search = within(ends()).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'oven' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });
@@ -652,6 +662,284 @@ describe('changing a relationship’s ends', () => {
     await within(panel).findByRole('heading', { name: 'Web Shop relates to Back Office Server' });
     expect(within(panel).queryByRole('button', { name: /^Change/ })).toBeNull();
     expect(within(panel).queryByRole('combobox')).toBeNull();
+  });
+});
+
+describe('the From and To fields', () => {
+  const ends = () => within(details()).getByRole('region', { name: 'Ends' });
+  const field = (name: string | RegExp) => within(ends()).getByRole('button', { name });
+  const search = () => within(ends()).getByRole('combobox');
+
+  it('shows each end as a labelled field, with no Change, no Go to element and no visible Ends heading', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: .*Till/);
+    const from = field('From: Till, Application');
+    expect(from.id).toBe('rf-from');
+    expect(from.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(from.getAttribute('aria-expanded')).toBe('false');
+    expect(from.getAttribute('title')).toBe('Till · Application');
+    // The type mark and the name only: the type is in the name and the tooltip.
+    expect(from.textContent).toBe('Till');
+    expect(field('To: Web Shop, Application').id).toBe('rf-to');
+    expect(document.getElementById('rf-from-label')?.textContent).toBe('From');
+    expect(document.getElementById('rf-to-label')?.textContent).toBe('To');
+    expect(within(ends()).queryByRole('button', { name: /^Change/ })).toBeNull();
+    expect(within(ends()).queryByRole('button', { name: /Go to element/ })).toBeNull();
+    expect(within(ends()).queryByRole('heading')).toBeNull();
+    expect(ends().textContent).not.toContain('Ends');
+  });
+
+  it('captions a two-way relationship From and To too, and announces with those words', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(within(form).getByRole('radio', { name: /Both ways/ }));
+    expect(field('From: Web Shop, Application').id).toBe('rf-from');
+    expect(field('To: Back Office Server, Infrastructure').id).toBe('rf-to');
+    expect(details().textContent).not.toMatch(/Between|\bAnd\b/);
+    fireEvent.click(field(/^To:/));
+    fireEvent.change(search(), { target: { value: 'till' } });
+    fireEvent.keyDown(search(), { key: 'ArrowDown' });
+    fireEvent.keyDown(search(), { key: 'Enter' });
+    expect(screen.getByText('To: Till. Save to keep it.')).toBeDefined();
+    fireEvent.click(field(/^From:/));
+    fireEvent.click(
+      within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Web Shop/ }),
+    );
+    expect(screen.getByText('From stays Web Shop.')).toBeDefined();
+  });
+
+  it('opens on ↓ with no row highlighted, and a letter opens it with that letter typed', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const to = field(/^To:/);
+    fireEvent.keyDown(to, { key: 'ArrowDown' });
+    expect(to.getAttribute('aria-expanded')).toBe('true');
+    const box = within(ends()).getByRole('combobox', { name: 'New element for To' });
+    expect(document.activeElement).toBe(box);
+    expect((box as HTMLInputElement).value).toBe('');
+    expect(box.getAttribute('aria-activedescendant')).toBeNull();
+    expect(to.getAttribute('aria-controls')).toBe(
+      within(ends()).getByRole('listbox', { name: 'Elements' }).id,
+    );
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+
+    const from = field(/^From:/);
+    fireEvent.keyDown(from, { key: 'r' });
+    const typed = within(ends()).getByRole<HTMLInputElement>('combobox', {
+      name: 'New element for From',
+    });
+    expect(typed.value).toBe('r');
+    expect(document.activeElement).toBe(typed);
+    expect(typed.selectionStart).toBe(1);
+    // Space is the button's own key (it opens with a click), never a typed character.
+    fireEvent.keyDown(typed, { key: 'Escape' });
+    fireEvent.keyDown(from, { key: ' ' });
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+  });
+
+  it('closes when focus tabs out of the search, without taking the highlighted row', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(field(/^From:/));
+    fireEvent.change(search(), { target: { value: 'till' } });
+    fireEvent.keyDown(search(), { key: 'ArrowDown' });
+    const to = field(/^To:/);
+    fireEvent.blur(search(), { relatedTarget: to });
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+    expect(field('From: Web Shop, Application')).toBeDefined();
+    expect(within(form).queryByText('Unsaved changes')).toBeNull();
+  });
+
+  it('a click on the caption focuses the field without opening it', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(document.getElementById('rf-to-label') as HTMLElement);
+    expect(document.activeElement?.id).toBe('rf-to');
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+  });
+
+  it('puts the ends error under To, before Reverse, and marks the picked field', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(field(/^To:/));
+    fireEvent.click(
+      within(within(ends()).getByRole('listbox')).getByRole('option', { name: /Web Shop/ }),
+    );
+    const error = document.getElementById('rf-ends-error') as HTMLElement;
+    const to = field(/^To: Web Shop, Application, changed/);
+    const from = field(/^From:/);
+    const reverse = within(ends()).getByRole('button', { name: 'Reverse direction' });
+    // Fields, then the error, then Reverse.
+    expect(to.compareDocumentPosition(error) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(error.compareDocumentPosition(reverse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(to.getAttribute('aria-invalid')).toBe('true');
+    expect(from.getAttribute('aria-invalid')).toBeNull();
+    for (const control of [from, to, reverse]) {
+      expect(control.getAttribute('aria-describedby')).toBe('rf-ends-error');
+    }
+    // The tag sits with the caption, above the field.
+    const label = document.getElementById('rf-to-label')?.parentElement;
+    expect(label?.querySelector('.tag')?.textContent).toBe('Changed');
+  });
+
+  it('shows the ends of a relationship with no id as links to the elements, with no fields', async () => {
+    const noId: JgfEdge = { source: 'shop', target: 'lonely', relation: 'Relation' };
+    await openShop((_method, url) =>
+      url === `/api/models/${bakeryId}`
+        ? Response.json({
+            graph: { ...bakeryModel.graph, edges: [...(bakeryModel.graph.edges ?? []), noId] },
+          })
+        : undefined,
+    );
+    fireEvent.click(
+      within(details()).getAllByRole('button', {
+        name: /^Open relationship: Relates to Recipe Archive/,
+      })[0] as HTMLElement,
+    );
+    await screen.findByText(/has no id/);
+    expect(field('From: Web Shop, Application. Go to element')).toBeDefined();
+    fireEvent.click(field('To: Recipe Archive, Other. Go to element'));
+    await within(details()).findByRole('heading', { name: 'Recipe Archive' });
+    expect(document.getElementById('rf-from')).toBeNull();
+  });
+
+  it('wraps long names at spaces in the fields, the list and the panel’s rows', () => {
+    const css = readFileSync(join(import.meta.dirname, '../src/styles/explorer.css'), 'utf8');
+    const rule = (selector: string) => {
+      const start = css.indexOf(`\n${selector} {`);
+      expect(start, selector).toBeGreaterThan(-1);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    expect(rule('.end-field .end-name')).toMatch(/overflow-wrap: break-word;/);
+    expect(rule('.end-field .end-name')).toMatch(/word-break: normal;/);
+    expect(rule('.end-pop .pick-list .pname')).toMatch(/overflow-wrap: break-word;/);
+    expect(rule('.end-pop .pick-list .pname')).toMatch(/white-space: normal;/);
+    expect(rule('.rel.rel-endrow .rname')).toMatch(/overflow-wrap: break-word;/);
+    expect(css).not.toMatch(/\.rel-label\b/);
+  });
+
+  it('disables both fields while saving, so neither opens, and enables them after', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const { handler } = api();
+    const held: Handler = (request) =>
+      request.method === 'PATCH'
+        ? new Promise<Response>((resolve) => {
+            answer = resolve;
+          })
+        : undefined;
+    stubApi(modeller, held, handler);
+    renderAt(at('shop'));
+    await screen.findByRole('form', { name: /^Edit / });
+    const form = await openRelationship(/^Open relationship: .*Till/);
+    fireEvent.click(field(/^To:/));
+    fireEvent.change(search(), { target: { value: 'recipe' } });
+    fireEvent.keyDown(search(), { key: 'ArrowDown' });
+    fireEvent.keyDown(search(), { key: 'Enter' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(field(/^To:/)).toHaveProperty('disabled', true);
+    });
+    expect(field(/^From:/)).toHaveProperty('disabled', true);
+    // A disabled button takes no click (nor focus, so no keys, in a browser).
+    fireEvent.click(field(/^From:/));
+    expect(within(ends()).queryByRole('combobox')).toBeNull();
+    expect(field(/^From:/).getAttribute('aria-expanded')).toBe('false');
+    answer(apiError(503, 'The server is busy.'));
+    await waitFor(() => {
+      expect(field(/^From:/)).toHaveProperty('disabled', false);
+    });
+    expect(field(/^To: Recipe Archive/)).toHaveProperty('disabled', false);
+  });
+
+  // Expected to fail until fixed: the section's class is also New relationship's "source → target"
+  // line, whose rule makes it one wrapping row. In a browser the fields then shrink to their names,
+  // To and Reverse share a row, and a list as narrow as a short field breaks names inside words.
+  it('stacks From, To and Reverse at full width: no rule lays their section out as a row', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: .*Till/);
+    const css = readFileSync(
+      join(import.meta.dirname, '../src/styles/explorer.css'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    // Every rule whose selector list holds one of the section's classes on its own.
+    const classes = [...ends().classList];
+    const bodies = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selectors]) =>
+        (selectors ?? '').split(',').some((selector) => classes.includes(selector.trim().slice(1))),
+      )
+      .map(([, , body]) => body ?? '');
+    for (const body of bodies) {
+      expect(body).not.toMatch(/(^|[;\s])display:\s*(inline-)?(flex|grid)\b/);
+      expect(body).not.toMatch(/overflow-wrap:\s*anywhere/);
+    }
+  });
+
+  it('keeps the accent border on an open field under the pointer', () => {
+    const css = readFileSync(join(import.meta.dirname, '../src/styles/explorer.css'), 'utf8');
+    // The hover border leaves an open field alone, so its open border wins under the pointer too.
+    const hover = /\n(\.end-field:hover[^{]*)\{/.exec(css)?.[1] ?? '';
+    expect(hover).toContain("[aria-expanded='true']");
+    expect(css).toMatch(
+      /\n\.end-field\[aria-expanded='true'\] \{\s*border-color: var\(--accent\);/,
+    );
+  });
+
+  it('keeps the list out of the Tab order, so Tab from the search leaves it', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.click(field(/^From:/));
+    const list = within(ends()).getByRole('listbox', { name: 'Elements' });
+    // A list that scrolls is a Tab stop of its own in some browsers, unless it says otherwise.
+    expect(list.getAttribute('tabindex')).toBe('-1');
+    // A press on the list (its scroll bar, its caption) keeps focus in the search.
+    expect(fireEvent.mouseDown(list)).toBe(false);
+    expect(document.activeElement).toBe(search());
+  });
+
+  it('shows a 60-character name whole in the field, with its type in the tooltip', async () => {
+    const long = 'Customer contact and complaints handling for every bakery shop';
+    const renamed = structuredClone(bakeryModel);
+    Object.assign(renamed.graph.nodes?.server ?? {}, { label: long });
+    await openShop((_method, url) =>
+      url === `/api/models/${bakeryId}` ? Response.json(renamed) : undefined,
+    );
+    await openRelationship(/^Open relationship: Relates to Customer contact/);
+    const to = field(`To: ${long}, Infrastructure`);
+    expect(to.querySelector('.end-name')?.textContent).toBe(long);
+    expect(to.getAttribute('title')).toBe(`${long} · Infrastructure`);
+  });
+});
+
+describe('the label line is gone', () => {
+  it('shows no “from the import” line on the form, and keeps the Label field', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    expect(details().textContent).not.toContain('from the import');
+    expect(details().querySelector('.rel-label')).toBeNull();
+    expect(within(form).getByRole<HTMLInputElement>('combobox', { name: /^Label/ }).value).toBe(
+      'Hosted on',
+    );
+  });
+
+  it('shows no “from the import” line in the details panel in Viewing', async () => {
+    const { handler } = api();
+    stubApi(modeller, handler);
+    renderAt(`/viewing/models/${bakeryId}/elements/shop`);
+    const panel = await screen.findByRole('complementary', { name: 'Details' });
+    await within(panel).findByRole('heading', { name: 'Web Shop' });
+    fireEvent.click(
+      within(panel).getAllByRole('button', {
+        name: /^Open relationship: Relates to Back Office Server/,
+      })[0] as HTMLElement,
+    );
+    await within(panel).findByRole('heading', { name: 'Web Shop relates to Back Office Server' });
+    expect(panel.textContent).not.toContain('from the import');
+    expect(panel.querySelector('.rel-label')).toBeNull();
+    // The section keeps its name for screen readers only.
+    const ends = within(panel).getByRole('region', { name: 'Ends' });
+    expect(within(ends).queryByRole('heading')).toBeNull();
+    expect(within(ends).getByRole('button', { name: /^From: Web Shop/ })).toBeDefined();
   });
 });
 
