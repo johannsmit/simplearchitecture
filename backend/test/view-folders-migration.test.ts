@@ -102,6 +102,8 @@ describe('migration 015', () => {
       { folder: null },
       { folder: null },
     ]);
+    // Read by today's app, on today's schema.
+    await migrate(target, loadMigrations());
     const service = new ViewService(await PostgresModelStore.open(target, quiet));
     const { views } = await service.listViews(modelId);
     expect(views.map((view) => [view.name, view.folder, view.version])).toEqual([
@@ -144,6 +146,7 @@ describe('migration 015', () => {
     const { db: target, modelId } = await at014();
     await migrate(target, all);
     await setFolder(target, 'Mornings');
+    await migrate(target, loadMigrations());
     const service = new ViewService(await PostgresModelStore.open(target, quiet));
     await service.renameView(modelId, milkingId, { version: 3, name: 'Milking at dawn' }, author);
     await service.replaceContents(

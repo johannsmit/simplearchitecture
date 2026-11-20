@@ -1,5 +1,12 @@
 import type { PlacedCard, PlacedHandle } from './elkLayout';
-import { absoluteBoxes, containerBox, linkOfPort, portId } from './layoutGeometry';
+import {
+  absoluteBoxes,
+  frameOf,
+  groupTextArea,
+  isGroupId,
+  linkOfPort,
+  portId,
+} from './layoutGeometry';
 import { fitContainers, type Box, type Point } from './positions';
 
 /**
@@ -325,7 +332,7 @@ export function laidForCanvas(
   // container must cross fewer names than before, counting every container's.
   const nameWidthOf = (id: string) =>
     options.nameWidthOf?.(id) ?? options.minSizeOf(id).width - nameInset;
-  const names = byDepth.map((id) => nameArea(after.get(id) as Box, nameWidthOf(id)));
+  const names = byDepth.map((id) => nameArea(after.get(id) as Box, nameWidthOf(id), id));
   const namesCrossed = (line: Line) =>
     names.filter((name) =>
       line.points.some((point, index) => {
@@ -339,7 +346,7 @@ export function laidForCanvas(
 
     const keep = (line: Line, was: Line) =>
       rightAngled(line.points) && !overOthers(line) && namesCrossed(line) < namesCrossed(was);
-    for (const [handle, line] of clearOfName(box, nameWidthOf(id), [...lines.values()], keep)) {
+    for (const [handle, line] of clearOfName(id, box, nameWidthOf(id), [...lines.values()], keep)) {
       lines.set(handle, line);
     }
   }
@@ -382,14 +389,16 @@ const nameInset = 30;
 /**
  * Where a container's name is: centred in its header, `width` wide (type mark and name, from
  * cardSize.ts) or as wide as the header lets it be (a longer name is cut), with 4px either side.
+ * A group box's value and count are at the left of its header instead, kept 8px clear.
  */
-export function nameArea(box: Box, width: number): Box {
+export function nameArea(box: Box, width: number, id?: string): Box {
+  if (id !== undefined && isGroupId(id)) return groupTextArea(box, width);
   const shown = Math.max(0, Math.min(width, box.width - 26)) + 8;
   return {
     x: box.x + (box.width - shown) / 2,
     y: box.y,
     width: shown,
-    height: containerBox.header,
+    height: frameOf(id).header,
   };
 }
 
@@ -444,15 +453,17 @@ function entryOf(line: Line, box: Box, name: Box, bandTop: number): Entry | unde
  * lowest level in the band. `keep` says whether a changed line may be used. By source handle id.
  */
 function clearOfName(
+  id: string,
   box: Box,
   nameWidth: number,
   lines: readonly Line[],
   keep: (line: Line, was: Line) => boolean,
 ): Map<string, Line> {
-  const name = nameArea(box, nameWidth);
+  const name = nameArea(box, nameWidth, id);
+  const frame = frameOf(id);
   const band = {
-    top: box.y + containerBox.header + 1,
-    bottom: box.y + containerBox.padding.top - endRoom,
+    top: box.y + frame.header + 1,
+    bottom: box.y + frame.padding.top - endRoom,
   };
   const entries = lines.flatMap((line) => entryOf(line, box, name, band.top) ?? []);
   const result = new Map<string, Line>();

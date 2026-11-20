@@ -181,6 +181,18 @@ export {
   type FilterValueCount,
 } from './filters.js';
 export {
+  compareGroupValues,
+  elementGroupValue,
+  groupByChoices,
+  groupByLabel,
+  isGroupByKey,
+  maxGroupByKeyLength,
+  maxViewGroupValueLength,
+  storedGroupValue,
+  typeGroupKey,
+  type GroupByChoice,
+} from './group-by.js';
+export {
   dataValueKey,
   dataValuesOf,
   dataValuesText,

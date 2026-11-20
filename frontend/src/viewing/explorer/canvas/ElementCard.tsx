@@ -20,6 +20,10 @@ export interface CardData extends Record<string, unknown> {
    * label then sits on that container's body colour.
    */
   containerColour?: string;
+  /** On a grouped canvas: the value of the group box the card is in ("Not set" for none). */
+  group?: string;
+  /** Right inside a group box: a circle's label sits on the box's fill. */
+  inGroup?: boolean;
   /**
    * A circle's name is longer than its 3-line label, or a container's than its one-line header:
    * the name ends in an ellipsis.
@@ -78,12 +82,18 @@ const positions: Record<Side, Position> = {
 };
 
 /**
- * What a screen reader hears for a card: "Order Hub, Application, Current". The type is said even
- * though the card doesn't print it (colour, column, shape and legend show it). Functions are in
- * the details panel, not on the card.
+ * What a screen reader hears for a card: "Order Hub, Application, Current", and on a grouped
+ * canvas ", group Claims IT". The type is said even though the card doesn't print it (colour,
+ * column, shape and legend show it). Functions are in the details panel, not on the card. Group
+ * boxes are hidden from screen readers, so the card says its group.
  */
-export function cardLabel(data: Pick<CardData, 'element' | 'state'>): string {
-  return [data.element.name || '(unnamed)', data.element.type, data.state]
+export function cardLabel(data: Pick<CardData, 'element' | 'state' | 'group'>): string {
+  return [
+    data.element.name || '(unnamed)',
+    data.element.type,
+    data.state,
+    data.group === undefined ? undefined : `group ${data.group}`,
+  ]
     .filter(Boolean)
     .join(', ');
 }
@@ -172,7 +182,7 @@ export const ElementCard = memo(function ElementCard({ data }: NodeProps<CardNod
         : undefined;
   return (
     <div
-      className={`card ${circle ? 'is-circle ' : ''}${container ? 'is-container ' : ''}${circle && style ? 'is-nested ' : ''}${data.nameLines === undefined ? '' : 'is-cut '}${colourClass(element.type)}${data.focused ? ' is-focus' : ''}${data.selected ? ' is-selected' : ''}${data.moving ? ' is-moving' : ''}${data.connectHot === true ? ' is-connect-hot' : ''}${data.drop ? ` is-drop-${data.drop}` : ''}`}
+      className={`card ${circle ? 'is-circle ' : ''}${container ? 'is-container ' : ''}${circle && style ? 'is-nested ' : ''}${circle && data.inGroup === true ? 'is-grouped ' : ''}${data.nameLines === undefined ? '' : 'is-cut '}${colourClass(element.type)}${data.focused ? ' is-focus' : ''}${data.selected ? ' is-selected' : ''}${data.moving ? ' is-moving' : ''}${data.connectHot === true ? ' is-connect-hot' : ''}${data.drop ? ` is-drop-${data.drop}` : ''}`}
       style={style}
       data-element-id={element.id}
     >

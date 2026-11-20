@@ -71,6 +71,7 @@ function siteView(
     relationshipIds,
     layout,
     routes,
+    groupBy: null,
   };
 }
 

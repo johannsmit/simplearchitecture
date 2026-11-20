@@ -85,6 +85,8 @@ describe('migration 017', () => {
     const before = await dump(target);
     await migrate(target, all);
     expect(await dump(target)).toEqual(before);
+    // Read by today's app, on today's schema.
+    await migrate(target, loadMigrations());
     const { view } = await new ViewService(await PostgresModelStore.open(target, quiet)).getView(
       modelId,
       viewId,

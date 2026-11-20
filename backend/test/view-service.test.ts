@@ -136,6 +136,7 @@ describe('creating and reading views', () => {
     delete summary.relationshipIds;
     delete summary.layout;
     delete summary.routes;
+    delete summary.groupBy;
     expect(views).toEqual([summary]);
   });
 

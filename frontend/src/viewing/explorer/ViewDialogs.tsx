@@ -263,6 +263,8 @@ interface SaveViewDialogProps {
   /** The focused element's name, the name to start with. */
   initialName: string;
   contents: ViewContents;
+  /** The canvas's Group by, which the view keeps (one of the model's choices). */
+  groupBy?: string | undefined;
   onCancel: () => void;
   onSaved: (view: StoredView) => void;
 }
@@ -302,6 +304,7 @@ export function SaveViewDialog(props: SaveViewDialogProps) {
           ...(trimmed === '' ? {} : { folder: folderNamed(views, trimmed) ?? trimmed }),
           elementIds: [...elementIds],
           relationshipIds: [...relationshipIds],
+          ...(props.groupBy === undefined ? {} : { groupBy: props.groupBy }),
         });
         props.onSaved(view);
       }}

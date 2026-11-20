@@ -13,7 +13,8 @@ import {
 } from './model-store.js';
 
 /**
- * Views in PostgreSQL (migrations 010, 011, 014 and 015): one row per view, with its folder, plus
+ * Views in PostgreSQL (migrations 010, 011, 014, 015 and 019): one row per view, with its folder
+ * and Group by, plus
  * one per element and per relationship in it; a card's position is on its element's row, and a
  * line's route on its relationship's row. The foreign keys keep views consistent with the model: deleting an element,
  * a relationship or the model removes it from every view in the same transaction. Ids travel as
@@ -40,6 +41,8 @@ interface StoredCard {
   x: number;
   y: number;
   width: number | null;
+  /** '' for Not set; null: saved without grouping. */
+  group: string | null;
 }
 
 interface StoredRoute {
@@ -49,6 +52,7 @@ interface StoredRoute {
 }
 
 interface FullViewRow extends ViewRow {
+  group_by: string | null;
   element_ids: string[];
   relationship_ids: string[];
   layout: StoredCard[];
@@ -67,6 +71,7 @@ const viewColumns = `v.id, v.name, v.folder, v.version, v.created_at, v.created_
 
 // Contents in the model's order.
 const contentColumns = `
+  v.group_by,
   coalesce((select jsonb_agg(ve.element_id order by e.ordinal)
             from view_elements ve
             join elements e on e.model_id = ve.model_id and e.id = ve.element_id
@@ -76,7 +81,7 @@ const contentColumns = `
             join relationships r on r.model_id = vr.model_id and r.ordinal = vr.relationship_ordinal
             where vr.view_id = v.id and r.id is not null), '[]'::jsonb) as relationship_ids,
   coalesce((select jsonb_agg(jsonb_build_object('elementId', ve.element_id, 'x', ve.x, 'y', ve.y,
-                               'width', ve.width) order by e.ordinal)
+                               'width', ve.width, 'group', ve.group_value) order by e.ordinal)
             from view_elements ve
             join elements e on e.model_id = ve.model_id and e.id = ve.element_id
             where ve.view_id = v.id and ve.x is not null), '[]'::jsonb) as layout,
@@ -117,9 +122,9 @@ const findRelationships = `select r.id, r.source, r.target from relationships r
   where r.model_id = $1::uuid and r.id in (select jsonb_array_elements_text($2::text::jsonb))
   order by r.ordinal`;
 
-const insertView = `insert into views (id, model_id, name, folder, created_at, created_by_id,
-  created_by_name, updated_at, updated_by_id, updated_by_name)
-  values ($1::uuid, $2::uuid, $3, $7, $4, $5, $6, $4, $5, $6)`;
+const insertView = `insert into views (id, model_id, name, folder, group_by, created_at,
+  created_by_id, created_by_name, updated_at, updated_by_id, updated_by_name)
+  values ($1::uuid, $2::uuid, $3, $7, $8, $4, $5, $6, $4, $5, $6)`;
 
 // New contents are written as a difference, so adding or removing one card costs little: rows no
 // longer wanted go, and only rows not there yet are added.
@@ -147,13 +152,16 @@ const deleteOtherRelationships = `delete from view_relationships vr
         and r.id in (select jsonb_array_elements_text($2::text::jsonb)))`;
 
 // A new layout: every card's position goes, then the cards sent get theirs.
-const clearLayout = `update view_elements set x = null, y = null, width = null
+const clearLayout = `update view_elements set x = null, y = null, width = null, group_value = null
   where view_id = $1::uuid and x is not null`;
 
-const setLayout = `update view_elements ve set x = c.x, y = c.y, width = c.width
+const setLayout = `update view_elements ve set x = c.x, y = c.y, width = c.width,
+    group_value = c.group_value
   from jsonb_to_recordset($2::text::jsonb)
-    as c(element_id text, x double precision, y double precision, width integer)
+    as c(element_id text, x double precision, y double precision, width integer, group_value text)
   where ve.view_id = $1::uuid and ve.element_id = c.element_id`;
+
+const setGroupBy = 'update views set group_by = $3 where id = $1::uuid and model_id = $2::uuid';
 
 // The same for the lines: every route goes, then the lines sent get theirs (by the relationship's
 // id, the first relationship with it, as in the contents).
@@ -204,16 +212,18 @@ function recordOf(row: FullViewRow): ViewRecord {
     summary: summaryOf(row),
     elementIds: row.element_ids,
     relationshipIds: row.relationship_ids,
-    layout: row.layout.map(({ elementId, x, y, width }): ViewCardLayout => ({
+    layout: row.layout.map(({ elementId, x, y, width, group }): ViewCardLayout => ({
       elementId,
       x,
       y,
       ...(width === null ? {} : { width }),
+      ...(group === null ? {} : { group: group === '' ? null : group }),
     })),
     routes: row.routes.map(({ relationshipId, xs, ys }): ViewLineRoute => ({
       relationshipId,
       points: xs.map((x, index) => ({ x, y: ys[index] as number })),
     })),
+    groupBy: row.group_by,
   };
 }
 
@@ -308,6 +318,7 @@ export class PostgresViewStore implements ViewStore {
           actor.id,
           actor.name,
           write.folder,
+          write.groupBy,
         ]);
       } else if (write.kind === 'rename') {
         await tx.query('update views set name = $3 where id = $1::uuid and model_id = $2::uuid', [
@@ -327,6 +338,7 @@ export class PostgresViewStore implements ViewStore {
                 x: card.x,
                 y: card.y,
                 width: card.width ?? null,
+                group_value: card.group === undefined ? null : (card.group ?? ''),
               })),
             ),
           ]);
@@ -343,6 +355,9 @@ export class PostgresViewStore implements ViewStore {
               })),
             ),
           ]);
+        }
+        if (write.groupBy !== undefined) {
+          await tx.query(setGroupBy, [write.viewId, modelId, write.groupBy]);
         }
         details = { ...details, cards: write.cards.length, routes: write.routes.length };
         await tx.query(touchView, [write.viewId, modelId, at, actor.id, actor.name]);

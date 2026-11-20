@@ -1,7 +1,7 @@
 import { getSmoothStepPath, Position } from '@xyflow/react';
 import { circleAngles, circleDiameter, circleNodeWidth } from './circle';
 import type { LinkRoute, Side } from './elkLayout';
-import { containerBox, crossesAny, spacing } from './layoutGeometry';
+import { containerBox, crossesAny, groupTextArea, isGroupId, spacing } from './layoutGeometry';
 import type { Box, Point } from './positions';
 import { opposite, straightEnds, straightRoom, type StraightCandidate } from './straightLines';
 
@@ -204,6 +204,8 @@ export interface EndBox extends Box {
   circle?: boolean;
   /** The container it is drawn inside: a line may cross its own cards' containers. */
   parent?: string;
+  /** A group box's header text (value and count), as wide as drawn: lines keep clear of it. */
+  headerWidth?: number;
 }
 
 /** A line without a route: where it leaves and enters, and the corners it takes. */
@@ -425,7 +427,8 @@ function bestLine(
 
 /**
  * The headers of the containers one card is in and the other isn't (nor is it one of them): a line
- * between the two would run over a container's name there.
+ * between the two would run over a container's name there. Of a group box, only its value and
+ * count, with room around them: a line may come in beside them.
  */
 function headersCrossed(boxes: ReadonlyMap<string, EndBox>, source: string, target: string): Box[] {
   const chainOf = (id: string) => {
@@ -442,6 +445,10 @@ function headersCrossed(boxes: ReadonlyMap<string, EndBox>, source: string, targ
   for (const id of [...fromSource, ...fromTarget]) {
     const box = boxes.get(id);
     if (shared.has(id) || !box) continue;
+    if (isGroupId(id)) {
+      result.push(groupTextArea(box, box.headerWidth ?? box.width));
+      continue;
+    }
     const height = Math.min(box.height, containerBox.header);
     result.push({ x: box.x, y: box.y, width: box.width, height });
   }

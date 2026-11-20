@@ -70,6 +70,7 @@ function view(
     relationshipIds,
     layout,
     routes,
+    groupBy: null,
   };
 }
 

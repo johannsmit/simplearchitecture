@@ -81,6 +81,7 @@ function stargazing(layout: ViewCardLayout[] = []): StoredView {
     relationshipIds: edges.map((edge) => edge.id ?? ''),
     layout,
     routes: [],
+    groupBy: null,
   };
 }
 

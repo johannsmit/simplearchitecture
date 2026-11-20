@@ -12,6 +12,7 @@ import {
   type ModelRelationship,
   type Neighbourhood,
   type RelationshipChangeResult,
+  type GroupByChoice,
   type RelationshipViewField,
   type ViewCardLayout,
   type ViewLineRoute,
@@ -100,6 +101,17 @@ import {
   type Viewport,
 } from './positions';
 import { LineProperties } from './LineProperties';
+import { GroupBox, groupHandleClass, type GroupNode } from './GroupBox';
+import { GroupByPanel } from './GroupByPanel';
+import {
+  groupCards,
+  groupedText,
+  groupHeaderWidth,
+  groupMinSize,
+  groupNowOf,
+  groupValueText,
+} from './groups';
+import { frameOf, groupTextArea, groupValueOf, isGroupId } from './layoutGeometry';
 import {
   bendAt,
   bendSnap,
@@ -116,7 +128,14 @@ import {
 } from './lineRoutes';
 import { keepCards, relinkHandles, samePlacement, type PlaceHint } from './placeCards';
 import { RelatedPopup } from './RelatedPopup';
-import { layoutOfCanvas, storedPlacement, storedPositions, type CanvasLayout } from './viewLayout';
+import {
+  groupOfCard,
+  layoutOfCanvas,
+  storedGroupedPositions,
+  storedPlacement,
+  storedPositions,
+  type CanvasLayout,
+} from './viewLayout';
 import {
   EdgeMarkers,
   litArrowMarkerId,
@@ -137,10 +156,13 @@ import {
   type Direction,
 } from './view';
 
-const flowNodeTypes: NodeTypes = { element: ElementCard };
+const flowNodeTypes: NodeTypes = { element: ElementCard, groupBox: GroupBox };
+
+/** What React Flow draws as nodes: cards, and Group by's boxes. */
+type CanvasNode = CardNode | GroupNode;
 const flowEdgeTypes: EdgeTypes = { relationship: RelationshipEdge };
 
-/** The zoom a fit may choose; its padding keeps the cards clear of Show Viewpoints. */
+/** The zoom a fit may choose; its padding keeps the cards clear of the panels at the top left. */
 const fitZoom = { min: 0.2, max: 1.25 } as const;
 
 /** A width set by hand, within the smallest and the widest a card's width can be set to. */
@@ -172,6 +194,14 @@ interface ExplorerCanvasProps {
   /** The ones selected: a selection changes how lines look, never the layout. */
   shownProperties: readonly string[];
   onShownProperties: (keys: string[]) => void;
+  /** The element properties the cards can be grouped by (Group by); none: no panel. */
+  groupChoices?: readonly GroupByChoice[];
+  /**
+   * The property the cards are grouped by, one box per value, or undefined for none. A change lays
+   * the canvas out again (the page makes it part of `layoutKey`).
+   */
+  groupBy?: string | undefined;
+  onGroupBy?: (key: string | undefined) => void;
   /** Adds a related element to the canvas (the focused element stays the same). */
   onAddElement: (id: string) => void;
   /** A double click (or Enter) on a card: it becomes the focus element. */
@@ -270,6 +300,11 @@ interface ExplorerCanvasProps {
    */
   storedRoutes?: readonly ViewLineRoute[] | undefined;
   /**
+   * The Group by the stored layout was saved with: the layout is read only while the canvas is
+   * grouped the same way (a change in Viewing lays the page out afresh).
+   */
+  storedGroupBy?: string | undefined;
+  /**
    * Goes up by one when the person added or took off cards, or chose Tidy up: once the canvas
    * shows it, it reports where its cards are (`onArranged`).
    */
@@ -357,6 +392,8 @@ interface Laid {
   canvas: number;
   /** The routes given by hand that its lines start with, by relationship id. */
   routes: ReadonlyMap<string, HeldRoute>;
+  /** The property its cards are grouped by (its group boxes are in `placed`), or undefined. */
+  groupBy: string | undefined;
 }
 
 const noRoutes: ReadonlyMap<string, HeldRoute> = new Map();
@@ -419,7 +456,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const showRelatedPill = props.related !== false;
   // The card with the first Tab stop: the focused element's, or in a view the first card.
   const homeId = hood.hops.has(focusId) ? focusId : (hood.hops.keys().next().value ?? focusId);
-  const flow = useReactFlow<CardNode, RelationshipFlowEdge>();
+  const flow = useReactFlow<CanvasNode, RelationshipFlowEdge>();
   const updateNodeInternals = useUpdateNodeInternals();
   const section = useRef<HTMLElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -486,7 +523,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const [movingState, setMoving] = useState<Moving | null>(null);
   const editable = props.editable === true && props.modelId !== undefined;
   const store = useStoreApi();
-  /** Show Viewpoints, always open at the top left: fits and keyboard focus keep cards clear of it. */
+  /**
+   * The panels at the top left (Show Viewpoints, then Group by), always open: fits and keyboard
+   * focus keep cards clear of their column.
+   */
   const viewpoints = useRef<HTMLDivElement>(null);
   /** Whether the last thing the person did was press the pointer (rather than a key). */
   const pointerLast = useRef(false);
@@ -504,7 +544,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       window.removeEventListener('keydown', key, true);
     };
   }, []);
-  /** Show Viewpoints' box, in screen pixels from the canvas's top left. */
+  /** The panels' box, in screen pixels from the canvas's top left. */
   const viewpointsBox = useCallback((): Box | undefined => {
     const host = section.current?.getBoundingClientRect();
     const box = viewpoints.current?.getBoundingClientRect();
@@ -512,18 +552,18 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return { x: box.left - host.left, y: box.top - host.top, width: box.width, height: box.height };
   }, []);
   /**
-   * Show Viewpoints' size at the last fit, while the view is still as that fit left it; null once
+   * The panels' size at the last fit, while the view is still as that fit left it; null once
    * the person has panned, zoomed or moved anything since (or nothing was fitted yet).
    */
   const fittedPanel = useRef<{ width: number; height: number } | null>(null);
-  /** Fits the whole drawing, with every card clear of Show Viewpoints. */
+  /** Fits the whole drawing, with every card clear of the panels. */
   const fit = useCallback(
     (duration: number) => {
       const { width, height } = store.getState();
       const bounds = flow.getNodesBounds(flow.getNodes());
       const panel = viewpointsBox();
       fittedPanel.current = panel ? { width: panel.width, height: panel.height } : null;
-      const options: FitViewOptions<CardNode> = {
+      const options: FitViewOptions<CanvasNode> = {
         padding: clearFitPadding(bounds, { width, height }, panel, fitZoom),
         minZoom: fitZoom.min,
         maxZoom: fitZoom.max,
@@ -533,7 +573,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     },
     [flow, store, viewpointsBox],
   );
-  // Show Viewpoints can change size after a fit (its choices arrive late, or the cap message comes):
+  // The panels can change size after a fit (choices arrive late, or the cap message comes):
   // fit again so no card ends up under it, unless the person has moved the view since.
   useEffect(() => {
     const panel = viewpoints.current;
@@ -552,7 +592,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       observer.disconnect();
     };
   }, [fit, viewpointsBox]);
-  /** The person did something on the canvas (not in Show Viewpoints): the last fit no longer holds. */
+  /** The person did something on the canvas (not in the panels): the last fit no longer holds. */
   const onCanvasInput = (event: { target: EventTarget }) => {
     if (!(event.target instanceof Node && viewpoints.current?.contains(event.target))) {
       fittedPanel.current = null;
@@ -627,9 +667,17 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   /** Where new cards should go (a drop point, or next to a card), until they are placed. */
   const hints = useRef(new Map<string, PlaceHint>());
   // Read only when the canvas is a new one, so a layout saved meanwhile moves nothing.
-  const storedRef = useRef({ cards: props.storedLayout, routes: props.storedRoutes });
+  const storedRef = useRef({
+    cards: props.storedLayout,
+    routes: props.storedRoutes,
+    groupBy: props.storedGroupBy,
+  });
   useEffect(() => {
-    storedRef.current = { cards: props.storedLayout, routes: props.storedRoutes };
+    storedRef.current = {
+      cards: props.storedLayout,
+      routes: props.storedRoutes,
+      groupBy: props.storedGroupBy,
+    };
   });
   /** How many new canvases there have been: each one's routes given by hand start afresh. */
   const canvasCount = useRef(0);
@@ -643,7 +691,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     key: null,
   });
 
-  const { layoutKey, tidyCount, widths } = props;
+  const { layoutKey, tidyCount, widths, groupBy } = props;
   // A new canvas is measured (after the fonts load) and laid out in ELK's worker. Any other change
   // (cards or lines added or taken off, an element edited) keeps every card where it is.
   useEffect(() => {
@@ -656,7 +704,20 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     let live = true;
     // Nesting: each element inside its container, when that and their Contains are shown.
     const wanted = nest ? nestingParents(graph, hood) : new Map<string, string>();
+    const ids = [...hood.hops.keys()].filter((id) => graph.elements.has(id));
+    // Group by: each top-level card in its value's group box, one more level above the cards.
+    const grouping = groupBy === undefined ? undefined : groupCards(graph, ids, wanted, groupBy);
+    const groupIds = grouping?.order ?? [];
+    /** The box each card is drawn in: its container, or its group box. */
+    const parentOf = new Map(wanted);
+    for (const [id, group] of grouping?.groupOf ?? []) parentOf.set(id, group);
+    const headerWidthOf = (group: string) =>
+      groupHeaderWidth(
+        groupValueText(groupBy ?? '', groupValueOf(group)),
+        grouping?.members.get(group)?.length ?? 0,
+      );
     const sizeOf = (id: string, container: boolean) => {
+      if (isGroupId(id)) return groupMinSize(headerWidthOf(id));
       const element = graph.elements.get(id);
       if (!element) return { width: 0, height: 0 };
       const focused = id === hood.focusId;
@@ -673,7 +734,21 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       if (!element || cardShape(element.type) !== 'card') return sizeOf(id, false).height;
       return cardHeightAt({ name: element.name, focused: id === hood.focusId }, width);
     };
-    const ids = [...hood.hops.keys()].filter((id) => graph.elements.has(id));
+    /** Every card and group box to draw, parents first. */
+    const canvasCards = [
+      ...groupIds.map((id) => ({ id })),
+      ...ids.map((id) => ({ id, parent: parentOf.get(id) })),
+    ];
+    /** Element containers only: group boxes are drawn as boxes of their own. */
+    const elementParents = (placed: ReadonlyMap<string, PlacedCard>) => {
+      const parents = new Map<string, string>();
+      for (const card of placed.values()) {
+        if (card.parent !== undefined && !isGroupId(card.parent)) parents.set(card.id, card.parent);
+      }
+      return parents;
+    };
+    const withoutGroups = (set: Iterable<string>) =>
+      new Set([...set].filter((id) => !isGroupId(id)));
     // A Contains drawn as nesting: no line.
     const nested =
       (parents: ReadonlyMap<string, string>) =>
@@ -699,6 +774,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       parents,
       containers,
       ...routes,
+      groupBy,
     });
 
     const previous = laidRef.current;
@@ -713,11 +789,42 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         minSizeOf: (id) => sizeOf(id, true),
         holding: holdingRef.current,
       });
+      // On a grouped canvas, a card that belongs in another box than it is in (its value changed,
+      // or it came into or out of a container) goes, with what it holds, to a free spot in its
+      // box, as a new card does, nearest to where it was. No other card moves.
+      const staying = new Map(before);
+      if (grouping) {
+        const at = absoluteBoxes(before);
+        const leaving = new Set<string>();
+        for (const card of before.values()) {
+          const want = parentOf.get(card.id);
+          if (card.parent === want || isGroupId(card.id)) continue;
+          const inGroup = (id: string | undefined) => id !== undefined && isGroupId(id);
+          if (!inGroup(card.parent) && !inGroup(want)) continue;
+          leaving.add(card.id);
+          const was = at.get(card.id);
+          if (was && !hints.current.has(card.id)) {
+            hints.current.set(card.id, { at: { x: was.x, y: was.y } });
+          }
+        }
+        for (const card of before.values()) {
+          for (
+            let up: string | undefined = card.id;
+            up !== undefined;
+            up = before.get(up)?.parent
+          ) {
+            if (leaving.has(up)) {
+              staying.delete(card.id);
+              break;
+            }
+          }
+        }
+      }
       const box = section.current?.getBoundingClientRect();
       const kept = keepCards({
-        previous: before,
+        previous: staying,
         previousContainers: previous.containers,
-        cards: ids.map((id) => ({ id, parent: wanted.get(id) })),
+        cards: canvasCards,
         related: hood.relationships,
         sizeOf,
         heightAt,
@@ -730,10 +837,13 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
             })
           : { x: 0, y: 0 },
       });
-      // A container whose card was taken off fits what it still holds, and so do its containers.
+      // A container whose card was taken off fits what it still holds, and so do its containers;
+      // and a group box whose card went to another box.
       const lostIn = new Set<string>();
       for (const card of before.values()) {
-        if (card.parent === undefined || kept.placed.has(card.id)) continue;
+        if (card.parent === undefined) continue;
+        const now = kept.placed.get(card.id);
+        if (now && (now.parent === card.parent || !isGroupId(card.parent))) continue;
         for (let up: string | undefined = card.parent; up !== undefined && !lostIn.has(up);) {
           lostIn.add(up);
           up = before.get(up)?.parent;
@@ -743,10 +853,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         lostIn.size === 0
           ? kept.placed
           : fitContainers(kept.placed, lostIn, { minSizeOf: (id) => sizeOf(id, true) });
-      const parents = new Map<string, string>();
-      for (const card of fitted.values()) {
-        if (card.parent !== undefined) parents.set(card.id, card.parent);
-      }
+      const parents = elementParents(fitted);
       const placed = relinkHandles(
         fitted,
         layoutLinkRelationships(previous.hood.relationships),
@@ -754,7 +861,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       );
       // A layout's failure message stays: only a new layout, or a new canvas, clears it.
       setLaid(
-        made(placed, parents, kept.containers, false, previous.layoutSizes, {
+        made(placed, parents, withoutGroups(kept.containers), false, previous.layoutSizes, {
           canvas: previous.canvas,
           routes: previous.routes,
         }),
@@ -769,7 +876,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
       return !samePlacement(before, placed);
     };
-    if (previous?.key === layoutKey) {
+    if (previous?.key === layoutKey && previous.groupBy === groupBy) {
       if (keep(previous, movedRef.current)) latest.current.onKept?.(layoutKey);
       return;
     }
@@ -783,9 +890,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       storedRoutes: readonly ViewLineRoute[],
       problem: string | null,
     ) => {
-      const cards = ids.map((id) => ({ id, parent: wanted.get(id) }));
+      const cards = canvasCards;
       // A card at the width it was given, as it was left: the lines' stored routes end on it.
       const leftSize = (id: string, container: boolean) => {
+        if (isGroupId(id)) return sizeOf(id, true);
         const element = graph.elements.get(id);
         const set = container ? undefined : widths.get(id);
         if (set === undefined || !element || cardShape(element.type) !== 'card') {
@@ -812,10 +920,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
             })
           : { x: 0, y: 0 },
       });
-      const parents = new Map<string, string>();
-      for (const card of kept.placed.values()) {
-        if (card.parent !== undefined) parents.set(card.id, card.parent);
-      }
+      const parents = elementParents(kept.placed);
       // No routes from ELK: every line follows its cards, as after a move.
       const placed = relinkHandles(
         kept.placed,
@@ -844,33 +949,58 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
       hints.current.clear();
       setLayoutError(problem);
-      setLaid(
-        made(placed, parents, kept.containers, true, new Map(), {
-          canvas: ++canvasCount.current,
-          routes,
-        }),
-      );
+      const next = made(placed, parents, withoutGroups(kept.containers), true, new Map(), {
+        canvas: ++canvasCount.current,
+        routes,
+      });
+      setLaid(next);
       // Not ELK's layout: Tidy up has something to do.
       latest.current.onKept?.(layoutKey);
+      return next;
     };
 
     // A view with a stored layout: its cards where they were left, the others at a free spot.
     // Tidy up lays it out with ELK instead, but only on the canvas it was chosen for.
     const tidied =
       previous !== null && previous.tidyCount !== tidyCount && tidyAsked.current.key === layoutKey;
+    // Another Group by: laid out afresh, as Tidy up does (and in a view, saved).
+    const regrouped = previous !== null && previous.groupBy !== groupBy;
+    /** What the canvas's status says once a regroup is drawn. */
+    const regroupNote =
+      groupBy === undefined ? 'Not grouped.' : groupedText(groupBy, groupIds.length);
     // Another canvas: a report asked for on the previous one (Tidy up's save) is never made for it.
-    if (!tidied) arrangeWanted.current = false;
-    const stored = tidied ? undefined : storedPositions(storedRef.current.cards ?? []);
+    if (!tidied && !regrouped) arrangeWanted.current = false;
+    const storedCards = storedRef.current.cards ?? [];
+    // A view's stored layout holds for the grouping it was saved with (also on a regroup back to
+    // it); any other is laid out afresh.
+    const stored =
+      tidied || storedRef.current.groupBy !== groupBy
+        ? undefined
+        : grouping
+          ? storedGroupedPositions(
+              storedCards,
+              (id) => groupNowOf(grouping, wanted, id),
+              grouping.members,
+            )
+          : storedPositions(storedCards);
     if (stored !== undefined && ids.some((id) => stored.has(id))) {
-      placeWithoutElk(stored, storedRef.current.routes ?? [], null);
+      const next = placeWithoutElk(stored, storedRef.current.routes ?? [], null);
+      if (regrouped) setNote({ laid: next, text: regroupNote });
       return;
     }
 
     hints.current.clear();
     const containers = new Set(wanted.values());
+    const groupLayoutCards = groupIds.map((id): LayoutCard => ({
+      id,
+      ...sizeOf(id, true),
+      shape: 'container',
+      // Lines into a group box come in beside its value and count.
+      nameWidth: headerWidthOf(id),
+    }));
     const cards = ids.map((id): LayoutCard => {
       const element = graph.elements.get(id);
-      const parent = wanted.get(id);
+      const parent = parentOf.get(id);
       const container = containers.has(id);
       const shape = container ? ('container' as const) : element ? cardShape(element.type) : 'card';
       // A width set by hand is kept by a new layout (Tidy up), with the name wrapped to it.
@@ -900,7 +1030,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     // A new try (Tidy up after a failure): "Laying out…" again until it answers.
     setLayoutError(null);
     const elk = getElk();
-    const timed = withinTimeLimit(layoutCards(elk, cards, laidOut), layoutTimeLimit);
+    // Group boxes first, in the property's order: where the lines leave a choice, they keep it.
+    const timed = withinTimeLimit(
+      layoutCards(elk, [...groupLayoutCards, ...cards], laidOut),
+      layoutTimeLimit,
+    );
     timed.promise
       .then((byElk) => {
         if (!live) return;
@@ -909,14 +1043,18 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         const sizes = new Map(
           [...byElk.values()].map((card) => [card.id, { width: card.width, height: card.height }]),
         );
-        // Every container fits what it holds, as after a move.
-        const placed = fitContainers(byElk, containers, { minSizeOf: (id) => sizeOf(id, true) });
+        // Every container and group box fits what it holds, as after a move.
+        const placed = fitContainers(byElk, [...containers, ...groupIds], {
+          minSizeOf: (id) => sizeOf(id, true),
+        });
         const next = made(placed, wanted, containers, true, sizes, {
           canvas: ++canvasCount.current,
           routes: noRoutes,
         });
         setLaid(next);
-        if (tidied) {
+        if (regrouped) {
+          setNote({ laid: next, text: regroupNote });
+        } else if (tidied) {
           setNote({ laid: next, text: 'Layout tidied up.' });
         }
       })
@@ -942,7 +1080,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       live = false;
       timed.cancel();
     };
-  }, [fontsReady, hood, links, graph, nest, layoutKey, tidyCount, widths]);
+  }, [fontsReady, hood, links, graph, nest, layoutKey, tidyCount, widths, groupBy]);
 
   // Model ids can hold any character, but React Flow builds CSS selectors from node ids.
   // So React Flow and the DOM get made-up ids (`n0`, `card-0`), mapped back on events.
@@ -968,8 +1106,28 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     holdingRef.current = holding;
   });
   const hoodFocusId = hood.focusId;
+  // Each group box's header: its value as shown, its count, and how wide the two are drawn.
+  const groupHeads = useMemo(() => {
+    const heads = new Map<string, { text: string; count: number; width: number }>();
+    if (laid?.groupBy === undefined) return heads;
+    const counts = new Map<string, number>();
+    for (const card of laid.placed.values()) {
+      if (card.parent !== undefined && isGroupId(card.parent)) {
+        counts.set(card.parent, (counts.get(card.parent) ?? 0) + 1);
+      }
+    }
+    for (const id of laid.placed.keys()) {
+      if (!isGroupId(id)) continue;
+      const text = groupValueText(laid.groupBy, groupValueOf(id));
+      const count = counts.get(id) ?? 0;
+      heads.set(id, { text, count, width: groupHeaderWidth(text, count) });
+    }
+    return heads;
+  }, [laid]);
   const minContainerSize = useCallback(
     (id: string) => {
+      const head = groupHeads.get(id);
+      if (head) return groupMinSize(head.width);
       const element = graph.elements.get(id);
       return containerMinSize({
         name: element?.name ?? '',
@@ -977,7 +1135,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         userIcon: element !== undefined && nodeTypeDefinitions[element.type].icon === 'user',
       });
     },
-    [graph, hoodFocusId],
+    [graph, hoodFocusId, groupHeads],
   );
   const shown = useMemo(
     () =>
@@ -1055,7 +1213,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   );
   // Positions on the canvas (cards inside containers are placed relative to them).
   const absolute = useMemo(() => absoluteBoxes(shown), [shown]);
-  /** The viewport panned so a box (flow coordinates) is clear of Show Viewpoints, if it isn't. */
+  /** The viewport panned so a box (flow coordinates) is clear of the panels, if it isn't. */
   const clearOfViewpointsAt = (box: Box, viewport: Viewport): Viewport | undefined => {
     const panel = viewpointsBox();
     return panel ? panClearOf(box, viewport, panel) : undefined;
@@ -1069,6 +1227,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     return at ? clearOfViewpointsAt(at, viewport) : undefined;
   };
   // The cards as a line's ends see them: a Stakeholder's lines end on its circle, not its box.
+  // Group boxes too: a line keeps out of a box it neither starts nor ends in, and off its header text.
   const endBoxes = useMemo(() => {
     const boxes = new Map<string, EndBox>();
     for (const [id, box] of absolute) {
@@ -1078,14 +1237,16 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         element !== undefined &&
         cardShape(element.type) === 'circle';
       const parent = shown.get(id)?.parent;
+      const head = groupHeads.get(id);
       boxes.set(id, {
         ...box,
         ...(circle ? { circle } : {}),
         ...(parent === undefined ? {} : { parent }),
+        ...(head ? { headerWidth: head.width } : {}),
       });
     }
     return boxes;
-  }, [absolute, graph, laid, shown]);
+  }, [absolute, graph, laid, shown, groupHeads]);
 
   // In Modelling, a line's label can lie over a card's connect handle. With the pointer on the
   // label there, that card (with what is inside it) comes above the labels and shows its handle,
@@ -1095,15 +1256,17 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const onPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     if (!editable || !laid || draggingId !== null) return;
     const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const cards = [...endBoxes].map(([id, box]) => ({
-      id,
-      box,
-      shape: laid.containers.has(id)
-        ? ('container' as const)
-        : box.circle === true
-          ? ('circle' as const)
-          : ('card' as const),
-    }));
+    const cards = [...endBoxes]
+      .filter(([id]) => !isGroupId(id))
+      .map(([id, box]) => ({
+        id,
+        box,
+        shape: laid.containers.has(id)
+          ? ('container' as const)
+          : box.circle === true
+            ? ('circle' as const)
+            : ('card' as const),
+      }));
     const current = connectHotRef.current;
     let next: string | null = null;
     if (current !== null) {
@@ -1172,7 +1335,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (!laid) return counts;
     if (!showRelatedPill) return counts;
     for (const id of laid.placed.keys()) {
-      counts.set(id, missingRelatedCount(graph, id, laid.placed));
+      if (!isGroupId(id)) counts.set(id, missingRelatedCount(graph, id, laid.placed));
     }
     return counts;
   }, [laid, graph, showRelatedPill]);
@@ -1189,9 +1352,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       const shape = container ? 'container' : cardShape(element.type);
       const parentElement = card.parent === undefined ? undefined : graph.elements.get(card.parent);
       const cut = shape === 'card' ? cardNameCut({ name: element.name, focused }, card) : undefined;
+      const group = groupOfCard(laid.placed, card.id);
       const data: CardNode['data'] = {
         element,
         shape,
+        ...(group === undefined ? {} : { group: groupHeads.get(group)?.text ?? '' }),
+        ...(card.parent !== undefined && isGroupId(card.parent) ? { inGroup: true } : {}),
         ...(parentElement
           ? { containerColour: nodeTypeDefinitions[parentElement.type].colour }
           : {}),
@@ -1248,11 +1414,14 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     resizeFromGrip,
     props.onRemoveCard,
     inView,
+    groupHeads,
   ]);
 
-  // The card being dragged or moved with the keyboard, with everything inside it, goes on top.
-  const liftedId = draggingId ?? movingId;
-  const baseNodes = useMemo<CardNode[]>(() => {
+  // The card being dragged or moved with the keyboard, with everything inside it, goes on top. A
+  // group box stays under its cards (CSS lifts it with a shadow).
+  const liftedId =
+    draggingId !== null && isGroupId(draggingId) ? undefined : (draggingId ?? movingId);
+  const baseNodes = useMemo<CanvasNode[]>(() => {
     /** The card whose connect handle is let through, or a card drawn inside it. */
     const hot = (id: string) => {
       if (!editable || connectHot === null) return false;
@@ -1261,13 +1430,44 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       }
       return false;
     };
-    return [...shown.values()].flatMap((card) => {
+    return [...shown.values()].flatMap((card): CanvasNode[] => {
+      const head = groupHeads.get(card.id);
+      if (head) {
+        return [
+          {
+            id: flowId(card.id),
+            type: 'groupBox' as const,
+            position: { x: card.x, y: card.y },
+            width: card.width,
+            height: card.height,
+            measured: { width: card.width, height: card.height },
+            // Under the lines and the cards.
+            zIndex: -1,
+            // Moved by its header only: its body lets presses through, so dragging there pans.
+            // Inline, as React Flow sets `pointer-events: all` inline on a draggable node.
+            dragHandle: `.${groupHandleClass}`,
+            style: { pointerEvents: 'none' },
+            draggable: true,
+            selectable: false,
+            connectable: false,
+            domAttributes: { 'aria-roledescription': undefined, 'aria-hidden': true },
+            data: {
+              text: head.text,
+              count: head.count,
+              notSet: groupValueOf(card.id) === undefined,
+            },
+          },
+        ];
+      }
       const data = cardData.get(card.id);
       if (!data) return [];
       const parent = card.parent === undefined ? undefined : shown.get(card.parent);
+      // How deep in containers (a group box isn't one: its cards are the top level).
       let depthInside = 0;
-      for (let up = card.parent; up !== undefined; up = shown.get(up)?.parent) depthInside++;
-      const { padding } = containerBox;
+      for (let up = card.parent; up !== undefined; up = shown.get(up)?.parent) {
+        if (!isGroupId(up)) depthInside++;
+      }
+      const { padding } = frameOf(card.parent);
       return [
         {
           id: flowId(card.id),
@@ -1302,15 +1502,18 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         },
       ];
     });
-  }, [shown, cardData, flowId, liftedId, editable, connectHot]);
+  }, [shown, cardData, flowId, liftedId, editable, connectHot, groupHeads]);
 
-  // What edge labels and state marks must not cover: cards, and only the header of a container.
+  // What edge labels and state marks must not cover: cards, only the header of a container, and
+  // only the value and count of a group box.
   const cardBoxes = useMemo(
     () =>
-      [...absolute].map(([id, box]) =>
-        laid?.containers.has(id) ? { ...box, height: containerBox.header } : box,
-      ),
-    [absolute, laid],
+      [...absolute].map(([id, box]) => {
+        const head = groupHeads.get(id);
+        if (head) return groupTextArea(box, head.width);
+        return laid?.containers.has(id) ? { ...box, height: containerBox.header } : box;
+      }),
+    [absolute, laid, groupHeads],
   );
 
   // A selected Contains drawn as nesting has no line: its two cards show it.
@@ -1321,13 +1524,18 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     selected && laid?.parents.get(selected.target) === selected.source ? selected : undefined;
   const nodes = useMemo(() => {
     const lit = highlight
-      ? baseNodes.map((node) => ({
-          ...node,
-          className: highlight.ids.has(node.data.element.id) ? 'is-lit' : 'is-dim',
-        }))
+      ? baseNodes.map((node) =>
+          node.type === 'groupBox'
+            ? node
+            : {
+                ...node,
+                className: highlight.ids.has(node.data.element.id) ? 'is-lit' : 'is-dim',
+              },
+        )
       : baseNodes;
     if (!selectedNest) return lit;
     return lit.map((node) => {
+      if (node.type === 'groupBox') return node;
       const id = node.data.element.id;
       if (id === selectedNest.target) return { ...node, className: 'is-lit is-sel-child' };
       return id === selectedNest.source ? { ...node, className: 'is-lit' } : node;
@@ -1639,15 +1847,19 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (!arrangeWanted.current || !laid || settling.current) return;
     if (laid.key !== layoutKey || laid.hood !== hood || laid.widths !== widths) return;
     arrangeWanted.current = false;
-    const cards = layoutOfCanvas(shown, (id) => {
-      const element = graph.elements.get(id);
-      return (
-        widths.has(id) &&
-        !laid.containers.has(id) &&
-        element !== undefined &&
-        cardShape(element.type) === 'card'
-      );
-    });
+    const cards = layoutOfCanvas(
+      shown,
+      (id) => {
+        const element = graph.elements.get(id);
+        return (
+          widths.has(id) &&
+          !laid.containers.has(id) &&
+          element !== undefined &&
+          cardShape(element.type) === 'card'
+        );
+      },
+      laid.groupBy !== undefined,
+    );
     const ends = new Map(hood.relationships.map((relationship) => [relationship.id, relationship]));
     // Lines on the layout's route (after Tidy up) are saved as drawn, so the view opens with them.
     const laidLines = new Map<string, Point[]>();
@@ -1674,6 +1886,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     onArranged?.({
       cards,
       routes: withLaidRoutes(routesToSave(held, ends, endBoxes), laidLines, laid.drawn, endBoxes),
+      groupBy: laid.groupBy ?? null,
     });
   }, [
     arrangeTick,
@@ -1886,7 +2099,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     } else if (hadFocus.current && lost) {
       const home = laid.placed.has(laid.hood.focusId)
         ? laid.hood.focusId
-        : laid.placed.keys().next().value;
+        : [...laid.placed.keys()].find((id) => !isGroupId(id));
       if (home !== undefined) focusPart(home, 'main');
     } else if (
       activeCard !== undefined &&
@@ -1993,7 +2206,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       });
       const from = absolute.get(cardId);
       if (!from) return;
-      const next = nearestInDirection(centre([cardId, from]), [...absolute].map(centre), direction);
+      const cardsOnly = [...absolute].filter(([id]) => !isGroupId(id));
+      const next = nearestInDirection(centre([cardId, from]), cardsOnly.map(centre), direction);
       if (next) {
         focusCard(next);
         props.onSelectElement?.(next);
@@ -2095,14 +2309,14 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (direction && card && !event.altKey && !event.ctrlKey && !event.metaKey) {
       const parent = card.parent === undefined ? undefined : shown.get(card.parent);
       const step = movedBy(card, direction, moveStep(event));
-      const next = parent ? clampToContainer(step) : step;
+      const next = parent ? clampToContainer(step, parent.id) : step;
       props.onMove(card.id, next);
       // Keep the card in view: pan just enough.
       const box = section.current?.getBoundingClientRect();
       const offset = parent ? absolute.get(parent.id) : undefined;
       const at = { ...card, x: next.x + (offset?.x ?? 0), y: next.y + (offset?.y ?? 0) };
       const kept = box ? panToKeepInView(at, flow.getViewport(), box) : undefined;
-      // Never under Show Viewpoints either: the canvas pans instead.
+      // Never under the panels either: the canvas pans instead.
       const viewport = clearOfViewpointsAt(at, kept ?? flow.getViewport()) ?? kept;
       if (viewport) void flow.setViewport(viewport);
     } else if (event.key === 'Enter' || isMoveKey(event)) {
@@ -2122,7 +2336,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (id) {
       setActiveId(id);
       setHover({ kind: 'card', id });
-      // A card that gets keyboard focus is never hidden under Show Viewpoints. A click on a card
+      // A card that gets keyboard focus is never hidden under the panels. A click on a card
       // half under it doesn't pan: the card is under the pointer, and may be about to be dragged.
       if (!pointerLast.current) {
         const viewport = clearOfViewpoints(id);
@@ -2166,7 +2380,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     note && (note.laid === laid || (note.canvas !== undefined && note.canvas === laid?.canvas))
       ? note.text
       : laid
-        ? `${inView ? `View ${props.viewName || '(unnamed)'}` : `Focused ${graph.elements.get(laid.hood.focusId)?.name || '(unnamed)'}`}. ${counted(laid.placed.size, 'element')} shown.`
+        ? `${inView ? `View ${props.viewName || '(unnamed)'}` : `Focused ${graph.elements.get(laid.hood.focusId)?.name || '(unnamed)'}`}. ${counted(laid.placed.size - groupHeads.size, 'element')} shown.`
         : '';
 
   /** A popover's place in the canvas: 12px right of the point, kept 8px inside. */
@@ -2356,7 +2570,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     const at = absolute.get(id);
     if (!at) return;
     setActiveId(id);
-    // Centred, at the same zoom, and clear of Show Viewpoints on a small canvas.
+    // Centred, at the same zoom, and clear of the panels on a small canvas.
     const { width, height } = store.getState();
     const zoom = flow.getZoom();
     const centred = {
@@ -2389,7 +2603,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     else section.current?.focus();
   };
 
-  const onNodesChange = (changes: NodeChange<CardNode>[]) => {
+  const onNodesChange = (changes: NodeChange<CanvasNode>[]) => {
     const moves = draggedPositions(changes, (id) => elementIds.get(id));
     if (moves.length > 0) dragMoved.current = true;
     for (const [id, position] of moves) props.onMove(id, position);
@@ -2442,7 +2656,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       onBlurCapture={onBlurCapture}
     >
       <EdgeMarkers />
-      <ReactFlow<CardNode, RelationshipFlowEdge>
+      <ReactFlow<CanvasNode, RelationshipFlowEdge>
         ref={wrapper}
         nodes={nodes}
         edges={props.lines ? edges : noEdges}
@@ -2454,9 +2668,11 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         }}
         onNodesChange={onNodesChange}
         onNodeDragStart={(_event, node) => {
+          const id = elementIds.get(node.id);
+          if (id === undefined) return;
           setRelated(null);
-          setHold(holdFrom(node.data.element.id));
-          setDraggingId(node.data.element.id);
+          setHold(holdFrom(id));
+          setDraggingId(id);
           dragMoved.current = false;
         }}
         onNodeDragStop={() => {
@@ -2467,6 +2683,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           dragMoved.current = false;
         }}
         onNodeClick={(event, node) => {
+          // A group box's header does nothing on a click.
+          if (node.type === 'groupBox') return;
           // A single click (or tap) selects; the second click of a double click (or a double tap)
           // focuses. Counting clicks here, rather than on dblclick, works for touch too.
           const id = node.data.element.id;
@@ -2477,7 +2695,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
           }
         }}
         onNodeMouseEnter={(_event, node) => {
-          setHover({ kind: 'card', id: node.data.element.id });
+          if (node.type !== 'groupBox') setHover({ kind: 'card', id: node.data.element.id });
         }}
         onNodeMouseLeave={() => {
           setHover(null);
@@ -2671,15 +2889,23 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         </div>
       )}
 
-      {/* Show Viewpoints at the top left, always open; the notices beside it, or under it when
-          there's no room beside it. */}
+      {/* Show Viewpoints and Group by at the top left, always open, in one column; the notices
+          beside it, or under it when there's no room beside it. */}
       <div className="canvas-top">
-        <LineProperties
-          ref={viewpoints}
-          fields={props.lineFields}
-          shown={props.shownProperties}
-          onChange={props.onShownProperties}
-        />
+        <div ref={viewpoints} className="canvas-panels">
+          <LineProperties
+            fields={props.lineFields}
+            shown={props.shownProperties}
+            onChange={props.onShownProperties}
+          />
+          {props.groupChoices && props.onGroupBy && (
+            <GroupByPanel
+              choices={props.groupChoices}
+              chosen={props.groupBy}
+              onChange={props.onGroupBy}
+            />
+          )}
+        </div>
         <div className="canvas-notices">
           {(pending || layoutError !== null) && (
             <div className="canvas-overlay" role="status">

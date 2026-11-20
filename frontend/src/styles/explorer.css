@@ -958,6 +958,117 @@
   padding: 2px 10px 4px;
 }
 
+/*
+ * The panels at the canvas's top left: Show Viewpoints, then Group by 8px below, one column as wide
+ * as the wider of the two (160 to 240px). Each is at most 276px tall; on a short canvas both
+ * shrink, each keeping its header and two rows, and together they never run past the canvas.
+ */
+.canvas-panels {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  min-width: 160px;
+  max-width: 240px;
+  max-height: 100%;
+}
+
+.canvas-panels > .line-props {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  /* Not its content's height: without this, a panel never shrinks below 276px. */
+  min-height: 0;
+  max-height: 276px;
+}
+
+/* Shrunk on a short canvas, a panel keeps its first two choices in view (its list scrolls). */
+.canvas-panels .line-props-list:has(> label) {
+  min-height: 24px;
+}
+
+.canvas-panels .line-props-list:has(> label ~ label) {
+  min-height: 48px;
+}
+
+/* Group by's caption before the custom keys, as the element list Filter's. */
+.gb-custom {
+  margin-top: 4px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+/*
+ * A group box (Group by): a dashed neutral box with its value and count at the top left, under its
+ * cards and the lines. Unlike a container (solid type colour, a coloured header band, the name
+ * centred), it has no colour of its own. Only its header takes the pointer: it moves the box; the
+ * body lets presses through to the canvas, which pans.
+ */
+.canvas {
+  --group-fill: color-mix(in srgb, var(--text) 4%, var(--canvas));
+}
+
+.group-box {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1px dashed var(--field-border);
+  border-radius: var(--r-lg);
+  background: var(--group-fill);
+}
+
+.group-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(100%, 400px);
+  height: 32px;
+  padding: 0 12px;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.group-value {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.group-box.is-notset .group-value {
+  color: var(--text-muted);
+}
+
+.react-flow__node-groupBox.dragging .group-box {
+  box-shadow: var(--e2);
+}
+
+.react-flow__node-groupBox.dragging .group-head {
+  cursor: grabbing;
+}
+
+/* A Stakeholder circle right inside a group box: its label on the box's fill. */
+.card.is-circle.is-grouped {
+  --label-bg: var(--group-fill);
+}
+
 .edge-markers {
   position: absolute;
   width: 0;

@@ -1,9 +1,9 @@
 import type { ELK, ElkNode, ElkPort } from 'elkjs/lib/elk-api';
 import { laidForCanvas } from './laidRoutes';
 import { straightLaid } from './straightLines';
-import { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
+import { absoluteBoxes, frameOf, isGroupId, portId, spacing } from './layoutGeometry';
 
-export { absoluteBoxes, containerBox, portId, spacing } from './layoutGeometry';
+export { absoluteBoxes, containerBox, groupBox, portId, spacing } from './layoutGeometry';
 
 /**
  * Canvas layout with ELK's layered algorithm (React Flow's "Elkjs" and "multiple handles"
@@ -92,9 +92,15 @@ export interface PlacedCard {
   handles: PlacedHandle[];
 }
 
-/** The options of one level of the graph: the top, or inside a container with lines in it. */
-function levelOptions(inside: boolean, direction: 'RIGHT' | 'DOWN'): Record<string, string> {
-  const columns = String(inside ? containerBox.columns : spacing.columns);
+/**
+ * The options of one level of the graph: the top, or inside a container (or group box, `inside`)
+ * with lines in it.
+ */
+function levelOptions(
+  inside: string | undefined,
+  direction: 'RIGHT' | 'DOWN',
+): Record<string, string> {
+  const columns = String(inside === undefined ? spacing.columns : frameOf(inside).columns);
   return {
     'elk.algorithm': 'layered',
     'elk.direction': direction,
@@ -126,7 +132,7 @@ function cardNode(card: LayoutCard, ports: readonly ElkPort[], children?: ElkNod
       ports: [...ports],
     };
   }
-  const { top, left, bottom, right } = containerBox.padding;
+  const { top, left, bottom, right } = frameOf(card.id).padding;
   // ELK (0.12) reads a container's smallest size across the flow, width for height, when it lays
   // out every level in one pass top to bottom: given so, it comes out as asked. Otherwise the fit
   // widened it afterwards, over the card beside it.
@@ -135,7 +141,7 @@ function cardNode(card: LayoutCard, ports: readonly ElkPort[], children?: ElkNod
     id: card.id,
     // No width or height: it grows to hold its cards, down to `nodeSize.minimum`.
     layoutOptions: {
-      ...levelOptions(true, layoutDirection),
+      ...levelOptions(card.id, layoutDirection),
       ...own,
       'elk.nodeSize.minimum': across
         ? `(${card.height}, ${card.width})`
@@ -164,12 +170,22 @@ export function buildElkGraph(
   };
 }
 
-/** One pass over every level, with every line's route in the canvas's coordinates. */
-function rootOptions(direction: 'RIGHT' | 'DOWN'): Record<string, string> {
+/**
+ * One pass over every level, with every line's route in the canvas's coordinates. With `modelOrder`
+ * (group boxes), where the lines leave a choice, boxes and cards keep the order they are given in.
+ * (Weighing that order against crossings, `crossingCounterNodeInfluence`, made a canvas of 150
+ * cards in group boxes take minutes, so it isn't set.)
+ */
+function rootOptions(direction: 'RIGHT' | 'DOWN', modelOrder = false): Record<string, string> {
   return {
-    ...levelOptions(false, direction),
+    ...levelOptions(undefined, direction),
     'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
     'elk.json.edgeCoords': 'ROOT',
+    ...(modelOrder
+      ? {
+          'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+        }
+      : {}),
   };
 }
 
@@ -259,7 +275,10 @@ function readRoutes(
   return routes;
 }
 
-/** Ids of the invisible nodes that stand for a block of packed cards in ELK's graph. */
+/**
+ * Ids of the invisible nodes that stand for a block of packed cards in ELK's graph (never an
+ * element's or a group box's).
+ */
 const blockId = (container: string) => `\u0000block:${container}`;
 
 /**
@@ -353,7 +372,7 @@ export async function layoutCards(
   };
   /** A container with only unlined cards: laid out now, one card to ELK from here on. */
   const packContainer = async (card: LayoutCard) => {
-    const { top, left, bottom, right } = containerBox.padding;
+    const { top, left, bottom, right } = frameOf(card.id).padding;
     const members = membersOf.get(card.id) ?? [];
     const block = await packedBlock(members, card.id, { x: left, y: top });
     sizes.set(card.id, {
@@ -400,7 +419,10 @@ export async function layoutCards(
   const children = await levelNodes(undefined);
   const graph: ElkNode = {
     id: 'root',
-    layoutOptions: rootOptions(layoutDirection),
+    layoutOptions: rootOptions(
+      layoutDirection,
+      cards.some((card) => isGroupId(card.id)),
+    ),
     children,
     edges: edgesOfLinks(known),
   };
@@ -475,7 +497,7 @@ export async function layoutCards(
   const fitted = laidForCanvas(ordered, {
     nameWidthOf: (id) => byId.get(id)?.nameWidth,
     minSizeOf: (id) =>
-      byId.get(id) ?? { width: containerBox.minWidth, height: containerBox.minHeight },
+      byId.get(id) ?? { width: frameOf(id).minWidth, height: frameOf(id).minHeight },
   });
   // ELK spreads a card's ports before it places the cards: lines that can run straight do.
   return straightLaid(fitted, (id) => byId.get(id)?.shape === 'circle');

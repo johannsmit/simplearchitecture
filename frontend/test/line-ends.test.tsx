@@ -87,6 +87,7 @@ function plantView(routes: ViewLineRoute[]): StoredView {
     relationshipIds: ['c1', 'c2', 'c3', 'r1', 'r2', 'r3'],
     layout,
     routes,
+    groupBy: null,
   };
 }
 

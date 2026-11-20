@@ -791,22 +791,32 @@ describe('Show Viewpoints, always open', () => {
     const notices = notice.closest('.canvas-notices');
     expect(notices).not.toBeNull();
     expect(notices?.parentElement?.classList.contains('canvas-top')).toBe(true);
-    expect(panel().parentElement).toBe(notices?.parentElement);
+    // Show Viewpoints, then Group by, in one column before the notices.
+    const column = panel().parentElement as HTMLElement;
+    expect(column.classList.contains('canvas-panels')).toBe(true);
+    expect(column.parentElement).toBe(notices?.parentElement);
+    expect(column.lastElementChild?.matches('[role="radiogroup"]')).toBe(true);
     expect(
-      panel().compareDocumentPosition(notices as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+      column.compareDocumentPosition(notices as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 });
 
-describe('cards clear of Show Viewpoints', () => {
-  // jsdom has no layout: the panel gets the box it would have, 12px in from the corner (the canvas
-  // itself is at the screen's corner): as wide as its longest choice (160 to 240px), 24px a choice
-  // and at most 10 before its list scrolls.
+describe('cards clear of Show Viewpoints and Group by', () => {
+  // jsdom has no layout: the panels' column gets the box it would have, 12px in from the corner
+  // (the canvas itself is at the screen's corner): as wide as the longest choice in either panel
+  // (160 to 240px), each panel 24px a choice and at most 10 before its list scrolls, 8px apart.
   const panelBox = () => {
-    const labels = [...document.querySelectorAll('.line-props-list label')];
-    const longest = Math.max(0, ...labels.map((label) => label.textContent.length));
+    const panels = [...document.querySelectorAll('.canvas-panels > .line-props')];
+    let longest = 0;
+    let height = 0;
+    for (const each of panels) {
+      const labels = [...each.querySelectorAll('.line-props-list label')];
+      longest = Math.max(longest, ...labels.map((label) => label.textContent.length));
+      height += 32 + 24 * Math.min(labels.length, 10);
+    }
     const width = Math.min(240, Math.max(160, 40 + 6 * longest));
-    return { x: 12, y: 12, width, height: 32 + 24 * Math.min(labels.length, 10) };
+    return { x: 12, y: 12, width, height: height + 8 * Math.max(0, panels.length - 1) };
   };
   /** The canvas's size: a laptop's, unless a test sets a smaller one before opening. */
   let canvasSize = { width: 764, height: 560 };
@@ -817,7 +827,7 @@ describe('cards clear of Show Viewpoints', () => {
     const spy = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockImplementation(function (this: HTMLElement) {
-        if (!this.classList.contains('line-props')) return real.call(this);
+        if (!this.classList.contains('canvas-panels')) return real.call(this);
         const { x, y, width, height } = panelBox();
         return {
           x,
@@ -957,7 +967,7 @@ describe('cards clear of Show Viewpoints', () => {
     vi.stubGlobal('ResizeObserver', Watching);
     return () => {
       for (const { target, tell } of watched) {
-        if (target.classList.contains('line-props')) act(tell);
+        if (target.classList.contains('canvas-panels')) act(tell);
       }
     };
   }

@@ -13,13 +13,13 @@ For everyone, and for Modellers who make and change views: a view is a named can
 2. Open **Views** at the bottom of the element list, and choose **Save as view…**.
 3. Give it a name, choose a folder if you like (see [Folders](#folders)), and choose **Save view**.
 
-The view holds exactly what the canvas draws: every card and every relationship among them, including each one inside a "×N" line. A name is unique within the model, ignoring case, across all folders.
+The view holds exactly what the canvas draws: every card and every relationship among them, including each one inside a "×N" line. It also keeps the canvas's **Group by**. A name is unique within the model, ignoring case, across all folders.
 
 ## Open a view
 
 Pick a view in the **Views** list, or on the model's start page. A view's address can be shared as a link.
 
-A view opens as it was left: each card in its place and at its width, and each line on its saved route. The depth, **Show Viewpoints** and the legend's switches aren't saved in a view. A view has no focused element and no depth, and brings in no containers of its own: a card is drawn inside another only when the view holds both.
+A view opens as it was left: each card in its place and at its width, each line on its saved route, and the cards in boxes if the view has a [Group by](canvas.md#group-by). The depth, **Show Viewpoints** and the legend's switches aren't saved in a view. A view has no focused element and no depth, and brings in no containers of its own: a card is drawn inside another only when the view holds both.
 
 Double-click a card, or press `Enter` on it, to leave the view and explore that element; Back returns to the view. **Close view** goes to the model's start page.
 
@@ -60,13 +60,14 @@ A view keeps its cards where they were put. These save the layout at once, in Mo
 - adding or removing a card;
 - moving a line (see [Moving a line](#moving-a-line));
 - **Tidy up**, which lays the whole view out again, without asking;
+- changing **Group by**, or **Clear** in it, which lays the view out again in the same way and saves the view's Group by with it;
 - **Tidy relations** (see [Tidy relations](#tidy-relations)).
 
-A view never laid out by hand is laid out automatically when it opens, and a card without a saved place goes to a free spot. Neither is saved until your next change.
+A view never laid out by hand is laid out automatically when it opens, and a card without a saved place goes to a free spot. In a grouped view, a card whose value has changed since goes to a free spot in its new box. None of this is saved until your next change.
 
 Containers fit what they hold. A view opens with each container just big enough for its cards.
 
-In Viewing, and for Viewers, you can still move and resize cards to look at the view another way, but nothing is saved.
+In Viewing, and for Viewers, you can still move and resize cards, or change **Group by**, to look at the view another way, but nothing is saved and the address doesn't change. Choosing the view's own Group by again brings back its saved layout, as does opening the view again.
 
 ### Moving a line
 

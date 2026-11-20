@@ -1,4 +1,4 @@
-import { catalogTabs, type CatalogTab } from '@simplearchitecture/shared';
+import { catalogTabs, maxGroupByKeyLength, type CatalogTab } from '@simplearchitecture/shared';
 
 /**
  * URLs of the explorer, in Viewing (read-only) and Modelling (editing). Both spaces use the same
@@ -19,17 +19,20 @@ export function modelPath(modelId: string, space: ExplorerSpace = 'viewing'): st
   return `${spaceHome(space)}/models/${encodeURIComponent(modelId)}`;
 }
 
+/** An element's address, with the depth, the relationship properties shown and the Group by. */
 export function elementPath(
   modelId: string,
   elementId: string,
   depth?: number,
   space: ExplorerSpace = 'viewing',
   shown: readonly string[] = [],
+  group?: string,
 ): string {
   const path = `${modelPath(modelId, space)}/elements/${encodeURIComponent(elementId)}`;
   const query = [
     ...(depth === undefined ? [] : [`depth=${depth}`]),
     ...shown.map((key) => `show=${encodeURIComponent(key)}`),
+    ...(group === undefined ? [] : [`group=${encodeURIComponent(group)}`]),
   ].join('&');
   return query === '' ? path : `${path}?${query}`;
 }
@@ -60,8 +63,11 @@ export function modelStartPath(
   return query === '' ? path : `${path}?${query}`;
 }
 
-/** The parameters a view's address doesn't use: depth, and Canvas | Catalog with its tab. */
-const notForViews = ['depth', 'view', 'type', 'tab'] as const;
+/**
+ * The parameters a view's address doesn't use: depth, Canvas | Catalog with its tab, and Group by
+ * (a view keeps its own).
+ */
+const notForViews = ['depth', 'view', 'type', 'tab', 'group'] as const;
 
 /**
  * A view's address search without what doesn't apply to a view, or undefined when it has none of
@@ -94,6 +100,27 @@ export function shownPropertiesSearch(params: URLSearchParams, keys: readonly st
   const next = new URLSearchParams(params);
   next.delete('show');
   for (const key of keys) next.append('show', key);
+  const text = next.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+export { maxGroupByKeyLength };
+
+/**
+ * The property the canvas is grouped by, from the address (`group=owningTeam`, `group=type`), or
+ * undefined. Outside a view only the address holds it, so a grouping can be shared as a link; a
+ * property name is model content, so it never goes in the browser's storage.
+ */
+export function readGroupBy(params: URLSearchParams): string | undefined {
+  const key = params.get('group');
+  return key === null || key === '' || key.length > maxGroupByKeyLength ? undefined : key;
+}
+
+/** The address's search with this Group by (none: undefined); other parameters stay. */
+export function groupBySearch(params: URLSearchParams, key: string | undefined): string {
+  const next = new URLSearchParams(params);
+  if (key === undefined) next.delete('group');
+  else next.set('group', key);
   const text = next.toString();
   return text === '' ? '' : `?${text}`;
 }

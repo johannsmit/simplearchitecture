@@ -70,6 +70,7 @@ function storedView(
     relationshipIds,
     layout,
     routes: [],
+    groupBy: null,
   };
 }
 

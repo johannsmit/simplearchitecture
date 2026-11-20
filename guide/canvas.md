@@ -29,6 +29,18 @@ The **legend**, at the bottom of the left panel, explains the element types, the
 
 A viewpoint never moves a card. It is part of the page's address, so you can share it as a link.
 
+## Group by
+
+**Group by**, under Show Viewpoints, draws the cards in boxes, one for each value of one element property: for example, a box per owning team.
+
+- Choose one property: **Type**, a standard property the model's elements have values for (such as Owning team, Architecture state or Supplier HQ country), or custom metadata that holds a single value. Description and Functions aren't offered.
+- Each box is headed by its value and the number of cards in it by that value, for example "Claims IT · 4". Elements with no value go in **Not set**.
+- With **Nest contained elements** on, a container goes in the box of its own value, with everything it holds; the cards inside it aren't counted. With it off, every card goes in the box of its own value.
+- When an element's value changes, its card moves to a free spot in the box of its new value, or in a new box. The box it left fits the cards still in it, and goes when it is empty. A box that grows pushes a box it would cover down. A card inside a container stays with its container.
+- **Clear**, in its header, removes the grouping.
+
+Choosing a property, or **Clear**, lays the canvas out again. Outside a view, Group by is part of the page's address: it stays when you focus another element or change the depth, and you can share it as a link. A view keeps its own Group by (see [Views](views.md#layout)).
+
 ## Adding cards
 
 - **A card's related elements:** a card with related elements that aren't on the canvas shows a small pill. Choose it, and pick an element to add.
@@ -51,13 +63,15 @@ Outside a view, a removed card stays off until you focus another element or relo
 
 **Containers fit what they hold.** Drag a card inside a container right or down past its edge, and the container grows to hold it. When you drop the card, the container fits its cards again.
 
+**On a grouped canvas** ([Group by](#group-by)), a card stays in its box. Drag it right or down past the box's edge and the box grows; when you drop it, the box fits its cards again. A card dropped on others in its box pushes them down. To move a box with all its cards, drag it by its header; a box dropped on another pushes it down. Dragging elsewhere in a box pans the canvas. Dragging never changes a value. There is no keyboard way to move a box.
+
 Outside a view, positions and widths are never saved: they last until the canvas is a new one. A [view](views.md) keeps them.
 
 ## Layout: Tidy up and Tidy relations
 
-The canvas lays itself out automatically only when it is new: when you open an element or a view, reload the page, change the depth or switch **Nest contained elements**. After that, cards stay where they are.
+The canvas lays itself out automatically only when it is new: when you open an element or a view, reload the page, change the depth, switch **Nest contained elements** or change **Group by**. After that, cards stay where they are.
 
-- **Tidy up** lays the whole canvas out again. It places cards by their relationships: lines point down from the element they start at, with as few crossings as it finds.
+- **Tidy up** lays the whole canvas out again. It places cards by their relationships: lines point down from the element they start at, with as few crossings as it finds. A grouped canvas keeps its boxes.
 - **Tidy relations**, in the menu of the small arrow next to **Tidy up** (or `T`), moves no card. It draws every line again from where the cards are now, including lines moved by hand. It can't be chosen while **Show relationships** is off.
 
 Lines follow the cards: when you move a card, its lines find the shortest right-angled way round the other cards. Where two cards face each other with room between them, the line runs straight.

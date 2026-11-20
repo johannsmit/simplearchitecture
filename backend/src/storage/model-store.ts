@@ -154,6 +154,8 @@ export interface ViewRecord {
   relationshipIds: string[];
   layout: ViewCardLayout[];
   routes: ViewLineRoute[];
+  /** The property the view is grouped by, or null. */
+  groupBy: string | null;
 }
 
 /** The two ends of a relationship as stored (null when the edge has none). */
@@ -194,6 +196,7 @@ export type ViewWrite =
       viewId: string;
       name: string;
       folder: string | null;
+      groupBy: string | null;
       elementIds: readonly string[];
       relationshipIds: readonly string[];
     }
@@ -203,6 +206,8 @@ export type ViewWrite =
       viewId: string;
       cards: readonly ViewCardLayout[];
       routes: readonly ViewLineRoute[];
+      /** The view's new Group by; undefined leaves it as it is. */
+      groupBy?: string | null;
     }
   | {
       kind: 'replace';

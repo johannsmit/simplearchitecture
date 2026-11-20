@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
+  buildModelGraph,
   compareNames,
+  groupByChoices,
+  isGroupByKey,
+  maxViewGroupValueLength,
   sameViewFolder,
   sameViewName,
   viewConflictMessage,
@@ -70,6 +74,10 @@ import { unstorable } from '../storage/stored-model.js';
  *   the person left it, with right angles only (each stretch shares x or y) and at most
  *   `maxViewLineBends` bends. Lines not named have no route afterwards. Taking the relationship
  *   out of the view, deleting it, or giving it other ends drops its route.
+ * - A view can be grouped by one element property (`groupBy`), set when it is created or with a new
+ *   layout. A new key must be one of the model's Group by choices; the stored one may stay after no
+ *   element has it. Each card of a grouped layout may name the group it was drawn in (its value,
+ *   or null for Not set), so a card whose value changed since can be placed afresh.
  * - Rename, new contents, a new layout and delete carry the view's version as read; another one
  *   is a conflict. A change that changes nothing stores nothing and keeps the version.
  * - A view can be in one folder: a name on the view, so a folder exists while a view is in it.
@@ -117,11 +125,30 @@ const relationshipIdsSchema = idsSchema(maxViewRelationships, 'relationships');
 
 const folderMessage = 'Must be a folder name, or null for none.';
 
+const groupByMessage = 'Must be the name of an element property, or null for none.';
+const groupBySchema = z
+  .string({ error: groupByMessage })
+  .refine((key) => isGroupByKey(key) && !unstorable.test(key), { error: groupByMessage })
+  .nullable();
+
+const groupMessage = `Must be a value of at most ${maxViewGroupValueLength} characters, or null for Not set.`;
+const groupSchema = z
+  .string({ error: groupMessage })
+  .refine(
+    (value) =>
+      value.trim() !== '' &&
+      Array.from(value).length <= maxViewGroupValueLength &&
+      !unstorable.test(value),
+    { error: groupMessage },
+  )
+  .nullable();
+
 const newViewSchema = z.strictObject({
   name: nameSchema,
   folder: z.string({ error: folderMessage }).nullable().optional(),
   elementIds: elementIdsSchema,
   relationshipIds: relationshipIdsSchema.optional(),
+  groupBy: groupBySchema.optional(),
 });
 
 const renameSchema = z.strictObject({ version: versionSchema, name: nameSchema });
@@ -181,6 +208,7 @@ const layoutSchema = z.strictObject({
           .min(minViewCardWidth, { error: widthMessage })
           .max(maxViewCardWidth, { error: widthMessage })
           .optional(),
+        group: groupSchema.optional(),
       }),
       { error: 'Must be a list of cards.' },
     )
@@ -191,6 +219,7 @@ const layoutSchema = z.strictObject({
       error: `A view can hold at most ${maxViewRelationships} relationships.`,
     })
     .optional(),
+  groupBy: groupBySchema.optional(),
 });
 
 /** Parses a request; a list's own index (and a card's field) isn't a field of it, so it goes. */
@@ -240,6 +269,7 @@ function storedView(record: ViewRecord): StoredView {
     relationshipIds: record.relationshipIds,
     layout: record.layout,
     routes: record.routes,
+    groupBy: record.groupBy,
   };
 }
 
@@ -254,7 +284,7 @@ const byName = (views: ViewSummary[]): ViewSummary[] =>
 
 /** A card's layout as a comparable key. */
 const cardKey = (card: ViewCardLayout): string =>
-  `${card.elementId}\n${card.x}\n${card.y}\n${card.width ?? ''}`;
+  `${card.elementId}\n${card.x}\n${card.y}\n${card.width ?? ''}\n${card.group === undefined ? 'none' : `group ${card.group ?? ''}`}`;
 
 /** A line's route as a comparable key. */
 const routeKey = (route: ViewLineRoute): string =>
@@ -322,7 +352,14 @@ function checkedRoutes(
 /** The cards of a new layout, or RejectedError: cards of the view only, each once. */
 function checkedLayout(
   view: ViewRecord,
-  cards: readonly { elementId: string; x: number; y: number; width?: number | undefined }[],
+  cards: readonly {
+    elementId: string;
+    x: number;
+    y: number;
+    width?: number | undefined;
+    group?: string | null | undefined;
+  }[],
+  grouped: boolean,
 ): ViewCardLayout[] {
   const inView = new Set(view.elementIds);
   const issues: ElementFieldIssue[] = [];
@@ -345,12 +382,19 @@ function checkedLayout(
       message: `These cards are not in the view (they may have been removed, or deleted from the model): ${listed(outside)}.`,
     });
   }
+  if (!grouped && cards.some((card) => card.group !== undefined)) {
+    issues.push({
+      field: 'cards',
+      message: 'A card can name its group only in a view grouped by a property.',
+    });
+  }
   if (issues.length > 0) throw new RejectedError(issues);
-  return cards.map(({ elementId, x, y, width }) => ({
+  return cards.map(({ elementId, x, y, width, group }) => ({
     elementId,
     x,
     y,
     ...(width === undefined ? {} : { width }),
+    ...(group === undefined ? {} : { group }),
   }));
 }
 
@@ -461,6 +505,14 @@ function existingFolder(views: readonly ViewName[], folder: string): string | un
 const folderTaken = (existing: string): RejectedError =>
   new RejectedError([{ field: 'folder', message: viewFolderTakenMessage(existing) }]);
 
+const unknownGroupBy = (): RejectedError =>
+  new RejectedError([
+    {
+      field: 'groupBy',
+      message: "The model's elements have no such property. Choose one from Group by.",
+    },
+  ]);
+
 /** The view a change is about, at the version sent, or NotFoundError or ConflictError. */
 function currentView(state: ViewChangeState, version: number): ViewRecord {
   const { view } = state;
@@ -504,9 +556,23 @@ export class ViewService {
     return { view: storedView(found) };
   }
 
+  /**
+   * The keys the model's elements can be grouped by now, for a Group by that is sent: read from the
+   * whole model, so only when a key is sent (the canvas sends one only when it changes).
+   */
+  async #groupByKeys(modelId: string, groupBy: string | null | undefined): Promise<Set<string>> {
+    if (typeof groupBy !== 'string') return new Set();
+    const document = await this.#store.get(modelId);
+    if (document === undefined) throw new NotFoundError('model');
+    return new Set(groupByChoices(buildModelGraph(document)).map((choice) => choice.key));
+  }
+
   async createView(modelId: string, input: unknown, actor: ModelAuthor): Promise<ViewResult> {
     const views = this.#store.views;
     const request = parse(newViewSchema, input);
+    const groupBy = request.groupBy ?? null;
+    const known = await this.#groupByKeys(modelId, groupBy);
+    if (groupBy !== null && !known.has(groupBy)) throw unknownGroupBy();
     const elementIds = unique(request.elementIds);
     const requested = request.relationshipIds === undefined ? [] : unique(request.relationshipIds);
     const asked = checkedFolder(request.folder, false);
@@ -521,10 +587,24 @@ export class ViewService {
         // Joining an existing folder is the point here: it keeps its spelling.
         const folder = asked === null ? null : (existingFolder(state.views, asked) ?? asked);
         return plan(
-          { kind: 'create', viewId, name: request.name, folder, elementIds, relationshipIds },
+          {
+            kind: 'create',
+            viewId,
+            name: request.name,
+            folder,
+            groupBy,
+            elementIds,
+            relationshipIds,
+          },
           'view-added',
           actor,
-          ['name', ...(folder === null ? [] : ['folder']), 'elementIds', 'relationshipIds'],
+          [
+            'name',
+            ...(folder === null ? [] : ['folder']),
+            'elementIds',
+            'relationshipIds',
+            ...(groupBy === null ? [] : ['groupBy']),
+          ],
         );
       },
     );
@@ -610,8 +690,9 @@ export class ViewService {
 
   /**
    * A new layout in place of the old: where each card named is, and its width when set by hand,
-   * and the route of each line named. Saved only on what the person did on the canvas (the
-   * caller's rule); a layout or a route the canvas made on its own is never sent by itself.
+   * and the route of each line named, with the view's Group by when it is sent. Saved only on what
+   * the person did on the canvas (the caller's rule); a layout or a route the canvas made on its
+   * own is never sent by itself.
    */
   async replaceLayout(
     modelId: string,
@@ -621,16 +702,26 @@ export class ViewService {
   ): Promise<ViewResult> {
     const views = this.#store.views;
     const request = parse(layoutSchema, input);
+    const known = await this.#groupByKeys(modelId, request.groupBy);
     try {
       const changed = await views.change(
         modelId,
         { viewId, elementIds: [], relationshipIds: [] },
         (state) => {
           const view = currentView(state, request.version);
-          const cards = checkedLayout(view, request.cards);
+          const groupBy = request.groupBy === undefined ? view.groupBy : request.groupBy;
+          const newGroupBy = groupBy !== view.groupBy;
+          if (newGroupBy && groupBy !== null && !known.has(groupBy)) throw unknownGroupBy();
+          const cards = checkedLayout(view, request.cards, groupBy !== null);
           const routes = checkedRoutes(view, request.routes ?? []);
-          if (sameLayout(view, cards, routes)) throw new Unchanged(view);
-          return plan({ kind: 'layout', viewId, cards, routes }, 'view-changed', actor, ['layout']);
+          const newLayout = !sameLayout(view, cards, routes);
+          if (!newLayout && !newGroupBy) throw new Unchanged(view);
+          return plan(
+            { kind: 'layout', viewId, cards, routes, ...(newGroupBy ? { groupBy } : {}) },
+            'view-changed',
+            actor,
+            [...(newLayout ? ['layout'] : []), ...(newGroupBy ? ['groupBy'] : [])],
+          );
         },
       );
       if (changed?.view === undefined) throw new NotFoundError('model');

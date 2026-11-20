@@ -1,6 +1,6 @@
 import type { NodeChange } from '@xyflow/react';
 import type { PlacedCard } from './elkLayout';
-import { containerBox, smallestContainer, spacing } from './layoutGeometry';
+import { frameOf, isGroupId, spacing } from './layoutGeometry';
 import type { Direction } from './view';
 
 /**
@@ -119,7 +119,10 @@ export interface Box {
   height: number;
 }
 
-/** Room kept between Show Viewpoints and the cards a fit or keyboard focus puts beside it. */
+/**
+ * Room kept between the panels at the top left (Show Viewpoints, Group by) and the cards a fit or
+ * keyboard focus puts beside them.
+ */
 const panelClearance = 12;
 
 /** The padding of a fit, in pixels per side, as React Flow's `fitView` takes it. */
@@ -134,9 +137,9 @@ const px = (pixels: number) => `${String(pixels)}px` as `${number}px`;
 
 /**
  * The padding that fits the drawing (`bounds`, flow coordinates) on a canvas of `size` with every
- * card clear of Show Viewpoints (`panel`, screen pixels from the canvas's top left). Of a fit below
- * the panel and one beside it, the one with the larger zoom: a wide drawing loses nothing to a tall
- * panel, and a tall one nothing to a wide panel. The other sides keep 6.5% (what a padding of 0.15
+ * card clear of the panels (`panel`, their column's box, screen pixels from the canvas's top left).
+ * Of a fit below the panel and one beside it, the one with the larger zoom: a wide drawing loses
+ * nothing to a tall panel, and a tall one nothing to a wide panel. The other sides keep 6.5% (what a padding of 0.15
  * gives). Without a panel to keep clear of, 6.5% all round.
  */
 export function clearFitPadding(
@@ -166,7 +169,7 @@ export function clearFitPadding(
 }
 
 /**
- * The viewport panned so a card (`box`, flow coordinates) is no longer under Show Viewpoints
+ * The viewport panned so a card (`box`, flow coordinates) is no longer under the panels
  * (`panel`, screen pixels from the canvas's top left), down or right, whichever is the shorter
  * way; undefined when nothing of it is under the panel.
  */
@@ -202,14 +205,19 @@ function overlaps(a: Box, b: Box): boolean {
 }
 
 /**
- * A position for a card inside its container: left and up, it stops at the content area (16px
- * from the side, 56px from the top, so it never covers the header), as the container's corner
- * stays where it is; right and down, the container grows to hold it (`fitContainers`).
+ * A position for a card inside its container (or group box, `parent`): left and up, it stops at
+ * the content area (a container's 16px from the side and 56px from the top, a group's 16px and
+ * 48px, so it never covers the header), as the box's corner stays where it is; right and down, the
+ * box grows to hold it (`fitContainers`).
  */
-export function clampToContainer(point: Point): Point {
-  const { padding } = containerBox;
+export function clampToContainer(point: Point, parent?: string): Point {
+  const { padding } = frameOf(parent);
   return { x: Math.max(padding.left, point.x), y: Math.max(padding.top, point.y) };
 }
+
+/** Whether a card's level is one where cards push each other: the top level, or a group box. */
+const pushes = (card: { parent?: string | undefined }): boolean =>
+  card.parent === undefined || isGroupId(card.parent);
 
 interface Size {
   width: number;
@@ -245,7 +253,6 @@ export function fitContainers(
   options: FitOptions = {},
 ): Map<string, PlacedCard> {
   const result = new Map(cards);
-  const { padding } = containerBox;
   const chainOf = (id: string): string[] => {
     const chain: string[] = [];
     for (let up = cards.get(id)?.parent; up !== undefined && !chain.includes(up);) {
@@ -261,6 +268,7 @@ export function fitContainers(
     .sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0));
   for (const id of innermostFirst) {
     const box = result.get(id) as PlacedCard;
+    const { padding, minWidth, minHeight } = frameOf(id);
     const members = [...result.values()].filter((card) => card.parent === id);
     const holds = held.has(id);
     const shift = (lowest: number, edge: number) =>
@@ -278,7 +286,7 @@ export function fitContainers(
     }
     const least = holds
       ? (options.holding?.sizes.get(id) ?? box)
-      : (options.minSizeOf?.(id) ?? smallestContainer);
+      : (options.minSizeOf?.(id) ?? { width: minWidth, height: minHeight });
     const width = members.length === 0 ? least.width : Math.max(least.width, right + padding.right);
     const height =
       members.length === 0 ? least.height : Math.max(least.height, bottom + padding.bottom);
@@ -293,8 +301,9 @@ export function fitContainers(
  * they hold (`fitContainers`), and while a card is held, those only grow. The other top-level
  * cards are where the layout put them, except that a card a moved card would cover is pushed
  * straight down, just below it; cards further down that way move along with it, so nothing ends
- * up covered. A container that grows pushes nothing. Returns `placed` itself when no shown card
- * has moved.
+ * up covered. A group box is the top level for its cards: they push each other the same way, and
+ * a moved group box pushes the boxes beside it. A container that grows pushes nothing. Returns
+ * `placed` itself when no shown card has moved.
  */
 export function arrangeCards(
   placed: ReadonlyMap<string, PlacedCard>,
@@ -303,35 +312,42 @@ export function arrangeCards(
 ): ReadonlyMap<string, PlacedCard> {
   if (!hasMovedCards(moved, placed)) return placed;
   const result = new Map<string, PlacedCard>();
-  const taken: Box[] = [];
+  // Per level that pushes (the top level, each group box): the boxes placed there so far.
+  const taken = new Map<string | undefined, Box[]>();
+  const takenAt = (level: string | undefined): Box[] => {
+    const list = taken.get(level) ?? [];
+    taken.set(level, list);
+    return list;
+  };
   // The containers a moved card is in, at any depth: they fit again.
   const touched = new Set<string>();
   for (const card of placed.values()) {
     const point = moved.get(card.id);
     if (!point) continue;
     const parent = card.parent === undefined ? undefined : placed.get(card.parent);
-    const at = { ...card, ...(parent ? clampToContainer(point) : point) };
+    const at = { ...card, ...(parent ? clampToContainer(point, parent.id) : point) };
     result.set(card.id, at);
-    if (!parent) taken.push(at);
+    if (pushes(card)) takenAt(card.parent).push(at);
     for (let up = parent; up && !touched.has(up.id);) {
       touched.add(up.id);
       up = up.parent === undefined ? undefined : placed.get(up.parent);
     }
   }
   for (const card of placed.values()) {
-    if (card.parent !== undefined && !result.has(card.id)) result.set(card.id, card);
+    if (!pushes(card) && !result.has(card.id)) result.set(card.id, card);
   }
   const rest = [...placed.values()]
-    .filter((card) => !moved.has(card.id) && card.parent === undefined)
+    .filter((card) => !moved.has(card.id) && pushes(card))
     .sort((a, b) => a.y - b.y || a.x - b.x);
   for (const card of rest) {
+    const level = takenAt(card.parent);
     const box = { x: card.x, y: card.y, width: card.width, height: card.height };
     // Each step moves the card below one box, and never up again, so this ends.
-    for (let blocker = taken.find((t) => overlaps(box, t)); blocker;) {
+    for (let blocker = level.find((t) => overlaps(box, t)); blocker;) {
       box.y = blocker.y + blocker.height + spacing.cards;
-      blocker = taken.find((t) => overlaps(box, t));
+      blocker = level.find((t) => overlaps(box, t));
     }
-    taken.push(box);
+    level.push(box);
     result.set(card.id, box.y === card.y ? card : { ...card, y: box.y });
   }
   // Keep the layout's order, so React Flow's node order doesn't change.
@@ -340,34 +356,20 @@ export function arrangeCards(
 }
 
 /**
- * After a drop inside a container: the cards beside the outermost container it is in that the
- * container, grown, now covers (and didn't at its size when the hold started), pushed straight
- * down just below it, with the cards further down that way along with them, as a dropped card
- * pushes the cards it lands on. Their new top left corners, by id; none for a top-level card.
- * Nothing moves up.
+ * The boxes `grown` now covers (and didn't at its size `was`), among `others` at its level,
+ * pushed straight down just below it, with the boxes further down that way along with them, as a
+ * dropped card pushes the cards it lands on. Their new top left corners, by id. Nothing moves up.
  */
-export function pushedByContainer(
-  shown: ReadonlyMap<string, PlacedCard>,
-  id: string,
-  sizesBefore: ReadonlyMap<string, Size>,
+export function pushedBelow(
+  grown: Box,
+  was: Box,
+  others: readonly (Box & { id: string })[],
 ): Map<string, Point> {
   const pushed = new Map<string, Point>();
-  let top = shown.get(id);
-  if (top?.parent === undefined) return pushed;
-  for (const seen = new Set<string>(); top.parent !== undefined && !seen.has(top.id);) {
-    seen.add(top.id);
-    const up = shown.get(top.parent);
-    if (!up) return pushed;
-    top = up;
-  }
-  const grown: Box = { x: top.x, y: top.y, width: top.width, height: top.height };
-  const was: Box = { ...grown, ...sizesBefore.get(top.id) };
   const pushers: Box[] = [grown];
   const stay: Box[] = [];
-  const others = [...shown.values()]
-    .filter((card) => card.parent === undefined && card.id !== top.id)
-    .sort((a, b) => a.y - b.y || a.x - b.x);
-  for (const card of others) {
+  const sorted = [...others].sort((a, b) => a.y - b.y || a.x - b.x);
+  for (const card of sorted) {
     const box = { x: card.x, y: card.y, width: card.width, height: card.height };
     const hit = pushers.some(
       (pusher) => overlaps(box, pusher) && (pusher !== grown || !overlaps(box, was)),
@@ -383,6 +385,64 @@ export function pushedByContainer(
     }
     pushers.push(box);
     pushed.set(card.id, { x: box.x, y: box.y });
+  }
+  return pushed;
+}
+
+/**
+ * After a drop inside a container: the cards beside the outermost container it is in that the
+ * container, grown, now covers (and didn't at its size when the hold started), pushed straight
+ * down (`pushedBelow`). In a group box, that is done among the group's cards, and the group box,
+ * grown (with the cards it pushed), does the same among the boxes beside it. Their new top left
+ * corners (relative to their group box, for its cards), by id; none for a top-level card.
+ */
+export function pushedByContainer(
+  shown: ReadonlyMap<string, PlacedCard>,
+  id: string,
+  sizesBefore: ReadonlyMap<string, Size>,
+): Map<string, Point> {
+  const pushed = new Map<string, Point>();
+  const chain: PlacedCard[] = [];
+  for (let at = shown.get(id); at && !chain.includes(at);) {
+    chain.push(at);
+    at = at.parent === undefined ? undefined : shown.get(at.parent);
+  }
+  const boxOf = (card: PlacedCard): Box => ({
+    x: card.x,
+    y: card.y,
+    width: card.width,
+    height: card.height,
+  });
+  const levelOf = (level: string | undefined, without: string) =>
+    [...shown.values()]
+      .filter((card) => card.parent === level && card.id !== without)
+      .map((card) => ({ id: card.id, ...boxOf(card) }));
+  // The outermost container under a group box (or at the top level): it pushes at its level.
+  const top = chain[chain.length - 1];
+  const group = top !== undefined && isGroupId(top.id) && chain.length > 1 ? top : undefined;
+  const outer = group ? chain[chain.length - 2] : top;
+  if (!outer || outer.id === id) {
+    if (!group) return pushed;
+  } else {
+    const grown = boxOf(outer);
+    const was: Box = { ...grown, ...sizesBefore.get(outer.id) };
+    for (const [key, point] of pushedBelow(grown, was, levelOf(outer.parent, outer.id))) {
+      pushed.set(key, point);
+    }
+  }
+  if (!group) return pushed;
+  // The group box with the cards it pushed, as it will fit them.
+  const { padding } = frameOf(group.id);
+  let { width, height } = group;
+  for (const card of levelOf(group.id, '')) {
+    const at = pushed.get(card.id) ?? card;
+    width = Math.max(width, at.x + card.width + padding.right);
+    height = Math.max(height, at.y + card.height + padding.bottom);
+  }
+  const grown: Box = { x: group.x, y: group.y, width, height };
+  const was: Box = { ...boxOf(group), ...sizesBefore.get(group.id) };
+  for (const [key, point] of pushedBelow(grown, was, levelOf(undefined, group.id))) {
+    pushed.set(key, point);
   }
   return pushed;
 }

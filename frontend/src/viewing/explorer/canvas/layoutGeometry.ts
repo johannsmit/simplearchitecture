@@ -31,6 +31,68 @@ export const containerBox = {
 /** The smallest container, before its name makes it wider. */
 export const smallestContainer = { width: containerBox.minWidth, height: containerBox.minHeight };
 
+/**
+ * A group box (Group by): the 32px header with the value and count at its left, the padding around
+ * its cards, the smallest size, and how wide the header text may make it. The numbers match
+ * .group-box in styles/explorer.css.
+ */
+export const groupBox = {
+  header: 32,
+  padding: { top: 48, left: 16, bottom: 16, right: 16 },
+  minWidth: 200,
+  minHeight: 116,
+  /** Between rows inside a group: as at the top level, since a group is the top level for its cards. */
+  columns: spacing.columns,
+  /** The header's text starts this far in from the box's left edge. */
+  textInset: 12,
+  /** The widest a header's text makes its box (text and 24px); a longer value ends in "…". */
+  maxHeaderWidth: 400,
+} as const;
+
+/**
+ * Group boxes' ids on the canvas: not element ids (which never hold NUL), so the two never mix. A
+ * value's group is the prefix and the value; Not set is the prefix alone.
+ */
+const groupPrefix = '\u0000group';
+
+/** The id of the group box of a value; undefined for Not set. */
+export function groupId(value: string | undefined): string {
+  return value === undefined ? groupPrefix : `${groupPrefix}:${value}`;
+}
+
+/** Whether an id on the canvas is a group box's. */
+export function isGroupId(id: string): boolean {
+  return id.startsWith(groupPrefix);
+}
+
+/** The value a group box stands for; undefined for Not set. */
+export function groupValueOf(id: string): string | undefined {
+  return id === groupPrefix ? undefined : id.slice(groupPrefix.length + 1);
+}
+
+/**
+ * Where a group box's value and count are, with 8px around them that lines keep clear of: at the
+ * left of its 32px header, `width` wide (or as wide as the header lets them be).
+ */
+export function groupTextArea(box: Box, width: number): Box {
+  const clear = 8;
+  const { textInset, header, maxHeaderWidth } = groupBox;
+  const room = Math.min(box.width, maxHeaderWidth) - 2 * textInset;
+  const shown = Math.max(0, Math.min(width, room));
+  return { x: box.x + textInset - clear, y: box.y, width: shown + 2 * clear, height: header };
+}
+
+/** The header and padding of a box that holds cards: a group box's, or a container's. */
+export function frameOf(id: string | undefined): {
+  header: number;
+  padding: { top: number; left: number; bottom: number; right: number };
+  minWidth: number;
+  minHeight: number;
+  columns: number;
+} {
+  return id !== undefined && isGroupId(id) ? groupBox : containerBox;
+}
+
 /** Port (and React Flow handle) id of one end of a link. */
 export function portId(linkId: string, end: 'source' | 'target'): string {
   return `${linkId}:${end === 'source' ? 's' : 't'}`;

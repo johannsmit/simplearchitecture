@@ -2,16 +2,19 @@ import {
   maxViewCardCoordinate,
   maxViewCardWidth,
   minViewCardWidth,
+  storedGroupValue,
   type ViewCardLayout,
   type ViewLineRoute,
 } from '@simplearchitecture/shared';
-import { absoluteBoxes, containerBox, type PlacedCard } from './elkLayout';
+import { absoluteBoxes, type PlacedCard } from './elkLayout';
+import { frameOf, groupValueOf, isGroupId } from './layoutGeometry';
 import { fitContainers, type Point } from './positions';
 
 /**
  * A view's stored layout on the canvas: where its cards were left. Positions are stored on the
  * canvas, also for a card drawn inside a container, so a layout still reads when nesting is
- * switched. Pure, so it is tested without a browser.
+ * switched. In a grouped view, each card also keeps the group it was drawn in; a group box is
+ * where its cards are. Pure, so it is tested without a browser.
  */
 
 /**
@@ -21,6 +24,8 @@ import { fitContainers, type Point } from './positions';
 export interface CanvasLayout {
   cards: ViewCardLayout[];
   routes: ViewLineRoute[];
+  /** The property the canvas is grouped by, or null. */
+  groupBy: string | null;
 }
 
 interface Size {
@@ -84,7 +89,6 @@ export function storedPlacement(input: StoredPlacementInput): {
   for (const id of ids) depthOf(id);
   const containers = new Set(wanted.values());
 
-  const { padding } = containerBox;
   const relative = new Map<string, Point>();
   for (const id of ids) {
     const at = stored.get(id) as Point;
@@ -101,6 +105,7 @@ export function storedPlacement(input: StoredPlacementInput): {
       continue;
     }
     let { width, height } = sizeOf(id, true);
+    const { padding } = frameOf(id);
     for (const member of ids) {
       if (wanted.get(member) !== id) continue;
       const at = relative.get(member) as Point;
@@ -145,29 +150,80 @@ export function storedWidths(layout: readonly ViewCardLayout[]): Map<string, num
 const coordinate = (value: number): number =>
   Math.min(maxViewCardCoordinate, Math.max(-maxViewCardCoordinate, Math.round(value * 10) / 10));
 
+/** The group box a card is drawn in, at any depth, or undefined on a canvas without groups. */
+export function groupOfCard(
+  placed: ReadonlyMap<string, { parent?: string | undefined }>,
+  id: string,
+): string | undefined {
+  const seen = new Set<string>();
+  for (let up = placed.get(id)?.parent; up !== undefined && !seen.has(up);) {
+    if (isGroupId(up)) return up;
+    seen.add(up);
+    up = placed.get(up)?.parent;
+  }
+  return undefined;
+}
+
 /**
  * What a view stores of the canvas as drawn: every card's top left corner on the canvas (to a
  * tenth of a pixel), and the width of each card whose width was set by hand (`setByHand`), as
- * drawn, in the canvas's order.
+ * drawn, in the canvas's order. On a grouped canvas, each card names the value of the group box
+ * it is drawn in (`storedGroupValue`, null for Not set). Group boxes aren't stored: each is where
+ * its cards are.
  */
 export function layoutOfCanvas(
   shown: ReadonlyMap<string, PlacedCard>,
   setByHand: (id: string) => boolean,
+  grouped = false,
 ): ViewCardLayout[] {
   const boxes = absoluteBoxes(shown);
   return [...shown.keys()].flatMap((id): ViewCardLayout[] => {
+    if (isGroupId(id)) return [];
     const box = boxes.get(id);
     if (!box || !Number.isFinite(box.x) || !Number.isFinite(box.y)) return [];
     const width = setByHand(id)
       ? Math.min(maxViewCardWidth, Math.max(minViewCardWidth, Math.round(box.width)))
       : undefined;
+    const group = grouped ? groupOfCard(shown, id) : undefined;
     return [
       {
         elementId: id,
         x: coordinate(box.x),
         y: coordinate(box.y),
         ...(width === undefined ? {} : { width }),
+        ...(grouped ? { group: storedGroupValue(group && groupValueOf(group)) } : {}),
       },
     ];
   });
+}
+
+/**
+ * A grouped view's stored positions as the canvas reads them now: a card's position only where it
+ * was saved in the group it is in now (`groupNow`, by its current value and nesting), so a card
+ * whose value changed since is placed afresh; and each group box's corner, from the cards it held
+ * when saved (its padding above and left of the topmost and leftmost). `members`: the cards right
+ * inside each group box now.
+ */
+export function storedGroupedPositions(
+  layout: readonly ViewCardLayout[],
+  groupNow: (id: string) => string | undefined,
+  members: ReadonlyMap<string, readonly string[]>,
+): Map<string, Point> {
+  const result = new Map<string, Point>();
+  for (const card of layout) {
+    const group = groupNow(card.elementId);
+    if (group === undefined || card.group === undefined) continue;
+    if (card.group !== storedGroupValue(groupValueOf(group))) continue;
+    result.set(card.elementId, { x: card.x, y: card.y });
+  }
+  for (const [group, ids] of members) {
+    const { padding } = frameOf(group);
+    const at = ids.flatMap((id) => result.get(id) ?? []);
+    if (at.length === 0) continue;
+    result.set(group, {
+      x: Math.min(...at.map((point) => point.x)) - padding.left,
+      y: Math.min(...at.map((point) => point.y)) - padding.top,
+    });
+  }
+  return result;
 }

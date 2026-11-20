@@ -1,6 +1,5 @@
 import {
   absoluteBoxes,
-  containerBox,
   portId,
   spacing,
   type PlacedCard,
@@ -8,7 +7,8 @@ import {
   type Side,
 } from './elkLayout';
 import { maxSetCardWidth, minCardHeight, minCardWidth } from './cardSize';
-import type { Box, Point } from './positions';
+import { frameOf, isGroupId } from './layoutGeometry';
+import { pushedBelow, type Box, type Point } from './positions';
 
 /**
  * Changes to the canvas without a new layout: cards that come and go, and new lines. Every card
@@ -131,14 +131,15 @@ const membersOf = (work: ReadonlyMap<string, PlacedCard>, parent: string | undef
 
 /**
  * Grows a container to hold its cards (and to `min`), then the containers it is in. False when a
- * grown container would come too close to a card beside it: nothing else moves to make room.
+ * grown container would come too close to a card beside it: nothing else moves to make room. A
+ * group box always grows: it pushes the boxes it covers down afterwards (`keepCards`).
  */
 function grow(work: Map<string, PlacedCard>, id: string, min: Size): boolean {
-  const { padding } = containerBox;
   let first = true;
   for (let at: string | undefined = id; at !== undefined; at = work.get(at)?.parent) {
     const box = work.get(at);
     if (!box) return true;
+    const { padding } = frameOf(at);
     const inside = membersOf(work, at);
     const width = Math.max(
       box.width,
@@ -154,6 +155,7 @@ function grow(work: Map<string, PlacedCard>, id: string, min: Size): boolean {
     if (width === box.width && height === box.height) return true;
     const grown = { ...box, width, height };
     work.set(at, grown);
+    if (isGroupId(at)) continue;
     const beside = membersOf(work, box.parent).filter((card) => card.id !== at);
     if (beside.some((card) => overlaps(grown, boxOf(card), clearance))) return false;
   }
@@ -166,7 +168,7 @@ function roomOf(work: ReadonlyMap<string, PlacedCard>, card: PlacedCard) {
     .filter((other) => other.id !== card.id)
     .map(boxOf);
   const parent = card.parent === undefined ? undefined : work.get(card.parent);
-  const { padding } = containerBox;
+  const { padding } = frameOf(card.parent);
   let right = parent ? parent.width - padding.right : Infinity;
   for (const other of others) {
     const level = other.y < card.y + card.height + gap && other.y + other.height > card.y - gap;
@@ -237,7 +239,7 @@ function placeInside(
 ): boolean {
   const parent = work.get(parentId);
   if (!parent) return false;
-  const { padding } = containerBox;
+  const { padding } = frameOf(parentId);
   const start = { x: padding.left, y: padding.top };
   const inside = membersOf(work, parentId).map(boxOf);
   const want = preferred
@@ -342,7 +344,7 @@ export function keepCards(input: KeepInput): Kept {
     const sizes = held.map((member) => ({ id: member, ...pack(member) }));
     const area = sizes.reduce((sum, size) => sum + size.width * size.height, 0);
     const rowWidth = Math.max(...sizes.map((size) => size.width), Math.sqrt(area * 1.6));
-    const { padding } = containerBox;
+    const { padding } = frameOf(id);
     let [x, y, rowHeight, width] = [0, 0, 0, 0];
     for (const size of sizes) {
       if (x > 0 && x + size.width > rowWidth) {
@@ -395,6 +397,20 @@ export function keepCards(input: KeepInput): Kept {
       work.set(root, { ...card, ...freeSpot(tops, size, want) });
     }
     addHeld(root);
+  }
+  // A group box that grew pushes the boxes it now covers down, as a grown container does on a drop.
+  for (const id of [...work.keys()].filter(isGroupId)) {
+    const was = previous.get(id);
+    const now = work.get(id);
+    if (!was || !now || (now.width <= was.width && now.height <= was.height)) continue;
+    const others = membersOf(work, undefined)
+      .filter((card) => card.id !== id)
+      .map((card) => ({ id: card.id, ...boxOf(card) }));
+    const before = { ...boxOf(now), width: was.width, height: was.height };
+    for (const [other, point] of pushedBelow(boxOf(now), before, others)) {
+      const card = work.get(other);
+      if (card) work.set(other, { ...card, ...point });
+    }
   }
   return { placed: parentsFirst(work, input.cards), containers };
 }

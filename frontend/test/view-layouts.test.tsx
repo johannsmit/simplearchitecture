@@ -75,6 +75,7 @@ function watering(layout: ViewCardLayout[] = [], routes: ViewLineRoute[] = []): 
     relationshipIds: ['g1', 'g2', 'g3'],
     layout,
     routes,
+    groupBy: null,
   };
 }
 

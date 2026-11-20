@@ -70,6 +70,7 @@ function stored(id: string, name: string, elementIds: string[], relationshipIds:
     relationshipIds,
     layout: [],
     routes: [],
+    groupBy: null,
   };
   return view;
 }

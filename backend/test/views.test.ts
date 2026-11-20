@@ -836,3 +836,200 @@ describe('the views an element is used in', () => {
     expect((await call(target, 'GET', usedIn('crane'), { cookie })).statusCode).toBe(403);
   });
 });
+
+describe('Group by', () => {
+  /** A view's address, its layout's, and the view as a Viewer opens it. */
+  const at = (viewId: string) => `${views()}/${viewId}`;
+
+  it('a Modeller saves it with the layout, each card with its group, and everyone sees it', async () => {
+    const modelling = await signedInAs(['Modeller']);
+    const logs = captureLogs(modelling.target);
+    const view = await created(modelling.target, modelling.cookie);
+    expect(view.groupBy).toBeNull();
+    const res = await call(modelling.target, 'PUT', `${at(view.id)}/layout`, {
+      cookie: modelling.cookie,
+      body: {
+        version: 1,
+        groupBy: 'type',
+        cards: [
+          { elementId: 'clerk', x: 16, y: 48, group: 'Stakeholder' },
+          { elementId: 'ledger', x: 300, y: 48, group: 'Application' },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const { view: laid } = res.json<ViewResult>();
+    expect(laid).toMatchObject({
+      version: 2,
+      groupBy: 'type',
+      layout: [
+        { elementId: 'clerk', x: 16, y: 48, group: 'Stakeholder' },
+        { elementId: 'ledger', x: 300, y: 48, group: 'Application' },
+      ],
+    });
+    // Logged as a layout change, without the property or a value.
+    const audit = logs.filter((line) => line.includes('"audit":"view-laid-out"'));
+    expect(audit).toHaveLength(1);
+    expect(loggedFields(audit[0] ?? '')).not.toMatch(/Stakeholder|Application|"type"/);
+    // Cleared again (null): the cards are saved without groups.
+    const cleared = await call(modelling.target, 'PUT', `${at(view.id)}/layout`, {
+      cookie: modelling.cookie,
+      body: { version: 2, groupBy: null, cards: [{ elementId: 'clerk', x: 0, y: 0 }] },
+    });
+    expect(cleared.json<ViewResult>().view).toMatchObject({
+      version: 3,
+      groupBy: null,
+      layout: [{ elementId: 'clerk', x: 0, y: 0 }],
+    });
+    await app?.close();
+    app = undefined;
+
+    const viewing = await signedInAs(['Viewer']);
+    const opened = await call(viewing.target, 'GET', at(view.id), { cookie: viewing.cookie });
+    expect(opened.json<ViewResult>().view.groupBy).toBeNull();
+  });
+
+  it('is saved with a new view, and only a Modeller or an Admin changes it', async () => {
+    const modelling = await signedInAs(['Modeller']);
+    const res = await call(modelling.target, 'POST', views(), {
+      cookie: modelling.cookie,
+      body: { name: 'By type', elementIds: ['clerk', 'ledger'], groupBy: 'type' },
+    });
+    expect(res.statusCode).toBe(201);
+    const { view } = res.json<ViewResult>();
+    expect(view.groupBy).toBe('type');
+    await app?.close();
+    app = undefined;
+
+    const viewing = await signedInAs(['Viewer']);
+    const { cookie, target } = viewing;
+    expect((await call(target, 'GET', at(view.id), { cookie })).json<ViewResult>().view).toEqual(
+      view,
+    );
+    const layout = await call(target, 'PUT', `${at(view.id)}/layout`, {
+      cookie,
+      body: { version: 1, groupBy: null, cards: [] },
+    });
+    expect(layout.statusCode).toBe(403);
+    const create = await call(target, 'POST', views(), {
+      cookie,
+      body: { name: 'Mine', elementIds: ['clerk'], groupBy: 'type' },
+    });
+    expect(create.statusCode).toBe(403);
+    expect((await call(target, 'GET', at(view.id), { cookie })).json<ViewResult>().view).toEqual(
+      view,
+    );
+  });
+
+  it('gets 422 on groupBy for a property the model lacks, __proto__ and other keys it never offers', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    for (const groupBy of [
+      'owningTeam',
+      '__proto__',
+      'description',
+      'functions',
+      'archimateType',
+      'simplearchitecture:stored',
+      '',
+      'k'.repeat(101),
+      'type\u0000',
+      42,
+      ['type'],
+    ]) {
+      const laid = await call(target, 'PUT', `${at(view.id)}/layout`, {
+        cookie,
+        body: { version: 1, groupBy, cards: [] },
+      });
+      expect(laid.statusCode, String(groupBy)).toBe(422);
+      expect(laid.json<ViewRejected>().fields.map((issue) => issue.field)).toEqual(['groupBy']);
+      const made = await call(target, 'POST', views(), {
+        cookie,
+        body: { name: 'Odd', elementIds: ['clerk'], groupBy },
+      });
+      expect(made.statusCode, String(groupBy)).toBe(422);
+      expect(made.json<ViewRejected>().fields.map((issue) => issue.field)).toEqual(['groupBy']);
+    }
+    // Nothing was stored.
+    const opened = await call(target, 'GET', at(view.id), { cookie });
+    expect(opened.json<ViewResult>().view).toMatchObject({ version: 1, groupBy: null });
+    expect((await call(target, 'GET', views(), { cookie })).json<ViewListResponse>().views).toEqual(
+      [expect.objectContaining({ id: view.id })],
+    );
+  });
+
+  it("gets 422 on cards for a group in a view that isn't grouped, or a group too long", async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    for (const body of [
+      { version: 1, cards: [{ elementId: 'clerk', x: 0, y: 0, group: 'Stakeholder' }] },
+      { version: 1, groupBy: null, cards: [{ elementId: 'clerk', x: 0, y: 0, group: null }] },
+      {
+        version: 1,
+        groupBy: 'type',
+        cards: [{ elementId: 'clerk', x: 0, y: 0, group: 'v'.repeat(201) }],
+      },
+      { version: 1, groupBy: 'type', cards: [{ elementId: 'clerk', x: 0, y: 0, group: ' ' }] },
+      { version: 1, groupBy: 'type', cards: [{ elementId: 'clerk', x: 0, y: 0, group: 7 }] },
+      // Text PostgreSQL can't store: a NUL, and half a surrogate pair.
+      {
+        version: 1,
+        groupBy: 'type',
+        cards: [{ elementId: 'clerk', x: 0, y: 0, group: 'a\u0000' }],
+      },
+      {
+        version: 1,
+        groupBy: 'type',
+        cards: [{ elementId: 'clerk', x: 0, y: 0, group: 'a\uD800' }],
+      },
+    ]) {
+      const res = await call(target, 'PUT', `${at(view.id)}/layout`, { cookie, body });
+      expect(res.statusCode).toBe(422);
+      expect(res.json<ViewRejected>().fields.map((issue) => issue.field)).toEqual(['cards']);
+    }
+    // A value of 200 characters (counted as characters, not code units) is kept as sent.
+    const long = '🍎'.repeat(200);
+    const res = await call(target, 'PUT', `${at(view.id)}/layout`, {
+      cookie,
+      body: {
+        version: 1,
+        groupBy: 'type',
+        cards: [{ elementId: 'clerk', x: 0, y: 0, group: long }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<ViewResult>().view.layout).toEqual([
+      { elementId: 'clerk', x: 0, y: 0, group: long },
+    ]);
+  });
+
+  it('keeps a stored property no element has any more, and checks the version', async () => {
+    const { target, cookie } = await signedInAs(['Modeller']);
+    const view = await created(target, cookie);
+    await db.query("update views set group_by = 'costCentre' where id = $1::uuid", [view.id]);
+    const card = { elementId: 'clerk', x: 0, y: 0, group: null };
+    // Sent again, or left out: it stays.
+    for (const [version, groupBy] of [
+      [1, 'costCentre'],
+      [2, undefined],
+    ] as const) {
+      const res = await call(target, 'PUT', `${at(view.id)}/layout`, {
+        cookie,
+        body: { version, cards: [{ ...card, x: version }], ...(groupBy ? { groupBy } : {}) },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<ViewResult>().view).toMatchObject({
+        version: version + 1,
+        groupBy: 'costCentre',
+      });
+    }
+    const stale = await call(target, 'PUT', `${at(view.id)}/layout`, {
+      cookie,
+      body: { version: 1, groupBy: 'type', cards: [] },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(
+      (await call(target, 'GET', at(view.id), { cookie })).json<ViewResult>().view,
+    ).toMatchObject({ version: 3, groupBy: 'costCentre' });
+  });
+});

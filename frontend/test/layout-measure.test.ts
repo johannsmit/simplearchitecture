@@ -1,6 +1,13 @@
 import { writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { add, madeUpSets, measureModel, noMeasures, type Measures } from './layoutMeasures';
+import {
+  add,
+  madeUpSets,
+  measureModel,
+  noMeasures,
+  type MadeUpModel,
+  type Measures,
+} from './layoutMeasures';
 
 // The layout's measures on the made-up models, as a table: a check to run by hand, before and after
 // a change to the layout. Slow (minutes), so it runs only with LAYOUT_MEASURE=1:
@@ -8,14 +15,26 @@ import { add, madeUpSets, measureModel, noMeasures, type Measures } from './layo
 //   LAYOUT_MEASURE=1 npx vitest run --project frontend test/layout-measure.test.ts
 //
 // LAYOUT_MEASURE_FUZZED sets how many fuzzed models (default 24); LAYOUT_MEASURE_OUT, a file the
-// table is written to as well.
+// table is written to as well; LAYOUT_MEASURE_GROUP, a property to group every canvas by (Group by,
+// for example `type`). The time column is the time the set's layouts took on this machine.
 
 const share = (part: number, whole: number) =>
   whole === 0 ? '-' : `${String(Math.round((100 * part) / whole))}%`;
 
-function row(name: string, m: Measures) {
+const groupBy = process.env.LAYOUT_MEASURE_GROUP || undefined;
+
+/** The measures of models, and how long their canvases took, in seconds. */
+async function timed(models: MadeUpModel[]): Promise<{ sum: Measures; seconds: number }> {
+  const sum = noMeasures();
+  const start = performance.now();
+  for (const model of models) add(sum, await measureModel(model, [1, 2], groupBy));
+  return { sum, seconds: (performance.now() - start) / 1000 };
+}
+
+function row(name: string, m: Measures, seconds: number) {
   return {
     model: name,
+    'time (s)': seconds.toFixed(1),
     canvases: m.canvases,
     'crossed names': `${String(m.crossedNames)}/${String(m.containers)} (${share(m.crossedNames, m.containers)})`,
     'crossed headers': `${String(m.crossedHeaders)}/${String(m.containers)} (${share(m.crossedHeaders, m.containers)})`,
@@ -35,23 +54,16 @@ function row(name: string, m: Measures) {
 describe.skipIf(process.env.LAYOUT_MEASURE !== '1')('layout measures on made-up models', () => {
   it('prints the table', { timeout: 1_800_000 }, async () => {
     const rows = [];
-    for (const set of ['large', 'moderate'] as const) {
-      const [model] = madeUpSets[set]();
-      if (model) rows.push(row(set, await measureModel(model)));
-    }
     for (const [name, models] of [
+      ['large', madeUpSets.large()],
+      ['moderate', madeUpSets.moderate()],
       ['long names', madeUpSets.long()],
       ['wide cards', madeUpSets.wide()],
+      ['fuzzed', madeUpSets.fuzzed(Number(process.env.LAYOUT_MEASURE_FUZZED ?? 24))],
     ] as const) {
-      const sum = noMeasures();
-      for (const model of models) add(sum, await measureModel(model));
-      rows.push(row(name, sum));
+      const { sum, seconds } = await timed(models);
+      rows.push(row(name, sum, seconds));
     }
-    const fuzzed = noMeasures();
-    for (const model of madeUpSets.fuzzed(Number(process.env.LAYOUT_MEASURE_FUZZED ?? 24))) {
-      add(fuzzed, await measureModel(model));
-    }
-    rows.push(row('fuzzed', fuzzed));
     const keys = Object.keys(rows[0] ?? {});
     const table = [
       `| ${keys.join(' | ')} |`,

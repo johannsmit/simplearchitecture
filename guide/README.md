@@ -5,7 +5,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 ## Using the app
 
 - [Using the app](using-the-app.md): the spaces and roles, opening a model, the parts of the screen, finding elements, the catalog.
-- [The canvas](canvas.md): what the canvas shows, Show Viewpoints, adding, moving and removing cards, Tidy up.
+- [The canvas](canvas.md): what the canvas shows, Show Viewpoints, Group by, adding, moving and removing cards, Tidy up.
 - [Modelling](modelling.md): creating and changing elements and relationships.
 - [Views](views.md): saving, opening, arranging and organising views.
 - [Keyboard shortcuts](keyboard-shortcuts.md): every key, in tables.

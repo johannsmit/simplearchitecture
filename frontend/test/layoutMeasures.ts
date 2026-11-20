@@ -29,6 +29,13 @@ import {
   type Side,
 } from '../src/viewing/explorer/canvas/elkLayout';
 import { laidLine } from '../src/viewing/explorer/canvas/lineRoutes';
+import {
+  groupCards,
+  groupHeaderWidth,
+  groupMinSize,
+  groupValueText,
+} from '../src/viewing/explorer/canvas/groups';
+import { groupTextArea, groupValueOf } from '../src/viewing/explorer/canvas/layoutGeometry';
 import { fitContainers, type Box, type Point } from '../src/viewing/explorer/canvas/positions';
 import { layoutLinks, mergeRelationships } from '../src/viewing/explorer/canvas/view';
 import { nestingParents } from '../src/viewing/explorer/views';
@@ -209,19 +216,36 @@ const elk = new ELK();
 
 /**
  * The canvas the explorer draws for a focus element at a depth, with nesting on. `widths` are
- * widths set by hand, kept by the layout as Tidy up keeps them.
+ * widths set by hand, kept by the layout as Tidy up keeps them. With `groupBy`, the top-level cards
+ * are in group boxes, as Group by draws them: the boxes count as containers here, and their value
+ * and count as their names.
  */
 export async function canvasOf(
   graph: ModelGraph,
   focusId: string,
   depth: number,
   widths: ReadonlyMap<string, number> = new Map(),
+  groupBy?: string,
 ): Promise<Canvas> {
   const hood = withContainers(graph, neighbourhood(graph, focusId, { depth }));
-  const wanted = nestingParents(graph, hood);
-  const containers = new Set(wanted.values());
+  const nesting = nestingParents(graph, hood);
   const ids = [...hood.hops.keys()].filter((id) => graph.elements.has(id));
+  const grouping = groupBy === undefined ? undefined : groupCards(graph, ids, nesting, groupBy);
+  const wanted = new Map(nesting);
+  for (const [id, group] of grouping?.groupOf ?? []) wanted.set(id, group);
+  const headerWidths = new Map(
+    (grouping?.order ?? []).map((group) => [
+      group,
+      groupHeaderWidth(
+        groupValueText(groupBy ?? '', groupValueOf(group)),
+        grouping?.members.get(group)?.length ?? 0,
+      ),
+    ]),
+  );
+  const containers = new Set(wanted.values());
   const minOf = (id: string) => {
+    const header = headerWidths.get(id);
+    if (header !== undefined) return groupMinSize(header);
     const element = graph.elements.get(id);
     return containerMinSize({
       name: element?.name ?? '',
@@ -230,6 +254,12 @@ export async function canvasOf(
     });
   };
   const partition = new Map<string, number>();
+  const groupLayoutCards = [...headerWidths].map(([id, nameWidth]): LayoutCard => ({
+    id,
+    ...minOf(id),
+    shape: 'container',
+    nameWidth,
+  }));
   const cards = ids.map((id): LayoutCard => {
     const element = graph.elements.get(id);
     const parent = wanted.get(id);
@@ -262,7 +292,7 @@ export async function canvasOf(
   const nested = (link: { type: string; source: string; target: string }) =>
     link.type === containsType && wanted.get(link.target) === link.source;
   const laidOut = layoutLinks(hood.relationships, (relationship) => !nested(relationship));
-  const byElk = await layoutCards(elk, cards, laidOut);
+  const byElk = await layoutCards(elk, [...groupLayoutCards, ...cards], laidOut);
   const sizes = new Map(
     [...byElk.values()].map((c) => [c.id, { width: c.width, height: c.height }]),
   );
@@ -274,10 +304,12 @@ export async function canvasOf(
     const circle =
       !containers.has(id) && element !== undefined && cardShape(element.type) === 'circle';
     const parent = placed.get(id)?.parent;
+    const header = headerWidths.get(id);
     endBoxes.set(id, {
       ...box,
       ...(circle ? { circle } : {}),
       ...(parent === undefined ? {} : { parent }),
+      ...(header === undefined ? {} : { headerWidth: header }),
     });
   }
   const drawn = mergeRelationships(hood.relationships).filter((link) => !nested(link));
@@ -338,6 +370,11 @@ export async function canvasOf(
   const names = new Map<string, Box>();
   for (const id of containers) {
     const box = boxes.get(id);
+    const header = headerWidths.get(id);
+    if (box && header !== undefined) {
+      names.set(id, groupTextArea(box, header));
+      continue;
+    }
     const element = graph.elements.get(id);
     if (!box || !element) continue;
     names.set(
@@ -678,13 +715,17 @@ export function wideCards(model: MadeUpModel): Map<string, number> {
   return widths;
 }
 
-/** Every canvas of a model: each focus element at depths 1 and 2. */
-export async function measureModel(model: MadeUpModel, depths = [1, 2]): Promise<Measures> {
+/** Every canvas of a model: each focus element at depths 1 and 2, grouped by `groupBy` if given. */
+export async function measureModel(
+  model: MadeUpModel,
+  depths = [1, 2],
+  groupBy?: string,
+): Promise<Measures> {
   const graph = buildModelGraph(model.document);
   const total = noMeasures();
   for (const focus of focusElements(graph)) {
     for (const depth of depths) {
-      measure(await canvasOf(graph, focus, depth, model.widths), total);
+      measure(await canvasOf(graph, focus, depth, model.widths, groupBy), total);
     }
   }
   return total;

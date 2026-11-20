@@ -129,6 +129,13 @@ export interface ViewCardLayout {
   y: number;
   /** A whole number from `minViewCardWidth` to `maxViewCardWidth`. Absent: the card's own width. */
   width?: number;
+  /**
+   * In a grouped view (`groupBy`): the value of the group the card was drawn in when the layout
+   * was saved, cut to `maxViewGroupValueLength` characters (`storedGroupValue`), or null for Not
+   * set. A card whose group is another one now is placed afresh when the view opens. Absent: the
+   * layout was saved without grouping.
+   */
+  group?: string | null;
 }
 
 /** A point on the canvas, in canvas pixels. */
@@ -158,6 +165,12 @@ export interface StoredView extends ViewSummary {
   relationshipIds: string[];
   layout: ViewCardLayout[];
   routes: ViewLineRoute[];
+  /**
+   * The element property the view's cards are grouped by (`typeGroupKey` for Type), or null for
+   * none. Everyone who opens the view sees it grouped so; it may name a property no element has any
+   * more (every card is then in Not set).
+   */
+  groupBy: string | null;
 }
 
 /**
@@ -196,6 +209,8 @@ export interface NewViewRequest {
   elementIds: string[];
   /** Absent: none. */
   relationshipIds?: string[];
+  /** Absent or null: not grouped. Otherwise one of the model's Group by choices (`groupByChoices`). */
+  groupBy?: string | null;
 }
 
 /** Body of `PATCH /api/models/:id/views/:viewId`: a new name. */
@@ -232,6 +247,12 @@ export interface ReplaceViewLayoutRequest {
   cards: ViewCardLayout[];
   /** Absent: none. */
   routes?: ViewLineRoute[];
+  /**
+   * The view's new Group by, saved with the layout: null for none, or a key. Absent: the view's
+   * Group by stays. A new key must be one of the model's Group by choices; the one stored may be
+   * sent again whatever the model holds now. A card names its `group` only in a grouped view.
+   */
+  groupBy?: string | null;
 }
 
 /**
@@ -283,7 +304,8 @@ export interface ViewNotFound extends ApiError {
 
 /**
  * Response body (422) when a request is refused. Nothing was stored. `field`: `name`, `folder`,
- * `elementIds`, `relationshipIds`, `cards`, `routes`, `version`, or '' (a general message).
+ * `elementIds`, `relationshipIds`, `cards`, `routes`, `groupBy`, `version`, or '' (a general
+ * message).
  */
 export interface ViewRejected extends ApiError {
   fields: ElementFieldIssue[];

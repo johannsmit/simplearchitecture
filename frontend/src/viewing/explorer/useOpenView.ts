@@ -14,6 +14,8 @@ export type ViewLoad =
   | { status: 'failed'; message: string };
 
 export interface OpenView {
+  /** Changes when another view opens, or the view is read again (Reload view). */
+  key: string;
   load: ViewLoad;
   /** The view as last read or saved (name and version). */
   view: StoredView | undefined;
@@ -30,7 +32,8 @@ export interface OpenView {
    */
   change: (next: (current: ViewContents) => ViewContents | undefined) => boolean;
   /**
-   * Saves where the view's cards are, and its lines' routes, after a change of contents on its way.
+   * Saves where the view's cards are, and its lines' routes, after a change of contents on its way,
+   * with the view's Group by when the layout's differs from the one saved.
    * Only for what the person did on the canvas (Tidy up included): a layout the canvas made on its
    * own is never saved. Refused (false) as `change` is. Cards and lines no longer in the view
    * are left out.
@@ -173,11 +176,14 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
             const routes = (q.layout?.routes ?? []).filter((route) =>
               linesInView.has(route.relationshipId),
             );
+            const groupBy = q.layout?.groupBy ?? null;
             q.layout = undefined;
             view = await replaceViewLayout(modelId, viewId, {
               version: saved.version,
               cards,
               routes,
+              // Sent only when it changes: the server then checks it against the model.
+              ...(groupBy === saved.groupBy ? {} : { groupBy }),
             });
           }
           if (stale()) return;
@@ -335,6 +341,7 @@ export function useOpenView(modelId: string, viewId: string | undefined): OpenVi
   }, []);
 
   return {
+    key,
     load: viewId === undefined ? { status: 'loading' } : current.load,
     view: current.view,
     contents: current.contents,

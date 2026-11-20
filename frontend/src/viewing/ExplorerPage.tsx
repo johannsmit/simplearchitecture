@@ -5,6 +5,7 @@ import {
   containerOf,
   degree,
   findElements,
+  groupByChoices,
   maxDepth,
   mostConnected,
   neighbourhood,
@@ -64,6 +65,7 @@ import {
   type MovedPositions,
   type Point,
 } from './explorer/canvas/positions';
+import { isGroupId } from './explorer/canvas/layoutGeometry';
 import { DetailsPanel, type RelationshipTools } from './explorer/DetailsPanel';
 import { ElementTree } from './explorer/ElementTree';
 import { Legend } from './explorer/Legend';
@@ -113,6 +115,8 @@ import {
   viewPath,
   viewSearchCleaned,
   spaceHome,
+  groupBySearch,
+  readGroupBy,
   readShownProperties,
   shownPropertiesSearch,
   type ExplorerSpace,
@@ -655,6 +659,8 @@ function Explorer({
   const depth = parseDepth(params.get('depth')) ?? rememberedDepth;
   // The relationship properties the lines show. Only the address holds them.
   const shownAsked = useMemo(() => readShownProperties(params), [params]);
+  // Group by outside a view: only the address holds it (a view keeps its own).
+  const groupAsked = viewId === undefined ? readGroupBy(params) : undefined;
   const [nest, setNest] = useState(readNestContained);
   const [lines, setLines] = useState(readShowLines);
   // An open view: its contents, saved at once on every change (Modelling with editing on).
@@ -688,6 +694,8 @@ function Explorer({
     [document_, definitions],
   );
   const lineFields = useMemo(() => (graph ? relationshipViewFields(graph) : []), [graph]);
+  // What the cards can be grouped by: Type and the element properties the model has.
+  const groupChoices = useMemo(() => (graph ? groupByChoices(graph) : []), [graph]);
   // What the address asks for and this model has, in the list's order: others are ignored.
   const shownProperties = useMemo(
     () => lineFields.map(({ key }) => key).filter((key) => shownAsked.includes(key)),
@@ -760,6 +768,16 @@ function Explorer({
   });
   if (moved.key !== movedKey) setMoved({ key: movedKey, positions: noMovedPositions });
   const movedPositions = moved.key === movedKey ? moved.positions : noMovedPositions;
+  // In a view, its Group by; changed for the page in Viewing (and, in Modelling, until the change is
+  // saved), and forgotten when the view is opened or read again.
+  const [viewGroup, setViewGroup] = useState<{ key: string; group: string | undefined } | null>(
+    null,
+  );
+  const groupBy = inView
+    ? viewGroup?.key === openView.key
+      ? viewGroup.group
+      : (openView.view?.groupBy ?? undefined)
+    : groupAsked;
   const moveCard = useCallback(
     (id: string, position: Point | undefined) => {
       setMoved((current) => ({
@@ -778,7 +796,7 @@ function Explorer({
   const [relationsTidyCount, setRelationsTidyCount] = useState(0);
   const [canTidyRelations, setCanTidyRelations] = useState(false);
   // The canvas is laid out only when it is a new one; changes in between keep every card in place.
-  const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}`;
+  const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}|${groupBy === undefined ? '' : `group:${groupBy}`}`;
   const layoutKey = `${canvasLayoutKey}|${tidyCount}`;
   // An open view's stored layout: a new canvas opens with it (cards where they were left, with
   // their widths). A focus canvas has none.
@@ -863,6 +881,18 @@ function Explorer({
     setMoved({ key: movedKey, positions: noMovedPositions });
   }, [movedKey]);
 
+  // Group by lays the canvas out again, like the Nest switch: in a view in Modelling, the new
+  // grouping and layout are saved, as after Tidy up; in Viewing, a view's is changed for the page.
+  const changeGroupBy = (key: string | undefined) => {
+    setMoved({ key: movedKey, positions: noMovedPositions });
+    if (inView) {
+      setViewGroup({ key: openView.key, group: key });
+      if (viewEditable && !viewBlocked) requestArrange();
+      return;
+    }
+    void navigate(`${shownPath}${groupBySearch(params, key)}`, { replace: true });
+  };
+
   // "Show relationships" only hides or shows the lines: unlike nesting, the cards stay where they are.
   const showLines = useCallback((on: boolean) => {
     setLines(on);
@@ -871,9 +901,9 @@ function Explorer({
 
   const focusElement = useCallback(
     (id: string) => {
-      void navigate(elementPath(modelId, id, depth, space, shownAsked));
+      void navigate(elementPath(modelId, id, depth, space, shownAsked, groupAsked));
     },
-    [navigate, modelId, depth, space, shownAsked],
+    [navigate, modelId, depth, space, shownAsked, groupAsked],
   );
 
   const setDepth = useCallback(
@@ -882,12 +912,12 @@ function Explorer({
       setRememberedDepth(next);
       writeDepth(next);
       if (elementId !== undefined) {
-        void navigate(elementPath(modelId, elementId, next, space, shownAsked), {
+        void navigate(elementPath(modelId, elementId, next, space, shownAsked, groupAsked), {
           replace: true,
         });
       }
     },
-    [navigate, modelId, elementId, space, shownAsked],
+    [navigate, modelId, elementId, space, shownAsked, groupAsked],
   );
 
   // After following a relationship in the details panel, focus goes to the new element's name.
@@ -971,7 +1001,8 @@ function Explorer({
     else if (inView) {
       addNewToView(result.element.id);
       setPicked({ key: selectionKey, id: result.element.id });
-    } else void navigate(elementPath(modelId, result.element.id, depth, space, shownAsked));
+    } else
+      void navigate(elementPath(modelId, result.element.id, depth, space, shownAsked, groupAsked));
   };
 
   const onRemoved = (id: string) => {
@@ -1001,7 +1032,7 @@ function Explorer({
     const previous = trail.filter((other) => other !== id).at(-1);
     if (previous !== undefined) {
       setHeadingFocusFor(previous);
-      void navigate(elementPath(modelId, previous, depth, space, shownAsked));
+      void navigate(elementPath(modelId, previous, depth, space, shownAsked, groupAsked));
     } else {
       void navigate(`${modelPath(modelId, space)}${explorerSearch(params, 'canvas')}`);
       requestAnimationFrame(() => {
@@ -1084,7 +1115,7 @@ function Explorer({
     } else if (next === 'catalog') {
       void navigate(viewUrl('catalog', catalogTabOnEntry(modelId, selected?.type)));
     } else if (elementId === undefined && selectedId !== undefined) {
-      void navigate(elementPath(modelId, selectedId, depth, space, shownAsked));
+      void navigate(elementPath(modelId, selectedId, depth, space, shownAsked, groupAsked));
     } else {
       void navigate(viewUrl('canvas'));
     }
@@ -1431,7 +1462,10 @@ function Explorer({
     );
   }
   const canTidy =
-    hood !== undefined && (keptFor === layoutKey || hasMovedCards(movedPositions, hood.hops));
+    hood !== undefined &&
+    (keptFor === layoutKey ||
+      hasMovedCards(movedPositions, hood.hops) ||
+      [...movedPositions.keys()].some(isGroupId));
   // The legend: only while a canvas is drawn (a focused element or an open view).
   const legendShown = view === 'canvas' && hood !== undefined;
   // Save as view: on a focus canvas in Modelling with editing on.
@@ -1826,7 +1860,9 @@ function Explorer({
                       </li>
                     ) : (
                       <li key={`${id}-${index}`}>
-                        <Link to={elementPath(modelId, id, depth, space, shownAsked)}>{name}</Link>
+                        <Link to={elementPath(modelId, id, depth, space, shownAsked, groupAsked)}>
+                          {name}
+                        </Link>
                       </li>
                     );
                   })}
@@ -1932,7 +1968,7 @@ function Explorer({
                           : modelPath(modelId, 'modelling')
                       }${explorerSearch(params, 'catalog', tab)}`
                     : elementId !== undefined
-                      ? elementPath(modelId, elementId, depth, 'modelling', shownAsked)
+                      ? elementPath(modelId, elementId, depth, 'modelling', shownAsked, groupAsked)
                       : modelPath(modelId, 'modelling')
               }
             >
@@ -2031,6 +2067,9 @@ function Explorer({
                     replace: true,
                   });
                 }}
+                groupChoices={groupChoices}
+                groupBy={groupBy}
+                onGroupBy={changeGroupBy}
                 onFocusElement={focusElement}
                 selectedId={selectedId}
                 onSelectElement={selectElement}
@@ -2066,6 +2105,7 @@ function Explorer({
                 onRemoveCard={removeCard}
                 storedLayout={storedLayout}
                 storedRoutes={storedRoutes}
+                storedGroupBy={openView.view?.groupBy ?? undefined}
                 arrangeRequest={arrangeRequest}
                 {...(viewEditable && !viewBlocked ? { onArranged: saveViewLayout } : {})}
               />
@@ -2216,6 +2256,9 @@ function Explorer({
                     replace: true,
                   });
                 }}
+                groupChoices={groupChoices}
+                groupBy={groupBy}
+                onGroupBy={changeGroupBy}
                 onFocusElement={focusElement}
                 selectedId={selectedId}
                 onSelectElement={selectElement}
@@ -2302,7 +2345,14 @@ function Explorer({
                   me.spaces.includes('modelling') &&
                   elementId !== undefined
                     ? {
-                        to: elementPath(modelId, elementId, depth, 'modelling', shownAsked),
+                        to: elementPath(
+                          modelId,
+                          elementId,
+                          depth,
+                          'modelling',
+                          shownAsked,
+                          groupAsked,
+                        ),
                         state: { relationship: selectedRelationship.id, element: selected.id },
                       }
                     : undefined
@@ -2317,7 +2367,7 @@ function Explorer({
                 graph={graph}
                 element={selected}
                 version={version}
-                link={elementPath(modelId, selected.id, depth, space, shownAsked)}
+                link={elementPath(modelId, selected.id, depth, space, shownAsked, groupAsked)}
                 onFocusElement={(id) => {
                   setHeadingFocusFor(id);
                   focusElement(id);
@@ -2340,7 +2390,7 @@ function Explorer({
                 key={selected.id}
                 graph={graph}
                 element={selected}
-                link={elementPath(modelId, selected.id, depth, space, shownAsked)}
+                link={elementPath(modelId, selected.id, depth, space, shownAsked, groupAsked)}
                 onFocusElement={(id) => {
                   setHeadingFocusFor(id);
                   focusElement(id);
@@ -2360,6 +2410,11 @@ function Explorer({
           modelId={modelId}
           initialName={element.name}
           contents={canvasContents(hood, hasOwnId)}
+          groupBy={
+            groupBy !== undefined && groupChoices.some((choice) => choice.key === groupBy)
+              ? groupBy
+              : undefined
+          }
           onCancel={() => {
             setViewDialog(null);
             focusInPanel(saveViewButton);
