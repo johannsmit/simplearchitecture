@@ -168,13 +168,60 @@ describe('a line round the cards in its way', () => {
       if (source !== target) links.push({ id: `l${index}`, source, target });
     }
     floatingEnds(links, boxes);
+    // Every card a little further on, so no line can keep its detour from the last time.
+    const moved = new Map(
+      [...boxes].map(([id, box]) => [id, { ...box, x: box.x + 4, y: box.y + 4 }]),
+    );
     const started = performance.now();
-    const lines = floatingEnds(links, boxes);
+    const lines = floatingEnds(links, moved);
     const took = performance.now() - started;
     expect(lines.size).toBe(links.length);
     for (const line of lines.values()) expectRightAngled(line.points);
-    // Generous, so a busy machine doesn't fail it: about 20 ms once warm, under 100 ms cold.
-    expect(took).toBeLessThan(500);
+    // About 50 to 80 ms in a test run (about 20 ms once warm): the bound is some three times that,
+    // so it catches a big slowdown without failing on a busy machine.
+    expect(took).toBeLessThan(250);
+  });
+
+  it('draws the same lines again for cards that haven’t moved', () => {
+    const boxes = boxedIn();
+    const links = [
+      { id: 'a', source: 'left', target: 'right' },
+      { id: 'b', source: 'overLeft', target: 'underRight' },
+    ];
+    const first = floatingEnds(links, new Map(Object.entries(boxes)));
+    // Moving a card far from both lines leaves them as they were.
+    const again = floatingEnds(links, new Map(Object.entries({ ...boxes, away: at(5000, 5000) })));
+    expect(again).toEqual(first);
+    // Moving a card in a line's way changes it.
+    const changed = floatingEnds(
+      links,
+      new Map(Object.entries({ ...boxes, pillar: at(300, -140, { height: 324 }) })),
+    );
+    expect(changed.get('a')?.points).not.toEqual(first.get('a')?.points);
+  });
+
+  it('still goes round from an end spread along its side close to another card', () => {
+    // Two lines between the boxed-in cards share each side. The upper end sits within 12px of a
+    // card at the corner: the line leaves there with less room, rather than crossing a card.
+    const boxes = boxedIn({ corner: at(176, -40, { width: 100 }) });
+    const all = floatingEnds(
+      [
+        { id: 'a', source: 'left', target: 'right' },
+        { id: 'b', source: 'left', target: 'right' },
+      ],
+      new Map(Object.entries(boxes)),
+    );
+    for (const id of ['a', 'b']) {
+      const points = all.get(id)?.points ?? [];
+      expect(points.length).toBeGreaterThan(4);
+      expectRightAngled(points);
+      for (const [name, box] of Object.entries(boxes)) {
+        if (name === 'left' || name === 'right') continue;
+        expect(crossesAny(points, [box])).toBe(false);
+        // As much room as its end leaves; the full 12px from every other card.
+        expect(nearest(points, box)).toBeGreaterThanOrEqual(name === 'corner' ? 10 : 12);
+      }
+    }
   });
 });
 

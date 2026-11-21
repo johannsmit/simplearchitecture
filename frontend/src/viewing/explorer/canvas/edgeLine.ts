@@ -534,6 +534,10 @@ interface DetourWay {
   /** The cards near both, as `blockersOf` gives them. */
   near: readonly { box: Box; id: string }[];
   headers: readonly Box[];
+  /** What a detour keeps out of among `near`, made once for the searches of both passes. */
+  avoid?: Box[];
+  /** The detour the sides were chosen by, kept for the final line when its ends stay put. */
+  chosen?: { line: Point[]; start: LineEnd; end: LineEnd };
 }
 
 /** A stub out from an end's side: where a detour may first turn. */
@@ -558,31 +562,137 @@ const notFacing = 0.25;
  * many bends as it takes, keeping `bendRoom` from every card it passes, `stub` from its own two
  * cards, and off the headers it must not cross. Its cost is its length plus `bendCost` a bend (and
  * `notFacing` for each end not on a facing side). When it goes wide, out past the cards near its
- * ends, the cards there are taken in too, and it is looked for again. Undefined when there is no
- * such line, or for a circle's line, which keeps today's way.
+ * ends, the cards there are taken in too, and it is looked for again. `eased`, a card keeps less
+ * than `bendRoom` where an end's stub is closer to it than that, so the line can still leave there.
+ * Undefined when there is no such line, or for a circle's line, which keeps today's way.
  */
 function detourLine(
   starts: readonly { end: LineEnd; extra?: number }[],
   ends: readonly { end: LineEnd; extra?: number }[],
   way: DetourWay,
-): { line: Point[]; start: LineEnd; end: LineEnd } | undefined {
-  const { boxes, source, target, free, headers } = way;
+  eased = false,
+): Detour | undefined {
+  const { boxes, source, target } = way;
   const sourceBox = boxes.get(source) as EndBox;
   const targetBox = boxes.get(target) as EndBox;
   if (sourceBox.circle === true || targetBox.circle === true) return undefined;
+  const key = detourKey(starts, ends, way, eased);
+  const hash = hashOf(key);
+  const known = detoursMade.get(hash);
+  if (known && sameKey(known.key, key)) {
+    // Most recently used last, so the oldest go first.
+    detoursMade.delete(hash);
+    detoursMade.set(hash, known);
+    return known.detour && copied(known.detour);
+  }
+  const { detour, widened } = searchDetour(starts, ends, way, eased);
+  // A detour that went wide depends on cards the key doesn't hold, so isn't kept.
+  if (!widened) {
+    detoursMade.delete(hash);
+    detoursMade.set(hash, { key, detour: detour && copied(detour) });
+    if (detoursMade.size > maxDetoursMade) {
+      detoursMade.delete(detoursMade.keys().next().value as number);
+    }
+  }
+  return detour;
+}
+
+type Detour = { line: Point[]; start: LineEnd; end: LineEnd };
+
+/**
+ * Detours already found, by everything their search depends on: while a card is dragged, the
+ * lines away from it keep theirs without searching again. Only the latest are kept: enough for
+ * every detour of a full canvas, at a few kilobytes each.
+ */
+const detoursMade = new Map<number, { key: Float64Array; detour: Detour | undefined }>();
+const maxDetoursMade = 1024;
+
+const copied = (detour: Detour): Detour => ({
+  line: detour.line.map((point) => ({ ...point })),
+  start: { ...detour.start },
+  end: { ...detour.end },
+});
+
+const sideNumbers: Record<Side, number> = { right: 0, bottom: 1, left: 2, top: 3 };
+
+/**
+ * All that a first search for a detour depends on, as numbers: the ends, the two cards and
+ * whether they may be crossed, and the cards and headers near them.
+ */
+function detourKey(
+  starts: readonly { end: LineEnd; extra?: number }[],
+  ends: readonly { end: LineEnd; extra?: number }[],
+  way: DetourWay,
+  eased: boolean,
+): Float64Array {
+  const { boxes, source, target, free, near, headers } = way;
+  const values: number[] = [eased ? 1 : 0, free.has(source) ? 1 : 0, free.has(target) ? 1 : 0];
+  const addBox = (box: Box) => values.push(box.x, box.y, box.width, box.height);
+  addBox(boxes.get(source) as EndBox);
+  addBox(boxes.get(target) as EndBox);
+  for (const list of [starts, ends]) {
+    values.push(list.length);
+    for (const { end, extra } of list) values.push(end.x, end.y, sideNumbers[end.side], extra ?? 0);
+  }
+  const others = near.filter((entry) => entry.id !== source && entry.id !== target);
+  values.push(others.length);
+  for (const entry of others) addBox(entry.box);
+  values.push(headers.length);
+  for (const header of headers) addBox(header);
+  return Float64Array.from(values);
+}
+
+/** A hash of a key's numbers, bit for bit (FNV-1a over their bytes' words). */
+function hashOf(key: Float64Array): number {
+  const words = new Uint32Array(key.buffer, key.byteOffset, key.length * 2);
+  let hash = 0x811c9dc5;
+  for (const word of words) hash = Math.imul(hash ^ word, 0x01000193);
+  return hash >>> 0;
+}
+
+function sameKey(a: Float64Array, b: Float64Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    if (!Object.is(a[index], b[index])) return false;
+  }
+  return true;
+}
+
+/** `detourLine`'s search, and whether it went wide. */
+function searchDetour(
+  starts: readonly { end: LineEnd; extra?: number }[],
+  ends: readonly { end: LineEnd; extra?: number }[],
+  way: DetourWay,
+  eased: boolean,
+): { detour: Detour | undefined; widened: boolean } {
+  const { boxes, source, target, free, headers } = way;
+  const sourceBox = boxes.get(source) as EndBox;
+  const targetBox = boxes.get(target) as EndBox;
   const own = [
     ...(free.has(source) ? [] : [grown(sourceBox, stub)]),
     ...(free.has(target) ? [] : [grown(targetBox, stub)]),
   ];
+  const stubs = [...starts, ...ends].map(({ end }) => stubOut(end));
+  // How far a stub is from a card, across or along, whichever is more.
+  const gap = (point: Point, box: Box) =>
+    Math.max(
+      box.x - point.x,
+      point.x - (box.x + box.width),
+      box.y - point.y,
+      point.y - (box.y + box.height),
+      0,
+    );
+  const roomFor = (box: Box) =>
+    eased ? Math.min(bendRoom, ...stubs.map((point) => gap(point, box))) : bendRoom;
   const avoidOf = (near: readonly { box: Box; id: string }[]) => [
     ...near
       .filter((entry) => entry.id !== source && entry.id !== target)
-      .map((entry) => grown(entry.box, bendRoom)),
+      .map((entry) => grown(entry.box, roomFor(entry.box))),
     ...own,
     ...headers,
   ];
   let area = grown(spanOf(sourceBox, targetBox), nearby);
-  let avoid = avoidOf(way.near);
+  let avoid = eased ? avoidOf(way.near) : (way.avoid ??= avoidOf(way.near));
   for (let widening = 0; widening <= maxWidenings; widening++) {
     const route = orthogonalRoute({
       starts: starts.map(({ end, extra }) => ({
@@ -598,7 +708,7 @@ function detourLine(
       avoid,
       bendCost,
     });
-    if (!route) return undefined;
+    if (!route) return { detour: undefined, widened: widening > 0 };
     const xs = route.points.map((point) => point.x);
     const ys = route.points.map((point) => point.y);
     const reach: Box = {
@@ -621,12 +731,28 @@ function detourLine(
         ...route.points,
         { x: end.x, y: end.y },
       ]);
-      return { line, start, end };
+      return { detour: { line, start, end }, widened: widening > 0 };
     }
     area = spanOf(area, grown(reach, nearby));
     avoid = avoidOf(cardsIn(boxes, free, area));
   }
-  return undefined;
+  return { detour: undefined, widened: true };
+}
+
+/**
+ * The detour for a line's final ends: the one its sides were chosen by when the ends are still
+ * where that put them (a single line on each side). Otherwise one looked for afresh, and when an
+ * end has been spread along its side to within `bendRoom` of another card, so no detour leaves
+ * there, one keeping less room from that card near the end.
+ */
+function finalDetour(start: LineEnd, end: LineEnd, way: DetourWay): Point[] | undefined {
+  const same = (a: LineEnd, b: LineEnd) => a.x === b.x && a.y === b.y && a.side === b.side;
+  const { chosen } = way;
+  if (chosen && same(chosen.start, start) && same(chosen.end, end)) return chosen.line;
+  return (
+    detourLine([{ end: start }], [{ end }], way)?.line ??
+    (chosen ? detourLine([{ end: start }], [{ end }], way, true)?.line : undefined)
+  );
 }
 
 /**
@@ -642,7 +768,7 @@ function detourLine(
  * spacing (`straightEnds`), where that runs through no other card. A line into or out of a
  * container keeps off its header, where the name is, coming in by a side below it, when it can.
  * On a circle, the ends sit on the circle, as its routed handles do. Only cards near a line are
- * checked, so this keeps up with a drag.
+ * checked, and a detour is kept while nothing it depends on moves, so this keeps up with a drag.
  */
 export function floatingEnds(
   links: readonly { id: string; source: string; target: string }[],
@@ -721,7 +847,10 @@ export function floatingEnds(
           extra: side === wanted ? 0 : notFacing,
         }));
       const detour = detourLine(sidesOf(source, facing.start), sidesOf(target, facing.end), way);
-      if (detour) chosen = { start: detour.start.side, end: detour.end.side };
+      if (detour) {
+        chosen = { start: detour.start.side, end: detour.end.side };
+        way.chosen = detour;
+      }
     }
     const along = (box: Box, side: Side) =>
       leavesSideways(side) ? box.y + box.height / 2 : box.x + box.width / 2;
@@ -827,12 +956,11 @@ export function floatingEnds(
     const others = all.filter((box) => box !== source && box !== target);
     const found = bestLine(candidateLines(start, end, others), all);
     const way = ways.get(link.id);
-    const detour =
-      found?.clear !== true && way ? detourLine([{ end: start }], [{ end }], way) : undefined;
+    const detour = found?.clear !== true && way ? finalDetour(start, end, way) : undefined;
     result.set(link.id, {
       start,
       end,
-      points: detour?.line ?? found?.line ?? directLine(start, end),
+      points: detour ?? found?.line ?? directLine(start, end),
     });
   }
   return result;
