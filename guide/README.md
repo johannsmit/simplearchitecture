@@ -38,5 +38,6 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.64.0](releases/v0.64.0.md): lines go round the cards in their way.
   - [0.63.0](releases/v0.63.0.md): element properties defined by an Admin.
   - [0.60.0 (beta)](releases/v0.60.0.md): the first public release.
