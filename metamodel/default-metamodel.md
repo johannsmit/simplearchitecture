@@ -30,6 +30,8 @@ Nodes will contain standard metadata properties:
 
 Custom metadata is allowed to be added as needed.
 
+A custom metadata value may be a Reference: a list of the ids of other nodes in the same graph, each once, at most 200, stored as `{"simplearchitecture:reference": ["node-id-1", "node-id-2"]}` (an object with that one key). A node never references itself.
+
 ## Edges
 The metamodel contains the following edge types:
 - Relation edge: This edge is depicted with a solid-line arrow and is used for any relation between elements, such as integration, hosting or serving a business process. A label or its properties can say what kind of relation it is.

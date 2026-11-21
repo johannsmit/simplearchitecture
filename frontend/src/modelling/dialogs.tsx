@@ -1,5 +1,6 @@
 import {
   containsType,
+  referencedBy,
   relationshipGroups,
   type ModelElement,
   type ModelGraph,
@@ -179,6 +180,8 @@ export interface DeleteSummary {
   named: string[];
   /** Distinct elements this one contains. */
   contained: number;
+  /** Elements that refer to this one in a Reference field. */
+  referring: number;
 }
 
 /** What deleting an element takes with it. */
@@ -198,7 +201,13 @@ export function deleteSummary(graph: ModelGraph, element: ModelElement): DeleteS
       .filter((r) => r.type === containsType && r.source === element.id && r.target !== element.id)
       .map((r) => r.target),
   );
-  return { count: relationships.length, named, contained: contained.size };
+  const referring = new Set(referencedBy(graph, element.id).map((entry) => entry.element.id));
+  return {
+    count: relationships.length,
+    named,
+    contained: contained.size,
+    referring: referring.size,
+  };
 }
 
 interface DeleteElementDialogProps {
@@ -215,12 +224,13 @@ interface DeleteElementDialogProps {
 
 export function DeleteElementDialog(props: DeleteElementDialogProps) {
   const cancel = useRef<HTMLButtonElement>(null);
-  const { count, named, contained } = props.summary;
+  const { count, named, contained, referring } = props.summary;
   const more = named.length - namedRelationships;
   const described = [
     'delete-text',
     named.length > 0 ? 'delete-list' : '',
     contained > 0 ? 'delete-note' : '',
+    referring > 0 ? 'delete-refs' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -262,6 +272,15 @@ export function DeleteElementDialog(props: DeleteElementDialogProps) {
           <span>
             It contains <b>{counted(contained, 'element')}</b>. They stay in the model but are no
             longer nested.
+          </span>
+        </div>
+      )}
+      {referring > 0 && (
+        <div id="delete-refs" className="type-note">
+          <Icon name="info" />
+          <span>
+            <b>{counted(referring, 'element')}</b> {referring === 1 ? 'refers' : 'refer'} to it in a
+            Reference field. It is taken out of those fields.
           </span>
         </div>
       )}

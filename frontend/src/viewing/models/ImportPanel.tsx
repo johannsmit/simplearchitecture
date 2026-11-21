@@ -97,6 +97,7 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
         newProperties = [],
         changedKeys = [],
         changedElementKeys = [],
+        leftOutReferences = [],
       } = state.result;
       return (
         <section className="result" aria-labelledby="import-result-title">
@@ -135,6 +136,7 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
               newProperties,
               changedKeys,
               changedElementKeys,
+              leftOutReferences,
             )}
           />
           <ReportSections
@@ -143,6 +145,7 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
             newProperties={newProperties}
             changedKeys={changedKeys}
             changedElementKeys={changedElementKeys}
+            leftOutReferences={leftOutReferences}
             modelId={model.id}
           />
         </section>

@@ -142,6 +142,7 @@ describe('a model whose last element is deleted', () => {
           deletedRelationshipCount: 0,
           deletedRelationshipIds: [],
           unnestedElementIds: [],
+          referencesRemovedFrom: [],
         });
       }
       return undefined;

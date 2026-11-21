@@ -81,6 +81,7 @@ function api(answer?: (request: Parameters<Handler>[0]) => Response | undefined)
         deletedRelationshipCount: 0,
         deletedRelationshipIds: [],
         unnestedElementIds: [],
+        referencesRemovedFrom: [],
       });
     }
     if (request.method === 'PATCH') {

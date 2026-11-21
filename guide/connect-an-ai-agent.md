@@ -63,6 +63,8 @@ The agent gets five read-only tools:
 
 Every element comes with its type. A Stakeholder also has its Kind, `stakeholderKind`: `Human` or `AI Agent`, with Human when none is set. So you can ask, for example, which AI agents use an application: the agent searches Stakeholders with the filter `{"stakeholderKind": ["AI Agent"]}`.
 
+An element's Reference fields come under `references` in **Search elements** and **Get element**: by field name, each element it points to with its `id` and current `name`. **Get element** also lists, under `referencedBy`, the elements that point to this one, each with the field (`field`) they do so in.
+
 A relationship's label comes as stored (`label`, which may name properties in braces) and as the canvas shows it (`displayLabel`, with the values filled in). Properties an Admin defined come by name, under `definedProperties`.
 
 Model content (names, descriptions, properties) is passed to the agent as data, marked as untrusted, never as instructions. The app logs each call with your user id, the tool and the model, never the content.

@@ -2,7 +2,7 @@
 
 For Admins, and for Modellers who fill them in: an Admin defines the extra properties that relationships have, on **Admin → Properties**. They show and work like the standard properties (Identity, the data lists and the others), on every Relation in every model, so everyone uses the same names in the same way.
 
-They apply to relationships of the type Relation only. Elements are unchanged: Modellers still add custom metadata to them with **Add field**.
+They apply to relationships of the type Relation only. Elements have fields of their own instead, Text or Reference, which Modellers add with **Add field**: see [Modelling](modelling.md#change-an-element).
 
 ## Who can do what
 

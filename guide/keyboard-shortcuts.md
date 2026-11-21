@@ -176,6 +176,26 @@ The suggestion keys above, and:
 | `Enter`         | In the box, adds the highlighted suggestion, or what is typed, as a value (it doesn't save). On a value's ×, removes that value; focus moves to the × that takes its place, the one before it, or the box |
 | `Shift` + `Tab` | From the box, moves back to the values' × buttons, which come before it                                                                                                                                   |
 
+## Add field (an element's form)
+
+| Key     | What it does                                                                         |
+| ------- | ------------------------------------------------------------------------------------ |
+| `Enter` | In Key, adds the field (it doesn't save); with a suggestion highlighted, takes it    |
+| `←` `→` | On Type, switches between Text and Reference                                         |
+| `Esc`   | Closes the box without adding a field (with the suggestions open, closes them first) |
+
+## Reference fields
+
+| Key             | What it does                                                                                                      |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `@`             | At the start of the box, lists all the model's elements; type on to narrow it down. Any other letter searches too |
+| `↑` `↓`         | `↓` opens the list; both move through it. With text typed, the first element is highlighted                       |
+| `Enter`         | Adds the highlighted element (it doesn't save). On an element's ×, removes it                                     |
+| `Backspace`     | In the empty box, removes the last element                                                                        |
+| `Esc`           | With the list open, closes it and clears what was typed                                                           |
+| `Tab`           | Closes the list and moves on; nothing is added                                                                    |
+| `Shift` + `Tab` | From the box, moves back to the elements' × buttons, which come before it                                         |
+
 ## Panel resize handles
 
 | Key     | What it does                      |

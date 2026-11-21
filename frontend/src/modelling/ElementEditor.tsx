@@ -14,6 +14,7 @@ import {
 import {
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -31,6 +32,7 @@ import {
   draftOf,
   elementOfNode,
   fieldKeys,
+  referenceSlot,
   sameNameCount,
   sameNameNote,
   serverErrors,
@@ -41,6 +43,7 @@ import {
   type FieldKey,
 } from './draft';
 import { deleteSummary, DeleteElementDialog, UnsavedDialog } from './dialogs';
+import { metadataNameTypes } from './fieldTypes';
 import { versionToSave } from './save';
 import { ValueField } from './ValueField';
 
@@ -251,7 +254,7 @@ export function ElementEditor(props: ElementEditorProps) {
     'type',
     'description',
     ...fieldKeys(d.type).map((key) => `field:${key}`),
-    ...d.custom.map((row) => `row:${row.id}`),
+    ...d.custom.flatMap((row) => [`row:${row.id}`, referenceSlot(row)]),
   ];
 
   const refuse = (found: ReadonlyMap<ErrorSlot, string>, top: TopAlert | null) => {
@@ -276,7 +279,10 @@ export function ElementEditor(props: ElementEditorProps) {
   const save = async (): Promise<boolean> => {
     if (!change) return true;
     if (!canSave || saving) return false;
-    const found = clientErrors(draft, base.metadata);
+    const found = clientErrors(draft, base.metadata, {
+      ownId: element.id,
+      isElement: (id) => graph.elements.has(id),
+    });
     if (found.size > 0) {
       refuse(found, null);
       return false;
@@ -428,6 +434,7 @@ export function ElementEditor(props: ElementEditorProps) {
   const shortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
 
   const valuesOf = (key: string) => elementPropertyValues(graph).get(key) ?? [];
+  const nameTypes = useMemo(() => metadataNameTypes(graph, element.id), [graph, element.id]);
   const setField = (key: FieldKey, value: string) => {
     edit(`field:${key}`, { ...draft, fields: { ...draft.fields, [key]: value } });
   };
@@ -711,6 +718,7 @@ export function ElementEditor(props: ElementEditorProps) {
             setFocusTarget(focusId);
           }}
           onRemoved={setFocusTarget}
+          references={{ graph, ownId: element.id, nameTypes }}
         />
       </section>
 

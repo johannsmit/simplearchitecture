@@ -3042,6 +3042,244 @@
   margin-top: 8px;
 }
 
+/* Add field: a key and a type, in Add relationship's look, under the rows. */
+.add-field-box {
+  margin: 10px 0 0;
+}
+
+.add-field-box .field {
+  margin: 0;
+}
+
+.add-field-box .state-segs {
+  margin: 0;
+}
+
+.add-field-box .state-segs > div {
+  background: var(--surface);
+}
+
+.add-field-box .pop-buttons {
+  margin-top: 0;
+}
+
+/* A key suggestion's type, at the row's right. */
+.value-list [role='option'] .rtype {
+  flex: none;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* A Reference row: key, tag and remove on one line, the field across the row below. */
+.meta-row.is-reference .ref-head {
+  position: relative;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 120px minmax(0, 1fr) 32px;
+  gap: 6px;
+  align-items: center;
+}
+
+.meta-row.is-reference .tag {
+  justify-self: start;
+}
+
+.ref-wrap {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ref-field {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  cursor: text;
+}
+
+.ref-field:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.ref-field.is-invalid {
+  border-color: var(--critical);
+  box-shadow: inset 0 0 0 1px var(--critical);
+}
+
+.ref-field.is-saving {
+  cursor: default;
+}
+
+/* The chips flow in the field's own lines, with the box after them. */
+.ref-chips {
+  display: contents;
+}
+
+.ref-chips .chip {
+  gap: 6px;
+  cursor: default;
+}
+
+.ref-chips .chip .swatch {
+  width: 9px;
+  height: 9px;
+}
+
+.ref-chips .chip .uicon {
+  width: 14px;
+  height: 14px;
+}
+
+.ref-chips .chip .uicon .ico {
+  width: 10px;
+  height: 10px;
+}
+
+.ref-chips .chip-type {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.ref-chips .chip-remove {
+  margin-left: -2px;
+}
+
+.ref-chips .chip.is-missing .chip-text {
+  color: var(--text-muted);
+}
+
+.ref-chips .chip.is-missing > .ico {
+  color: var(--warning);
+}
+
+.d-form .ref-field input.ref-box {
+  flex: 1 1 120px;
+  width: auto;
+  min-width: 120px;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  outline: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.ref-box::placeholder {
+  color: var(--text-muted);
+}
+
+/* The element list, floating under the field over what follows, as wide as the field's edge. */
+.ref-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: -1px;
+  left: -1px;
+  z-index: 3;
+  max-height: min(256px, 40dvh);
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--e2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+  list-style: none;
+  cursor: default;
+}
+
+.ref-list [role='option'] {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.ref-list [role='option'] .swatch,
+.ref-list [role='option'] .uicon {
+  margin-top: 2px;
+}
+
+.ref-list [role='option']:hover {
+  background: var(--surface-2);
+}
+
+.ref-list [role='option'].is-active {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  background: var(--select-soft);
+}
+
+.ref-list .pname {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.ref-list .rtype {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/*
+ * References in the panel's Custom metadata: the relationship rows' links. The value column is
+ * narrow (about 140px in a 300px panel), so the type goes under the name, and names break at
+ * spaces where they can.
+ */
+.ref-links {
+  margin: -6px -6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ref-links .rel {
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.ref-links .rel .rname {
+  overflow-wrap: break-word;
+}
+
+.ref-links .rel .rtype {
+  grid-column: 2;
+}
+
+.ref-links .ref-missing {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ref-links .ref-missing .ico {
+  color: var(--warning);
+}
+
 .d-form-foot {
   position: sticky;
   bottom: 0;

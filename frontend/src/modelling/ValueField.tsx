@@ -29,6 +29,8 @@ interface SuggestionOptions {
   startTyped?: boolean;
   /** Says "Down arrow for suggestions." itself; a catalog cell has its own hint. */
   hint?: boolean;
+  /** A few words at a row's right (Add field: the type a name is used as). */
+  note?: (row: string) => string | undefined;
 }
 
 /**
@@ -151,21 +153,30 @@ export function useValueSuggestions(options: SuggestionOptions) {
         event.preventDefault();
       }}
     >
-      {shown.map((row, index) => (
-        <li
-          key={row}
-          id={optionId(index)}
-          role="option"
-          aria-selected={index === active}
-          className={index === active ? 'is-active' : undefined}
-          title={row}
-          onClick={() => {
-            take(row);
-          }}
-        >
-          <span>{row}</span>
-        </li>
-      ))}
+      {shown.map((row, index) => {
+        const note = options.note?.(row);
+        return (
+          <li
+            key={row}
+            id={optionId(index)}
+            role="option"
+            aria-selected={index === active}
+            className={index === active ? 'is-active' : undefined}
+            title={row}
+            onClick={() => {
+              take(row);
+            }}
+          >
+            <span>{row}</span>
+            {note !== undefined && (
+              <>
+                {' '}
+                <span className="rtype">{note}</span>
+              </>
+            )}
+          </li>
+        );
+      })}
       {count > pickLimit && (
         <li role="presentation" className="pick-more">
           Showing {pickLimit} of {count}. Keep typing to narrow it down.

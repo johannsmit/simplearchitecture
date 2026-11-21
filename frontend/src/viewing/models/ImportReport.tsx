@@ -6,6 +6,8 @@ import {
   nodeTypes,
   type CountsByReasonAndType,
   type JgfValidationResult,
+  type LeftOutReferences,
+  maxReferences,
   type OefMappingReport,
   type ValidationIssue,
 } from '@simplearchitecture/shared';
@@ -27,6 +29,7 @@ export type SectionKey =
   | 'properties'
   | 'new-properties'
   | 'changed-keys'
+  | 'references'
   | 'not-imported'
   | 'warnings';
 
@@ -67,6 +70,25 @@ function nonZeroDescending(counts: Record<string, number>): [string, number][] {
     .sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
 }
 
+/** The references an import left out, under all keys. */
+function leftOutTotal(changes: readonly LeftOutReferences[]): number {
+  return sum(
+    changes.map((change) => change.notInModel + change.itself + change.repeated + change.overLimit),
+  );
+}
+
+/** Reference fields an import removed, left with no element (an empty one among them). */
+function removedFields(changes: readonly LeftOutReferences[]): number {
+  return sum(changes.map((change) => change.removed));
+}
+
+/** The chip's and the section's summary: the references left out, else the fields removed. */
+function referencesSummary(leftOut: number, removed: number): string {
+  return leftOut > 0
+    ? `${counted(leftOut, 'reference')} left out`
+    : `${counted(removed, 'empty Reference field')} removed`;
+}
+
 interface Chip {
   key: SectionKey;
   icon: IconName;
@@ -81,6 +103,7 @@ export function summaryChips(
   newProperties: readonly AddedRelationshipProperty[] = [],
   changedKeys: readonly ChangedRelationshipKey[] = [],
   changedElementKeys: readonly ChangedPropertyKey[] = [],
+  leftOutReferences: readonly LeftOutReferences[] = [],
 ): Chip[] {
   const chips: Chip[] = [];
   if (warningCount > 0) {
@@ -104,6 +127,16 @@ export function summaryChips(
       key: 'changed-keys',
       icon: 'alert',
       text: `${counted(changedCount, 'property key')} changed`,
+      warn: true,
+    });
+  }
+  const leftOut = leftOutTotal(leftOutReferences);
+  const removed = removedFields(leftOutReferences);
+  if (leftOut > 0 || removed > 0) {
+    chips.push({
+      key: 'references',
+      icon: 'alert',
+      text: referencesSummary(leftOut, removed),
       warn: true,
     });
   }
@@ -328,6 +361,51 @@ function ChangedKeyTable(props: { caption: string; changes: readonly ChangedProp
   );
 }
 
+/** What an import left out of one Reference field, in words: "2 not in this model, 1 repeated". */
+function leftOutWords(change: LeftOutReferences): string {
+  const parts = [
+    change.notInModel > 0 && `${formatNumber(change.notInModel)} not in this model`,
+    change.itself > 0 && `${formatNumber(change.itself)} the element itself`,
+    change.repeated > 0 && `${formatNumber(change.repeated)} repeated`,
+    change.overLimit > 0 && `${formatNumber(change.overLimit)} past the first ${maxReferences}`,
+  ].filter((part): part is string => typeof part === 'string');
+  const sentences = parts.length > 0 ? [parts.join(', ')] : [];
+  if (change.removed > 0) {
+    sentences.push(
+      `${counted(change.removed, 'field')} left with none ${change.removed === 1 ? 'was' : 'were'} removed`,
+    );
+  }
+  return sentences.join('. ');
+}
+
+/** The references an import left out, per field (summed over the model's elements). */
+function LeftOutReferencesTable(props: { changes: readonly LeftOutReferences[] }) {
+  return (
+    <table className="mini-table">
+      <thead>
+        <tr>
+          <th scope="col">Field</th>
+          <th scope="col">Left out</th>
+          <th scope="col" className="n">
+            Elements
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.changes.map((change, index) => (
+          <tr key={`${String(index)}:${change.key}`}>
+            <td>
+              <code>{change.key}</code>
+            </td>
+            <td>{leftOutWords(change)}</td>
+            <td className="n">{formatNumber(change.elements)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 /** The sections of an OEF import report and the validation warnings. */
 export function ReportSections(props: {
   report?: OefMappingReport;
@@ -338,6 +416,8 @@ export function ReportSections(props: {
   changedKeys?: readonly ChangedRelationshipKey[];
   /** The same for the custom metadata on the model's elements. */
   changedElementKeys?: readonly ChangedPropertyKey[];
+  /** What the import left out of the elements' Reference fields, per field. */
+  leftOutReferences?: readonly LeftOutReferences[];
   modelId?: string;
   /** Rejected import: the Errors section comes first and is open. */
   rejected?: boolean;
@@ -668,6 +748,31 @@ export function ReportSections(props: {
         {changedKeys.length > 0 && (
           <ChangedKeyTable caption="On relationships" changes={changedKeys} />
         )}
+      </Section>,
+    );
+  }
+
+  const leftOutReferences = props.leftOutReferences ?? [];
+  const leftOut = leftOutTotal(leftOutReferences);
+  const removed = removedFields(leftOutReferences);
+  if (leftOut > 0 || removed > 0) {
+    sections.push(
+      <Section
+        key="references"
+        id="references"
+        title="References left out"
+        summary={referencesSummary(leftOut, removed)}
+        open
+      >
+        <p>
+          {leftOut > 0 &&
+            `${counted(leftOut, 'reference')} ${leftOut === 1 ? 'was' : 'were'} left out. `}
+          {removed > 0 &&
+            `${counted(removed, 'Reference field')} left with no element ${removed === 1 ? 'was' : 'were'} removed. `}
+          A Reference field keeps only other elements of this model, each once, at most{' '}
+          {maxReferences}.
+        </p>
+        <LeftOutReferencesTable changes={leftOutReferences} />
       </Section>,
     );
   }

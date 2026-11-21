@@ -1,7 +1,17 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { JgfDocument, JgfEdge, ModelAuthor } from '@simplearchitecture/shared';
+import {
+  buildModelGraph,
+  elementReferences,
+  filterFields,
+  referenceKey,
+  withImportableReferences,
+  type JgfDocument,
+  type JgfEdge,
+  type ModelAuthor,
+} from '@simplearchitecture/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadMigrations, migrate, type Migration } from '../src/db/migrate.js';
+import { ElementService } from '../src/editing/element-service.js';
 import { convertOlderTypes, validateImported } from '../src/jgf/older-types.js';
 import { validateJgf } from '../src/jgf/validate.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
@@ -568,5 +578,64 @@ describe('a database from before the licence was dropped (migration 007)', () =>
     expect(await db.query('select id from models')).toEqual([{ id }]);
     const store = await PostgresModelStore.open(db, quiet);
     expect(await store.listDamaged()).toEqual([]);
+  });
+});
+
+describe('custom values from before references', () => {
+  // Lists and objects a model could hold as custom metadata before references existed, some close
+  // to the reference shape: each stays ordinary custom metadata, exactly as stored.
+  const older = {
+    list: ['bakery'],
+    named: { reference: ['bakery'] },
+    text: { [referenceKey]: 'bakery' },
+    more: { [referenceKey]: ['bakery'], note: 'Made-up' },
+  };
+
+  it('imports from an older file unchanged, with nothing left out', () => {
+    const file = {
+      graph: {
+        label: 'Made-up',
+        nodes: { ...nodes, mill: { label: 'Mill', metadata: { type: 'Application', ...older } } },
+      },
+    };
+    const { document, validation } = validateImported(file);
+    expect(validation.valid).toBe(true);
+    const imported = (document as JgfDocument).graph.nodes ?? {};
+    const { nodes: kept, changes } = withImportableReferences(imported);
+    expect(changes).toEqual([]);
+    expect(kept.mill).toBe(imported.mill);
+  });
+
+  it('reads as stored from a database, and an element’s delete leaves them as they are', async () => {
+    const id = await storeRows(current, []);
+    await current.query(
+      "update elements set metadata = $2::jsonb where model_id = $1::uuid and id = 'mill'",
+      [id, JSON.stringify(older)],
+    );
+    const store = await PostgresModelStore.open(current, quiet);
+    const read = (await store.get(id)) as JgfDocument;
+    expect(read.graph.nodes?.mill?.metadata).toEqual({ type: 'Application', ...older });
+    expect(await store.listDamaged()).toEqual([]);
+    const graph = buildModelGraph(read);
+    const mill = graph.elements.get('mill');
+    expect(mill && elementReferences(mill)).toEqual([]);
+    // Lists and objects are no filter fields, as before.
+    expect(filterFields(graph).map((field) => field.key)).toEqual([
+      'data',
+      'informationFlow',
+      'requestData',
+    ]);
+
+    const result = await new ElementService(store).deleteElement(
+      id,
+      'bakery',
+      { version: 1 },
+      author,
+    );
+    expect(result.referencesRemovedFrom).toEqual([]);
+    expect(((await store.get(id)) as JgfDocument).graph.nodes?.mill?.metadata).toEqual({
+      type: 'Application',
+      ...older,
+    });
   });
 });

@@ -1,4 +1,9 @@
-import type { JgfDocument, JgfEdge, JgfNode } from '@simplearchitecture/shared';
+import {
+  withoutReferenceTo,
+  type JgfDocument,
+  type JgfEdge,
+  type JgfNode,
+} from '@simplearchitecture/shared';
 
 /**
  * Changes to the explorer's in-memory copy of a model after the server accepted them, so the
@@ -15,10 +20,16 @@ export function withNode(document: JgfDocument, id: string, node: JgfNode): JgfD
   };
 }
 
-/** The model without an element and every relationship from or to it, as the server deletes. */
+/**
+ * The model without an element and every relationship from or to it, and with the element left
+ * out of every Reference field, as the server deletes (so the referring elements match the
+ * server's copies, and a later save of one isn't taken for someone else's change).
+ */
 export function withoutElement(document: JgfDocument, id: string): JgfDocument {
   const nodes = Object.fromEntries(
-    Object.entries(document.graph.nodes ?? {}).filter(([nodeId]) => nodeId !== id),
+    Object.entries(document.graph.nodes ?? {}).flatMap(([nodeId, node]): [string, JgfNode][] =>
+      nodeId === id ? [] : [[nodeId, withoutReferenceTo(node, id)?.node ?? node]],
+    ),
   );
   const graph = { ...document.graph, nodes };
   if (document.graph.edges) {

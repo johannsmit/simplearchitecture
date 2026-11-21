@@ -1,5 +1,6 @@
 import type { ApiError } from './api.js';
 import type { ChangedPropertyKey } from './imported-keys.js';
+import type { LeftOutReferences } from './references.js';
 import type { JgfValidationResult, OefMappingReport } from './jgf.js';
 import type {
   AddedRelationshipProperty,
@@ -76,6 +77,12 @@ export interface SaveModelResult {
    * when there were any.
    */
   changedElementKeys?: ChangedPropertyKey[];
+  /**
+   * What the import left out of the elements' Reference fields, per field: ids that aren't
+   * elements of the model, the element itself, repeats and ids past the most a field may hold (a
+   * field left with none removed). Sorted by key. Only when there were any.
+   */
+  leftOutReferences?: LeftOutReferences[];
 }
 
 /** Response body (201) of `POST /api/models/import/oef`. */

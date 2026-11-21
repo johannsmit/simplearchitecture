@@ -204,6 +204,7 @@ describe('element routes: editing', () => {
       deletedRelationshipCount: 1,
       deletedRelationshipIds: ['g1'],
       unnestedElementIds: [],
+      referencesRemovedFrom: [],
     });
 
     const model = await call(target, 'GET', `/api/models/${modelId}`, { cookie });

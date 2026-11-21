@@ -1,6 +1,7 @@
 import {
   buildModelGraph,
   catalogColumns,
+  referenceKey,
   type JgfDocument,
   type ModelSummary,
 } from '@simplearchitecture/shared';
@@ -103,6 +104,21 @@ describe('the catalog as CSV', () => {
       .find((l) => l.startsWith('Stock'));
     expect(stock?.split(',')[owning]).toBe('');
     expect(stock).toBe(`Stock${','.repeat(columns.length - 1)}`);
+  });
+
+  it('writes a Reference as the elements\' current names, joined with ", "', () => {
+    const referring = {
+      id: 'board',
+      name: 'Menu board',
+      type: 'Business' as const,
+      metadata: {
+        type: 'Business',
+        owningTeam: { [referenceKey]: ['till', 'oven'] },
+      },
+    };
+    const text = catalogCsv(catalogColumns('Business'), [referring], graph.elements);
+    expect(text).toContain('Menu board,,"Till, front, Oven server"');
+    expect(text).not.toContain('object');
   });
 
   it('is named <model>-<type>-<yyyy-mm-dd>.csv, made safe', () => {

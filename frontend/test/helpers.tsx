@@ -1,5 +1,5 @@
 import type { MeResponse } from '@simplearchitecture/shared';
-import { render } from '@testing-library/react';
+import { fireEvent, render, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { StrictMode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
@@ -164,4 +164,16 @@ export function modalDialogs(): () => void {
     delete (proto as Partial<typeof proto>).showModal;
     delete (proto as Partial<typeof proto>).close;
   };
+}
+
+/**
+ * Add field on an element's form: opens the box, types the key, picks the type and adds the row.
+ * Returns the new row's value control (focused after the render).
+ */
+export function addField(form: HTMLElement, key: string, type: 'Text' | 'Reference' = 'Text') {
+  fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
+  const box = within(form).getByRole('group', { name: 'Add field' });
+  fireEvent.change(within(box).getByLabelText('Key'), { target: { value: key } });
+  if (type === 'Reference') fireEvent.click(within(box).getByRole('radio', { name: 'Reference' }));
+  fireEvent.click(within(box).getByRole('button', { name: 'Add' }));
 }

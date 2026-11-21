@@ -4,11 +4,15 @@ import {
   checkStandardProperty,
   childrenOf,
   containerOf,
+  isMeantAsReference,
   isNodeType,
+  isReference,
   isStandardPropertyOf,
   nodeTypeKey,
   nodeTypes,
+  referenceProblem,
   standardProperties,
+  withoutReferenceTo,
   type DeletedElementResult,
   type ElementChangeResult,
   type ElementFieldIssue,
@@ -192,20 +196,37 @@ function requestField(field: string): string {
 }
 
 /**
+ * Whom a Reference may name: the element's own id (undefined for a new element) and whether an id
+ * is an element of the model.
+ */
+interface ReferenceScope {
+  ownId: string | undefined;
+  isElement: (id: string) => boolean;
+}
+
+/** The model's elements, as a Reference sees them. */
+function scopeOf(document: JgfDocument, ownId: string | undefined): ReferenceScope {
+  const nodes = document.graph.nodes ?? {};
+  return { ownId, isElement: (id) => Object.hasOwn(nodes, id) };
+}
+
+/**
  * Why a metadata value can't be stored for a `type` element, or undefined. A value equal to the
  * stored one is always fine (nothing changes). Standard properties: text, or a list of text (the
- * validation checks which). Custom metadata: text.
+ * validation checks which). Custom metadata: text, or a Reference to other elements of the model.
  */
 function valueProblem(
   type: NodeType,
   key: string,
   value: unknown,
   current: Entries,
+  scope: ReferenceScope,
 ): string | undefined {
   if (Object.hasOwn(current, key) && sameValue(current[key], value)) return undefined;
   if (isStandardPropertyOf(type, key)) {
     return propertyValueProblem(value) ?? readAsChoiceProblem(key, value);
   }
+  if (isMeantAsReference(value)) return referenceProblem(value, scope.ownId, scope.isElement);
   if (typeof value !== 'string') return 'Must be text.';
   return value.length > maxPropertyValueLength ? tooLong : undefined;
 }
@@ -219,10 +240,28 @@ function metadataProblem(
   key: string,
   value: unknown,
   current: Entries,
+  scope: ReferenceScope,
 ): string | undefined {
   const problem = Object.hasOwn(current, key) ? undefined : keyProblem(key);
   if (problem !== undefined || value === null) return problem;
-  return valueProblem(type, key, value, current);
+  return valueProblem(type, key, value, current, scope);
+}
+
+/**
+ * A type change can't turn a Reference into a standard property of the new type: refused at
+ * `type`, naming the field.
+ */
+function referenceTypeIssues(type: NodeType, metadata: Entries): ElementFieldIssue[] {
+  return Object.entries(metadata).flatMap(([key, value]): ElementFieldIssue[] =>
+    isStandardPropertyOf(type, key) && isReference(value)
+      ? [
+          {
+            field: 'type',
+            message: `“${key}” holds references, which a ${type} can't keep under that name. Remove that field first.`,
+          },
+        ]
+      : [],
+  );
 }
 
 /** Refuses a change that gives the model an error, naming the fields of this element. */
@@ -263,8 +302,10 @@ export class ElementService {
       metadata.description = request.description;
       fields.push('description');
     }
+    // Whether the elements a Reference names are in the model is checked with the model below.
+    const anyElement: ReferenceScope = { ownId: undefined, isElement: () => true };
     for (const [key, value] of Object.entries(request.metadata ?? {})) {
-      const problem = metadataProblem(type, key, value, {});
+      const problem = metadataProblem(type, key, value, {}, anyElement);
       if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
       metadata[key] = value;
       fields.push(`metadata.${key}`);
@@ -275,6 +316,14 @@ export class ElementService {
     const node: JgfNode = { label: request.name, metadata };
     let warnings: ValidationIssue[] = [];
     const applied = await elements.change(modelId, (model) => {
+      const scope = scopeOf(model.document, id);
+      const missing = Object.entries(request.metadata ?? {}).flatMap(
+        ([key, value]): ElementFieldIssue[] => {
+          const problem = metadataProblem(type, key, value, {}, scope);
+          return problem === undefined ? [] : [{ field: `metadata.${key}`, message: problem }];
+        },
+      );
+      if (missing.length > 0) throw new ElementRejectedError(missing);
       const document = withNode(model.document, id, node);
       const validation = validateJgf(document);
       refuseErrors(validation, id);
@@ -339,11 +388,13 @@ export class ElementService {
           }
           apply(metadata, 'description', description, 'description', changed);
         }
+        const scope = scopeOf(model.document, elementId);
         for (const [key, value] of Object.entries(request.metadata ?? {})) {
-          const problem = metadataProblem(type, key, value, stored);
+          const problem = metadataProblem(type, key, value, stored, scope);
           if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
           apply(metadata, key, value, `metadata.${key}`, changed);
         }
+        if (request.type !== undefined) issues.push(...referenceTypeIssues(type, metadata));
         if (issues.length > 0) throw new ElementRejectedError(issues);
         if (changed.length === 0) {
           throw new Unchanged({
@@ -372,7 +423,9 @@ export class ElementService {
 
   /**
    * Deletes the element with every relationship from or to it. A container's Contains
-   * relationships go with it; the elements it contained stay in the model, no longer nested.
+   * relationships go with it; the elements it contained stay in the model, no longer nested. The
+   * element is left out of every Reference to it (a field left with none is removed), in the same
+   * change: each element that referred to it gets a new version and an audit row of its own.
    */
   async deleteElement(
     modelId: string,
@@ -383,11 +436,24 @@ export class ElementService {
     const elements = this.#store.elements;
     const { version } = parse(deleteSchema, input);
     let unnested: string[] = [];
+    let referring: string[] = [];
     const applied = await elements.change(modelId, (model) => {
       const current = currentElement(model, elementId);
       if (current.version !== version) throw new ElementConflictError(current.version);
       const { graph } = model.document;
-      const nodes = Object.entries(graph.nodes ?? {}).filter(([id]) => id !== elementId);
+      const references: { elementId: string; node: JgfNode; fields: string[] }[] = [];
+      const nodes = Object.entries(graph.nodes ?? {}).flatMap(([id, node]): [string, JgfNode][] => {
+        if (id === elementId) return [];
+        const cleaned = withoutReferenceTo(node, elementId);
+        if (cleaned === undefined) return [[id, node]];
+        references.push({
+          elementId: id,
+          node: cleaned.node,
+          fields: cleaned.keys.map((key) => `metadata.${key}`),
+        });
+        return [[id, cleaned.node]];
+      });
+      referring = references.map((reference) => reference.elementId);
       const document: JgfDocument = {
         graph: {
           ...graph,
@@ -407,7 +473,13 @@ export class ElementService {
       unnested = childrenOf(buildModelGraph(model.document), elementId).filter(
         (child) => containerOf(after, child) === undefined,
       );
-      return plan({ kind: 'delete', elementId }, document, 'element-deleted', actor, []);
+      return plan(
+        { kind: 'delete', elementId, referencesRemoved: references },
+        document,
+        'element-deleted',
+        actor,
+        [],
+      );
     });
     if (applied === undefined) throw new ElementNotFoundError('model');
     return {
@@ -417,6 +489,7 @@ export class ElementService {
         edge.id === null ? [] : [edge.id],
       ),
       unnestedElementIds: unnested,
+      referencesRemovedFrom: referring,
     };
   }
 }

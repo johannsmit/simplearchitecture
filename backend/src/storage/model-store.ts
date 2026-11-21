@@ -70,7 +70,8 @@ export interface EditableModel {
 }
 
 /**
- * One element written (added or replaced) or deleted with every relationship from or to it; or
+ * One element written (added or replaced) or deleted with every relationship from or to it (and
+ * left out of every Reference to it); or
  * one relationship (by id) written (added last, or replaced in place) or deleted. A relationship
  * whose ends moved (`endsIntoViews`) stays in every view that holds it: each of those views gets
  * the ends it lacks, without a position, in the same transaction (ViewFullError when one has no
@@ -80,7 +81,15 @@ export interface EditableModel {
  */
 export type ElementWrite =
   | { kind: 'put'; elementId: string; node: JgfNode }
-  | { kind: 'delete'; elementId: string }
+  | {
+      kind: 'delete';
+      elementId: string;
+      /**
+       * The elements that referred to the deleted one, as they are without it: each is written
+       * with a new version and its own `element-updated` audit row naming `fields`.
+       */
+      referencesRemoved?: readonly { elementId: string; node: JgfNode; fields: string[] }[];
+    }
   | { kind: 'put-relationship'; relationshipId: string; edge: JgfEdge; endsIntoViews?: boolean }
   | { kind: 'delete-relationship'; relationshipId: string };
 

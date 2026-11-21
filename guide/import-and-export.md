@@ -6,7 +6,7 @@ Models are exchanged as [JSON Graph Format](https://jsongraphformat.info/) (JGF)
 
 ## Export a model
 
-Choose **Export** on the model's row. The browser downloads the model as a JGF file, with every element and relationship and their properties.
+Choose **Export** on the model's row. The browser downloads the model as a JGF file, with every element and relationship and their properties. Reference fields are written as stored, as lists of element ids (see the [default metamodel](../metamodel/default-metamodel.md)).
 
 Views aren't part of the export. Treat an exported file as confidential: it holds your organisation's architecture.
 
@@ -17,6 +17,7 @@ Choose **Import file** and pick a `.json` file of at most 5 MB.
 - The file becomes a **new model**. A file saved by Export comes back with the same elements and relationships, under a new id.
 - The file is checked in full first. If it has errors, nothing is saved and the result lists them. Warnings don't stop an import; the result lists them too.
 - Every relationship without an id gets one, so it can be put in a view.
+- An element's Reference fields keep the other elements of the same file they point to, each once, at most 200. Anything else is left out: an id that isn't an element in the file, the element's own id, an element named twice, and any past the first 200. A field left with no element is removed.
 - Files written for older versions of the format are converted as they are imported, with a note in the result.
 
 ## Import an ArchiMate file
@@ -34,6 +35,7 @@ After an import, the result shows what was brought in and anything to check:
 
 - **New properties:** a custom key on a relationship that isn't a property yet is added on **Admin → Properties** as a text property, with its values kept. Check these after the import: see [Properties](properties.md#properties-from-imports). Custom keys on elements stay custom metadata.
 - **Property keys changed:** a property name can't be blank or longer than 100 characters, so the import changes such keys instead of failing. A blank key is left out, with its values; a longer one is shortened. The result lists each key, what happened to it, and how many elements or relationships held it.
+- **References left out:** for each Reference field, what was left out of it and from how many elements.
 - **Warnings:** things that don't stop the import but are worth a look.
 
 ## Try it with the sample model

@@ -288,6 +288,25 @@ export {
   withImportableKeys,
   type ChangedPropertyKey,
 } from './imported-keys.js';
+export {
+  elementReferences,
+  isMeantAsReference,
+  isReference,
+  isReferenceKeyOf,
+  maxReferences,
+  referenceIds,
+  referenceKey,
+  referenceMessages,
+  referenceProblem,
+  referenceValue,
+  referencedBy,
+  withImportableReferences,
+  withoutReferenceTo,
+  type LeftOutReferences,
+  type ReferenceField,
+  type ReferenceValue,
+  type ReferringElement,
+} from './references.js';
 export type { DatabaseStatus, DatabaseTestResult } from './database.js';
 export {
   elementConflictMessage,

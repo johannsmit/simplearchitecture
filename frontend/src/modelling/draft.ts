@@ -2,12 +2,17 @@ import {
   customMetadata,
   isNodeType,
   isPrototypeKey,
+  isReference,
   isStandardPropertyOf,
   keptAsCustomOnTypeChange,
   nodeTypeDefinitions,
   nodeTypeKey,
   normaliseForSearch,
   prototypeKeyMessage,
+  referenceIds,
+  referenceMessages,
+  referenceProblem,
+  referenceValue,
   standardProperties,
   type ElementFieldIssue,
   type JgfNode,
@@ -43,6 +48,8 @@ export interface CustomRow {
    * over, it is sent as it is: an import may once have left one blank, padded or very long.
    */
   storedKey?: string;
+  /** A Reference field (elements only): the ids of the elements it holds, in order. */
+  refs?: readonly string[];
 }
 
 export interface Draft {
@@ -83,6 +90,27 @@ export function customRow(key: string, value: unknown, wasProperty = false): Cus
   };
 }
 
+/** A Reference row: its elements' ids, in order; `original` is the stored value, if any. */
+export function referenceRow(
+  key: string,
+  ids: readonly string[] = [],
+  original?: unknown,
+): CustomRow {
+  return { id: newRowId(), key, original, text: '', editable: false, refs: [...ids] };
+}
+
+const sameIds = (a: readonly string[] | undefined, b: readonly string[]): boolean =>
+  a !== undefined && a.length === b.length && a.every((id, index) => id === b[index]);
+
+/** A Reference row's value: the stored one while its elements are the same, else a new one. */
+function referenceRowValue(row: CustomRow & { refs: readonly string[] }): unknown {
+  return sameIds(referenceIds(row.original), row.refs) ? row.original : referenceValue(row.refs);
+}
+
+/** Whether a Reference row stands for what the element holds: the same key and elements. */
+const isStoredReference = (row: CustomRow & { refs: readonly string[] }): boolean =>
+  isStoredKey(row) && sameIds(referenceIds(row.original), row.refs);
+
 /** Whether a row's key is the one the element holds, not typed over. */
 export const isStoredKey = (row: CustomRow): boolean =>
   row.storedKey !== undefined && row.key === row.storedKey;
@@ -99,6 +127,10 @@ export function customValues(rows: readonly CustomRow[]): Map<string, unknown> {
   for (const row of rows) {
     const key = rowKey(row);
     if (key.trim() === '' && !isStoredKey(row)) continue;
+    if (row.refs !== undefined) {
+      values.set(key, referenceRowValue({ ...row, refs: row.refs }));
+      continue;
+    }
     const changed = row.editable && row.text !== asText(row.original);
     values.set(key, changed ? row.text : row.original);
   }
@@ -135,7 +167,8 @@ export function customRowErrors(
   for (const row of rows) {
     const key = rowKey(row);
     const slot = `row:${row.id}`;
-    const hasValue = row.editable ? row.text !== '' : true;
+    const hasValue =
+      row.refs !== undefined ? row.refs.length > 0 : row.editable ? row.text !== '' : true;
     // A key the element holds is never refused here: it can always be changed or removed.
     if (isStoredKey(row)) {
       seen.add(key);
@@ -176,7 +209,9 @@ export function draftOf(element: ModelElement): Draft {
     description: asText(element.metadata.description),
     fields,
     custom: customMetadata(element).map(([key, value]) => ({
-      ...customRow(key, value),
+      ...(isReference(value)
+        ? referenceRow(key, referenceIds(value), value)
+        : customRow(key, value)),
       storedKey: key,
     })),
   };
@@ -204,7 +239,8 @@ export function withType(draft: Draft, type: NodeType): Draft {
   const custom: CustomRow[] = [];
   for (const row of draft.custom) {
     const key = row.key.trim();
-    if (key !== 'description' && isStandardPropertyOf(type, key)) {
+    // A Reference never becomes a standard property: the Save check says to remove it first.
+    if (row.refs === undefined && key !== 'description' && isStandardPropertyOf(type, key)) {
       const value = row.editable && row.text !== asText(row.original) ? row.text : row.original;
       fields[key as FieldKey] = fieldText(key as FieldKey, value);
     } else {
@@ -264,8 +300,31 @@ export function changesOf(
   return Object.keys(change).length > 0 ? change : undefined;
 }
 
-/** Where an error shows: 'name', 'type', 'description', `field:<key>`, `row:<id>` or '' (top). */
+/**
+ * Where an error shows: 'name', 'type', 'description', `field:<key>`, `row:<id>` (a row's key),
+ * `ref:<id>` (a Reference row's elements) or '' (top).
+ */
 export type ErrorSlot = string;
+
+/** The slot of a Reference row's elements. */
+export const referenceSlot = (row: CustomRow): ErrorSlot => `ref:${row.id}`;
+
+/** Which elements a Reference may name: the element's own id, and the model's elements. */
+export interface ReferenceScope {
+  ownId: string | undefined;
+  isElement: (id: string) => boolean;
+}
+
+/** An element that is no longer in the model, said in the form's words. */
+export const referenceGoneMessage =
+  'An element in this field is no longer in the model. Remove it and save again.';
+
+/** The server's refusal of a type change that would make a Reference a standard property. */
+function referenceTypeMessage(key: string, type: NodeType): string {
+  return `“${key}” holds references, which a ${type} can't keep under that name. Remove that field first.`;
+}
+
+const referenceRefusals = new Set<string>(Object.values(referenceMessages));
 
 /**
  * The checks run on Save before anything is sent. A choice outside its options is refused unless
@@ -275,6 +334,7 @@ export type ErrorSlot = string;
 export function clientErrors(
   draft: Draft,
   stored: Readonly<Record<string, unknown>> = {},
+  scope: ReferenceScope = { ownId: undefined, isElement: () => true },
 ): Map<ErrorSlot, string> {
   const errors = new Map<ErrorSlot, string>();
   if (draft.name.trim() === '') errors.set('name', 'Enter a name.');
@@ -298,6 +358,26 @@ export function clientErrors(
       : undefined;
   });
   for (const [slot, message] of rows) errors.set(slot, message);
+  for (const row of draft.custom) {
+    const ids = row.refs;
+    if (ids === undefined || isStoredReference({ ...row, refs: ids })) continue;
+    const key = rowKey(row);
+    if (key.trim() === '' && ids.length === 0) continue;
+    // The server's own rules, so the form and the server agree.
+    const problem = referenceProblem(referenceValue(ids), scope.ownId, scope.isElement);
+    if (problem !== undefined) {
+      errors.set(
+        referenceSlot(row),
+        problem === referenceMessages.missing ? referenceGoneMessage : problem,
+      );
+    }
+  }
+  // A type change can't turn a Reference into a standard property of the new type.
+  const typeProblems = draft.custom
+    .filter((row) => row.refs !== undefined && isStoredKey(row))
+    .filter((row) => isStandardPropertyOf(draft.type, row.key))
+    .map((row) => referenceTypeMessage(row.key, draft.type));
+  if (typeProblems.length > 0) errors.set('type', typeProblems.join('\n'));
   return errors;
 }
 
@@ -326,6 +406,13 @@ export function serverErrors(
       continue;
     }
     const row = key === undefined ? undefined : draft.custom.find((r) => rowKey(r) === key);
+    if (row?.refs !== undefined && referenceRefusals.has(message)) {
+      add(
+        referenceSlot(row),
+        message === referenceMessages.missing ? referenceGoneMessage : message,
+      );
+      continue;
+    }
     add(row ? `row:${row.id}` : '', message);
   }
   return errors;
@@ -351,6 +438,7 @@ export function typeChangeNote(
     (key) => standardProperties[key].label,
   );
   const now = customMetadata(base)
+    .filter(([, value]) => !isReference(value))
     .map(([key]) => key)
     .filter((key) => key !== 'description' && isStandardPropertyOf(type, key))
     .map((key) => standardProperties[key as FieldKey].label);

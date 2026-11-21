@@ -9,7 +9,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { ImportPanel } from '../src/viewing/models/ImportPanel';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { admin, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { addField, admin, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // Property keys no property should have: blank, over 100 characters, or `__proto__`. Made-up
 // data only.
@@ -122,8 +122,7 @@ describe('a custom key __proto__ on the element form', () => {
     stubApi(modeller, handler);
     renderAt(`/modelling/models/${bakeryId}/elements/till`);
     const form = await screen.findByRole('form', { name: /^Edit / });
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(within(form).getByLabelText('Key'), { target: { value: ' __proto__ ' } });
+    addField(form, ' __proto__ ');
     fireEvent.change(within(form).getByRole('textbox', { name: 'Value of __proto__' }), {
       target: { value: 'Made-up' },
     });

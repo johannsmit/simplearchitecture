@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ValueField } from '../src/modelling/ValueField';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { cpuMs, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { addField, cpuMs, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // Pick a metadata value, or type a new one. Made-up data only.
 
@@ -381,8 +381,9 @@ async function openShop() {
   return { ...server, form };
 }
 
+/** A new Text row, its key then typed over in the row (where a used key is refused only on Save). */
 const newRow = (form: HTMLElement, name: string) => {
-  fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
+  addField(form, `${name} (new)`);
   const key = within(form).getAllByLabelText('Key').at(-1) as HTMLElement;
   fireEvent.change(key, { target: { value: name } });
   return key;
@@ -391,8 +392,7 @@ const newRow = (form: HTMLElement, name: string) => {
 describe('custom rows', () => {
   it('follows the key as it is now, and never touches the value', async () => {
     const { form } = await openShop();
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const key = within(form).getAllByLabelText('Key').at(-1) as HTMLElement;
+    const key = newRow(form, '');
     // No key: a plain text field.
     expect(within(form).getByRole('textbox', { name: 'Value of the new field' })).toBeDefined();
     fireEvent.change(key, { target: { value: ' zone ' } });
@@ -463,13 +463,15 @@ describe('metadata names', () => {
     renderAt(`/modelling/models/${bakeryId}/elements/till?depth=1`);
     const form = await screen.findByRole('form', { name: /^Edit / });
     fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const key = within(form).getAllByLabelText('Key').at(-1) as HTMLInputElement;
+    const box = within(form).getByRole('group', { name: 'Add field' });
+    const key = within(box).getByLabelText<HTMLInputElement>('Key');
     expect(key.getAttribute('role')).toBe('combobox');
     fireEvent.click(key);
     // zone and protocol are on Till already; standard keys and archimateType are never names.
-    expect(offered()).toEqual(['hostingModel', 'multi']);
+    // Each shows the type other elements use it as.
+    expect(offered()).toEqual(['hostingModel Text', 'multi Text']);
     fireEvent.change(key, { target: { value: 'MU' } });
-    expect(offered()).toEqual(['multi']);
+    expect(offered()).toEqual(['multi Text']);
     fireEvent.keyDown(key, { key: 'ArrowDown' });
     fireEvent.keyDown(key, { key: 'Enter' });
     expect(key.value).toBe('multi');

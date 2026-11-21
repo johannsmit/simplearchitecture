@@ -12,6 +12,7 @@ import {
   type StandardPropertyDefinition,
   type StandardPropertyKey,
 } from './metamodel.js';
+import { isReference } from './reference-value.js';
 
 /** A standard property of some element type; a key standard on edges only is custom here. */
 const isElementStandardKey = (key: string): key is StandardPropertyKey =>
@@ -116,7 +117,8 @@ function elementFilterValue(
  * The fields the model's elements can be filtered on, with each value's count and a "(not set)"
  * count. Standard properties (except description and functions) come first in metamodel order,
  * then custom keys by name. A key is a field when at least one element has a value for it. A
- * custom key that holds a list or an object on any element is left out (every value differs).
+ * custom key that holds a list or an object on any element is left out (every value differs),
+ * except a Reference, which counts as not set: a key held only as a Reference is never a field.
  */
 export function filterFields(graph: ModelGraph): FilterField[] {
   const counts = new Map<string, Map<string, number>>();
@@ -130,6 +132,8 @@ export function filterFields(graph: ModelGraph): FilterField[] {
       if (!isFilterableKey(key)) continue;
       if (!countsFor(element, key, readAsOf(key))) continue;
       const raw = element.metadata[key];
+      // A Reference is never a filter value; the key's text values on other elements still are.
+      if (isReference(raw) && !isStandardPropertyOf(element.type, key)) continue;
       if (typeof raw === 'object' && raw !== null && !isElementStandardKey(key)) {
         structured.add(key);
         continue;

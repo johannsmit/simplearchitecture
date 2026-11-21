@@ -13,6 +13,7 @@ import {
 } from '../src/modelling/draft';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
+  addField,
   apiError,
   currentLocation,
   modeller,
@@ -194,6 +195,7 @@ function api(
         deletedRelationshipCount: edges.length,
         deletedRelationshipIds: edges.map((e) => e.id),
         unnestedElementIds: [],
+        referencesRemovedFrom: [],
       });
     }
     return undefined;
@@ -546,9 +548,7 @@ describe('element of a node', () => {
 // The rows in CustomMetadataFields, shared with the relationship form.
 describe('custom metadata rows on the element form', () => {
   const add = (form: HTMLElement, key: string, value: string) => {
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const keys = within(form).getAllByLabelText('Key');
-    fireEvent.change(keys.at(-1) as HTMLElement, { target: { value: key } });
+    addField(form, key);
     const name = `Value of ${key.trim()}`;
     fireEvent.change(within(form).getByRole('textbox', { name }), { target: { value } });
   };
@@ -568,18 +568,14 @@ describe('custom metadata rows on the element form', () => {
     return result;
   };
 
-  it('adds a row with focus on its key, and sends only that row', async () => {
+  it('adds a row with focus on its value, and sends only that row', async () => {
     const { form, fetchMock } = await opened('till');
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
+    addField(form, ' protocol ');
+    const value = within(form).getByRole('textbox', { name: 'Value of protocol' });
     await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByLabelText('Key'));
+      expect(document.activeElement).toBe(value);
     });
-    fireEvent.change(within(form).getByLabelText('Key'), {
-      target: { value: ' protocol ' },
-    });
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Value of protocol' }), {
-      target: { value: 'Made-up' },
-    });
+    fireEvent.change(value, { target: { value: 'Made-up' } });
     save(form);
     await waitFor(() => {
       expect(patches(fetchMock)).toHaveLength(1);

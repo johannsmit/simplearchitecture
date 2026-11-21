@@ -30,6 +30,11 @@ const labels =
   "A Relation may also have `definedProperties`: the properties the installation's Admin defined, by name, with the values that are set. " +
   'A relationship with a label has `label`, as stored (it may name properties in braces, such as {Source to Target Data}), and `displayLabel`, the label as the canvas shows it, with those values filled in (a list as its values joined by ", ").';
 
+const references =
+  'A custom property may be a Reference to other elements of the model: in `properties` it is stored as {"simplearchitecture:reference": [element ids]}, and `references` gives each such property\'s elements, by property name, as a list of {id, name} with their current names.';
+const referencedByText =
+  '`referencedBy` lists the elements whose References name this element, with the property (`field`) they do so under.';
+
 const modelId = z.string().max(100).describe('The model id, from list_models.');
 const elementId = z.string().max(1000).describe('The element id, from search_elements.');
 
@@ -119,7 +124,7 @@ export function buildMcpServer(service: McpReadService, auth: McpAuth, log: Tool
       title: 'Search elements',
       description:
         `Finds elements whose name contains the text (case- and accent-insensitive), of one type and matching metadata filters, by name, ${searchPageSize} a page. ` +
-        `Descriptions are cut to 200 characters: use get_element for the full element. Pass nextCursor back as cursor for the next page. ${kinds} To find AI agents, search with type "Stakeholder" with filters {"stakeholderKind": ["AI Agent"]}; to find people, type "Stakeholder" with filters {"stakeholderKind": ["Human"]} (a Stakeholder without Kind counts as Human, and the filter never matches other types). ${untrusted}`,
+        `Descriptions are cut to 200 characters: use get_element for the full element. Pass nextCursor back as cursor for the next page. ${kinds} ${references} To find AI agents, search with type "Stakeholder" with filters {"stakeholderKind": ["AI Agent"]}; to find people, type "Stakeholder" with filters {"stakeholderKind": ["Human"]} (a Stakeholder without Kind counts as Human, and the filter never matches other types). ${untrusted}`,
       inputSchema: z.object({
         model_id: modelId,
         query: z.string().max(200).optional().describe('Text the name contains. Empty: all.'),
@@ -147,7 +152,7 @@ export function buildMcpServer(service: McpReadService, auth: McpAuth, log: Tool
     'get_element',
     {
       title: 'Get element',
-      description: `One element in full: its properties, the element it is inside, the elements it contains, and its relationships with the element at the other end. ${kinds} ${labels} ${untrusted}`,
+      description: `One element in full: its properties, the element it is inside, the elements it contains, and its relationships with the element at the other end. ${kinds} ${references} ${referencedByText} ${labels} ${untrusted}`,
       inputSchema: z.object({ model_id: modelId, element_id: elementId }),
       annotations: readOnly,
     },

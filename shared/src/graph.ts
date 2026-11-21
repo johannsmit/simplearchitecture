@@ -25,6 +25,7 @@ import {
   type NodeType,
   type StandardPropertyKey,
 } from './metamodel.js';
+import { referenceIds } from './reference-value.js';
 
 export interface ModelElement {
   id: string;
@@ -920,10 +921,20 @@ export function standardPropertyRows(element: ModelElement): PropertyRow[] {
 
 /**
  * A metadata value as plain text, as the details panel shows it: text as is, numbers and
- * true/false as text, a list of plain values joined with ", ", anything else as JSON.
+ * true/false as text, a list of plain values joined with ", ", a Reference as the elements' names
+ * (from `elements`; their ids without it) joined with ", ", anything else as JSON.
  */
-export function metadataText(value: unknown): string {
+export function metadataText(value: unknown, elements?: ReadonlyMap<string, ModelElement>): string {
   if (typeof value === 'string') return value;
+  const ids = referenceIds(value);
+  if (ids !== undefined) {
+    return ids
+      .map((id) => {
+        const name = elements?.get(id)?.name.trim() ?? '';
+        return name === '' ? id : name;
+      })
+      .join(', ');
+  }
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value) && value.every((entry) => typeof entry !== 'object' || entry === null)) {
     return value.map((entry) => String(entry)).join(', ');

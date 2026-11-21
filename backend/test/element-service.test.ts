@@ -573,6 +573,7 @@ describe('ElementService on PostgreSQL: delete', () => {
       deletedRelationshipCount: 2,
       deletedRelationshipIds: ['e2'],
       unnestedElementIds: ['shop', 'stock'],
+      referencesRemovedFrom: [],
     });
     const document = await stored(store, modelId);
     expect(Object.keys(document.graph.nodes ?? {})).toEqual(['buyer', 'shop', 'stock']);

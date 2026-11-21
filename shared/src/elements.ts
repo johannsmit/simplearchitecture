@@ -33,7 +33,8 @@ export interface NewElementRequest {
 /**
  * A value in `metadata`. A key is a standard property when it is one of the element type's
  * (`isStandardPropertyOf`): text, or a list of text for `functions`. Any other key is custom
- * metadata: text. A custom list or object read from the model may be sent back unchanged; any
+ * metadata: text, or a Reference to other elements of the model (`ReferenceValue`, checked with
+ * `referenceProblem`). A custom list or object read from the model may be sent back unchanged; any
  * other change to it is refused. `type` and `description` have their own fields.
  */
 export type ElementMetadataValue = unknown;
@@ -86,6 +87,11 @@ export interface DeletedElementResult {
   deletedRelationshipIds: string[];
   /** Elements that were drawn inside the deleted one and now aren't nested at all. */
   unnestedElementIds: string[];
+  /**
+   * Elements that referred to the deleted one: it was left out of their Reference fields (a field
+   * left with none removed), and each has a new version.
+   */
+  referencesRemovedFrom: string[];
 }
 
 /** Response body (404): which one is missing, so a form can say the element was deleted. */

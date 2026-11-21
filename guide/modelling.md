@@ -20,14 +20,24 @@ In an open view, a new element is added to the view. If an element with the name
 
 Select the element and change its fields in the details panel: name, type, description and the standard properties of its type, such as Owning team or Architecture state.
 
-- **Custom metadata:** **Add field** adds a property of your own. The name box offers names that other elements of the model use, most used first; you can always type a new one.
-- **Suggestions:** text fields such as Owning team, Supplier HQ Country and custom metadata offer the values the model already has, most used first. Pick one, or type anything else.
+- **Custom metadata:** **Add field** adds a field of your own, with a key and a type: **Text**, one line of text, or **Reference**, other elements of the model (see [Reference fields](#reference-fields)). The key box offers the keys other elements of the model use, most used first, each with the type it is used as; picking one used as a single type sets the type to match, unless you chose a type yourself first. You can always type a new key. A key that other elements use as the other type works too; the box notes it. A field keeps its type: to change it, remove the field and add it again.
+- **Suggestions:** text fields such as Owning team, Supplier HQ Country and Text custom metadata offer the values the model already has, most used first. Pick one, or type anything else.
 - **A Stakeholder's Kind:** Human (a person) or AI Agent (an AI agent acting as a stakeholder). A Stakeholder without a Kind is Human. An AI Agent is drawn with a robot icon wherever its type icon shows.
-- **Changing the type** keeps every value. Standard properties the new type doesn't have become custom metadata.
+- **Changing the type** keeps every value. Standard properties the new type doesn't have become custom metadata. If a Reference field's key is a standard property of the new type, the change can't be saved until that field is removed.
+
+### Reference fields
+
+A Reference field points an element at other elements of the same model, without a relationship. It draws no line on the canvas.
+
+- Type `@` in the field's box to list the model's elements, or type part of a name to search them. Pick one with the arrow keys and `Enter`, or click it: it is added as a chip with its type. Remove one with its **×**, or press `Backspace` in the empty box to remove the last one. What you type is only a search and is never saved. All keys are in [Keyboard shortcuts](keyboard-shortcuts.md#reference-fields).
+- A field can hold any element of the model except the element itself, each once, and at most 200.
+- A Reference field can't be saved empty: choose at least one element, or remove the field.
+- A reference follows the element, not its name: rename the element, and the field shows the new name.
+- In Viewing, the details panel shows the field's elements as links. Every element that is referred to lists the elements that refer to it under **Referenced by**, in Viewing and Modelling. See [The details panel](using-the-app.md#the-details-panel).
 
 ### Delete an element
 
-Deleting an element also deletes every relationship from or to it, and removes it from every view. The elements a deleted container held stay in the model, no longer nested.
+Deleting an element also deletes every relationship from or to it, removes it from every view, and takes it out of every Reference field that holds it (a field left with no element is removed). The dialog says how many elements refer to it. The elements a deleted container held stay in the model, no longer nested.
 
 ## Relationships
 

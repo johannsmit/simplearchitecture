@@ -401,7 +401,8 @@ export async function deleteElement(
     typeof result?.id !== 'string' ||
     typeof result.deletedRelationshipCount !== 'number' ||
     !Array.isArray(result.deletedRelationshipIds) ||
-    !Array.isArray(result.unnestedElementIds)
+    !Array.isArray(result.unnestedElementIds) ||
+    !Array.isArray(result.referencesRemovedFrom)
   ) {
     throw new ApiRequestError(response.status, 'The server sent an unexpected answer.');
   }

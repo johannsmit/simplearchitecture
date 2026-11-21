@@ -2,7 +2,7 @@ import { prototypeKeyMessage, type JgfDocument, type JgfEdge } from '@simplearch
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, type Handler } from './helpers';
+import { addField, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // A typed value is never changed or lost, and a stored number stays one. Made-up data.
 
@@ -100,9 +100,7 @@ function typeAndTake(form: HTMLElement, key: string, typed: string, row: string)
 }
 
 function addRow(form: HTMLElement, key: string, value: string) {
-  fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-  const keys = within(form).getAllByLabelText('Key');
-  fireEvent.change(keys.at(-1) as HTMLElement, { target: { value: key } });
+  addField(form, key);
   const name = `Value of ${key}`;
   const field =
     within(form).queryByRole('textbox', { name }) ?? within(form).getByRole('combobox', { name });

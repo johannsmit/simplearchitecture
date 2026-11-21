@@ -619,6 +619,18 @@ export class PostgresModelStore implements ModelStore {
           modelId,
           write.elementId,
         ]);
+        // Left out of every Reference to it: the referring elements, as the plan cleaned them.
+        for (const reference of write.referencesRemoved ?? []) {
+          const row = elementRow(reference.elementId, { ...reference.node }, 0);
+          await tx.query(updateElement, [
+            modelId,
+            reference.elementId,
+            row.type ?? null,
+            row.label ?? null,
+            jsonOrNull(row.metadata),
+            jsonOrNull(row.extra),
+          ]);
+        }
       }
       const [updated] = await tx.query<ModelRow>(touchModel, [
         modelId,
@@ -638,6 +650,19 @@ export class PostgresModelStore implements ModelStore {
         'relationshipId' in write ? write.relationshipId : null,
         JSON.stringify(details),
       ]);
+      if (write.kind === 'delete') {
+        for (const reference of write.referencesRemoved ?? []) {
+          await tx.query(insertAudit, [
+            'element-updated',
+            audit.actor.id,
+            audit.actor.name,
+            modelId,
+            reference.elementId,
+            null,
+            JSON.stringify({ fields: reference.fields }),
+          ]);
+        }
+      }
       const applied: AppliedElementChange = { version, deletedRelationships: deleted };
       if (viewsChanged !== undefined) applied.viewsChanged = viewsChanged;
       return { applied, updated };

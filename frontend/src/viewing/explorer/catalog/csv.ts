@@ -28,17 +28,19 @@ export function csvText(rows: readonly (readonly string[])[]): string {
 
 /**
  * The catalog's table as CSV: the columns' labels, then one line per element in the order given,
- * with each cell's full text (empty when not set).
+ * with each cell's full text (empty when not set; a Reference as the names of the model's
+ * elements it holds, from `model`).
  */
 export function catalogCsv(
   columns: readonly CatalogColumn[],
   elements: readonly ModelElement[],
+  model?: ReadonlyMap<string, ModelElement>,
 ): string {
   return csvText([
     columns.map((column) => column.label),
     ...elements.map((element) =>
       columns.map((column) =>
-        column.key === 'name' ? element.name : catalogCell(element, column.key).text,
+        column.key === 'name' ? element.name : catalogCell(element, column.key, model).text,
       ),
     ),
   ]);

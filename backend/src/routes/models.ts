@@ -1,5 +1,6 @@
 import {
   withImportableElementKeys,
+  withImportableReferences,
   withImportableRelationshipKeys,
   type AddedRelationshipProperty,
   type ApiError,
@@ -9,6 +10,7 @@ import {
   type ImportOefModelResult,
   type JgfDocument,
   type JgfValidationResult,
+  type LeftOutReferences,
   type ModelListResponse,
   type ElementRejected,
   type ModelRejected,
@@ -112,9 +114,9 @@ function storeRefused(
 /**
  * Saves a validated model and writes the audit line (ids and counts only, never names or
  * content). Answers 409 itself when the store is full and returns undefined. With it, the
- * properties the save added from the custom keys on its relationships, and the keys on its
+ * properties the save added from the custom keys on its relationships, the keys on its
  * relationships and elements it shortened or left out first because no key can be blank or that
- * long (each only when there were any).
+ * long, and what it left out of the elements' Reference fields (each only when there were any).
  */
 async function saveModel(
   request: FastifyRequest,
@@ -128,21 +130,25 @@ async function saveModel(
       newProperties?: AddedRelationshipProperty[];
       changedKeys?: ChangedRelationshipKey[];
       changedElementKeys?: ChangedPropertyKey[];
+      leftOutReferences?: LeftOutReferences[];
     }
   | undefined
 > {
   const user = author(request);
   const keys = withImportableRelationshipKeys(imported.graph.edges ?? []);
   const elementKeys = withImportableElementKeys(imported.graph.nodes ?? {});
+  // References keep only other elements of the same graph, under the keys as now stored.
+  const references = withImportableReferences(elementKeys.nodes);
+  const nodesChanged = elementKeys.changes.length > 0 || references.changes.length > 0;
   const document: JgfDocument =
-    keys.changes.length === 0 && elementKeys.changes.length === 0
+    keys.changes.length === 0 && !nodesChanged
       ? imported
       : {
           ...imported,
           graph: {
             ...imported.graph,
             ...(keys.changes.length === 0 ? {} : { edges: keys.edges }),
-            ...(elementKeys.changes.length === 0 ? {} : { nodes: elementKeys.nodes }),
+            ...(nodesChanged ? { nodes: references.nodes } : {}),
           },
         };
   let model: ModelSummary;
@@ -169,6 +175,7 @@ async function saveModel(
       ...(elementKeys.changes.length === 0
         ? {}
         : { changedElementKeys: elementKeys.changes.length }),
+      ...(references.changes.length === 0 ? {} : { leftOutReferences: references.changes.length }),
     },
     audit === 'model-saved' ? 'model saved' : 'model imported and saved',
   );
@@ -178,6 +185,7 @@ async function saveModel(
     ...(newProperties === undefined ? {} : { newProperties }),
     ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes }),
     ...(elementKeys.changes.length === 0 ? {} : { changedElementKeys: elementKeys.changes }),
+    ...(references.changes.length === 0 ? {} : { leftOutReferences: references.changes }),
   };
 }
 

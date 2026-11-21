@@ -261,7 +261,10 @@ export function Catalog(props: CatalogProps) {
     () => new Map(sortByModelTab),
   );
   const sort = sorts.get(sortKey) ?? defaultCatalogSort;
-  const live = useMemo(() => catalogTable(matches, tab, sort), [matches, tab, sort]);
+  const live = useMemo(
+    () => catalogTable(matches, tab, sort, graph.elements),
+    [matches, tab, sort, graph],
+  );
   const { columns, counts } = live;
 
   useEffect(() => {
@@ -911,7 +914,7 @@ export function Catalog(props: CatalogProps) {
             disabled={rows.length === 0}
             onClick={() => {
               saveCsvFile(
-                catalogCsv(columns, rows),
+                catalogCsv(columns, rows, graph.elements),
                 catalogCsvFileName(props.download?.modelName ?? '', tab, new Date()),
               );
             }}

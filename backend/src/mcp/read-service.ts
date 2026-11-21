@@ -8,11 +8,13 @@ import {
   definedPropertiesOf,
   displayLabel,
   edgeTypes,
+  elementReferences,
   findElements,
   hasStandardEdgeProperty,
   isRelationDataProperty,
   neighbourhood,
   nodeTypes,
+  referencedBy,
   relationshipsOf,
   relationshipValue,
   relationProperties,
@@ -74,8 +76,32 @@ function brief(element: ModelElement) {
   };
 }
 
-function listed(element: ModelElement) {
-  return { ...brief(element), properties: propertiesOf(element, true) };
+/**
+ * An element's Reference fields as shown: per field, the elements it names with their current
+ * names (the ids as stored are in `properties`). Only when it has any.
+ */
+function referencesOf(
+  graph: ModelGraph,
+  element: ModelElement,
+): { references?: Record<string, { id: string; name: string }[]> } {
+  const fields = elementReferences(element);
+  if (fields.length === 0) return {};
+  return {
+    references: Object.fromEntries(
+      fields.map(({ key, ids }) => [
+        key,
+        ids.map((id) => ({ id, name: graph.elements.get(id)?.name ?? '' })),
+      ]),
+    ),
+  };
+}
+
+function listed(graph: ModelGraph, element: ModelElement) {
+  return {
+    ...brief(element),
+    properties: propertiesOf(element, true),
+    ...referencesOf(graph, element),
+  };
 }
 
 /**
@@ -235,7 +261,7 @@ export class McpReadService {
     const next = offset + page.length;
     return {
       total: matches.length,
-      elements: page.map(listed),
+      elements: page.map((element) => listed(graph, element)),
       ...(next < matches.length ? { nextCursor: encodeCursor(next) } : {}),
     };
   }
@@ -260,9 +286,19 @@ export class McpReadService {
         ),
       };
     });
+    const referring = referencedBy(graph, elementId);
     return {
       ...brief(element),
       properties: propertiesOf(element, false),
+      ...referencesOf(graph, element),
+      ...(referring.length === 0
+        ? {}
+        : {
+            referencedBy: referring.map((reference) => ({
+              ...brief(reference.element),
+              field: reference.key,
+            })),
+          }),
       container: container === undefined ? null : brief(container),
       contains: childrenOf(graph, elementId).flatMap((id) => {
         const child = graph.elements.get(id);

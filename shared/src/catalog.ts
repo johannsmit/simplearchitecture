@@ -98,17 +98,23 @@ export function hasCatalogColumn(tab: CatalogTab, column: string): column is Cat
 
 /**
  * One cell. Description reads as the details panel shows it (line breaks normalised, trimmed);
- * other properties as the stored value in text (a list joined with ", "), and Kind not set as
- * Human. Only own keys count.
+ * other properties as the stored value in text (a list joined with ", ", a Reference as the
+ * names of the model's `elements` it holds, joined with ", "), and Kind not set as Human. Only own
+ * keys count.
  */
-export function catalogCell(element: ModelElement, key: CatalogColumnKey): CatalogCell {
+export function catalogCell(
+  element: ModelElement,
+  key: CatalogColumnKey,
+  elements?: ReadonlyMap<string, ModelElement>,
+): CatalogCell {
   if (key === 'name') return { value: element.name, text: element.name.trim() };
   if (key === 'type') return { value: element.type, text: element.type };
   const value = Object.hasOwn(element.metadata, key) ? element.metadata[key] : undefined;
   if (key === 'description') return { value, text: elementDescription(element) ?? '' };
   // A property read as one of its options when not set (Kind: Human) reads so here too.
   const readAs = (standardProperties[key] as StandardPropertyDefinition).readAs ?? '';
-  const text = value === undefined || value === null ? readAs : metadataText(value).trim();
+  const text =
+    value === undefined || value === null ? readAs : metadataText(value, elements).trim();
   return { value, text };
 }
 
@@ -178,19 +184,20 @@ export function sortCatalogRows(
 /**
  * The catalog for a tab: its columns, its rows (the matches of its type, or all of them) sorted,
  * and the matches per tab. `matches` are the elements that match the search and filters
- * (`findElements`).
+ * (`findElements`); `elements`, the model's, name the elements a Reference holds.
  */
 export function catalogTable(
   matches: readonly ModelElement[],
   tab: CatalogTab,
   sort: CatalogSort = defaultCatalogSort,
+  elements?: ReadonlyMap<string, ModelElement>,
 ): CatalogTable {
   const columns = catalogColumns(tab);
   const rows = matches
     .filter((element) => tab === 'all' || element.type === tab)
     .map((element) => ({
       element,
-      cells: columns.map((column) => catalogCell(element, column.key)),
+      cells: columns.map((column) => catalogCell(element, column.key, elements)),
     }));
   return { columns, rows: sortCatalogRows(rows, columns, sort), counts: catalogCounts(matches) };
 }

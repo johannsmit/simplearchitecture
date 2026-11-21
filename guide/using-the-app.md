@@ -30,7 +30,7 @@ Pick a model in the model picker in the header. It opens in the space you are in
 
 - **The element list**, on the left: every element of the model, grouped by type. An element contained by another element of the same type is listed under it. At the top are the search and the filter; at the bottom are the **Views** list and the legend.
 - **The canvas or the catalog**, in the middle. The **Canvas | Catalog** switch above it changes between them. See [The canvas](canvas.md).
-- **The details panel**, on the right: the selected element or relationship, with its properties, its relationships and, for an element, **Used in views**.
+- **The details panel**, on the right: the selected element or relationship, with its properties and its relationships (see [The details panel](#the-details-panel)).
 
 Drag the handles between the panels to make them wider or narrower, or use the arrow keys on a handle (`Enter` resets it).
 
@@ -40,6 +40,16 @@ Drag the handles between the panels to make them wider or narrower, or use the a
 - **A double click** focuses it: it becomes the centre of the canvas, with what it relates to around it.
 
 The breadcrumbs above the canvas show the elements you focused before, and the browser's Back button returns to them. The address always names the model and the focused element or view, so you can share it as a link.
+
+## The details panel
+
+For an element, the panel shows its description and properties, then its relationships, **Referenced by**, **Used in views** and its **Custom metadata**. A click on another element in the panel, such as the other end of a relationship, focuses that element.
+
+- **Custom metadata** is folded away, except when the element has a Reference field with elements in it: then it starts open.
+- **A Reference field** lists the elements it points to as links, each with its type under its name.
+- **Referenced by** lists the elements that point to this one in a Reference field, with the fields they do so in. It shows only when there are any.
+
+Reference fields are added in Modelling: see [Reference fields](modelling.md#reference-fields).
 
 ## Finding an element
 

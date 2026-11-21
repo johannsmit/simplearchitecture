@@ -8,7 +8,7 @@ SimpleArchitecture is a web app for modelling your IT landscape. You record your
 
 ## What you can do
 
-- **Model** your landscape as elements and relationships, against a [small metamodel](metamodel/default-metamodel.md): Stakeholder, Business, Application, Infrastructure and Other, linked by Relation and Contains.
+- **Model** your landscape as elements and relationships, against a [small metamodel](metamodel/default-metamodel.md): Stakeholder, Business, Application, Infrastructure and Other, linked by Relation and Contains. An element can also refer to others in a field of its own.
 - **Explore** a canvas centred on one element, with what it relates to, laid out for you. Elements that contain others are drawn with them inside, and cards can be grouped by a property, such as Owning team.
 - **Save views**, arrange them by hand and group them in folders.
 - **Show what matters** on the lines with Show Viewpoints: the identity used, the data that flows each way, the architecture state, or properties your Admin defines.
