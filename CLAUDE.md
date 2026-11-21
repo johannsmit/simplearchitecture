@@ -32,8 +32,9 @@ Run from the repository root:
 - Test and end-to-end servers never use the development ports 5173 and 3000. Check that a port is free before using it.
 - No issue numbers or task marks in code, tests or workflows.
 - Use npm 11 from Node 26 for any lockfile change.
-- The version lives in the package files and is changed only by the maintainer. Never create a git tag: a `v*` tag publishes an image.
-- **Docs:** the README stays a short front page; everything else goes in `guide/`, one page per subject, written as the product (no "I" or "we"). A new or changed keyboard shortcut is updated in `guide/keyboard-shortcuts.md` in the same change. A change users will notice gets a line in the next release notes under `guide/releases/`.
+- **Agent pull requests merge themselves:** once a pull request is open, turn on auto-merge, so it merges into `main` when CI passes. Never push to `main` directly, and never turn on auto-merge for a draft or for a Dependabot pull request; the maintainer merges Dependabot pull requests by hand.
+- **Versioning is part of every pull request.** Each pull request raises the version in all five places: the root, `shared`, `frontend` and `backend` package files and `package-lock.json`. Raise the minor version (0.63.0 to 0.64.0) for a feature or any change users will notice, and the patch version (0.64.0 to 0.64.1) for fixes only. Start from the version on the latest `main`. Release notes for that version go in `guide/releases/v<version>.md`, linked from `guide/README.md` and from the front page. Never create a git tag: the maintainer tags, and a `v*` tag publishes an image.
+- **Docs:** the README stays a short front page; everything else goes in `guide/`, one page per subject, written as the product (no "I" or "we"). A new or changed keyboard shortcut is updated in `guide/keyboard-shortcuts.md` in the same change. A change users will notice gets a line in the release notes of the version its pull request sets, under `guide/releases/`.
 
 ## Working on an issue
 

@@ -5,7 +5,7 @@ description: Take the oldest open GitHub issue labelled "refined", build it on a
 
 # Work the next refined issue
 
-An issue labelled `refined` is approved for work. This skill takes one such issue, builds it on its own branch, checks it, and opens a pull request. The maintainer reviews, tests and merges. Nothing reaches `main` without them.
+An issue labelled `refined` is approved for work. This skill takes one such issue, builds it on its own branch, checks it, and opens a pull request that merges itself into `main` once CI passes. Nothing reaches `main` without passing CI.
 
 Work on **one issue per run**. Stop after the pull request is open.
 
@@ -21,7 +21,7 @@ Work on **one issue per run**. Stop after the pull request is open.
 ## 2. Plan before you build
 
 - Read `README.md`, the `guide/` pages the issue touches, and the code around the change.
-- Write down, for yourself, the goal and the acceptance criteria as the issue states them. If the issue lists none, derive them from its text and put them in the pull request so the maintainer can check them.
+- Write down, for yourself, the goal and the acceptance criteria as the issue states them. If the issue lists none, derive them from its text and put them in the pull request so they can be checked.
 - Keep it small. Build only what the issue asks: no extra features, no unrelated refactoring. If the work turns out to be much larger than the issue suggests, stop at step 5 of "Pick the issue": comment why, set `needs-refinement`, remove `in-progress`.
 
 ## 3. Build
@@ -57,7 +57,8 @@ If a check still fails and you can't fix it within the issue's scope, open the p
 - Push the branch and open a pull request against `main`:
   - title: the change in a few words;
   - body: `Closes #<N>`, what changed for the user, the acceptance criteria with how each was checked, the checks actually run with their results (test count included), anything skipped or left open, and what the maintainer should try by hand.
-- Don't bump the version, tag, merge, or push to `main`. The maintainer does those.
+- Before you open the pull request, set its version as `CLAUDE.md` says (minor for a feature, patch for fixes only), with its release notes. Then run `npm install --package-lock-only` with npm 11 to check that the lockfile agrees. Give the new version in the pull request body.
+- Turn on auto-merge for the pull request (merge commit), so it merges once CI passes. Don't do this for a draft. Don't merge by hand, tag, or push to `main`.
 - On the issue, swap `in-progress` for `in-review` and comment with the pull request link.
 
 Then stop.
