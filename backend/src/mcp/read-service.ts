@@ -10,6 +10,9 @@ import {
   edgeTypes,
   elementReferences,
   findElements,
+  groupByChoices,
+  maxViewElements,
+  maxViewRelationships,
   referenceIds,
   sortElementDefinitions,
   hasStandardEdgeProperty,
@@ -23,6 +26,7 @@ import {
   stakeholderKindOf,
   type EdgeType,
   type ElementFilters,
+  type JgfDocument,
   type ElementPropertyDefinition,
   type ModelElement,
   type ModelGraph,
@@ -31,7 +35,9 @@ import {
   type RelationProperty,
   type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
+import { NotFoundError } from '../editing/common.js';
 import { isModelId, ModelUnreadableError, type ModelStore } from '../storage/model-store.js';
+import { ViewService } from '../views/view-service.js';
 
 /**
  * What an AI agent may read through MCP: exactly what Viewing shows, in compact JSON. The tools
@@ -235,6 +241,8 @@ export class McpReadService {
   constructor(
     private readonly store: ModelStore,
     private readonly properties: PropertySource = noProperties,
+    // The views as Viewing reads them: the same service the view routes use.
+    private readonly views: ViewService = new ViewService(store, properties),
   ) {}
 
   /** Every model Viewing lists, newest first. Damaged models are left out, as there. */
@@ -370,7 +378,108 @@ export class McpReadService {
     };
   }
 
+  /** The model's views, by name, as Viewing lists them: no contents, counts only. */
+  async listViews(modelId: string) {
+    await this.#document(modelId);
+    const { views } = await this.#viewCall(() => this.views.listViews(modelId));
+    return {
+      views: views.map((view) => ({
+        id: view.id,
+        name: view.name,
+        ...(view.folder === null ? {} : { folder: view.folder }),
+        elements: view.elementCount,
+        relationships: view.relationshipCount,
+        version: view.version,
+        updatedAt: view.updatedAt,
+      })),
+    };
+  }
+
+  /**
+   * One view with its elements and relationships, read against the model as it is now. An id
+   * that is no longer in the model (it was deleted while the view was read) is left out and
+   * counted in `missing`. No layout: where the cards are is the canvas's business.
+   */
+  async view(modelId: string, viewId: string) {
+    const graph = await this.#graph(modelId);
+    const { view } = await this.#viewCall(() => this.views.getView(modelId, viewId));
+    const relationshipsById = new Map<string, ModelRelationship>();
+    for (const relationship of graph.relationships) {
+      if (!relationshipsById.has(relationship.id)) {
+        relationshipsById.set(relationship.id, relationship);
+      }
+    }
+    // A stored view is within these caps already; they only bound the answer.
+    const elements = view.elementIds.slice(0, maxViewElements).flatMap((id) => {
+      const element = graph.elements.get(id);
+      return element === undefined ? [] : [brief(element)];
+    });
+    const relationships = view.relationshipIds.slice(0, maxViewRelationships).flatMap((id) => {
+      const relationship = relationshipsById.get(id);
+      return relationship === undefined
+        ? []
+        : [
+            {
+              ...relationshipFields(graph, relationship),
+              source: relationship.source,
+              target: relationship.target,
+            },
+          ];
+    });
+    const missingElements = Math.min(view.elementIds.length, maxViewElements) - elements.length;
+    const missingRelationships =
+      Math.min(view.relationshipIds.length, maxViewRelationships) - relationships.length;
+    const groupBy =
+      view.groupBy === null
+        ? undefined
+        : {
+            key: view.groupBy,
+            label:
+              groupByChoices(graph).find((choice) => choice.key === view.groupBy)?.label ??
+              view.groupBy,
+          };
+    return {
+      id: view.id,
+      name: view.name,
+      ...(view.folder === null ? {} : { folder: view.folder }),
+      ...(groupBy === undefined ? {} : { groupBy }),
+      version: view.version,
+      updatedAt: view.updatedAt,
+      elements,
+      relationships,
+      ...(missingElements > 0 || missingRelationships > 0
+        ? { missing: { elements: missingElements, relationships: missingRelationships } }
+        : {}),
+    };
+  }
+
+  /** A ViewService call, with its refusals as tool errors. */
+  async #viewCall<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        throw new ToolError(
+          error.what === 'view'
+            ? 'View not found in this model. Use list_views for the ids.'
+            : 'Model not found. Use list_models for the ids.',
+        );
+      }
+      throw error;
+    }
+  }
+
   async #graph(modelId: string): Promise<ModelGraph> {
+    const document = await this.#document(modelId);
+    const [relationshipProperties, elementProperties] = await Promise.all([
+      this.properties.list(),
+      this.properties.listElements(),
+    ]);
+    return buildModelGraph(document, relationshipProperties, elementProperties);
+  }
+
+  /** The model as stored, or a tool error when there is none or it is damaged (as in Viewing). */
+  async #document(modelId: string): Promise<JgfDocument> {
     if (!isModelId(modelId)) throw new ToolError('Model not found. Use list_models for the ids.');
     let document;
     try {
@@ -384,11 +493,7 @@ export class McpReadService {
     if (document === undefined) {
       throw new ToolError('Model not found. Use list_models for the ids.');
     }
-    const [relationshipProperties, elementProperties] = await Promise.all([
-      this.properties.list(),
-      this.properties.listElements(),
-    ]);
-    return buildModelGraph(document, relationshipProperties, elementProperties);
+    return document;
   }
 
   #element(graph: ModelGraph, elementId: string): ModelElement {
