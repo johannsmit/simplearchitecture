@@ -57,8 +57,8 @@ If a check still fails and you can't fix it within the issue's scope, open the p
 - Push the branch and open a pull request against `main`:
   - title: the change in a few words;
   - body: `Closes #<N>`, what changed for the user, the acceptance criteria with how each was checked, the checks actually run with their results (test count included), anything skipped or left open, and what the maintainer should try by hand.
-- Before you open the pull request, set its version as `CLAUDE.md` says (minor for a feature, patch for fixes only), with its release notes. Then run `npm install --package-lock-only` with npm 11 to check that the lockfile agrees. Give the new version in the pull request body.
-- Turn on auto-merge for the pull request (merge commit), so it merges once CI passes. Don't do this for a draft. Don't merge by hand, tag, or push to `main`.
+- Before you open the pull request, set its version as `CLAUDE.md` says (minor for a feature, patch for fixes only), with release notes when users will notice the change. Then run `npm install --package-lock-only` with npm 11 to check that the lockfile agrees. Give the new version in the pull request body.
+- Turn on auto-merge for the pull request (merge commit), so it merges once CI passes. Don't do this for a draft. If GitHub refuses because every check has already passed, merge the pull request yourself with a merge commit. If a check has failed, fix it first, as in step 4. Never merge a pull request with a failing check. Don't tag or push to `main`.
 - On the issue, swap `in-progress` for `in-review` and comment with the pull request link.
 
 Then stop.
