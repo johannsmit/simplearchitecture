@@ -124,6 +124,22 @@ describe('a line round the cards in its way', () => {
     expect(others.filter((box) => crossesAny(line?.points ?? [], [box]))).toHaveLength(1);
   });
 
+  it('takes the sides of a clear detour over those of a shorter line through a card', () => {
+    // A post hard against the first card's facing side leaves no way out of it there: the line
+    // leaves by another side and goes round, rather than through the post and the pillar.
+    const boxes = boxedIn({ post: at(166, -10, { width: 20, height: 64 }) });
+    const line = lineOf(boxes, 'left', 'right');
+    const points = line?.points ?? [];
+    expect(line?.start.side).not.toBe('right');
+    expectRightAngled(points);
+    for (const [id, box] of Object.entries(boxes)) {
+      if (id === 'left' || id === 'right') continue;
+      expect(crossesAny(points, [box])).toBe(false);
+      expect(nearest(points, box)).toBeGreaterThanOrEqual(12);
+    }
+    expect(crossesAny(points, [boxes.left, boxes.right])).toBe(false);
+  });
+
   it('keeps today’s line when one with two bends or fewer is clear', () => {
     const boxes = { one: at(0, 0), two: at(188, 0), three: at(376, 0) };
     const points = lineOf(boxes, 'one', 'three')?.points ?? [];
