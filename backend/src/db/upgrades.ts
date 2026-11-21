@@ -1,5 +1,11 @@
-import { definitionsForKeys, isDefinableRelationshipKey } from '@simplearchitecture/shared';
-import { insertDefinitions } from '../properties/property-store.js';
+import {
+  definitionsForKeys,
+  elementDefinitionsForKeys,
+  isDefinableElementKey,
+  isDefinableRelationshipKey,
+  referenceKey,
+} from '@simplearchitecture/shared';
+import { insertDefinitions, insertElementDefinitions } from '../properties/property-store.js';
 import type { Queryable } from './db.js';
 
 /**
@@ -28,6 +34,35 @@ export async function defineRelationshipKeysFromModels(tx: Queryable): Promise<v
   await insertDefinitions(tx, definitionsForKeys(keys, []));
 }
 
+/**
+ * After 020 (the element definitions table): every custom key on elements in the stored models
+ * becomes an element property from models, named after its key by the same rules as an import. A
+ * key whose every value, in every model, is a Reference (an object whose one key is
+ * `simplearchitecture:reference`, holding a list: `isReference`) becomes a Reference property;
+ * any other key a text property, its other values then read as "not this kind". The standard
+ * properties of every element type and the reserved keys are left out. Values and models don't
+ * change.
+ */
+export async function defineElementKeysFromModels(tx: Queryable): Promise<void> {
+  const rows = await tx.query<{ key: string; references: boolean }>(
+    `select entry.key,
+       -- A case, so the key is only taken out of an object (any order of an "and" is allowed).
+       bool_and(case when jsonb_typeof(entry.value) = 'object'
+         then entry.value - $1::text = '{}'::jsonb
+           and coalesce(jsonb_typeof(entry.value -> $1::text) = 'array', false)
+         else false end) as references
+     from elements, jsonb_each(elements.metadata) as entry
+     where jsonb_typeof(elements.metadata) = 'object'
+     group by entry.key`,
+    [referenceKey],
+  );
+  const keys = rows
+    .filter((row) => isDefinableElementKey(row.key))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  await insertElementDefinitions(tx, elementDefinitionsForKeys(keys, []));
+}
+
 export const upgradeSteps: ReadonlyMap<string, UpgradeStep> = new Map([
   ['016_relationship_properties', defineRelationshipKeysFromModels],
+  ['020_element_properties', defineElementKeysFromModels],
 ]);

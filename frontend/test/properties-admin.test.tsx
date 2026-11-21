@@ -99,7 +99,7 @@ async function openPage(
 }
 
 const rows = () =>
-  within(screen.getByRole('table', { name: 'Defined properties' }))
+  within(screen.getByRole('table', { name: 'Relation properties' }))
     .getAllByRole('row')
     .slice(1)
     .map((row) =>
@@ -129,7 +129,7 @@ describe('Admin → Properties', () => {
 
   it('lists name, key, kind and values by name, with the note on properties from models', async () => {
     await openPage();
-    await screen.findByRole('table', { name: 'Defined properties' });
+    await screen.findByRole('table', { name: 'Relation properties' });
     expect(rows()).toEqual([
       ['Criticality', 'criticality', 'Choice · 3 options', 'None', ''],
       [
@@ -141,22 +141,25 @@ describe('Admin → Properties', () => {
       ],
     ]);
     expect(
-      screen.getByText(/1 property was added from the custom metadata in models/),
+      screen.getByText(/1 relation property was added from the custom metadata in models/),
     ).toBeDefined();
   });
 
   it('shows the empty state with no properties, and the standard ones below', async () => {
     await openPage([], []);
-    expect(await screen.findByText('No properties defined yet.')).toBeDefined();
-    expect(document.querySelector('details.standard-properties summary')?.textContent).toMatch(
-      /^Standard properties of a Relation 6$/,
-    );
+    expect(await screen.findByText('No relation properties defined yet.')).toBeDefined();
+    expect(screen.getByText('No element properties defined yet.')).toBeDefined();
+    expect(
+      [...document.querySelectorAll('details.standard-properties summary')].map(
+        (summary) => summary.textContent,
+      ),
+    ).toEqual(['Standard properties of an element 7', 'Standard properties of a Relation 6']);
   });
 
   it('creates a property: the key follows the name until typed in', async () => {
     const { sent } = await openPage([], []);
-    fireEvent.click(screen.getByRole('button', { name: 'New property' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New property' });
+    fireEvent.click(screen.getByRole('button', { name: 'New relation property' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New relation property' });
     const name = within(dialog).getByLabelText(/^Name/);
     const key = within(dialog).getByLabelText<HTMLInputElement>(/^Key/);
     expect(document.activeElement).toBe(name);
@@ -175,7 +178,9 @@ describe('Admin → Properties', () => {
         },
       ]);
     });
-    expect(await screen.findByText('Created the property Cost centre (EU).')).toBeDefined();
+    expect(
+      await screen.findByText('Created the relation property Cost centre (EU).'),
+    ).toBeDefined();
   });
 
   it('refuses at the dialog what the server would, and shows the server’s refusals at their field', async () => {
@@ -186,8 +191,8 @@ describe('Admin → Properties', () => {
           })
         : undefined,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'New property' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New property' });
+    fireEvent.click(screen.getByRole('button', { name: 'New relation property' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New relation property' });
     const name = within(dialog).getByLabelText(/^Name/);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
     expect(within(dialog).getByText('Enter a name.')).toBeDefined();
@@ -211,8 +216,8 @@ describe('Admin → Properties', () => {
 
   it('edits a choice list: two rows to start, Enter adds one, moves and removes', async () => {
     const { sent } = await openPage([], []);
-    fireEvent.click(screen.getByRole('button', { name: 'New property' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New property' });
+    fireEvent.click(screen.getByRole('button', { name: 'New relation property' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New relation property' });
     fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Level' } });
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Choice' }));
     const option = (n: number, of: number) =>
@@ -250,8 +255,8 @@ describe('Admin → Properties', () => {
 
   it('keeps a key with values, and adds the values in use to the list', async () => {
     const { sent } = await openPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit tier' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit relation property tier' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     const key = within(dialog).getByLabelText<HTMLInputElement>(/^Key/);
     expect(key.readOnly).toBe(true);
     expect(
@@ -274,15 +279,17 @@ describe('Admin → Properties', () => {
         body: { version: 1, name: 'Tier', kind: 'choice', options: ['Gold', 'Silver'] },
       });
     });
-    expect(await screen.findByText('Saved the property Tier.')).toBeDefined();
+    expect(await screen.findByText('Saved the relation property Tier.')).toBeDefined();
   });
 
   it('says so when someone else changed the property, and stops Save', async () => {
     await openPage(undefined, undefined, (method) =>
       method === 'PATCH' ? apiError(409, 'Changed.', { currentVersion: 4 }) : undefined,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit Criticality' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Edit relation property Criticality' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(
       await within(dialog).findByText(/Someone else changed this property since you opened it/),
@@ -292,8 +299,10 @@ describe('Admin → Properties', () => {
 
   it('deletes only once the name is typed, and gives the counts deleted', async () => {
     const { sent } = await openPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete tier' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete the property tier?' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete relation property tier' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete the relation property tier?',
+    });
     expect(
       within(dialog).getByText(
         "This deletes tier and its 48 values from 3 models. It can't be undone.",
@@ -313,7 +322,7 @@ describe('Admin → Properties', () => {
       ]);
     });
     expect(
-      await screen.findByText('Deleted the property tier and 48 values from 3 models.'),
+      await screen.findByText('Deleted the relation property tier and 48 values from 3 models.'),
     ).toBeDefined();
   });
 });
@@ -341,18 +350,20 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
     });
   };
 
-  it('returns focus to + New property, the row’s pencil or trash, or the heading after a delete', async () => {
+  it('returns focus to New relation property, the row’s pencil or trash, or the section heading after a delete', async () => {
     await openPage();
-    const newButton = screen.getByRole('button', { name: 'New property' });
-    const pencil = await screen.findByRole('button', { name: 'Edit Criticality' });
-    const trash = screen.getByRole('button', { name: 'Delete tier' });
+    const newButton = screen.getByRole('button', { name: 'New relation property' });
+    const pencil = await screen.findByRole('button', {
+      name: 'Edit relation property Criticality',
+    });
+    const trash = screen.getByRole('button', { name: 'Delete relation property tier' });
     for (const [opener, title, how] of [
-      [newButton, 'New property', 'Escape'],
-      [newButton, 'New property', 'Cancel'],
-      [pencil, 'Edit property', 'Escape'],
-      [pencil, 'Edit property', 'Cancel'],
-      [trash, 'Delete the property tier?', 'Escape'],
-      [trash, 'Delete the property tier?', 'Cancel'],
+      [newButton, 'New relation property', 'Escape'],
+      [newButton, 'New relation property', 'Cancel'],
+      [pencil, 'Edit relation property', 'Escape'],
+      [pencil, 'Edit relation property', 'Cancel'],
+      [trash, 'Delete the relation property tier?', 'Escape'],
+      [trash, 'Delete the relation property tier?', 'Cancel'],
     ] as const) {
       press(opener);
       const dialog = await screen.findByRole('dialog', { name: title });
@@ -364,29 +375,29 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
     }
 
     press(newButton);
-    let dialog = await screen.findByRole('dialog', { name: 'New property' });
+    let dialog = await screen.findByRole('dialog', { name: 'New relation property' });
     fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Cost centre' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
     await closed();
     expect(document.activeElement, 'Create').toBe(newButton);
 
     press(pencil);
-    dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await closed();
-    await screen.findByText('Saved the property Criticality.');
+    await screen.findByText('Saved the relation property Criticality.');
     expect(document.activeElement, 'Save').toBe(
-      screen.getByRole('button', { name: 'Edit Criticality' }),
+      screen.getByRole('button', { name: 'Edit relation property Criticality' }),
     );
 
     press(trash);
-    dialog = await screen.findByRole('dialog', { name: 'Delete the property tier?' });
+    dialog = await screen.findByRole('dialog', { name: 'Delete the relation property tier?' });
     const field = within(dialog).getByLabelText('Type tier to confirm');
     fireEvent.change(field, { target: { value: 'tier' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await closed();
     expect(document.activeElement, 'Delete').toBe(
-      screen.getByRole('heading', { level: 1, name: 'Properties' }),
+      screen.getByRole('heading', { level: 2, name: 'Relation properties' }),
     );
   });
 
@@ -404,8 +415,8 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
       if (method === 'PATCH') properties[1] = { ...zone, key: 'area', version: 3 };
       return undefined;
     });
-    press(await screen.findByRole('button', { name: 'Edit Zone' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    press(await screen.findByRole('button', { name: 'Edit relation property Zone' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     fireEvent.change(within(dialog).getByLabelText(/^Key/), { target: { value: 'area' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await closed();
@@ -413,14 +424,16 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
       expect(rows().map((row) => row[1])).toEqual(['criticality', 'area']);
     });
     await waitFor(() => {
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Zone' }));
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Edit relation property Zone' }),
+      );
     });
   });
 
   it('Kind is a radio group: the arrow keys switch it and focus stays on it; a click focuses the first option', async () => {
     await openPage([], []);
-    press(screen.getByRole('button', { name: 'New property' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New property' });
+    press(screen.getByRole('button', { name: 'New relation property' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New relation property' });
     const text = within(dialog).getByRole<HTMLInputElement>('radio', { name: 'Text' });
     const choice = within(dialog).getByRole<HTMLInputElement>('radio', { name: 'Choice' });
     const options = () => within(dialog).queryAllByRole('textbox', { name: /^Option \d of \d$/ });
@@ -470,8 +483,8 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
       version: 5,
     };
     const { sent } = await openPage([tier, tierUpper], [usageOf('tier'), usageOf('Tier')]);
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit Tier (2)' }));
-    let dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit relation property Tier (2)' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Tier two' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
@@ -483,11 +496,11 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
         },
       ]);
     });
-    await screen.findByText('Saved the property Tier two.');
+    await screen.findByText('Saved the relation property Tier two.');
 
     // The name "tier" is the other's key ignoring case, and is checked only when it changes too.
-    fireEvent.click(screen.getByRole('button', { name: 'Edit tier' }));
-    dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit relation property tier' }));
+    dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Choice' }));
     const [first, second] = within(dialog).getAllByRole('textbox', { name: /^Option \d of 2$/ });
     fireEvent.change(first as HTMLElement, { target: { value: 'Gold' } });
@@ -500,11 +513,11 @@ describe('Admin → Properties: focus and keys in the dialogs', () => {
         body: { version: 1, name: 'tier', kind: 'choice', options: ['Gold', 'Silver'] },
       });
     });
-    await screen.findByText('Saved the property tier.');
+    await screen.findByText('Saved the relation property tier.');
 
     // A changed key is still checked against the others.
-    fireEvent.click(screen.getByRole('button', { name: 'Edit tier' }));
-    dialog = await screen.findByRole('dialog', { name: 'Edit property' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit relation property tier' }));
+    dialog = await screen.findByRole('dialog', { name: 'Edit relation property' });
     fireEvent.change(within(dialog).getByLabelText(/^Key/), { target: { value: 'TIER' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(

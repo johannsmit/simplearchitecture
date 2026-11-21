@@ -31,7 +31,8 @@ const labels =
   'A relationship with a label has `label`, as stored (it may name properties in braces, such as {Source to Target Data}), and `displayLabel`, the label as the canvas shows it, with those values filled in (a list as its values joined by ", ").';
 
 const references =
-  'A custom property may be a Reference to other elements of the model: in `properties` it is stored as {"simplearchitecture:reference": [element ids]}, and `references` gives each such property\'s elements, by property name, as a list of {id, name} with their current names.';
+  "An element may have `definedProperties`: the element properties the installation's Admin defined, by name, with the values that are set (a Reference as a list of {id, name}). " +
+  'A property may be a Reference to other elements of the model: in `properties` it is stored as {"simplearchitecture:reference": [element ids]}, and `references` gives each such property\'s elements, by property key, as a list of {id, name} with their current names.';
 const referencedByText =
   '`referencedBy` lists the elements whose References name this element, with the property (`field`) they do so under.';
 

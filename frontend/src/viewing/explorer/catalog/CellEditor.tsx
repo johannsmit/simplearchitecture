@@ -6,11 +6,18 @@ import {
   type ModelElement,
   type ModelGraph,
   type PropertyKind,
+  type StandardPropertyKey,
 } from '@simplearchitecture/shared';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Icon } from '../../../icons';
 import { choiceValues } from '../../../metamodel-ui';
-import { cellText, sameNameCount, sameNameNote, type CellKey } from '../../../modelling/draft';
+import {
+  cellPropertyKey,
+  cellText,
+  sameNameCount,
+  sameNameNote,
+  type CellKey,
+} from '../../../modelling/draft';
 import { useValueSuggestions } from '../../../modelling/ValueField';
 
 /**
@@ -37,6 +44,20 @@ export interface CellEdit {
   suggesting?: boolean;
   /** Opened by typing a character: the suggestions are narrowed by it. */
   typedFirst?: boolean;
+}
+
+/** An element property's choices: a stored value not in the list first, Not set, the options. */
+function definedChoiceValues(
+  options: readonly string[],
+  original: string,
+): { value: string; label: string }[] {
+  return [
+    ...(original !== '' && !options.includes(original)
+      ? [{ value: original, label: `“${original}” (not in the list)` }]
+      : []),
+    { value: '', label: 'Not set' },
+    ...options.map((option) => ({ value: option, label: option })),
+  ];
 }
 
 const regionNames = (() => {
@@ -74,8 +95,17 @@ export function CellEditor({
   onCancel,
   onConflict,
 }: CellEditorProps) {
+  // An element property's cell: its definition (text or choice; others never open).
+  const property = column.property;
+  const propertyKey = cellPropertyKey(edit.key);
   const rule: PropertyKind | undefined =
-    edit.key === 'name' ? undefined : standardProperties[edit.key].value;
+    property !== undefined
+      ? property.kind === 'choice'
+        ? { kind: 'choice', options: property.options ?? [] }
+        : { kind: 'text' }
+      : edit.key === 'name'
+        ? undefined
+        : standardProperties[edit.key as keyof typeof standardProperties].value;
   const kind = rule?.kind ?? 'text';
   const field = useRef<HTMLElement | null>(null);
   const setField = (node: HTMLElement | null) => {
@@ -88,7 +118,7 @@ export function CellEditor({
     edit.key !== 'name' && edit.key !== 'description' && (kind === 'text' || kind === 'country');
   const suggestions = useValueSuggestions({
     value: edit.text,
-    values: offersValues ? (elementPropertyValues(graph).get(edit.key) ?? []) : [],
+    values: offersValues ? (elementPropertyValues(graph).get(propertyKey ?? edit.key) ?? []) : [],
     label: column.label,
     disabled: readOnly,
     startOpen: edit.suggesting === true,
@@ -103,7 +133,11 @@ export function CellEditor({
   // Not set, as not set reads as Human).
   const [original] = useState(() => cellText(element, edit.key));
   const choices =
-    rule?.kind === 'choice' && edit.key !== 'name' ? choiceValues(edit.key, original) : [];
+    rule?.kind !== 'choice' || edit.key === 'name'
+      ? []
+      : property !== undefined
+        ? definedChoiceValues(property.options ?? [], original)
+        : choiceValues(edit.key as StandardPropertyKey, original);
   const values = choices.map((choice) => choice.value);
   const labelOf = (value: string) =>
     choices.find((choice) => choice.value === value)?.label ?? value;

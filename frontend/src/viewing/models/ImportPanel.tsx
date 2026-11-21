@@ -95,6 +95,7 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
         report,
         validation,
         newProperties = [],
+        newElementProperties = [],
         changedKeys = [],
         changedElementKeys = [],
         leftOutReferences = [],
@@ -137,12 +138,14 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
               changedKeys,
               changedElementKeys,
               leftOutReferences,
+              newElementProperties,
             )}
           />
           <ReportSections
             {...(report === undefined ? {} : { report })}
             validation={validation}
             newProperties={newProperties}
+            newElementProperties={newElementProperties}
             changedKeys={changedKeys}
             changedElementKeys={changedElementKeys}
             leftOutReferences={leftOutReferences}

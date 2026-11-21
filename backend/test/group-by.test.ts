@@ -6,6 +6,7 @@ import {
   groupByLabel,
   isGroupByKey,
   storedGroupValue,
+  type ElementPropertyDefinition,
   type JgfDocument,
 } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
@@ -74,19 +75,50 @@ describe('Group by choices', () => {
     ]);
   });
 
-  it('never offers Description, Functions, archimateType, keys holding a list, or __proto__', () => {
+  it('never offers Description, Functions, an undefined archimateType, keys holding a list, or __proto__', () => {
     const keys = groupByChoices(graph).map((choice) => choice.key);
     for (const key of ['description', 'functions', 'archimateType', 'tags']) {
       expect(keys).not.toContain(key);
     }
-    for (const key of ['description', 'functions', 'archimateType', '__proto__', '', ' ']) {
+    for (const key of ['description', 'functions', '__proto__', '', ' ']) {
       expect(isGroupByKey(key), key).toBe(false);
     }
     expect(isGroupByKey('simplearchitecture:stored')).toBe(false);
     expect(isGroupByKey('k'.repeat(101))).toBe(false);
-    for (const key of ['type', 'owningTeam', 'Cost centre', 'k'.repeat(100)]) {
+    // archimateType can be an element property's key: then the model offers it.
+    for (const key of ['type', 'owningTeam', 'Cost centre', 'archimateType', 'k'.repeat(100)]) {
       expect(isGroupByKey(key), key).toBe(true);
     }
+  });
+
+  it('offers Text and Choice element properties by name, a choice in its options’ order, never a Reference', () => {
+    const define = (
+      key: string,
+      name: string,
+      kind: ElementPropertyDefinition['kind'],
+      options?: string[],
+    ): ElementPropertyDefinition => ({
+      key,
+      name,
+      kind,
+      ...(options === undefined ? {} : { options }),
+      fromModels: false,
+      version: 1,
+    });
+    const definitions = [
+      define('hosting', 'Hosted at', 'choice', ['On site', 'Cloud']),
+      define('archimateType', 'ArchiMate type', 'text'),
+      define('floor', 'Floor', 'reference'),
+    ];
+    const defined = buildModelGraph(fleet, [], definitions);
+    expect(groupByChoices(defined).filter((choice) => !choice.standard)).toEqual([
+      { key: 'archimateType', label: 'ArchiMate type', standard: false },
+      { key: 'hosting', label: 'Hosted at', standard: false },
+      { key: 'remote', label: 'remote', standard: false },
+    ]);
+    expect(groupByLabel('hosting', definitions)).toBe('Hosted at');
+    const order = compareGroupValues('hosting', definitions);
+    expect(['Cloud', undefined, 'On site'].sort(order)).toEqual(['On site', 'Cloud', undefined]);
   });
 
   it('labels a key as the panel does', () => {

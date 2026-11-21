@@ -17,7 +17,7 @@ People and their roles aren't managed here. They come from your organisation's s
 
 ## Properties
 
-**Admin → Properties** defines the extra properties that every Relation has, such as a cost centre or a tier, as text or as a choice from a list. See [Properties](properties.md).
+**Admin → Properties** defines the extra properties that elements and relationships have, in two lists. **Element properties** are on every element, such as a cost centre or a lifecycle stage, as text, a choice from a list, or a Reference to other elements. **Relation properties** are on every Relation, such as a tier, as text or a choice. Modellers can't add properties of their own. See [Properties](properties.md).
 
 ## Database
 

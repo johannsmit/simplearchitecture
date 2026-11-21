@@ -13,6 +13,7 @@ import {
   viewNameTakenMessage,
   type DeletedViewResult,
   type ElementFieldIssue,
+  type ElementPropertyDefinition,
   type ModelAuthor,
   type MovedViewResult,
   type RenamedViewFolderResult,
@@ -523,11 +524,20 @@ function currentView(state: ViewChangeState, version: number): ViewRecord {
   return view;
 }
 
+/** Where the element properties come from (PropertyService): Group by offers them. */
+export interface ElementPropertySource {
+  listElements(): Promise<ElementPropertyDefinition[]>;
+}
+
+const noElementProperties: ElementPropertySource = { listElements: async () => [] };
+
 export class ViewService {
   readonly #store: ModelStore;
+  readonly #properties: ElementPropertySource;
 
-  constructor(store: ModelStore) {
+  constructor(store: ModelStore, properties: ElementPropertySource = noElementProperties) {
     this.#store = store;
+    this.#properties = properties;
   }
 
   /** The model's views, by name. */
@@ -564,7 +574,8 @@ export class ViewService {
     if (typeof groupBy !== 'string') return new Set();
     const document = await this.#store.get(modelId);
     if (document === undefined) throw new NotFoundError('model');
-    return new Set(groupByChoices(buildModelGraph(document)).map((choice) => choice.key));
+    const graph = buildModelGraph(document, [], await this.#properties.listElements());
+    return new Set(groupByChoices(graph).map((choice) => choice.key));
   }
 
   async createView(modelId: string, input: unknown, actor: ModelAuthor): Promise<ViewResult> {

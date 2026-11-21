@@ -1,4 +1,5 @@
 import {
+  elementDefinitionsForKeys,
   prototypeKeyMessage,
   type DeletedElementResult,
   type ElementChangeResult,
@@ -12,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import type { OAuth2Server } from 'oauth2-mock-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DatabaseService } from '../src/db/service.js';
+import { insertElementDefinitions } from '../src/properties/property-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import {
   buildTestApp,
@@ -66,6 +68,15 @@ beforeEach(async () => {
   await resetTestDb(db);
   const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
   modelId = (await store.save(garden, { id: 'oid-seed', name: 'Made-up Seeder' })).id;
+  // Element properties an Admin defined, which the tests set.
+  const keys = ['secretNote', 'constructor', 'toString'];
+  await insertElementDefinitions(
+    db,
+    elementDefinitionsForKeys(
+      keys.map((key) => ({ key, references: false })),
+      [],
+    ),
+  );
 });
 
 afterEach(async () => {

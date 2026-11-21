@@ -180,7 +180,7 @@ export interface DeleteSummary {
   named: string[];
   /** Distinct elements this one contains. */
   contained: number;
-  /** Elements that refer to this one in a Reference field. */
+  /** Elements that refer to this one in a Reference property. */
   referring: number;
 }
 
@@ -280,7 +280,7 @@ export function DeleteElementDialog(props: DeleteElementDialogProps) {
           <Icon name="info" />
           <span>
             <b>{counted(referring, 'element')}</b> {referring === 1 ? 'refers' : 'refer'} to it in a
-            Reference field. It is taken out of those fields.
+            Reference property. It is taken out of those properties.
           </span>
         </div>
       )}

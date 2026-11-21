@@ -4,7 +4,7 @@ import {
   checkStandardProperty,
   childrenOf,
   containerOf,
-  isMeantAsReference,
+  elementKeyRole,
   isNodeType,
   isReference,
   isStandardPropertyOf,
@@ -16,6 +16,7 @@ import {
   type DeletedElementResult,
   type ElementChangeResult,
   type ElementFieldIssue,
+  type ElementPropertyDefinition,
   type JgfDocument,
   type JgfNode,
   type JgfValidationResult,
@@ -76,6 +77,11 @@ const ElementRejectedError = RejectedError;
  * - Update and delete carry the element's version as read; another one is a conflict.
  * - Nothing is stored for a refused change, and every stored change has one audit row (the store
  *   writes it in the same transaction).
+ * - Metadata takes the type's standard properties, the element properties an Admin defined, and
+ *   keys the element holds already (such as a standard property of its type before a type change:
+ *   "Was a property"); no new key, for anyone (`metadataProblem`). The definitions are read,
+ *   and the ones set share-locked, in the change's transaction, so a property deleted meanwhile is
+ *   never set.
  */
 
 // Input. Messages stand alone, so the form can show them under the field.
@@ -210,30 +216,38 @@ function scopeOf(document: JgfDocument, ownId: string | undefined): ReferenceSco
   return { ownId, isElement: (id) => Object.hasOwn(nodes, id) };
 }
 
-/**
- * Why a metadata value can't be stored for a `type` element, or undefined. A value equal to the
- * stored one is always fine (nothing changes). Standard properties: text, or a list of text (the
- * validation checks which). Custom metadata: text, or a Reference to other elements of the model.
- */
-function valueProblem(
-  type: NodeType,
-  key: string,
+/** Why a value can't be set under an element property, by its kind. */
+function definedValueProblem(
+  definition: ElementPropertyDefinition,
   value: unknown,
-  current: Entries,
   scope: ReferenceScope,
 ): string | undefined {
-  if (Object.hasOwn(current, key) && sameValue(current[key], value)) return undefined;
-  if (isStandardPropertyOf(type, key)) {
-    return propertyValueProblem(value) ?? readAsChoiceProblem(key, value);
+  switch (definition.kind) {
+    case 'reference':
+      return referenceProblem(value, scope.ownId, scope.isElement);
+    case 'choice': {
+      const options = definition.options ?? [];
+      return typeof value === 'string' && options.includes(value)
+        ? undefined
+        : `Pick one of ${options.join(', ')}.`;
+    }
+    case 'text':
+      if (typeof value !== 'string') return 'Must be text.';
+      return value.length > maxPropertyValueLength ? tooLong : undefined;
   }
-  if (isMeantAsReference(value)) return referenceProblem(value, scope.ownId, scope.isElement);
-  if (typeof value !== 'string') return 'Must be text.';
-  return value.length > maxPropertyValueLength ? tooLong : undefined;
 }
 
+export const notAnElementPropertyMessage = (key: string): string =>
+  `“${key}” isn't a property here. An Admin can add it in Admin → Properties.`;
+
 /**
- * Why a metadata entry of a change can't be stored, or undefined: a key the element doesn't hold
- * yet must be a name a person can type, and a value (not `null`, which removes it) must fit.
+ * Why a metadata entry of a change can't be stored for a `type` element, or undefined. Removing a
+ * value (`null`) and a value equal to the stored one are always fine (nothing new is set); a key
+ * the element doesn't hold must still be a name a person can type. Otherwise the key must be a
+ * standard property of the type (text, or a list of text: the validation checks which), an
+ * element property (`definitions`) whose value fits its kind, or a key the element holds already
+ * (a standard property of another type, "Was a property": text or a list of text). No other key
+ * can be set.
  */
 function metadataProblem(
   type: NodeType,
@@ -241,10 +255,25 @@ function metadataProblem(
   value: unknown,
   current: Entries,
   scope: ReferenceScope,
+  definitions: readonly ElementPropertyDefinition[],
 ): string | undefined {
-  const problem = Object.hasOwn(current, key) ? undefined : keyProblem(key);
+  const held = Object.hasOwn(current, key);
+  const problem = held ? undefined : keyProblem(key);
   if (problem !== undefined || value === null) return problem;
-  return valueProblem(type, key, value, current, scope);
+  if (held && sameValue(current[key], value)) return undefined;
+  const role = elementKeyRole(type, key, definitions);
+  switch (role.role) {
+    case 'standard':
+      return propertyValueProblem(value) ?? readAsChoiceProblem(key as StandardPropertyKey, value);
+    case 'defined':
+      return definedValueProblem(role.definition, value, scope);
+    case 'was-property':
+      return held
+        ? propertyValueProblem(value)
+        : `${standardProperties[key as StandardPropertyKey].label} isn't a property of the type ${type}.`;
+    case 'custom':
+      return held ? propertyValueProblem(value) : notAnElementPropertyMessage(key);
+  }
 }
 
 /**
@@ -297,39 +326,40 @@ export class ElementService {
     const { type } = request;
     const fields = ['name', 'type'];
     const metadata: Entries = { [nodeTypeKey]: type };
-    const issues: ElementFieldIssue[] = [];
     if (request.description !== undefined) {
       metadata.description = request.description;
       fields.push('description');
     }
-    // Whether the elements a Reference names are in the model is checked with the model below.
-    const anyElement: ReferenceScope = { ownId: undefined, isElement: () => true };
     for (const [key, value] of Object.entries(request.metadata ?? {})) {
-      const problem = metadataProblem(type, key, value, {}, anyElement);
-      if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
       metadata[key] = value;
       fields.push(`metadata.${key}`);
     }
-    if (issues.length > 0) throw new ElementRejectedError(issues);
 
     const id = randomUUID();
     const node: JgfNode = { label: request.name, metadata };
     let warnings: ValidationIssue[] = [];
-    const applied = await elements.change(modelId, (model) => {
-      const scope = scopeOf(model.document, id);
-      const missing = Object.entries(request.metadata ?? {}).flatMap(
-        ([key, value]): ElementFieldIssue[] => {
-          const problem = metadataProblem(type, key, value, {}, scope);
-          return problem === undefined ? [] : [{ field: `metadata.${key}`, message: problem }];
-        },
-      );
-      if (missing.length > 0) throw new ElementRejectedError(missing);
-      const document = withNode(model.document, id, node);
-      const validation = validateJgf(document);
-      refuseErrors(validation, id);
-      warnings = warningsFor(validation, id);
-      return plan({ kind: 'put', elementId: id, node }, document, 'element-added', actor, fields);
-    });
+    const metadataKeys = Object.keys(request.metadata ?? {});
+    const applied = await elements.change(
+      modelId,
+      (model) => {
+        // Checked with the model: the definitions, and the elements a Reference names.
+        const scope = scopeOf(model.document, id);
+        const definitions = model.elementProperties;
+        const issues = Object.entries(request.metadata ?? {}).flatMap(
+          ([key, value]): ElementFieldIssue[] => {
+            const problem = metadataProblem(type, key, value, {}, scope, definitions);
+            return problem === undefined ? [] : [{ field: `metadata.${key}`, message: problem }];
+          },
+        );
+        if (issues.length > 0) throw new ElementRejectedError(issues);
+        const document = withNode(model.document, id, node);
+        const validation = validateJgf(document);
+        refuseErrors(validation, id);
+        warnings = warningsFor(validation, id);
+        return plan({ kind: 'put', elementId: id, node }, document, 'element-added', actor, fields);
+      },
+      { elementPropertyKeys: metadataKeys },
+    );
     if (applied === undefined) throw new ElementNotFoundError('model');
     return { element: { id, version: applied.version ?? 1, node }, warnings };
   }
@@ -345,72 +375,84 @@ export class ElementService {
     let node: JgfNode | undefined;
     let warnings: ValidationIssue[] = [];
     try {
-      const applied = await elements.change(modelId, (model) => {
-        const current = currentElement(model, elementId);
-        if (current.version !== request.version) throw new ElementConflictError(current.version);
-        const metadata: Entries = isEntries(current.node.metadata)
-          ? { ...current.node.metadata }
-          : {};
-        const stored = { ...metadata };
-        const oldType = isNodeType(metadata[nodeTypeKey]) ? metadata[nodeTypeKey] : undefined;
-        // A valid model always has a type; the fallback only keeps TypeScript content.
-        const type = request.type ?? oldType ?? 'Other';
-        const changed: string[] = [];
-        const issues: ElementFieldIssue[] = [];
-        let label = current.node.label;
-        if (request.name !== undefined && request.name !== label) {
-          label = request.name;
-          changed.push('name');
-          if (label.length > maxElementNameLength) {
-            issues.push({
-              field: 'name',
-              message: `Must be at most ${maxElementNameLength} characters.`,
+      const applied = await elements.change(
+        modelId,
+        (model) => {
+          const current = currentElement(model, elementId);
+          if (current.version !== request.version) throw new ElementConflictError(current.version);
+          const metadata: Entries = isEntries(current.node.metadata)
+            ? { ...current.node.metadata }
+            : {};
+          const stored = { ...metadata };
+          const oldType = isNodeType(metadata[nodeTypeKey]) ? metadata[nodeTypeKey] : undefined;
+          // A valid model always has a type; the fallback only keeps TypeScript content.
+          const type = request.type ?? oldType ?? 'Other';
+          const changed: string[] = [];
+          const issues: ElementFieldIssue[] = [];
+          let label = current.node.label;
+          if (request.name !== undefined && request.name !== label) {
+            label = request.name;
+            changed.push('name');
+            if (label.length > maxElementNameLength) {
+              issues.push({
+                field: 'name',
+                message: `Must be at most ${maxElementNameLength} characters.`,
+              });
+            }
+          }
+          // Required after every change, even for an imported element that had no name.
+          if (label === undefined || label.trim() === '') {
+            issues.push({ field: 'name', message: 'Enter a name.' });
+          }
+          // Standard properties the new type doesn't have stay as they are: custom metadata now.
+          if (request.type !== undefined)
+            apply(metadata, nodeTypeKey, request.type, 'type', changed);
+          if (request.description !== undefined) {
+            const { description } = request;
+            if (
+              description !== null &&
+              description.length > maxElementDescriptionLength &&
+              !sameValue(stored.description, description)
+            ) {
+              issues.push({
+                field: 'description',
+                message: `Must be at most ${maxElementDescriptionLength} characters.`,
+              });
+            }
+            apply(metadata, 'description', description, 'description', changed);
+          }
+          const scope = scopeOf(model.document, elementId);
+          const definitions = model.elementProperties;
+          for (const [key, value] of Object.entries(request.metadata ?? {})) {
+            const problem = metadataProblem(type, key, value, stored, scope, definitions);
+            if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
+            apply(metadata, key, value, `metadata.${key}`, changed);
+          }
+          if (request.type !== undefined) issues.push(...referenceTypeIssues(type, metadata));
+          if (issues.length > 0) throw new ElementRejectedError(issues);
+          if (changed.length === 0) {
+            throw new Unchanged({
+              element: { id: elementId, version: current.version, node: current.node },
+              warnings: warningsFor(model.validation, elementId),
             });
           }
-        }
-        // Required after every change, even for an imported element that had no name.
-        if (label === undefined || label.trim() === '') {
-          issues.push({ field: 'name', message: 'Enter a name.' });
-        }
-        // Standard properties the new type doesn't have stay as they are: custom metadata now.
-        if (request.type !== undefined) apply(metadata, nodeTypeKey, request.type, 'type', changed);
-        if (request.description !== undefined) {
-          const { description } = request;
-          if (
-            description !== null &&
-            description.length > maxElementDescriptionLength &&
-            !sameValue(stored.description, description)
-          ) {
-            issues.push({
-              field: 'description',
-              message: `Must be at most ${maxElementDescriptionLength} characters.`,
-            });
-          }
-          apply(metadata, 'description', description, 'description', changed);
-        }
-        const scope = scopeOf(model.document, elementId);
-        for (const [key, value] of Object.entries(request.metadata ?? {})) {
-          const problem = metadataProblem(type, key, value, stored, scope);
-          if (problem !== undefined) issues.push({ field: `metadata.${key}`, message: problem });
-          apply(metadata, key, value, `metadata.${key}`, changed);
-        }
-        if (request.type !== undefined) issues.push(...referenceTypeIssues(type, metadata));
-        if (issues.length > 0) throw new ElementRejectedError(issues);
-        if (changed.length === 0) {
-          throw new Unchanged({
-            element: { id: elementId, version: current.version, node: current.node },
-            warnings: warningsFor(model.validation, elementId),
-          });
-        }
 
-        // A valid node has no other fields (JGF v2).
-        node = label === undefined ? { metadata } : { label, metadata };
-        const document = withNode(model.document, elementId, node);
-        const validation = validateJgf(document);
-        refuseErrors(validation, elementId);
-        warnings = warningsFor(validation, elementId);
-        return plan({ kind: 'put', elementId, node }, document, 'element-updated', actor, changed);
-      });
+          // A valid node has no other fields (JGF v2).
+          node = label === undefined ? { metadata } : { label, metadata };
+          const document = withNode(model.document, elementId, node);
+          const validation = validateJgf(document);
+          refuseErrors(validation, elementId);
+          warnings = warningsFor(validation, elementId);
+          return plan(
+            { kind: 'put', elementId, node },
+            document,
+            'element-updated',
+            actor,
+            changed,
+          );
+        },
+        { elementPropertyKeys: Object.keys(request.metadata ?? {}) },
+      );
       if (applied === undefined) throw new ElementNotFoundError('model');
       if (node === undefined || applied.version === undefined)
         throw new Error('no element written');

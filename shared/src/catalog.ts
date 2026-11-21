@@ -1,3 +1,4 @@
+import { sortElementDefinitions, type ElementPropertyDefinition } from './element-properties.js';
 import {
   compareElements,
   compareNames,
@@ -18,8 +19,9 @@ import {
 
 /**
  * The catalog: the elements that match the element list's search and filters as a
- * table. One tab per node type, with that type's standard properties as columns, and All with
- * name, type and description. Pure functions, so the web app and a future MCP server agree.
+ * table. One tab per node type, with that type's standard properties as columns and a column per
+ * element property, and All with name, type, description and the element properties. Pure
+ * functions, so the web app and a future MCP server agree.
  */
 
 export type CatalogTab = NodeType | 'all';
@@ -31,11 +33,22 @@ export function isCatalogTab(value: unknown): value is CatalogTab {
   return value === 'all' || isNodeType(value);
 }
 
-export type CatalogColumnKey = 'name' | 'type' | StandardPropertyKey;
+/** An element property's column: its key after this prefix, so no key can be taken for another. */
+export const catalogPropertyPrefix = 'property:';
+export type CatalogPropertyColumnKey = `${typeof catalogPropertyPrefix}${string}`;
+
+export type CatalogColumnKey = 'name' | 'type' | StandardPropertyKey | CatalogPropertyColumnKey;
 
 export interface CatalogColumn {
   key: CatalogColumnKey;
   label: string;
+  /** An element property's column: the property (its key holds the values). */
+  property?: ElementPropertyDefinition;
+}
+
+/** The column key of an element property. */
+export function catalogPropertyColumn(key: string): CatalogPropertyColumnKey {
+  return `${catalogPropertyPrefix}${key}`;
 }
 
 export interface CatalogCell {
@@ -76,31 +89,50 @@ const allColumns: readonly CatalogColumn[] = [
 ];
 
 /**
- * Name, then the type's standard properties in metamodel order with Functions last, as the details
- * panel shows them. All: name, type, description.
+ * Name, then the type's standard properties in metamodel order, then the element properties
+ * (`definitions`, every kind; every type has every one) in name order, and Functions last, as the
+ * details panel shows them. All: name, type, description, then the element properties.
  */
-export function catalogColumns(tab: CatalogTab): CatalogColumn[] {
-  if (tab === 'all') return [...allColumns];
+export function catalogColumns(
+  tab: CatalogTab,
+  definitions: readonly ElementPropertyDefinition[] = [],
+): CatalogColumn[] {
+  const defined: CatalogColumn[] = sortElementDefinitions(definitions).map((property) => ({
+    key: catalogPropertyColumn(property.key),
+    label: property.name,
+    property,
+  }));
+  if (tab === 'all') return [...allColumns, ...defined];
   const keys = nodeTypeDefinitions[tab].properties;
+  const column = (key: StandardPropertyKey): CatalogColumn => ({
+    key,
+    label: standardProperties[key].label,
+  });
   return [
     nameColumn,
-    ...[
-      ...keys.filter((key) => key !== 'functions'),
-      ...keys.filter((key) => key === 'functions'),
-    ].map((key) => ({ key, label: standardProperties[key].label })),
+    ...keys.filter((key) => key !== 'functions').map(column),
+    ...defined,
+    ...keys.filter((key) => key === 'functions').map(column),
   ];
 }
 
 /** Whether the tab has the column, e.g. for a sort read from the address. */
-export function hasCatalogColumn(tab: CatalogTab, column: string): column is CatalogColumnKey {
-  return catalogColumns(tab).some((c) => c.key === column);
+export function hasCatalogColumn(
+  tab: CatalogTab,
+  column: string,
+  definitions: readonly ElementPropertyDefinition[] = [],
+): column is CatalogColumnKey {
+  return catalogColumns(tab, definitions).some((c) => c.key === column);
 }
+
+const isPropertyColumn = (key: CatalogColumnKey): key is CatalogPropertyColumnKey =>
+  key.startsWith(catalogPropertyPrefix);
 
 /**
  * One cell. Description reads as the details panel shows it (line breaks normalised, trimmed);
  * other properties as the stored value in text (a list joined with ", ", a Reference as the
- * names of the model's `elements` it holds, joined with ", "), and Kind not set as Human. Only own
- * keys count.
+ * names of the model's `elements` it holds, joined with ", "), and Kind not set as Human. An element
+ * property's cell reads its value as stored the same way, whatever its kind. Only own keys count.
  */
 export function catalogCell(
   element: ModelElement,
@@ -109,6 +141,12 @@ export function catalogCell(
 ): CatalogCell {
   if (key === 'name') return { value: element.name, text: element.name.trim() };
   if (key === 'type') return { value: element.type, text: element.type };
+  if (isPropertyColumn(key)) {
+    const own = key.slice(catalogPropertyPrefix.length);
+    const value = Object.hasOwn(element.metadata, own) ? element.metadata[own] : undefined;
+    const text = value === undefined || value === null ? '' : metadataText(value, elements).trim();
+    return { value, text };
+  }
   const value = Object.hasOwn(element.metadata, key) ? element.metadata[key] : undefined;
   if (key === 'description') return { value, text: elementDescription(element) ?? '' };
   // A property read as one of its options when not set (Kind: Human) reads so here too.
@@ -131,12 +169,24 @@ export function catalogCounts(matches: Iterable<ModelElement>): Record<CatalogTa
   return counts;
 }
 
-/** Orders two non-empty texts of a column: types and choices in metamodel order. */
-function compareText(key: CatalogColumnKey, a: string, b: string): number {
+/**
+ * Orders two non-empty texts of a column: types and choices in metamodel order, an element
+ * property's choices in their options' order.
+ */
+function compareText(column: CatalogColumn, a: string, b: string): number {
+  const { key } = column;
   const rule: PropertyKind | undefined =
-    key === 'name' || key === 'type' ? undefined : standardProperties[key].value;
+    key === 'name' || key === 'type' || isPropertyColumn(key)
+      ? undefined
+      : standardProperties[key].value;
   const order: readonly string[] | undefined =
-    key === 'type' ? nodeTypes : rule?.kind === 'choice' ? rule.options : undefined;
+    key === 'type'
+      ? nodeTypes
+      : rule?.kind === 'choice'
+        ? rule.options
+        : column.property?.kind === 'choice'
+          ? column.property.options
+          : undefined;
   if (order !== undefined) {
     const ai = order.indexOf(a);
     const bi = order.indexOf(b);
@@ -165,7 +215,7 @@ export function sortCatalogRows(
 ): CatalogRow[] {
   const index = columns.findIndex((column) => column.key === sort.column);
   const at = index === -1 ? columns.findIndex((column) => column.key === 'name') : index;
-  const key = columns[at]?.key ?? 'name';
+  const column = columns[at] ?? nameColumn;
   const sign = index !== -1 && sort.direction === 'desc' ? -1 : 1;
   const textOf = (row: CatalogRow) => row.cells[at]?.text ?? '';
   return [...rows].sort((a, b) => {
@@ -174,7 +224,7 @@ export function sortCatalogRows(
     if (ta === '' || tb === '') {
       if (ta !== tb) return ta === '' ? 1 : -1;
     } else {
-      const order = compareText(key, ta, tb);
+      const order = compareText(column, ta, tb);
       if (order !== 0) return sign * order;
     }
     return byName(a.element, b.element);
@@ -184,15 +234,17 @@ export function sortCatalogRows(
 /**
  * The catalog for a tab: its columns, its rows (the matches of its type, or all of them) sorted,
  * and the matches per tab. `matches` are the elements that match the search and filters
- * (`findElements`); `elements`, the model's, name the elements a Reference holds.
+ * (`findElements`); `elements`, the model's, name the elements a Reference holds; `definitions`,
+ * the element properties, give the tabs their columns.
  */
 export function catalogTable(
   matches: readonly ModelElement[],
   tab: CatalogTab,
   sort: CatalogSort = defaultCatalogSort,
   elements?: ReadonlyMap<string, ModelElement>,
+  definitions: readonly ElementPropertyDefinition[] = [],
 ): CatalogTable {
-  const columns = catalogColumns(tab);
+  const columns = catalogColumns(tab, definitions);
   const rows = matches
     .filter((element) => tab === 'all' || element.type === tab)
     .map((element) => ({

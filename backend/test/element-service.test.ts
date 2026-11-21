@@ -1,4 +1,5 @@
 import {
+  elementDefinitionsForKeys,
   keptAsCustomOnTypeChange,
   storedModelKey,
   type JgfDocument,
@@ -12,6 +13,7 @@ import {
   ElementService,
 } from '../src/editing/element-service.js';
 import { validateJgf } from '../src/jgf/validate.js';
+import { insertElementDefinitions } from '../src/properties/property-store.js';
 import { ModelTooLargeError, ModelUnreadableError } from '../src/storage/model-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import { createTestDb, resetTestDb, type TestDb } from './pglite.js';
@@ -85,12 +87,26 @@ async function setup(options: { maxModelBytes?: number; model?: JgfDocument } = 
     ...storeOptions,
   });
   const summary = await store.save(model, other);
+  // Element properties the tests set beside those the model brought (the save defined those).
+  const known = new Set(
+    (await db.query<{ key: string }>('select key from element_properties')).map((row) => row.key),
+  );
+  const keys = ['vendor', 'size', 'note', 'region', 'extra'].filter((key) => !known.has(key));
+  await insertElementDefinitions(
+    db,
+    elementDefinitionsForKeys(
+      keys.map((key) => ({ key, references: false })),
+      [],
+    ),
+  );
   return { store, service: new ElementService(store), modelId: summary.id };
 }
 
+/** The element audit rows (not the property rows the save wrote). */
 const audit = () =>
   db.query<AuditRow>(
-    'select action, user_id, user_name, model_id, element_id, details from audit order by id',
+    `select action, user_id, user_name, model_id, element_id, details from audit
+     where action not like '%property%' order by id`,
   );
 
 async function stored(store: PostgresModelStore, modelId: string): Promise<JgfDocument> {
@@ -450,16 +466,14 @@ describe('ElementService on PostgreSQL: update', () => {
   });
 
   it('refuses a type change that would give an error at the property', async () => {
-    const { store, service, modelId } = await setup();
-    await service.updateElement(
-      modelId,
-      'buyer',
-      { version: 1, metadata: { sourcing: 'Lease' } },
-      modeller,
-    );
+    // A Stakeholder can't be given Sourcing: a model may hold it (Was a property).
+    const nodes = { ...shop.graph.nodes };
+    nodes.buyer = { label: 'Buyer', metadata: { type: 'Stakeholder', sourcing: 'Lease' } };
+    const model: JgfDocument = { graph: { ...shop.graph, nodes } };
+    const { store, service, modelId } = await setup({ model });
     const before = await stored(store, modelId);
     const error = await rejection(
-      service.updateElement(modelId, 'buyer', { version: 2, type: 'Application' }, modeller),
+      service.updateElement(modelId, 'buyer', { version: 1, type: 'Application' }, modeller),
     );
     expect(error.fields).toEqual([
       {

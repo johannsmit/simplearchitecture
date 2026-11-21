@@ -13,7 +13,6 @@ import {
 } from '../src/modelling/draft';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
-  addField,
   apiError,
   currentLocation,
   modeller,
@@ -72,7 +71,7 @@ describe('editing draft', () => {
     // Unchanged values are not sent: the server keeps them as custom metadata itself.
     expect(changesOf(initial, business)).toEqual({ type: 'Business' });
     expect(typeChangeNote(initial, element('shop'), 'Business')).toBe(
-      "Business doesn't have Architecture state, Functions, Sourcing or Supplier HQ country. Their values are kept as custom metadata.",
+      "Business doesn't have Architecture state, Functions, Sourcing or Supplier HQ country. Their values are kept, marked Was a property.",
     );
 
     const back = withType(business, 'Application');
@@ -547,11 +546,6 @@ describe('element of a node', () => {
 
 // The rows in CustomMetadataFields, shared with the relationship form.
 describe('custom metadata rows on the element form', () => {
-  const add = (form: HTMLElement, key: string, value: string) => {
-    addField(form, key);
-    const name = `Value of ${key.trim()}`;
-    fireEvent.change(within(form).getByRole('textbox', { name }), { target: { value } });
-  };
   const save = (form: HTMLElement) => {
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
   };
@@ -567,49 +561,6 @@ describe('custom metadata rows on the element form', () => {
     });
     return result;
   };
-
-  it('adds a row with focus on its value, and sends only that row', async () => {
-    const { form, fetchMock } = await opened('till');
-    addField(form, ' protocol ');
-    const value = within(form).getByRole('textbox', { name: 'Value of protocol' });
-    await waitFor(() => {
-      expect(document.activeElement).toBe(value);
-    });
-    fireEvent.change(value, { target: { value: 'Made-up' } });
-    save(form);
-    await waitFor(() => {
-      expect(patches(fetchMock)).toHaveLength(1);
-    });
-    expect(patches(fetchMock)[0]?.metadata).toEqual({ protocol: 'Made-up' });
-  });
-
-  it('moves focus to the next row, or to Add field, when a row is removed', async () => {
-    const { form } = await opened('till');
-    add(form, 'alpha', 'x');
-    add(form, 'beta', 'y');
-    fireEvent.click(within(form).getByRole('button', { name: 'Remove alpha' }));
-    await waitFor(() => {
-      expect((document.activeElement as HTMLInputElement).value).toBe('beta');
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Remove beta' }));
-    await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByRole('button', { name: 'Add field' }));
-    });
-  });
-
-  it('refuses a reserved key under its row, linked from its input, with nothing sent', async () => {
-    const { form, fetchMock } = await opened('till');
-    add(form, 'type', 'x');
-    save(form);
-    const message = await within(form).findByText('“type” is reserved.');
-    const key = within(form).getByLabelText('Key');
-    expect(key.getAttribute('aria-invalid')).toBe('true');
-    // The error first, then the suggestions hint when the model has names to offer.
-    const describedBy = (key.getAttribute('aria-describedby') ?? '').split(' ')[0] ?? '';
-    expect(document.getElementById(describedBy)).toBe(message.closest('.field-error'));
-    expect(message.closest('.meta-row')).not.toBeNull();
-    expect(patches(fetchMock)).toHaveLength(0);
-  });
 
   it('shows a list as kept as is, and sends a removal as null', async () => {
     const { form, fetchMock } = await opened('shop');

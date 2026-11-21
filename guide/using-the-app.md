@@ -43,13 +43,14 @@ The breadcrumbs above the canvas show the elements you focused before, and the b
 
 ## The details panel
 
-For an element, the panel shows its description and properties, then its relationships, **Referenced by**, **Used in views** and its **Custom metadata**. A click on another element in the panel, such as the other end of a relationship, focuses that element.
+For an element, the panel shows its description and properties, then its relationships, **Referenced by**, **Used in views** and, if it has any, its **Custom metadata**. A click on another element in the panel, such as the other end of a relationship, focuses that element.
 
-- **Custom metadata** is folded away, except when the element has a Reference field with elements in it: then it starts open.
-- **A Reference field** lists the elements it points to as links, each with its type under its name.
-- **Referenced by** lists the elements that point to this one in a Reference field, with the fields they do so in. It shows only when there are any.
+- **Properties** are the standard properties of the element's type, then every property an Admin defined, in name order, with "Not set" where there is no value. See [Properties](properties.md).
+- **A Reference property** lists the elements it points to as links, each with its type under its name.
+- **Referenced by** lists the elements that point to this one in a Reference property, with the properties they do so in. It shows only when there are any.
+- **Custom metadata** is folded away. It holds only values the element's properties don't cover, such as a standard property its type no longer has, marked **Was a property**.
 
-Reference fields are added in Modelling: see [Reference fields](modelling.md#reference-fields).
+References are set in Modelling: see [Reference properties](modelling.md#reference-properties).
 
 ## Finding an element
 
@@ -62,7 +63,7 @@ Reference fields are added in Modelling: see [Reference fields](modelling.md#ref
 The catalog shows every element of one type in a table, with a tab per type and a column per property. The search and the filter work here too. Click a column header to sort by it, and again to reverse the order.
 
 - In Viewing, `Enter` or a double click focuses the row's element on the canvas.
-- In Modelling, you can edit a cell in place: double-click it, or start typing. `Enter` saves it.
+- In Modelling, you can edit a cell in place: double-click it, or start typing. `Enter` saves it. A Reference, and a value that doesn't fit its property, are changed in the details panel instead.
 - In Modelling, **Download CSV**, at the end of the search row, saves the current tab as a CSV file, with the rows as the search, the filter and the sort show them. Cells that a spreadsheet could run as a formula are written so that it shows them as text.
 
 ## The header

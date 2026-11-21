@@ -328,7 +328,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   await app.register(propertyRoutes(properties));
   await app.register(elementRoutes(new ElementService(modelStore)));
   await app.register(relationshipRoutes(new RelationshipService(modelStore)));
-  await app.register(viewRoutes(new ViewService(modelStore)));
+  await app.register(viewRoutes(new ViewService(modelStore, properties)));
   await app.register(databaseRoutes(database, now));
   await app.register(brandingRoutes(new BrandingService(db), uploads));
   await app.register(

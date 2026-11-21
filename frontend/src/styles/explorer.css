@@ -2109,6 +2109,23 @@
   color: var(--warning);
 }
 
+/* A value of another kind than its element property's: a line under the value. */
+.kind-mark {
+  display: flex;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* The element form's note that an Admin adds properties, under its blocks, at their inset. */
+.d-form .new-properties-hint {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 16px 14px;
+}
+
 .pre-wrap {
   white-space: pre-wrap;
 }

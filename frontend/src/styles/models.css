@@ -755,7 +755,34 @@ th[aria-sort] .sort {
   margin: 0;
 }
 
-/* Admin → Properties */
+/* Admin → Properties: a section per list, each with its heading, lead and New button. */
+.properties-section + .properties-section {
+  margin-top: 32px;
+}
+
+.properties-section .section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.properties-section .section-head h2 {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.properties-section .section-head p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+}
+
+.properties-section .section-head .btn {
+  flex: none;
+  margin-left: auto;
+}
+
 .properties-table .name-cell .tag {
   margin-left: 8px;
 }

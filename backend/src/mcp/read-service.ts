@@ -10,6 +10,8 @@ import {
   edgeTypes,
   elementReferences,
   findElements,
+  referenceIds,
+  sortElementDefinitions,
   hasStandardEdgeProperty,
   isRelationDataProperty,
   neighbourhood,
@@ -21,6 +23,7 @@ import {
   stakeholderKindOf,
   type EdgeType,
   type ElementFilters,
+  type ElementPropertyDefinition,
   type ModelElement,
   type ModelGraph,
   type ModelRelationship,
@@ -96,10 +99,39 @@ function referencesOf(
   };
 }
 
+/**
+ * An element's element properties (every type has every one) that have a value, by name in name
+ * order, as `definedProperties`. Values as stored (a choice's value may be outside its list, and a
+ * value of another kind is kept), except that a Reference names its elements: `[{ id, name }]`.
+ */
+function definedElementValues(
+  graph: ModelGraph,
+  element: ModelElement,
+): { definedProperties?: Record<string, unknown> } {
+  const entries = sortElementDefinitions(graph.elementProperties).flatMap(
+    (definition): [string, unknown][] => {
+      if (!Object.hasOwn(element.metadata, definition.key)) return [];
+      const value = element.metadata[definition.key];
+      if (value === null || value === '') return [];
+      const ids = referenceIds(value);
+      return [
+        [
+          definition.name,
+          ids === undefined
+            ? value
+            : ids.map((id) => ({ id, name: graph.elements.get(id)?.name ?? '' })),
+        ],
+      ];
+    },
+  );
+  return entries.length === 0 ? {} : { definedProperties: Object.fromEntries(entries) };
+}
+
 function listed(graph: ModelGraph, element: ModelElement) {
   return {
     ...brief(element),
     properties: propertiesOf(element, true),
+    ...definedElementValues(graph, element),
     ...referencesOf(graph, element),
   };
 }
@@ -194,9 +226,10 @@ export interface SearchInput {
 /** Where the defined properties come from (PropertyService). */
 export interface PropertySource {
   list(): Promise<RelationshipPropertyDefinition[]>;
+  listElements(): Promise<ElementPropertyDefinition[]>;
 }
 
-const noProperties: PropertySource = { list: async () => [] };
+const noProperties: PropertySource = { list: async () => [], listElements: async () => [] };
 
 export class McpReadService {
   constructor(
@@ -290,6 +323,7 @@ export class McpReadService {
     return {
       ...brief(element),
       properties: propertiesOf(element, false),
+      ...definedElementValues(graph, element),
       ...referencesOf(graph, element),
       ...(referring.length === 0
         ? {}
@@ -350,7 +384,11 @@ export class McpReadService {
     if (document === undefined) {
       throw new ToolError('Model not found. Use list_models for the ids.');
     }
-    return buildModelGraph(document, await this.properties.list());
+    const [relationshipProperties, elementProperties] = await Promise.all([
+      this.properties.list(),
+      this.properties.listElements(),
+    ]);
+    return buildModelGraph(document, relationshipProperties, elementProperties);
   }
 
   #element(graph: ModelGraph, elementId: string): ModelElement {

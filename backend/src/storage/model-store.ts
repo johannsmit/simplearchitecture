@@ -1,5 +1,7 @@
 import type {
+  AddedElementProperty,
   AddedRelationshipProperty,
+  ElementPropertyDefinition,
   JgfDocument,
   JgfEdge,
   JgfNode,
@@ -34,8 +36,8 @@ export interface ModelStore {
    * replaces anything the document says about them; the document's own `graph.id` is kept as
    * `sourceId`. Throws ModelStoreFullError, ModelTooLargeError or ModelNotStorableError.
    *
-   * Defines every custom key on the model's relationships that isn't defined yet, in the same
-   * transaction (`SaveOptions`).
+   * Defines every custom key on the model's relationships and elements that isn't defined yet, in
+   * the same transaction (`SaveOptions`).
    */
   save(document: JgfDocument, createdBy: ModelAuthor, options?: SaveOptions): Promise<ModelSummary>;
   /** Removes a model, damaged or not. Undefined when there is none. */
@@ -55,6 +57,8 @@ export interface SaveOptions {
    * (none: not called). Called before the save returns.
    */
   onNewProperties?: (added: AddedRelationshipProperty[]) => void;
+  /** The same for the element properties the save added. */
+  onNewElementProperties?: (added: AddedElementProperty[]) => void;
 }
 
 /** The model as stored now, read under the model's lock, and fully validated. */
@@ -63,6 +67,8 @@ export interface EditableModel {
   validation: JgfValidationResult;
   /** The relationship properties an Admin defined, as they are now (by name). */
   relationshipProperties: readonly RelationshipPropertyDefinition[];
+  /** The element properties an Admin defined, as they are now (by name). */
+  elementProperties: readonly ElementPropertyDefinition[];
   /** The element's version, or undefined when the model has no such element. */
   versionOf(elementId: string): number | undefined;
   /** The relationship's version, or undefined when the model has no relationship with this id. */
@@ -150,6 +156,8 @@ export interface ChangeOptions {
    * after it sees it gone.
    */
   propertyKeys?: readonly string[];
+  /** The same for element properties. */
+  elementPropertyKeys?: readonly string[];
 }
 
 /**

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ValueField } from '../src/modelling/ValueField';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { addField, cpuMs, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { cpuMs, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // Pick a metadata value, or type a new one. Made-up data only.
 
@@ -381,55 +381,48 @@ async function openShop() {
   return { ...server, form };
 }
 
-/** A new Text row, its key then typed over in the row (where a used key is refused only on Save). */
-const newRow = (form: HTMLElement, name: string) => {
-  addField(form, `${name} (new)`);
-  const key = within(form).getAllByLabelText('Key').at(-1) as HTMLElement;
-  fireEvent.change(key, { target: { value: name } });
-  return key;
-};
+/** The element properties the shop's form shows (zone and protocol), as an Admin defined them. */
+const elementProperties: Handler = ({ url, method }) =>
+  url === '/api/properties' && method === 'GET'
+    ? Response.json({
+        properties: [],
+        elementProperties: ['protocol', 'zone'].map((key) => ({
+          key,
+          name: key,
+          kind: 'text',
+          fromModels: true,
+          version: 1,
+        })),
+      })
+    : undefined;
 
-describe('custom rows', () => {
-  it('follows the key as it is now, and never touches the value', async () => {
-    const { form } = await openShop();
-    const key = newRow(form, '');
-    // No key: a plain text field.
-    expect(within(form).getByRole('textbox', { name: 'Value of the new field' })).toBeDefined();
-    fireEvent.change(key, { target: { value: ' zone ' } });
-    // Leaving the key closes its own list of names.
-    fireEvent.blur(key);
-    const value = within(form)
-      .getAllByRole<HTMLInputElement>('combobox', { name: 'Value of zone' })
-      .at(-1) as HTMLInputElement;
-    fireEvent.change(value, { target: { value: 'typed' } });
-    fireEvent.change(value, { target: { value: '' } });
+async function openShopWithProperties() {
+  const server = api(withData());
+  stubApi(modeller, elementProperties, server.handler);
+  renderAt(shopAt);
+  const form = await screen.findByRole('form', { name: /^Edit / });
+  return { ...server, form };
+}
+
+describe('element property fields', () => {
+  it('offers the values the model’s elements hold under the key', async () => {
+    const { form } = await openShopWithProperties();
+    const zone = within(form).getByRole<HTMLInputElement>('combobox', { name: 'zone' });
+    expect(zone.value).toBe('Element zone');
+    fireEvent.change(zone, { target: { value: '' } });
     expect(offered()).toEqual(['Element zone', 'Till zone']);
-    fireEvent.change(key, { target: { value: 'Zone' } });
-    expect(within(form).getByRole('textbox', { name: 'Value of Zone' })).toBe(value);
   });
 
-  it('offers nothing for a key the model lacks, or a reserved or standard one', async () => {
-    const { form } = await openShop();
-    for (const name of ['constructor', 'toString', 'type', 'description', 'owningTeam']) {
-      newRow(form, name);
-      expect(within(form).getByRole('textbox', { name: `Value of ${name}` })).toBeDefined();
-    }
-    expect(list()).toBeNull();
-  });
-
-  it('leaves a row with a line break a textarea, and never offers such a value', async () => {
+  it('leaves a custom value with a line break a textarea', async () => {
     const { form } = await openShop();
     const multi = within(form).getByRole('textbox', { name: 'Value of multi' });
     expect(multi.tagName).toBe('TEXTAREA');
-    newRow(form, 'multi');
-    expect(within(form).getAllByRole('textbox', { name: 'Value of multi' })).toHaveLength(2);
     expect(within(form).queryByRole('combobox', { name: 'Value of multi' })).toBeNull();
   });
 
   it('keeps separate lists for elements and relationships', async () => {
-    const { form } = await openShop();
-    newRow(form, 'protocol');
-    fireEvent.click(within(form).getByRole('combobox', { name: 'Value of protocol' }));
+    const { form } = await openShopWithProperties();
+    fireEvent.click(within(form).getByRole('combobox', { name: 'protocol' }));
     expect(offered()).toEqual(['Element only']);
   });
 
@@ -457,35 +450,6 @@ describe('custom rows', () => {
 });
 
 describe('metadata names', () => {
-  it('offers the names elements have, not those the form already has, and narrows as you type', async () => {
-    const server = api(withData());
-    stubApi(modeller, server.handler);
-    renderAt(`/modelling/models/${bakeryId}/elements/till?depth=1`);
-    const form = await screen.findByRole('form', { name: /^Edit / });
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    const box = within(form).getByRole('group', { name: 'Add field' });
-    const key = within(box).getByLabelText<HTMLInputElement>('Key');
-    expect(key.getAttribute('role')).toBe('combobox');
-    fireEvent.click(key);
-    // zone and protocol are on Till already; standard keys and archimateType are never names.
-    // Each shows the type other elements use it as.
-    expect(offered()).toEqual(['hostingModel Text', 'multi Text']);
-    fireEvent.change(key, { target: { value: 'MU' } });
-    expect(offered()).toEqual(['multi Text']);
-    fireEvent.keyDown(key, { key: 'ArrowDown' });
-    fireEvent.keyDown(key, { key: 'Enter' });
-    expect(key.value).toBe('multi');
-    expect(list()).toBeNull();
-  });
-
-  it('always takes a new name as typed', async () => {
-    const { form } = await openShop();
-    const key = newRow(form, 'brand new') as HTMLInputElement;
-    fireEvent.keyDown(key, { key: 'Enter' });
-    expect(key.value).toBe('brand new');
-    expect(within(form).getByRole('textbox', { name: 'Value of brand new' })).toBeDefined();
-  });
-
   it('has no names to offer on a relationship: it takes no new keys', async () => {
     await openShop();
     fireEvent.click(

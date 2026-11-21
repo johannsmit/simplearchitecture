@@ -18,26 +18,33 @@ In an open view, a new element is added to the view. If an element with the name
 
 ### Change an element
 
-Select the element and change its fields in the details panel: name, type, description and the standard properties of its type, such as Owning team or Architecture state.
+Select the element and change its fields in the details panel: name, type, description, the standard properties of its type, such as Owning team or Architecture state, and the properties an Admin defined.
 
-- **Custom metadata:** **Add field** adds a field of your own, with a key and a type: **Text**, one line of text, or **Reference**, other elements of the model (see [Reference fields](#reference-fields)). The key box offers the keys other elements of the model use, most used first, each with the type it is used as; picking one used as a single type sets the type to match, unless you chose a type yourself first. You can always type a new key. A key that other elements use as the other type works too; the box notes it. A field keeps its type: to change it, remove the field and add it again.
-- **Suggestions:** text fields such as Owning team, Supplier HQ Country and Text custom metadata offer the values the model already has, most used first. Pick one, or type anything else.
+- **Properties defined by an Admin** come after the type's standard properties and before Functions, in name order, on every element of every type. A Text property is a field, a Choice a list with "Not set" first, and a Reference the `@` field (see [Reference properties](#reference-properties)). The form has no **Add field**: new properties are added by an Admin, on **Admin → Properties**. See [Properties](properties.md).
+- **Suggestions:** text fields such as Owning team, Supplier HQ Country and Text properties offer the values the model already has, most used first. Pick one, or type anything else.
 - **A Stakeholder's Kind:** Human (a person) or AI Agent (an AI agent acting as a stakeholder). A Stakeholder without a Kind is Human. An AI Agent is drawn with a robot icon wherever its type icon shows.
-- **Changing the type** keeps every value. Standard properties the new type doesn't have become custom metadata. If a Reference field's key is a standard property of the new type, the change can't be saved until that field is removed.
+- **Changing the type** keeps every value. A standard property the new type doesn't have, such as Sourcing when an Application becomes Infrastructure, is kept under **Custom metadata**, marked **Was a property**: the form says which. You can still change its value, or remove it with its bin. Changing back to a type that has the property shows the value in its field again. Properties an Admin defined don't change: every type has them.
 
-### Reference fields
+### Values that don't fit
 
-A Reference field points an element at other elements of the same model, without a relationship. It draws no line on the canvas.
+A value keeps the shape it was stored with, even when it doesn't fit its property: for example, references kept under a Text property after an upgrade, or after an Admin changed the property's kind.
+
+- **Not text**, **Not a choice** or **Not a reference:** the form shows the value as it is stored, in a box marked "kept as is", with a bin to remove it. Once removed, the property's normal field takes its place. The details panel shows the value with the mark under it, and the catalog shows it read-only.
+- **Not in the list:** a choice whose value isn't one of its options shows it as the list's first item, marked "not in the list". It is kept when you save other fields; once you pick another value, only the options and Not set are offered.
+
+### Reference properties
+
+A Reference property points an element at other elements of the same model, without a relationship. It draws no line on the canvas.
 
 - Type `@` in the field's box to list the model's elements, or type part of a name to search them. Pick one with the arrow keys and `Enter`, or click it: it is added as a chip with its type. Remove one with its **×**, or press `Backspace` in the empty box to remove the last one. What you type is only a search and is never saved. All keys are in [Keyboard shortcuts](keyboard-shortcuts.md#reference-fields).
-- A field can hold any element of the model except the element itself, each once, and at most 200.
-- A Reference field can't be saved empty: choose at least one element, or remove the field.
+- A Reference holds any element of the model except the element itself, each once, and at most 200. Remove every element to leave it Not set.
 - A reference follows the element, not its name: rename the element, and the field shows the new name.
-- In Viewing, the details panel shows the field's elements as links. Every element that is referred to lists the elements that refer to it under **Referenced by**, in Viewing and Modelling. See [The details panel](using-the-app.md#the-details-panel).
+- In the catalog, a Reference shows the elements' names and is changed in the details panel.
+- In Viewing, the details panel shows its elements as links. Every element that is referred to lists the elements that refer to it under **Referenced by**, with the property they do so in, in Viewing and Modelling. See [The details panel](using-the-app.md#the-details-panel).
 
 ### Delete an element
 
-Deleting an element also deletes every relationship from or to it, removes it from every view, and takes it out of every Reference field that holds it (a field left with no element is removed). The dialog says how many elements refer to it. The elements a deleted container held stay in the model, no longer nested.
+Deleting an element also deletes every relationship from or to it, removes it from every view, and takes it out of every Reference that holds it (one left with no element becomes Not set). The dialog says how many elements refer to it. The elements a deleted container held stay in the model, no longer nested.
 
 ## Relationships
 

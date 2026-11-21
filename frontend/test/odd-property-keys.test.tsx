@@ -1,5 +1,4 @@
 import {
-  prototypeKeyMessage,
   type JgfDocument,
   type JgfEdge,
   type RelationshipPropertyDefinition,
@@ -9,7 +8,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { ImportPanel } from '../src/viewing/models/ImportPanel';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { addField, admin, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { admin, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // Property keys no property should have: blank, over 100 characters, or `__proto__`. Made-up
 // data only.
@@ -116,22 +115,6 @@ describe('a blank or long property key on the relationship form', () => {
   });
 });
 
-describe('a custom key __proto__ on the element form', () => {
-  it('is refused under its row with the server’s message, and nothing is sent', async () => {
-    const { handler, sent } = api({});
-    stubApi(modeller, handler);
-    renderAt(`/modelling/models/${bakeryId}/elements/till`);
-    const form = await screen.findByRole('form', { name: /^Edit / });
-    addField(form, ' __proto__ ');
-    fireEvent.change(within(form).getByRole('textbox', { name: 'Value of __proto__' }), {
-      target: { value: 'Made-up' },
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(await within(form).findByText(prototypeKeyMessage)).toBeDefined();
-    expect(sent).toEqual([]);
-  });
-});
-
 /** The bakery, with the till holding `metadata` besides its type; the PATCH bodies sent. */
 function elementApi(metadata: Record<string, unknown>) {
   const nodes = bakeryModel.graph.nodes ?? {};
@@ -212,17 +195,11 @@ describe('a blank or long custom name on the element form', () => {
     expect(sent[0]).toEqual({ version: 1, name: 'Made-up till' });
   });
 
-  it('renames one: the stored name is removed and the typed one set', async () => {
-    const { form, sent } = await openElement({ [longKey]: 'Long value' });
-    const key = within(form)
-      .getAllByLabelText('Key')
-      .find((input) => (input as HTMLInputElement).value === longKey) as HTMLInputElement;
-    fireEvent.change(key, { target: { value: ' warranty ' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    await waitFor(() => {
-      expect(sent).toHaveLength(1);
-    });
-    expect(sent[0]).toEqual({ version: 1, metadata: { warranty: 'Long value', [longKey]: null } });
+  it('shows a stored name as fixed text: it can be changed or removed, never renamed', async () => {
+    const { form } = await openElement({ [longKey]: 'Long value' });
+    expect(within(form).queryAllByLabelText('Key')).toEqual([]);
+    expect(within(form).getByTitle(longKey).textContent).toBe(longKey);
+    expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
   });
 });
 
@@ -349,7 +326,9 @@ describe('Admin → Properties', () => {
       return undefined;
     });
     renderAt('/admin/properties');
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit Made-up blank' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Edit relation property Made-up blank' }),
+    );
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText(/^Name/), {
       target: { value: 'Made-up spaces' },

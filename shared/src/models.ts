@@ -1,4 +1,5 @@
 import type { ApiError } from './api.js';
+import type { AddedElementProperty } from './element-properties.js';
 import type { ChangedPropertyKey } from './imported-keys.js';
 import type { LeftOutReferences } from './references.js';
 import type { JgfValidationResult, OefMappingReport } from './jgf.js';
@@ -65,6 +66,12 @@ export interface SaveModelResult {
    * there were any.
    */
   newProperties?: AddedRelationshipProperty[];
+  /**
+   * The same for custom keys on the model's elements: each was added to Admin → Properties as an
+   * element property (Reference when every value the model holds under it is one, text otherwise).
+   * Only when there were any.
+   */
+  newElementProperties?: AddedElementProperty[];
   /**
    * Keys on the model's relationships that no property can have, so the import changed them: a key
    * over 100 characters was shortened (`storedAs`), and a blank one was left out with its values.

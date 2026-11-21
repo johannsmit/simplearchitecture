@@ -9,6 +9,7 @@
  * dialog and the relationship form) apply the same rules.
  */
 import type { ApiError } from './api.js';
+import type { ElementPropertyDefinition, ElementPropertyUsage } from './element-properties.js';
 import { isPrototypeKey, prototypeKeyMessage, type ElementFieldIssue } from './elements.js';
 import { compareNames } from './graph.js';
 import {
@@ -46,10 +47,21 @@ export interface RelationshipPropertyDefinition {
   version: number;
 }
 
-/** Response body of `GET /api/properties` (everyone with a role): sorted by name. */
+/**
+ * Response body of `GET /api/properties` (everyone with a role): both lists, each sorted by name.
+ * `properties` are the relationship properties.
+ */
 export interface RelationshipPropertyListResponse {
   properties: RelationshipPropertyDefinition[];
+  elementProperties: ElementPropertyDefinition[];
 }
+
+/**
+ * Which list a change names, in the query's `for`: `relationship` (the default, also when `for`
+ * isn't sent) or `element`.
+ */
+export const propertyLists = ['relationship', 'element'] as const;
+export type PropertyList = (typeof propertyLists)[number];
 
 /** Body of `POST /api/properties` (Admin). */
 export interface NewRelationshipPropertyRequest {
@@ -103,9 +115,10 @@ export interface RelationshipPropertyUsage {
   labels: number;
 }
 
-/** Response body of `GET /api/properties/usage` (Admin). */
+/** Response body of `GET /api/properties/usage` (Admin): `usage` for relationships. */
 export interface RelationshipPropertyUsageResponse {
   usage: RelationshipPropertyUsage[];
+  elementUsage: ElementPropertyUsage[];
 }
 
 /** Response body (200) of `DELETE /api/properties/:key` (Admin): what was deleted. */

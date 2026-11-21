@@ -2,6 +2,7 @@ import {
   withImportableElementKeys,
   withImportableReferences,
   withImportableRelationshipKeys,
+  type AddedElementProperty,
   type AddedRelationshipProperty,
   type ApiError,
   type ChangedPropertyKey,
@@ -114,7 +115,8 @@ function storeRefused(
 /**
  * Saves a validated model and writes the audit line (ids and counts only, never names or
  * content). Answers 409 itself when the store is full and returns undefined. With it, the
- * properties the save added from the custom keys on its relationships, the keys on its
+ * properties the save added from the custom keys on its relationships and on its elements, the
+ * keys on its
  * relationships and elements it shortened or left out first because no key can be blank or that
  * long, and what it left out of the elements' Reference fields (each only when there were any).
  */
@@ -128,6 +130,7 @@ async function saveModel(
   | {
       model: ModelSummary;
       newProperties?: AddedRelationshipProperty[];
+      newElementProperties?: AddedElementProperty[];
       changedKeys?: ChangedRelationshipKey[];
       changedElementKeys?: ChangedPropertyKey[];
       leftOutReferences?: LeftOutReferences[];
@@ -153,10 +156,14 @@ async function saveModel(
         };
   let model: ModelSummary;
   let newProperties: AddedRelationshipProperty[] | undefined;
+  let newElementProperties: AddedElementProperty[] | undefined;
   try {
     model = await store.save(document, user, {
       onNewProperties: (added) => {
         newProperties = added;
+      },
+      onNewElementProperties: (added) => {
+        newElementProperties = added;
       },
     });
   } catch (error) {
@@ -171,6 +178,9 @@ async function saveModel(
       nodes: model.nodeCount,
       edges: model.edgeCount,
       ...(newProperties === undefined ? {} : { newProperties: newProperties.length }),
+      ...(newElementProperties === undefined
+        ? {}
+        : { newElementProperties: newElementProperties.length }),
       ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes.length }),
       ...(elementKeys.changes.length === 0
         ? {}
@@ -183,6 +193,7 @@ async function saveModel(
   return {
     model,
     ...(newProperties === undefined ? {} : { newProperties }),
+    ...(newElementProperties === undefined ? {} : { newElementProperties }),
     ...(keys.changes.length === 0 ? {} : { changedKeys: keys.changes }),
     ...(elementKeys.changes.length === 0 ? {} : { changedElementKeys: elementKeys.changes }),
     ...(references.changes.length === 0 ? {} : { leftOutReferences: references.changes }),

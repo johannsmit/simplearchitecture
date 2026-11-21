@@ -28,9 +28,9 @@ Nodes will contain standard metadata properties:
 **Application nodes:**
 - Sourcing (Option: Build, Buy)
 
-Custom metadata is allowed to be added as needed.
+Custom metadata isn't added to nodes freely. Further properties of nodes are defined by an Admin in the app; every node has them, and none is required.
 
-A custom metadata value may be a Reference: a list of the ids of other nodes in the same graph, each once, at most 200, stored as `{"simplearchitecture:reference": ["node-id-1", "node-id-2"]}` (an object with that one key). A node never references itself.
+Such a property's value may be a Reference: a list of the ids of other nodes in the same graph, at least one, each once, at most 200, stored as `{"simplearchitecture:reference": ["node-id-1", "node-id-2"]}` (an object with that one key). A node never references itself.
 
 ## Edges
 The metamodel contains the following edge types:

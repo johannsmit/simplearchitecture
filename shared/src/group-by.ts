@@ -8,6 +8,11 @@
  * set, a Stakeholder without Kind is Human, and an element whose type lacks a standard property
  * has no value for it.
  */
+import {
+  elementDefinitionOf,
+  isDefinableElementKey,
+  type ElementPropertyDefinition,
+} from './element-properties.js';
 import { compareText, filterFields, filterValueOf, isFilterableKey } from './filters.js';
 import type { ModelElement, ModelGraph } from './graph.js';
 import {
@@ -35,7 +40,7 @@ export const maxViewGroupValueLength = 200;
 /** One property the canvas can be grouped by. */
 export interface GroupByChoice {
   key: string;
-  /** "Type", a standard property's label, or the custom key itself. */
+  /** "Type", a standard property's label, an element property's name, or the custom key itself. */
   label: string;
   /** Type and the standard properties; false for custom metadata. */
   standard: boolean;
@@ -47,16 +52,24 @@ const isElementStandardKey = (key: string): key is StandardPropertyKey =>
 const definitionOf = (key: StandardPropertyKey): StandardPropertyDefinition =>
   standardProperties[key];
 
-/** The label of a Group by key: "Type", a standard property's label, or the key. */
-export function groupByLabel(key: string): string {
+/**
+ * The label of a Group by key: "Type", a standard property's label, the name of an element
+ * property (of `definitions`), or the key.
+ */
+export function groupByLabel(
+  key: string,
+  definitions: readonly ElementPropertyDefinition[] = [],
+): string {
   if (key === typeGroupKey) return 'Type';
-  return isElementStandardKey(key) ? definitionOf(key).label : key;
+  if (isElementStandardKey(key)) return definitionOf(key).label;
+  return elementDefinitionOf(definitions, key)?.name ?? key;
 }
 
 /**
  * The properties the model's elements can be grouped by: Type first, then the Filter's fields
- * (standard properties some element has a value for, in metamodel order, then single-value custom
- * keys A to Z). Description, Functions, `archimateType` and keys holding a list never show.
+ * (standard properties some element has a value for, in metamodel order, then text and choice
+ * element properties and single-value custom keys A to Z). Description, Functions,
+ * `archimateType`, Reference properties and keys holding a list never show.
  */
 export function groupByChoices(graph: ModelGraph): GroupByChoice[] {
   return [
@@ -66,9 +79,9 @@ export function groupByChoices(graph: ModelGraph): GroupByChoice[] {
 }
 
 /**
- * Whether a key can be a Group by setting at all: Type, or a key the Filter could offer, of at
- * most `maxGroupByKeyLength` characters, and never `__proto__`. Whether the model has it is
- * another question (`groupByChoices`).
+ * Whether a key can be a Group by setting at all: Type, or a key the Filter could offer (a key an
+ * element property can have, `archimateType` too), of at most `maxGroupByKeyLength` characters,
+ * and never `__proto__`. Whether the model has it is another question (`groupByChoices`).
  */
 export function isGroupByKey(key: string): boolean {
   if (key === typeGroupKey) return true;
@@ -76,7 +89,7 @@ export function isGroupByKey(key: string): boolean {
     key.trim() !== '' &&
     key.length <= maxGroupByKeyLength &&
     key !== '__proto__' &&
-    isFilterableKey(key)
+    (isFilterableKey(key) || isDefinableElementKey(key))
   );
 }
 
@@ -94,19 +107,23 @@ export function elementGroupValue(element: ModelElement, key: string): string | 
 
 /**
  * The order of a key's groups where the layout leaves a choice: Type in the metamodel's type
- * order, a choice property's options in the metamodel's order (then other values), other values A
- * to Z; Not set (undefined) last.
+ * order, a choice property's options in their order (the metamodel's, or an element property's of
+ * `definitions`; then other values), other values A to Z; Not set (undefined) last.
  */
 export function compareGroupValues(
   key: string,
+  definitions: readonly ElementPropertyDefinition[] = [],
 ): (a: string | undefined, b: string | undefined) => number {
   const definition = isElementStandardKey(key) ? definitionOf(key) : undefined;
+  const defined = definition === undefined ? elementDefinitionOf(definitions, key) : undefined;
   const options: readonly string[] =
     key === typeGroupKey
       ? nodeTypes
       : definition?.value.kind === 'choice'
         ? definition.value.options
-        : [];
+        : defined?.kind === 'choice'
+          ? (defined.options ?? [])
+          : [];
   const rank = (value: string) => {
     const index = options.indexOf(value);
     return index === -1 ? Infinity : index;

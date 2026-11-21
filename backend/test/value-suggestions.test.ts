@@ -1,6 +1,5 @@
 import {
   buildModelGraph,
-  elementMetadataNames,
   elementPropertyValues,
   relationshipMetadataNames,
   relationshipPropertyValues,
@@ -226,18 +225,6 @@ describe('suggestedValues', () => {
 });
 
 describe('metadata names', () => {
-  it('lists the custom names elements have, most used first, then by name', () => {
-    const graph = buildModelGraph(
-      model({
-        c: node({ zone: 'x', rack: '', owningTeam: 'Web', description: 'd' }),
-        d: node({ zone: ['list'], archimateType: 'ApplicationComponent', Rack: 1 }),
-        e: node({ zone: null, 'simplearchitecture:stored': 1, functions: ['f'] }),
-        f: node({ sourcing: 'Buy', supplierHqCountry: 'NL', architectureState: 'Current' }),
-      }),
-    );
-    expect(elementMetadataNames(graph)).toEqual(['zone', 'Rack', 'rack']);
-  });
-
   it('lists the names relationships have apart from elements, never their own fields', () => {
     const graph = buildModelGraph(
       model({ c: node({ zone: 'element' }) }, [
@@ -249,12 +236,10 @@ describe('metadata names', () => {
       ]),
     );
     expect(relationshipMetadataNames(graph)).toEqual(['protocol', 'functions', 'owningTeam']);
-    expect(elementMetadataNames(graph)).toEqual(['zone']);
   });
 
   it('works the names out once per graph', () => {
     const graph = buildModelGraph(model({ c: node({ zone: 'x' }) }));
-    expect(elementMetadataNames(graph)).toBe(elementMetadataNames(graph));
     expect(relationshipMetadataNames(graph)).toBe(relationshipMetadataNames(graph));
   });
 });

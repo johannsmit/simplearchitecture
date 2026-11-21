@@ -1,4 +1,5 @@
 import {
+  catalogPropertyPrefix,
   customMetadata,
   isNodeType,
   isPrototypeKey,
@@ -14,7 +15,9 @@ import {
   referenceProblem,
   referenceValue,
   standardProperties,
+  type CatalogPropertyColumnKey,
   type ElementFieldIssue,
+  type ElementPropertyDefinition,
   type JgfNode,
   type ModelElement,
   type ModelGraph,
@@ -135,6 +138,49 @@ export function customValues(rows: readonly CustomRow[]): Map<string, unknown> {
     values.set(key, changed ? row.text : row.original);
   }
   return values;
+}
+
+/** The draft's row for a key, exactly as held (an element property's, or custom metadata). */
+export const rowOfKey = (draft: Draft, key: string): CustomRow | undefined =>
+  draft.custom.find((row) => rowKey(row) === key);
+
+/**
+ * The draft with an element property's text (or choice) set: blank removes the value, a new value
+ * gets a row of its own under the property's exact key.
+ */
+export function withDefinedText(draft: Draft, key: string, text: string): Draft {
+  const row = rowOfKey(draft, key);
+  const rest = draft.custom.filter((other) => other !== row);
+  if (text === '') return { ...draft, custom: rest };
+  // A row holding text is edited; one that held a list, an object or a Reference is replaced.
+  if (row !== undefined && row.editable && row.refs === undefined) {
+    return {
+      ...draft,
+      custom: draft.custom.map((other) => (other === row ? { ...row, text } : other)),
+    };
+  }
+  return { ...draft, custom: [...rest, { ...customRow(key, ''), text, storedKey: key }] };
+}
+
+/** The draft with a Reference property's elements set: none removes the value. */
+export function withDefinedReferences(draft: Draft, key: string, ids: readonly string[]): Draft {
+  const row = rowOfKey(draft, key);
+  if (ids.length === 0) return { ...draft, custom: draft.custom.filter((other) => other !== row) };
+  const next = row?.refs !== undefined ? { ...row, refs: [...ids] } : undefined;
+  return {
+    ...draft,
+    custom: next
+      ? draft.custom.map((other) => (other === row ? next : other))
+      : [
+          ...draft.custom.filter((other) => other !== row),
+          { ...referenceRow(key, ids), storedKey: key },
+        ],
+  };
+}
+
+/** The draft without a key's value (an element property's kept value, Remove). */
+export function withoutKey(draft: Draft, key: string): Draft {
+  return { ...draft, custom: draft.custom.filter((row) => rowKey(row) !== key) };
 }
 
 /** What differs between two sets of values, as a PATCH sends it: `null` removes a key. */
@@ -309,6 +355,9 @@ export type ErrorSlot = string;
 /** The slot of a Reference row's elements. */
 export const referenceSlot = (row: CustomRow): ErrorSlot => `ref:${row.id}`;
 
+/** The slot of an element property's field, by its key. */
+export const propertySlot = (key: string): ErrorSlot => `prop:${key}`;
+
 /** Which elements a Reference may name: the element's own id, and the model's elements. */
 export interface ReferenceScope {
   ownId: string | undefined;
@@ -335,7 +384,9 @@ export function clientErrors(
   draft: Draft,
   stored: Readonly<Record<string, unknown>> = {},
   scope: ReferenceScope = { ownId: undefined, isElement: () => true },
+  definitions: readonly ElementPropertyDefinition[] = [],
 ): Map<ErrorSlot, string> {
+  const defined = new Set(definitions.map((definition) => definition.key));
   const errors = new Map<ErrorSlot, string>();
   if (draft.name.trim() === '') errors.set('name', 'Enter a name.');
   for (const key of fieldKeys(draft.type)) {
@@ -367,7 +418,7 @@ export function clientErrors(
     const problem = referenceProblem(referenceValue(ids), scope.ownId, scope.isElement);
     if (problem !== undefined) {
       errors.set(
-        referenceSlot(row),
+        defined.has(key) ? propertySlot(key) : referenceSlot(row),
         problem === referenceMessages.missing ? referenceGoneMessage : problem,
       );
     }
@@ -385,7 +436,9 @@ export function clientErrors(
 export function serverErrors(
   draft: Draft,
   issues: readonly ElementFieldIssue[],
+  definitions: readonly ElementPropertyDefinition[] = [],
 ): Map<ErrorSlot, string> {
+  const defined = new Set(definitions.map((definition) => definition.key));
   const errors = new Map<ErrorSlot, string>();
   const add = (slot: ErrorSlot, message: string) => {
     const before = errors.get(slot);
@@ -403,6 +456,13 @@ export function serverErrors(
     }
     if (key === 'description') {
       add('description', message);
+      continue;
+    }
+    if (key !== undefined && defined.has(key)) {
+      add(
+        propertySlot(key),
+        message === referenceMessages.missing ? referenceGoneMessage : message,
+      );
       continue;
     }
     const row = key === undefined ? undefined : draft.custom.find((r) => rowKey(r) === key);
@@ -445,7 +505,7 @@ export function typeChangeNote(
   const parts: string[] = [];
   if (kept.length > 0) {
     parts.push(
-      `${type} doesn't have ${orList(kept)}. ${kept.length === 1 ? 'Its value is' : 'Their values are'} kept as custom metadata.`,
+      `${type} doesn't have ${orList(kept)}. ${kept.length === 1 ? 'Its value is' : 'Their values are'} kept, marked Was a property.`,
     );
   }
   if (now.length > 0) {
@@ -494,9 +554,15 @@ export function sameNameNote(count: number, type: NodeType, name: string): strin
  * One cell of the catalog: the name or a standard property. A cell is the panel's
  * draft with one field typed, so it sends, checks and normalises exactly as the panel does.
  */
-export type CellKey = 'name' | StandardPropertyKey;
+export type CellKey = 'name' | StandardPropertyKey | CatalogPropertyColumnKey;
+
+/** The element property's key of a cell, or undefined for the name or a standard property. */
+export const cellPropertyKey = (key: CellKey): string | undefined =>
+  key.startsWith(catalogPropertyPrefix) ? key.slice(catalogPropertyPrefix.length) : undefined;
 
 function withCell(draft: Draft, key: CellKey, text: string): Draft {
+  const property = cellPropertyKey(key);
+  if (property !== undefined) return withDefinedText(draft, property, text);
   if (key === 'name') return { ...draft, name: text };
   if (key === 'description') return { ...draft, description: text };
   return { ...draft, fields: { ...draft.fields, [key]: text } };
@@ -505,9 +571,14 @@ function withCell(draft: Draft, key: CellKey, text: string): Draft {
 /** The text a cell's editor starts with, as the panel's field shows it (Functions: one a line). */
 export function cellText(element: ModelElement, key: CellKey): string {
   const draft = draftOf(element);
+  const property = cellPropertyKey(key);
+  if (property !== undefined) {
+    const row = rowOfKey(draft, property);
+    return row?.editable === true ? row.text : '';
+  }
   if (key === 'name') return draft.name;
   if (key === 'description') return draft.description;
-  return draft.fields[key] ?? '';
+  return draft.fields[key as FieldKey] ?? '';
 }
 
 /**
@@ -524,8 +595,26 @@ export function cellChange(
   return changesOf(initial, withCell(initial, key, text));
 }
 
-/** The panel's check before saving, for this cell only (an empty name, an unknown choice). */
-export function cellError(element: ModelElement, key: CellKey, text: string): string | undefined {
+/**
+ * The panel's check before saving, for this cell only (an empty name, an unknown choice). An
+ * element property's choice (of `definitions`) takes one of its options, or the stored value.
+ */
+export function cellError(
+  element: ModelElement,
+  key: CellKey,
+  text: string,
+  definitions: readonly ElementPropertyDefinition[] = [],
+): string | undefined {
+  const property = cellPropertyKey(key);
+  if (property !== undefined) {
+    const definition = definitions.find((each) => each.key === property);
+    const options = definition?.kind === 'choice' ? (definition.options ?? []) : undefined;
+    const stored = Object.hasOwn(element.metadata, property) ? element.metadata[property] : '';
+    if (options === undefined || text === '' || options.includes(text) || text === stored) {
+      return undefined;
+    }
+    return `Pick one of ${options.join(', ')}.`;
+  }
   const draft = withCell(draftOf(element), key, text);
   return clientErrors(draft, element.metadata).get(key === 'name' ? 'name' : `field:${key}`);
 }
@@ -535,7 +624,8 @@ export function cellError(element: ModelElement, key: CellKey, text: string): st
  * nowhere else to show them, and none may be lost).
  */
 export function cellServerErrors(key: CellKey, issues: readonly ElementFieldIssue[]): string[] {
-  const field = key === 'name' || key === 'description' ? key : `metadata.${key}`;
+  const field =
+    key === 'name' || key === 'description' ? key : `metadata.${cellPropertyKey(key) ?? key}`;
   const own = issues.filter((issue) => issue.field === field).map((issue) => issue.message);
   const rest = issues.filter((issue) => issue.field !== field).map((issue) => issue.message);
   return [...own, ...rest];

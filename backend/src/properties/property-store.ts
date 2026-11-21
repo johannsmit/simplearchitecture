@@ -1,10 +1,15 @@
 import {
   definitionsForKeys,
+  elementDefinitionsForKeys,
+  newElementKeys,
   newRelationshipKeys,
   sortDefinitions,
   standardNameClash,
+  type AddedElementProperty,
   type AddedRelationshipProperty,
   type DefinedPropertyKind,
+  type ElementPropertyDefinition,
+  type ElementPropertyKind,
   type ModelAuthor,
   type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
@@ -12,31 +17,35 @@ import type { Queryable } from '../db/db.js';
 import { unstorable } from '../storage/stored-model.js';
 
 /**
- * The relationship property definitions in PostgreSQL (migration 016), read and written inside the
- * caller's transaction. The rules are in shared/relationship-properties.ts and PropertyService.
+ * The property definitions in PostgreSQL, for relationships (migration 016) and for elements
+ * (migration 020), read and written inside the caller's transaction. The rules are in
+ * shared/relationship-properties.ts, shared/element-properties.ts and PropertyService.
  *
  * Locks, so a value never lands under a key that isn't defined:
- * - every change to the definitions (an Admin's, an import's) takes `propertyLock` first, so they
- *   take turns and a name or key is checked against the list as it is;
- * - a relationship change share-locks the rows of the defined keys it sets (`lockDefinitions`), so a
- *   key change or a delete waits for it, and a change after them finds the key gone.
+ * - every change to the definitions of either list (an Admin's, an import's) takes `propertyLock`
+ *   first, so they take turns and a name or key is checked against the list as it is;
+ * - a relationship or element change share-locks the rows of the defined keys it sets
+ *   (`lockDefinitions`, `lockElementDefinitions`), so a key change or a delete waits for it, and a
+ *   change after them finds the key gone.
  */
 
 // Definition changes take turns across every API process (any fixed number would do).
 const propertyLock = 4_120_003;
 
-interface DefinitionRow {
+interface Row<K extends string> {
   key: string;
   name: string;
-  kind: DefinedPropertyKind;
+  kind: K;
   options: string[] | null;
   from_models: boolean;
   version: number;
 }
+type DefinitionRow = Row<DefinedPropertyKind>;
+export type ElementDefinitionRow = Row<ElementPropertyKind>;
 
 const columns = 'key, name, kind, options, from_models, version';
 
-export function definitionOfRow(row: DefinitionRow): RelationshipPropertyDefinition {
+function ofRow<K extends string>(row: Row<K>) {
   return {
     key: row.key,
     name: row.name,
@@ -47,6 +56,14 @@ export function definitionOfRow(row: DefinitionRow): RelationshipPropertyDefinit
   };
 }
 
+export function definitionOfRow(row: DefinitionRow): RelationshipPropertyDefinition {
+  return ofRow(row);
+}
+
+export function elementDefinitionOfRow(row: ElementDefinitionRow): ElementPropertyDefinition {
+  return ofRow(row);
+}
+
 /**
  * Whether the database has the definitions (migration 016). A store on an older schema (while it
  * is upgraded, and in the migration tests) works without them: 016's upgrade step defines the keys.
@@ -54,6 +71,17 @@ export function definitionOfRow(row: DefinitionRow): RelationshipPropertyDefinit
 export async function hasDefinitions(q: Queryable): Promise<boolean> {
   const [row] = await q.query<{ present: boolean }>(
     "select to_regclass('relationship_properties') is not null as present",
+  );
+  return row?.present === true;
+}
+
+/**
+ * Whether the database has the element definitions (migration 020). A store on an older schema
+ * works without them: 020's upgrade step defines the keys.
+ */
+export async function hasElementDefinitions(q: Queryable): Promise<boolean> {
+  const [row] = await q.query<{ present: boolean }>(
+    "select to_regclass('element_properties') is not null as present",
   );
   return row?.present === true;
 }
@@ -104,10 +132,41 @@ export async function lockDefinitions(q: Queryable, keys: readonly string[]): Pr
   ]);
 }
 
-/** Adds definitions (each new). */
-export async function insertDefinitions(
+/** Every element definition, by name. */
+export async function readElementDefinitions(q: Queryable): Promise<ElementPropertyDefinition[]> {
+  const rows = await q.query<ElementDefinitionRow>(`select ${columns} from element_properties`);
+  return sortDefinitions(rows.map(elementDefinitionOfRow));
+}
+
+/** One element definition; `lock` takes its row for a change. */
+export async function readElementDefinition(
   q: Queryable,
-  definitions: readonly Omit<RelationshipPropertyDefinition, 'version'>[],
+  key: string,
+  lock = false,
+): Promise<ElementPropertyDefinition | undefined> {
+  const [row] = await q.query<ElementDefinitionRow>(
+    `select ${columns} from element_properties where key = $1${lock ? ' for update' : ''}`,
+    [key],
+  );
+  return row === undefined ? undefined : elementDefinitionOfRow(row);
+}
+
+/** Share-locks the rows of these element keys (those defined), until the transaction ends. */
+export async function lockElementDefinitions(q: Queryable, keys: readonly string[]): Promise<void> {
+  const storable = keys.filter((key) => !unstorable.test(key));
+  if (storable.length === 0) return;
+  await q.query('select key from element_properties where key = any($1::text[]) for share', [
+    storable,
+  ]);
+}
+
+type NewDefinition = Omit<RelationshipPropertyDefinition | ElementPropertyDefinition, 'version'>;
+
+/** Adds definitions (each new) to one of the two tables (never a name from input). */
+async function insertInto(
+  q: Queryable,
+  table: 'relationship_properties' | 'element_properties',
+  definitions: readonly NewDefinition[],
 ): Promise<void> {
   if (definitions.length === 0) return;
   const rows = definitions.map((definition) => ({
@@ -118,12 +177,28 @@ export async function insertDefinitions(
     from_models: definition.fromModels,
   }));
   await q.query(
-    `insert into relationship_properties (key, name, kind, options, from_models)
+    `insert into ${table} (key, name, kind, options, from_models)
      select x.key, x.name, x.kind, x.options, x.from_models
      from jsonb_to_recordset($1::text::jsonb)
        as x(key text, name text, kind text, options jsonb, from_models boolean)`,
     [JSON.stringify(rows)],
   );
+}
+
+/** Adds relationship definitions (each new). */
+export async function insertDefinitions(
+  q: Queryable,
+  definitions: readonly Omit<RelationshipPropertyDefinition, 'version'>[],
+): Promise<void> {
+  await insertInto(q, 'relationship_properties', definitions);
+}
+
+/** Adds element definitions (each new). */
+export async function insertElementDefinitions(
+  q: Queryable,
+  definitions: readonly Omit<ElementPropertyDefinition, 'version'>[],
+): Promise<void> {
+  await insertInto(q, 'element_properties', definitions);
 }
 
 const insertAudit = `insert into audit (action, user_id, user_name, model_id, details)
@@ -179,6 +254,40 @@ export async function defineKeysOf(
   return added.map((definition, index) => ({
     key: definition.key,
     name: definition.name,
+    values: found[index]?.values ?? 0,
+  }));
+}
+
+/**
+ * Defines every custom key on these elements (JGF nodes) that isn't defined yet, as an element
+ * property from models named after its key (a Reference property when every value here is a
+ * Reference, text otherwise), and says which, with the number of values each has here. For a model
+ * being stored (an import), in its transaction. Each gets an audit row naming the actor.
+ */
+export async function defineElementKeysOf(
+  tx: Queryable,
+  nodes: readonly { metadata?: unknown }[],
+  actor: ModelAuthor,
+): Promise<AddedElementProperty[]> {
+  if (newElementKeys(nodes, () => false).length === 0) return [];
+  if (!(await hasElementDefinitions(tx))) return [];
+  await lockPropertyChanges(tx);
+  const existing = await readElementDefinitions(tx);
+  const known = new Set(existing.map((definition) => definition.key));
+  const found = newElementKeys(nodes, (key) => known.has(key));
+  const added = elementDefinitionsForKeys(found, existing);
+  await insertElementDefinitions(tx, added);
+  for (const definition of added) {
+    await auditProperty(tx, 'element-property-added', actor, {
+      key: definition.key,
+      fields: ['name', 'key', 'kind'],
+      fromModels: true,
+    });
+  }
+  return added.map((definition, index) => ({
+    key: definition.key,
+    name: definition.name,
+    kind: definition.kind,
     values: found[index]?.values ?? 0,
   }));
 }

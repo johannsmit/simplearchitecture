@@ -176,14 +176,6 @@ The suggestion keys above, and:
 | `Enter`         | In the box, adds the highlighted suggestion, or what is typed, as a value (it doesn't save). On a value's ×, removes that value; focus moves to the × that takes its place, the one before it, or the box |
 | `Shift` + `Tab` | From the box, moves back to the values' × buttons, which come before it                                                                                                                                   |
 
-## Add field (an element's form)
-
-| Key     | What it does                                                                         |
-| ------- | ------------------------------------------------------------------------------------ |
-| `Enter` | In Key, adds the field (it doesn't save); with a suggestion highlighted, takes it    |
-| `←` `→` | On Type, switches between Text and Reference                                         |
-| `Esc`   | Closes the box without adding a field (with the suggestions open, closes them first) |
-
 ## Reference fields
 
 | Key             | What it does                                                                                                      |
@@ -220,4 +212,4 @@ The theme menu, the menu of the small arrow next to **Tidy up**, and every dialo
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Enter` | In Name or Key, creates or saves the property. In an option, adds an option after it. In the delete dialog's name field, deletes the property once the name matches (case ignored) |
 | `Esc`   | Closes the dialog without saving                                                                                                                                                   |
-| `←` `→` | On Kind, switches between Text and Choice                                                                                                                                          |
+| `←` `→` | On Kind, moves between Text and Choice (and Reference, for an element property)                                                                                                    |

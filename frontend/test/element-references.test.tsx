@@ -1,6 +1,7 @@
 import {
   buildModelGraph,
   maxReferences,
+  type ElementPropertyDefinition,
   referenceMessages,
   type JgfDocument,
   type JgfNode,
@@ -22,12 +23,10 @@ import {
   serverErrors,
   withType,
 } from '../src/modelling/draft';
-import { metadataNameTypes, typesLabel } from '../src/modelling/fieldTypes';
 import { ReferenceField, referenceSearch } from '../src/modelling/ReferenceField';
 import { DetailsPanel } from '../src/viewing/explorer/DetailsPanel';
 import { ImportPanel } from '../src/viewing/models/ImportPanel';
 import {
-  addField,
   apiError,
   currentLocation,
   modeller,
@@ -37,7 +36,7 @@ import {
   type Handler,
 } from './helpers';
 
-// References from an element to other elements: a custom metadata field of the type Reference.
+// References from an element to other elements: an element property of the kind Reference.
 // Made-up model and names only.
 
 const ref = (...ids: string[]) => ({ 'simplearchitecture:reference': ids });
@@ -88,6 +87,21 @@ const model: JgfDocument = {
 };
 
 const graph = buildModelGraph(model);
+
+const defined = (
+  key: string,
+  kind: ElementPropertyDefinition['kind'] = 'text',
+): ElementPropertyDefinition => ({ key, name: key, kind, fromModels: true, version: 1 });
+/** The model's element properties, as the upgrade defines them. */
+const definitions = [
+  defined('Cost centre'),
+  defined('Depends on', 'reference'),
+  defined('Kind'),
+  defined('Mixed'),
+  defined('Rack'),
+  defined('Shares data with', 'reference'),
+];
+const definedGraph = buildModelGraph(model, [], definitions);
 const elementOf = (g: ModelGraph, id: string) => {
   const found = g.elements.get(id);
   if (!found) throw new Error(id);
@@ -159,16 +173,7 @@ describe('reference rows in the draft', () => {
   });
 });
 
-describe('names and their types', () => {
-  it('says how other elements use each name, leaving the element itself out', () => {
-    const types = metadataNameTypes(graph, 'portal');
-    expect(typesLabel(types.get('Depends on'))).toBe('Reference');
-    expect(typesLabel(types.get('Mixed'))).toBe('Text, Reference');
-    // Only the portal has these.
-    expect(types.has('Cost centre')).toBe(false);
-    expect(typesLabel(metadataNameTypes(graph, 'hub').get('Cost centre'))).toBe('Text');
-  });
-
+describe('the Reference field’s search', () => {
   it('searches with one leading @ dropped', () => {
     expect(referenceSearch('  @')).toBe('');
     expect(referenceSearch('@cla')).toBe('cla');
@@ -209,10 +214,14 @@ describe('the details panel', () => {
     return went;
   };
 
-  it('shows references as links in Custom metadata, open, and goes to one on a click', () => {
-    const went = panel(graph, 'portal');
-    const fold = document.querySelector('details.meta') as HTMLDetailsElement;
-    expect(fold.open).toBe(true);
+  it('shows a Reference property’s elements as links under Properties, and goes to one on a click', () => {
+    const went = panel(definedGraph, 'portal');
+    // Every value is a property's: no Custom metadata.
+    expect(document.querySelector('details.meta')).toBeNull();
+    const properties = screen.getByRole('heading', { name: 'Properties' }).closest('section');
+    expect(
+      within(properties as HTMLElement).getByRole('list', { name: 'Depends on: 2 elements' }),
+    ).toBeTruthy();
     const links = within(screen.getByRole('list', { name: 'Depends on: 2 elements' }))
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label'));
@@ -227,9 +236,12 @@ describe('the details panel', () => {
     expect(screen.getByText('CC-410')).toBeTruthy();
   });
 
-  it('keeps Custom metadata closed without references, and leaves out an empty Referenced by', () => {
-    panel(graph, 'archive');
-    expect((document.querySelector('details.meta') as HTMLDetailsElement).open).toBe(false);
+  it('keeps Custom metadata closed, for Was a property values only, and leaves out an empty Referenced by', () => {
+    panel(definedGraph, 'process');
+    const fold = document.querySelector('details.meta') as HTMLDetailsElement;
+    expect(fold.open).toBe(false);
+    // Functions isn't a Business's property: kept, under its label, tagged.
+    expect(within(fold).getByText('Functions').textContent).toContain('Was a property');
     expect(screen.queryByRole('heading', { name: /^Referenced by/ })).toBeNull();
   });
 
@@ -524,6 +536,9 @@ function api() {
     if (request.method === 'GET' && /\/views(\?|$)/.test(request.url)) {
       return Response.json({ views: [] });
     }
+    if (request.method === 'GET' && request.url === '/api/properties') {
+      return Response.json({ properties: [], elementProperties: definitions });
+    }
     if (!request.url.startsWith(elementsUrl)) return undefined;
     const [path = ''] = request.url.slice(elementsUrl.length).split('?');
     const id = decodeURIComponent(path.slice(1));
@@ -584,123 +599,6 @@ async function openForm(id: string) {
 const patches = (bodies: { method: string; body: unknown }[]) =>
   bodies.filter((b) => b.method === 'PATCH').map((b) => b.body);
 
-describe('Add field', () => {
-  const box = (form: HTMLElement) => within(form).getByRole('group', { name: 'Add field' });
-  const keyBox = (form: HTMLElement) => within(box(form)).getByLabelText<HTMLInputElement>('Key');
-  const radio = (form: HTMLElement, name: string) =>
-    within(box(form)).getByRole<HTMLInputElement>('radio', { name });
-
-  it('opens with Key focused and Text checked, and offers names with their types', async () => {
-    const { form } = await openForm('hub');
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    expect(within(box(form)).getByRole('heading', { name: 'Add field' })).toBeTruthy();
-    await waitFor(() => {
-      expect(document.activeElement).toBe(keyBox(form));
-    });
-    expect(keyBox(form).value).toBe('');
-    expect(radio(form, 'Text').checked).toBe(true);
-    expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
-    fireEvent.click(keyBox(form));
-    const list = screen.getByRole('listbox', { name: 'Suggestions for Key' });
-    const offered = within(list)
-      .getAllByRole('option')
-      .map((option) => option.textContent);
-    expect(offered).toEqual(
-      expect.arrayContaining(['Depends on Reference', 'Mixed Text, Reference', 'Cost centre Text']),
-    );
-  });
-
-  it('sets Type from a name used as one type, until the person picks one', async () => {
-    const { form } = await openForm('hub');
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(keyBox(form), { target: { value: 'Depends' } });
-    fireEvent.click(screen.getByRole('option', { name: 'Depends on Reference' }));
-    expect(keyBox(form).value).toBe('Depends on');
-    expect(radio(form, 'Reference').checked).toBe(true);
-    // Used as both: Type stays.
-    fireEvent.change(keyBox(form), { target: { value: 'Mixed' } });
-    expect(radio(form, 'Reference').checked).toBe(true);
-    // Picked by the person: a name no longer changes it.
-    fireEvent.click(radio(form, 'Text'));
-    fireEvent.change(keyBox(form), { target: { value: 'Depends on' } });
-    expect(radio(form, 'Text').checked).toBe(true);
-    expect(
-      within(box(form)).getByText('Other elements use “Depends on” as Reference.'),
-    ).toBeTruthy();
-  });
-
-  it('refuses a blank or used key in the box, with focus kept there', async () => {
-    const { form, bodies } = await openForm('portal');
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.click(within(box(form)).getByRole('button', { name: 'Add' }));
-    expect(within(box(form)).getByText('Enter a key.')).toBeTruthy();
-    expect(keyBox(form).getAttribute('aria-invalid')).toBe('true');
-    fireEvent.change(keyBox(form), { target: { value: ' Cost centre ' } });
-    fireEvent.keyDown(keyBox(form), { key: 'Enter' });
-    expect(
-      within(box(form)).getByText('This element already has a field “Cost centre”.'),
-    ).toBeTruthy();
-    expect(document.activeElement).toBe(keyBox(form));
-    expect(bodies).toEqual([]);
-  });
-
-  it('adds a Reference row on Enter, with focus in its box, and never saves', async () => {
-    const { form, bodies } = await openForm('hub');
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.change(keyBox(form), { target: { value: 'Owned by' } });
-    fireEvent.click(radio(form, 'Reference'));
-    fireEvent.keyDown(keyBox(form), { key: 'Enter' });
-    expect(within(form).queryByRole('group', { name: 'Add field' })).toBeNull();
-    const field = within(form).getByRole('group', { name: 'Owned by, Reference' });
-    const refBox = within(field).getByRole('combobox', { name: 'Add element to Owned by' });
-    await waitFor(() => {
-      expect(document.activeElement).toBe(refBox);
-    });
-    expect(field.closest('.meta-row')?.querySelector('.tag')?.textContent).toBe('Reference');
-    expect(within(form).getByRole('button', { name: 'Save' })).toBeTruthy();
-    expect(within(form).getByRole('button', { name: 'Add field' })).toBeTruthy();
-    expect(bodies).toEqual([]);
-  });
-
-  it('closes on Esc or ✕ without adding, back on Add field, with no Discard dialog', async () => {
-    const { form } = await openForm('hub');
-    fireEvent.change(within(form).getByRole('textbox', { name: /^Name/ }), {
-      target: { value: 'Payment hub 2' },
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.keyDown(radio(form, 'Text'), { key: 'Escape' });
-    expect(within(form).queryByRole('group', { name: 'Add field' })).toBeNull();
-    await waitFor(() => {
-      expect(document.activeElement).toBe(within(form).getByRole('button', { name: 'Add field' }));
-    });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(within(form).getByRole('button', { name: 'Add field' }));
-    fireEvent.click(within(box(form)).getByRole('button', { name: 'Close Add field' }));
-    expect(within(form).queryByRole('group', { name: 'Add field' })).toBeNull();
-    expect(form.querySelectorAll('.meta-row')).toHaveLength(0);
-  });
-
-  it('offers a row’s own key box only names of its type', async () => {
-    const { form } = await openForm('hub');
-    addField(form, 'Owned by', 'Reference');
-    addField(form, 'Note');
-    const keys = within(form).getAllByLabelText('Key');
-    fireEvent.change(keys[0] as HTMLElement, { target: { value: '' } });
-    const referenceNames = within(screen.getByRole('listbox', { name: 'Suggestions for Key' }))
-      .getAllByRole('option')
-      .map((option) => option.textContent);
-    expect(referenceNames).toEqual(expect.arrayContaining(['Depends on', 'Mixed']));
-    expect(referenceNames).not.toContain('Cost centre');
-    fireEvent.blur(keys[0] as HTMLElement);
-    fireEvent.change(keys[1] as HTMLElement, { target: { value: '' } });
-    const textNames = within(screen.getByRole('listbox', { name: 'Suggestions for Key' }))
-      .getAllByRole('option')
-      .map((option) => option.textContent);
-    expect(textNames).toEqual(expect.arrayContaining(['Cost centre', 'Mixed']));
-    expect(textNames).not.toContain('Depends on');
-  });
-});
-
 describe('a Reference field on the element form', () => {
   const field = (form: HTMLElement, name: string) =>
     within(within(form).getByRole('group', { name: `${name}, Reference` })).getByRole('combobox', {
@@ -734,16 +632,17 @@ describe('a Reference field on the element form', () => {
     });
   });
 
-  it('refuses an empty Reference field at the field, sending nothing', async () => {
-    const { form, bodies } = await openForm('hub');
-    addField(form, 'Owned by', 'Reference');
+  it('saves a Reference property left with no element as not set, refusing nothing', async () => {
+    const { form, bodies } = await openForm('portal');
+    const shares = within(form).getByRole('group', { name: 'Shares data with, Reference' });
+    fireEvent.click(
+      within(shares).getByRole('button', { name: 'Remove Payment hub, Application' }),
+    );
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(await within(form).findByText(referenceMessages.empty)).toBeTruthy();
-    const box = field(form, 'Owned by');
-    expect(box.getAttribute('aria-invalid')).toBe('true');
-    expect(document.activeElement).toBe(box);
-    expect(box.closest('.ref-field')?.classList.contains('is-invalid')).toBe(true);
-    expect(patches(bodies)).toEqual([]);
+    await waitFor(() => {
+      expect(patches(bodies)).toHaveLength(1);
+    });
+    expect(patches(bodies)[0]).toEqual({ version: 1, metadata: { 'Shares data with': null } });
   });
 
   it('shows the server’s refusal of an element no longer in the model at the field', async () => {
@@ -797,7 +696,7 @@ describe('references in the explorer', () => {
     );
     const dialog = await screen.findByRole('dialog', { name: 'Delete “Payment hub”?' });
     expect(dialog.textContent).toContain(
-      '3 elements refer to it in a Reference field. It is taken out of those fields.',
+      '3 elements refer to it in a Reference property. It is taken out of those properties.',
     );
     expect(dialog.getAttribute('aria-describedby')).toContain('delete-refs');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete element' }));
@@ -812,7 +711,7 @@ describe('references in the explorer', () => {
     const portal = await screen.findByRole('form', { name: 'Edit Customer portal' });
     // Out of Depends on; Shares data with, left with none, is gone.
     expect(within(portal).queryByRole('button', { name: /^Remove Payment hub/ })).toBeNull();
-    expect(within(portal).queryByRole('group', { name: 'Shares data with, Reference' })).toBeNull();
+    expect(within(portal).queryByRole('list', { name: /^Shares data with: / })).toBeNull();
     fireEvent.change(within(portal).getByRole('textbox', { name: /^Name/ }), {
       target: { value: 'Customer portal 2' },
     });

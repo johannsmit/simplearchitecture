@@ -9,10 +9,14 @@ import {
 import type { Db, Queryable } from '../db/db.js';
 import { convertOlderTypes } from '../jgf/older-types.js';
 import {
+  defineElementKeysOf,
   defineKeysOf,
   hasDefinitions,
+  hasElementDefinitions,
   lockDefinitions,
+  lockElementDefinitions,
   readDefinitions,
+  readElementDefinitions,
 } from '../properties/property-store.js';
 import { validateJgf } from '../jgf/validate.js';
 import { maxModelBytes, maxStoredModels, modelReadConcurrency } from '../limits.js';
@@ -417,6 +421,8 @@ export class PostgresModelStore implements ModelStore {
   readonly #cache = new Map<string, CacheEntry>();
   /** Seen the definitions table (migration 016): it never goes away again. */
   #definitions = false;
+  /** The same for the element definitions (migration 020). */
+  #elementDefinitions = false;
   readonly elements: ElementStore = {
     read: (modelId) => this.#readEditable(modelId),
     change: (modelId, plan, options) => this.#change(modelId, plan, options),
@@ -473,11 +479,15 @@ export class PostgresModelStore implements ModelStore {
       await this.#checkRoom(tx);
       const rows = toRows(stored);
       await this.#insert(tx, summary, rows);
-      // Custom keys on its relationships become defined properties, with the model.
-      return defineKeysOf(tx, rows.relationships, createdBy);
+      // Custom keys on its relationships and elements become defined properties, with the model.
+      return {
+        relationships: await defineKeysOf(tx, rows.relationships, createdBy),
+        elements: await defineElementKeysOf(tx, Object.values(stored.graph.nodes ?? {}), createdBy),
+      };
     });
     this.#cache.set(summary.id, { version: 1, summary });
-    if (added.length > 0) options.onNewProperties?.(added);
+    if (added.relationships.length > 0) options.onNewProperties?.(added.relationships);
+    if (added.elements.length > 0) options.onNewElementProperties?.(added.elements);
     return summary;
   }
 
@@ -519,6 +529,7 @@ export class PostgresModelStore implements ModelStore {
         modelId,
         lockModelForChange,
         options.propertyKeys ?? [],
+        options.elementPropertyKeys ?? [],
       );
       if (model === undefined) return undefined;
       const { write, document, audit } = plan(model);
@@ -680,13 +691,15 @@ export class PostgresModelStore implements ModelStore {
 
   /**
    * The model under `lock`, fully validated, and the property definitions (those of
-   * `propertyKeys` share-locked first). Throws ModelUnreadableError when it is damaged.
+   * `propertyKeys` and `elementPropertyKeys` share-locked first). Throws ModelUnreadableError when
+   * it is damaged.
    */
   async #loadEditable(
     tx: Queryable,
     id: string,
     lock: string,
     propertyKeys: readonly string[] = [],
+    elementPropertyKeys: readonly string[] = [],
   ): Promise<EditableModel | undefined> {
     const [locked] = await tx.query(lock, [id]);
     if (!locked) return undefined;
@@ -695,6 +708,12 @@ export class PostgresModelStore implements ModelStore {
     if (this.#definitions) {
       await lockDefinitions(tx, propertyKeys);
       relationshipProperties = await readDefinitions(tx);
+    }
+    this.#elementDefinitions ||= await hasElementDefinitions(tx);
+    let elementProperties: Awaited<ReturnType<typeof readElementDefinitions>> = [];
+    if (this.#elementDefinitions) {
+      await lockElementDefinitions(tx, elementPropertyKeys);
+      elementProperties = await readElementDefinitions(tx);
     }
     const [row] = await tx.query<FullModelRow>(loadModel, [id]);
     if (!row) return undefined;
@@ -724,6 +743,7 @@ export class PostgresModelStore implements ModelStore {
       document,
       validation,
       relationshipProperties,
+      elementProperties,
       versionOf: (elementId) => versions.get(elementId),
       relationshipVersionOf: (relationshipId) => relationshipVersions.get(relationshipId),
     };

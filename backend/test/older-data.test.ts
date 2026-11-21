@@ -436,6 +436,14 @@ beforeAll(async () => {
     expect(elements.map((row) => row.metadata)).toEqual(
       Object.keys(nodes).map(() => elementMetadata),
     );
+    // Migration 020 made them element properties, as stored.
+    expect(
+      await db.query('select key, kind, from_models from element_properties order by key'),
+    ).toEqual(
+      Object.keys(elementMetadata)
+        .sort()
+        .map((key) => ({ key, kind: 'text', from_models: true })),
+    );
     upgraded.set(era, {
       rows: new Map(
         stored.map((row) => [

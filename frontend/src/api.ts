@@ -26,9 +26,14 @@ import type {
   DatabaseStatus,
   DatabaseTestResult,
   DeletedRelationshipPropertyResult,
+  ElementPropertyDefinition,
+  ElementPropertyUsage,
+  NewElementPropertyRequest,
   NewRelationshipPropertyRequest,
+  PropertyList,
   RelationshipPropertyDefinition,
   RelationshipPropertyUsage,
+  UpdateElementPropertyRequest,
   UpdateRelationshipPropertyRequest,
   ImportOefModelResult,
   SaveModelResult,
@@ -469,12 +474,16 @@ export async function updateRelationship(
   );
 }
 
-function isDefinition(value: unknown): value is RelationshipPropertyDefinition {
+/** A definition of either list (element properties may also be References). */
+type AnyPropertyDefinition = RelationshipPropertyDefinition | ElementPropertyDefinition;
+
+function isDefinition(value: unknown, list: PropertyList): value is AnyPropertyDefinition {
   return (
     isObject(value) &&
     typeof value.key === 'string' &&
     typeof value.name === 'string' &&
     (value.kind === 'text' ||
+      (list === 'element' && value.kind === 'reference') ||
       (value.kind === 'choice' &&
         Array.isArray(value.options) &&
         value.options.every((option) => typeof option === 'string'))) &&
@@ -483,59 +492,102 @@ function isDefinition(value: unknown): value is RelationshipPropertyDefinition {
   );
 }
 
-async function propertyResult(response: Response): Promise<RelationshipPropertyDefinition> {
+async function propertyResult(
+  response: Response,
+  list: PropertyList,
+): Promise<AnyPropertyDefinition> {
   const body = await json(response);
   const property = isObject(body) ? body.property : undefined;
-  if (!isDefinition(property)) {
+  if (!isDefinition(property, list)) {
     throw new ApiRequestError(response.status, 'The server sent an unexpected property.');
   }
   return property;
 }
 
-const propertyUrl = (key: string): string => `/api/properties?key=${encodeURIComponent(key)}`;
+/** A change's address: the list (`for=element` for element properties) and the key. */
+const propertyUrl = (list: PropertyList, key?: string): string => {
+  const query = [
+    ...(list === 'element' ? ['for=element'] : []),
+    ...(key === undefined ? [] : [`key=${encodeURIComponent(key)}`]),
+  ];
+  return `/api/properties${query.length === 0 ? '' : `?${query.join('&')}`}`;
+};
 
-/** GET /api/properties (everyone with a role): the properties defined for relationships. */
-export async function listProperties(
-  signal?: AbortSignal,
-): Promise<RelationshipPropertyDefinition[]> {
+/** Both lists of defined properties, each by name. */
+export interface DefinedPropertyLists {
+  relationship: RelationshipPropertyDefinition[];
+  element: ElementPropertyDefinition[];
+}
+
+/** GET /api/properties (everyone with a role): the properties defined for relationships and elements. */
+export async function listProperties(signal?: AbortSignal): Promise<DefinedPropertyLists> {
   const body = await json(await request('/api/properties', signal ? { signal } : {}));
   const properties = isObject(body) ? body.properties : undefined;
-  if (!Array.isArray(properties) || !properties.every(isDefinition)) {
+  // An older server sends no element list: none are defined there.
+  const elements = isObject(body) ? (body.elementProperties ?? []) : undefined;
+  if (
+    !Array.isArray(properties) ||
+    !properties.every((each) => isDefinition(each, 'relationship')) ||
+    !Array.isArray(elements) ||
+    !elements.every((each) => isDefinition(each, 'element'))
+  ) {
     throw new ApiRequestError(200, 'The server sent an unexpected list of properties.');
   }
-  return properties;
+  return {
+    relationship: properties as RelationshipPropertyDefinition[],
+    element: elements,
+  };
+}
+
+/** How the keys of both lists are used in the models. */
+export interface DefinedPropertyUsage {
+  relationship: RelationshipPropertyUsage[];
+  element: ElementPropertyUsage[];
 }
 
 /** GET /api/properties/usage (Admin): how each property's key is used in the models. */
-export async function propertyUsage(signal?: AbortSignal): Promise<RelationshipPropertyUsage[]> {
+export async function propertyUsage(signal?: AbortSignal): Promise<DefinedPropertyUsage> {
   const body = await json(await request('/api/properties/usage', signal ? { signal } : {}));
   const usage = isObject(body) ? body.usage : undefined;
-  if (!Array.isArray(usage)) {
+  const elements = isObject(body) ? (body.elementUsage ?? []) : undefined;
+  if (!Array.isArray(usage) || !Array.isArray(elements)) {
     throw new ApiRequestError(200, 'The server sent an unexpected answer.');
   }
-  return usage as RelationshipPropertyUsage[];
+  return {
+    relationship: usage as RelationshipPropertyUsage[],
+    element: elements as ElementPropertyUsage[],
+  };
 }
 
-/** POST /api/properties (Admin). A 422 carries `fields`. */
+/** POST /api/properties (Admin), to the list named. A 422 carries `fields`. */
 export async function createProperty(
-  property: NewRelationshipPropertyRequest,
-): Promise<RelationshipPropertyDefinition> {
+  property: NewRelationshipPropertyRequest | NewElementPropertyRequest,
+  list: PropertyList = 'relationship',
+): Promise<AnyPropertyDefinition> {
   return propertyResult(
-    await request('/api/properties', { method: 'POST', ...jsonBody(property) }),
+    await request(propertyUrl(list), { method: 'POST', ...jsonBody(property) }),
+    list,
   );
 }
 
 /** PATCH /api/properties?key=… (Admin). 409: changed meanwhile; 404: deleted. */
 export async function updateProperty(
   key: string,
-  change: UpdateRelationshipPropertyRequest,
-): Promise<RelationshipPropertyDefinition> {
-  return propertyResult(await request(propertyUrl(key), { method: 'PATCH', ...jsonBody(change) }));
+  change: UpdateRelationshipPropertyRequest | UpdateElementPropertyRequest,
+  list: PropertyList = 'relationship',
+): Promise<AnyPropertyDefinition> {
+  return propertyResult(
+    await request(propertyUrl(list, key), { method: 'PATCH', ...jsonBody(change) }),
+    list,
+  );
 }
 
 /** DELETE /api/properties?key=… (Admin): the property and its values in every model. */
-export async function deleteProperty(key: string): Promise<DeletedRelationshipPropertyResult> {
-  const response = await request(propertyUrl(key), { method: 'DELETE' });
+export async function deleteProperty(
+  key: string,
+  list: PropertyList = 'relationship',
+): Promise<DeletedRelationshipPropertyResult> {
+  const response = await request(propertyUrl(list, key), { method: 'DELETE' });
   const body = await json(response);
   const result = body as Partial<DeletedRelationshipPropertyResult> | null;
   if (typeof result?.values !== 'number' || typeof result.models !== 'number') {

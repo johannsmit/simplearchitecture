@@ -3,6 +3,7 @@ import {
   catalogTable,
   catalogTabs,
   defaultCatalogSort,
+  elementValueFit,
   filterFields,
   isIsoCountryCode,
   isStandardPropertyKey,
@@ -32,7 +33,13 @@ import {
 import { ApiRequestError, getElement } from '../../../api';
 import { Icon } from '../../../icons';
 import { StateBadge, TypeMark } from '../../../metamodel-ui';
-import { cellChange, cellError, cellServerErrors, cellText } from '../../../modelling/draft';
+import {
+  cellChange,
+  cellError,
+  cellServerErrors,
+  cellText,
+  type CellKey,
+} from '../../../modelling/draft';
 import type { EditorHandle, EditorState } from '../../../modelling/ElementEditor';
 import { saveCell } from '../../../modelling/save';
 import { counted, formatNumber } from '../../../words';
@@ -74,6 +81,13 @@ const columnWidths: Readonly<Record<string, number>> = {
   functions: 220,
 };
 const rowHeight = 36;
+/** A column's least width: an element property's by its kind. */
+const widthOf = (column: CatalogColumn): number =>
+  column.property === undefined
+    ? (columnWidths[column.key] ?? 0)
+    : column.property.kind === 'reference'
+      ? 220
+      : 180;
 
 /** Modelling with editing on: what saving a cell needs from the explorer. */
 export interface CatalogEditing {
@@ -121,14 +135,56 @@ interface Cursor {
 const tabLabel = (tab: CatalogTab) => (tab === 'all' ? 'All' : tab);
 const cellId = (row: number | 'h', col: number) => `cc-${row}-${col}`;
 
-function choiceOptions(key: string): readonly string[] | undefined {
+/** A column's choices: a standard property's, or an element property's. */
+function choiceOptions(column: CatalogColumn): readonly string[] | undefined {
+  if (column.property !== undefined) {
+    return column.property.kind === 'choice' ? (column.property.options ?? []) : undefined;
+  }
+  const { key } = column;
   if (!isStandardPropertyKey(key)) return undefined;
   const rule = standardProperties[key].value;
   return rule.kind === 'choice' ? rule.options : undefined;
 }
 
+/** "Not text", "Not a choice", "Not a reference". */
+const notKind = { text: 'Not text', choice: 'Not a choice', reference: 'Not a reference' };
+
+/**
+ * Why a cell can't be edited in place, or undefined: Type (the panel changes it), a Reference
+ * property's elements, and a value of another kind than its property's.
+ */
+function readOnlyReason(
+  element: ModelElement,
+  column: CatalogColumn,
+  elements: ReadonlyMap<string, ModelElement>,
+): string | undefined {
+  if (column.key === 'type') return 'Change the type in the details panel';
+  const { property } = column;
+  if (property === undefined) return undefined;
+  const { value, text } = catalogCell(element, column.key, elements);
+  const fit =
+    value === undefined || value === null || value === ''
+      ? 'fits'
+      : elementValueFit(property, value);
+  if (fit === 'not-this-kind') return `${notKind[property.kind]}. Change it in the details panel.`;
+  if (property.kind === 'reference') {
+    return text === ''
+      ? 'Change it in the details panel.'
+      : `${text}. Change it in the details panel.`;
+  }
+  return undefined;
+}
+
 /** A cell's value, shown as in the details panel. */
-function CellValue({ element, column }: { element: ModelElement; column: CatalogColumn }) {
+function CellValue({
+  element,
+  column,
+  elements,
+}: {
+  element: ModelElement;
+  column: CatalogColumn;
+  elements: ReadonlyMap<string, ModelElement>;
+}) {
   const { key } = column;
   if (key === 'name') return element.name ? element.name : <i>(unnamed)</i>;
   if (key === 'type') {
@@ -139,7 +195,7 @@ function CellValue({ element, column }: { element: ModelElement; column: Catalog
       </>
     );
   }
-  const { text } = catalogCell(element, key);
+  const { value, text } = catalogCell(element, key, elements);
   if (text === '') {
     return (
       <>
@@ -150,7 +206,17 @@ function CellValue({ element, column }: { element: ModelElement; column: Catalog
       </>
     );
   }
-  const options = choiceOptions(key);
+  const { property } = column;
+  if (property !== undefined && elementValueFit(property, value) === 'not-this-kind') {
+    const words = notKind[property.kind];
+    return (
+      <span className="not-iso">
+        {text.replace(/\n+/g, ' ')} <Icon name="alert" size="sm" />
+        <span className="vh"> ({words.toLowerCase()})</span>
+      </span>
+    );
+  }
+  const options = choiceOptions(column);
   if (options !== undefined) {
     if (!options.includes(text)) {
       return (
@@ -169,10 +235,19 @@ function CellValue({ element, column }: { element: ModelElement; column: Catalog
   return text;
 }
 
-function titleOf(element: ModelElement, column: CatalogColumn, editable: boolean): string {
+function titleOf(
+  element: ModelElement,
+  column: CatalogColumn,
+  editable: boolean,
+  elements: ReadonlyMap<string, ModelElement>,
+): string {
   const { key } = column;
   if (key === 'type') return editable ? 'Change the type in the details panel' : element.type;
-  const { value, text } = catalogCell(element, key);
+  if (editable && column.property !== undefined) {
+    const reason = readOnlyReason(element, column, elements);
+    if (reason !== undefined) return reason;
+  }
+  const { value, text } = catalogCell(element, key, elements);
   if (text === '') return '';
   if (key === 'description' && text.length > descriptionTitleLength) {
     return `${text.slice(0, descriptionTitleLength)}…`;
@@ -195,6 +270,8 @@ interface RowProps {
   /** The column being edited in this row, or -1, and its editor. */
   editCol: number;
   editor: ReactNode;
+  /** The model's elements, which name a Reference's. */
+  elements: ReadonlyMap<string, ModelElement>;
 }
 
 const CatalogRow = memo(function CatalogRow({
@@ -206,12 +283,14 @@ const CatalogRow = memo(function CatalogRow({
   editable,
   editCol,
   editor,
+  elements,
 }: RowProps) {
   return (
     <tr aria-selected={selected} className={selected ? 'is-selected' : undefined} data-row={index}>
       {columns.map((column, col) => {
         const Cell = col === 0 ? 'th' : 'td';
         const editing = col === editCol;
+        const readOnly = editable && readOnlyReason(element, column, elements) !== undefined;
         return (
           <Cell
             key={column.key}
@@ -220,15 +299,15 @@ const CatalogRow = memo(function CatalogRow({
             {...(col === 0 ? { scope: 'row' } : {})}
             data-col={col}
             tabIndex={col === cursorCol && !editing ? 0 : -1}
-            aria-readonly={editable && column.key === 'type' ? true : undefined}
-            title={editing ? undefined : titleOf(element, column, editable) || undefined}
-            className={`cat-${column.key}${editable && column.key !== 'type' ? ' is-editable' : ''}${editing ? ' is-editing' : ''}`}
+            aria-readonly={readOnly ? true : undefined}
+            title={editing ? undefined : titleOf(element, column, editable, elements) || undefined}
+            className={`cat-${column.property === undefined ? column.key : column.property.kind === 'reference' ? 'reference' : 'defined'}${editable && !readOnly ? ' is-editable' : ''}${editing ? ' is-editing' : ''}`}
           >
             {editing ? (
               editor
             ) : (
               <span className="cat-text">
-                <CellValue element={element} column={column} />
+                <CellValue element={element} column={column} elements={elements} />
               </span>
             )}
           </Cell>
@@ -262,7 +341,7 @@ export function Catalog(props: CatalogProps) {
   );
   const sort = sorts.get(sortKey) ?? defaultCatalogSort;
   const live = useMemo(
-    () => catalogTable(matches, tab, sort, graph.elements),
+    () => catalogTable(matches, tab, sort, graph.elements, graph.elementProperties),
     [matches, tab, sort, graph],
   );
   const { columns, counts } = live;
@@ -476,7 +555,7 @@ export function Catalog(props: CatalogProps) {
       close(move, current);
       return true;
     }
-    const problem = cellError(element, current.key, text);
+    const problem = cellError(element, current.key, text, graph.elementProperties);
     if (problem !== undefined) {
       setEdit({ ...current, text, messages: [problem] });
       return false;
@@ -577,9 +656,11 @@ export function Catalog(props: CatalogProps) {
   ) => {
     const column = columns[col];
     const element = graph.elements.get(id);
-    if (!editing || !column || column.key === 'type' || !element || edit !== null) return;
-    const key = column.key;
-    const choice = choiceOptions(key) !== undefined;
+    if (!editing || !column || !element || edit !== null) return;
+    // Type, a Reference and a value of another kind are changed in the details panel.
+    if (readOnlyReason(element, column, graph.elements) !== undefined) return;
+    const key = column.key as CellKey;
+    const choice = choiceOptions(column) !== undefined;
     let text = start.text ?? cellText(element, key);
     let letter: string | undefined;
     if (start.letter !== undefined) {
@@ -970,7 +1051,7 @@ export function Catalog(props: CatalogProps) {
               aria-describedby="catalog-hint"
               aria-readonly={editing ? undefined : true}
               style={{
-                minWidth: columns.reduce((sum, column) => sum + (columnWidths[column.key] ?? 0), 0),
+                minWidth: columns.reduce((sum, column) => sum + widthOf(column), 0),
               }}
               onKeyDown={onGridKey}
               onClick={onGridClick}
@@ -978,7 +1059,11 @@ export function Catalog(props: CatalogProps) {
             >
               <colgroup>
                 {columns.map((column) => (
-                  <col key={column.key} className={`col-${column.key}`} />
+                  <col
+                    key={column.key}
+                    className={`col-${column.property === undefined ? column.key : 'property'}`}
+                    style={column.property === undefined ? undefined : { width: widthOf(column) }}
+                  />
                 ))}
               </colgroup>
               <thead>
@@ -1029,6 +1114,7 @@ export function Catalog(props: CatalogProps) {
                     editable={editing !== undefined}
                     editCol={edit !== null && edit.id === element.id ? edit.col : -1}
                     editor={editorFor(element)}
+                    elements={graph.elements}
                   />
                 ))}
               </tbody>

@@ -8,7 +8,7 @@ SimpleArchitecture is a web app for modelling your IT landscape. You record your
 
 ## What you can do
 
-- **Model** your landscape as elements and relationships, against a [small metamodel](metamodel/default-metamodel.md): Stakeholder, Business, Application, Infrastructure and Other, linked by Relation and Contains. An element can also refer to others in a field of its own.
+- **Model** your landscape as elements and relationships, against a [small metamodel](metamodel/default-metamodel.md): Stakeholder, Business, Application, Infrastructure and Other, linked by Relation and Contains. Your Admin adds the extra properties elements and relationships need, such as a cost centre, or references from an element to others.
 - **Explore** a canvas centred on one element, with what it relates to, laid out for you. Elements that contain others are drawn with them inside, and cards can be grouped by a property, such as Owning team.
 - **Save views**, arrange them by hand and group them in folders.
 - **Show what matters** on the lines with Show Viewpoints: the identity used, the data that flows each way, the architecture state, or properties your Admin defines.
@@ -63,7 +63,7 @@ All pages are listed in [the guide](guide/README.md).
 - **Hosting:** [Run with Docker Compose](guide/docker-compose.md), [Hosting the image](guide/hosting.md), [Sign-in and roles](guide/sign-in.md), [Azure examples](guide/azure.md), [Database](guide/database.md)
 - **For IT and security teams:** [Security overview](guide/security-overview.md), including how to verify a release
 - **Building from source:** [Development](guide/development.md)
-- **Release notes:** [Release notes](guide/releases/), one page per version
+- **Release notes:** [0.63.0](guide/releases/v0.63.0.md), [0.60.0 (beta)](guide/releases/v0.60.0.md)
 
 ## Licence
 

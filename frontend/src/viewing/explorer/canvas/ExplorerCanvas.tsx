@@ -967,7 +967,9 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     const regrouped = previous !== null && previous.groupBy !== groupBy;
     /** What the canvas's status says once a regroup is drawn. */
     const regroupNote =
-      groupBy === undefined ? 'Not grouped.' : groupedText(groupBy, groupIds.length);
+      groupBy === undefined
+        ? 'Not grouped.'
+        : groupedText(groupBy, groupIds.length, graph.elementProperties);
     // Another canvas: a report asked for on the previous one (Tidy up's save) is never made for it.
     if (!tidied && !regrouped) arrangeWanted.current = false;
     const storedCards = storedRef.current.cards ?? [];

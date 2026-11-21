@@ -70,7 +70,7 @@ export function groupCards(
     if (list) list.push(id);
     else members.set(group, [id]);
   }
-  const compare = compareGroupValues(key);
+  const compare = compareGroupValues(key, graph.elementProperties);
   const order = [...members.keys()].sort((a, b) => compare(groupValueOf(a), groupValueOf(b)));
   return { key, groupOf, order, members };
 }
@@ -91,6 +91,10 @@ export function groupNowOf(
 }
 
 /** "Grouped by Owning team, 4 groups." for the canvas's status. */
-export function groupedText(key: string, groups: number): string {
-  return `Grouped by ${groupByLabel(key)}, ${String(groups)} ${groups === 1 ? 'group' : 'groups'}.`;
+export function groupedText(
+  key: string,
+  groups: number,
+  definitions: ModelGraph['elementProperties'] = [],
+): string {
+  return `Grouped by ${groupByLabel(key, definitions)}, ${String(groups)} ${groups === 1 ? 'group' : 'groups'}.`;
 }

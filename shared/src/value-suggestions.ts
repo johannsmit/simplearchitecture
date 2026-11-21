@@ -11,8 +11,6 @@ import {
   isOlderDataKey,
   isRelationDataProperty,
   isStandardPropertyKey,
-  isStandardPropertyOf,
-  nodeTypes,
   relationDataProperties,
   retiredDataKey,
   standardProperties,
@@ -137,10 +135,6 @@ function namesOf(
   return [...counts].sort((a, b) => b[1] - a[1] || compareText(a[0], b[0])).map(([key]) => key);
 }
 
-/** A key an element's form can take as custom metadata: not a standard property of any type. */
-const isElementName = (key: string): boolean =>
-  isFilterableKey(key) && !nodeTypes.some((type) => isStandardPropertyOf(type, key));
-
 /**
  * A key a relationship's form can take as custom metadata: not one of its own fields, nor Data,
  * Request Data or Response Data.
@@ -151,18 +145,7 @@ const isRelationshipName = (key: string): boolean =>
   !isOlderDataKey(key) &&
   !(isStandardPropertyKey(key) && hasStandardEdgeProperty(key));
 
-const elementNameCache = new WeakMap<ModelGraph, readonly string[]>();
 const relationshipNameCache = new WeakMap<ModelGraph, readonly string[]>();
-
-/** The custom metadata names elements have, worked out once per graph. */
-export function elementMetadataNames(graph: ModelGraph): readonly string[] {
-  let names = elementNameCache.get(graph);
-  if (names === undefined) {
-    names = namesOf(graph.elements.values(), isElementName);
-    elementNameCache.set(graph, names);
-  }
-  return names;
-}
 
 /**
  * The custom metadata names relationships have, apart from elements, worked out once per graph.

@@ -33,7 +33,7 @@ A viewpoint never moves a card. It is part of the page's address, so you can sha
 
 **Group by**, under Show Viewpoints, draws the cards in boxes, one for each value of one element property: for example, a box per owning team.
 
-- Choose one property: **Type**, a standard property the model's elements have values for (such as Owning team, Architecture state or Supplier HQ country), or custom metadata that holds a single value. Description and Functions aren't offered.
+- Choose one property: **Type**, a standard property the model's elements have values for (such as Owning team, Architecture state or Supplier HQ country), or a Text or Choice property an Admin defined that some element has a value for. Description, Functions and Reference properties aren't offered.
 - Each box is headed by its value and the number of cards in it by that value, for example "Claims IT · 4". Elements with no value go in **Not set**.
 - With **Nest contained elements** on, a container goes in the box of its own value, with everything it holds; the cards inside it aren't counted. With it off, every card goes in the box of its own value.
 - When an element's value changes, its card moves to a free spot in the box of its new value, or in a new box. The box it left fits the cards still in it, and goes when it is empty. A box that grows pushes a box it would cover down. A card inside a container stays with its container.

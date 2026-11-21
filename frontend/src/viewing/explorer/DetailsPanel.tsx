@@ -5,14 +5,18 @@ import {
   elementArchitectureState,
   elementDescription,
   elementFunctions,
+  elementValueFit,
   hasStandardProperty,
+  isElementStandardKey,
   isIsoCountryCode,
   metadataText,
   referenceIds,
   referencedBy,
   relationshipGroups,
+  sortElementDefinitions,
   standardProperties,
   standardPropertyRows,
+  type ElementPropertyDefinition,
   type ModelElement,
   type ModelGraph,
   type PropertyRow,
@@ -229,6 +233,61 @@ function ReferenceLinks(props: {
   );
 }
 
+/** "Not text", "Not a choice", "Not a reference": a value of another kind than its property's. */
+const notKindWords: Record<ElementPropertyDefinition['kind'], string> = {
+  text: 'Not text',
+  choice: 'Not a choice',
+  reference: 'Not a reference',
+};
+
+/**
+ * An element property's value in the panel: Not set, the text, a choice (marked when not in its
+ * list), the elements of a Reference as links; a value of another kind as stored, with a mark.
+ */
+function DefinedElementValue(props: {
+  definition: ElementPropertyDefinition;
+  value: unknown;
+  graph: ModelGraph;
+  onFocusElement: (id: string) => void;
+}) {
+  const { definition, value, graph } = props;
+  if (value === undefined || value === null || value === '') {
+    return <span className="muted">Not set</span>;
+  }
+  const ids = referenceIds(value);
+  const fit = elementValueFit(definition, value);
+  const shown =
+    ids !== undefined ? (
+      <ReferenceLinks
+        name={definition.name}
+        ids={ids}
+        graph={graph}
+        onFocusElement={props.onFocusElement}
+      />
+    ) : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? (
+      fit === 'not-listed' ? (
+        <span className="not-iso" title="Not in the list">
+          {String(value)} <Icon name="alert" size="sm" />
+          <span className="vh"> (not in the list)</span>
+        </span>
+      ) : (
+        <span className="pre-wrap">{String(value)}</span>
+      )
+    ) : (
+      <MetadataValue name={definition.name} value={value} />
+    );
+  if (fit !== 'not-this-kind') return shown;
+  return (
+    <>
+      {shown}
+      <span className="kind-mark not-iso">
+        <Icon name="alert" size="sm" />
+        {notKindWords[definition.kind]}
+      </span>
+    </>
+  );
+}
+
 /** The elements that refer to this one in a Reference field; left out when there are none. */
 function ReferencedBy(props: {
   graph: ModelGraph;
@@ -258,7 +317,12 @@ function ReferencedBy(props: {
         <ul>
           {(all ? rows : rows.slice(0, referencesShown)).map(({ element: from, keys }) => {
             const name = elementName(from);
-            const fields = `in ${[...keys].sort(compareNames).join(', ')}`;
+            // An element property by its name; another key as it is.
+            const names = keys.map(
+              (key) =>
+                graph.elementProperties.find((definition) => definition.key === key)?.name ?? key,
+            );
+            const fields = `in ${names.sort(compareNames).join(', ')}`;
             return (
               <li key={from.id}>
                 <button
@@ -368,8 +432,9 @@ export function DetailsPanel({
   const functions = elementFunctions(element);
   const groups = useMemo(() => relationshipGroups(graph, element.id), [graph, element]);
   const relationshipTotal = groups.reduce((sum, group) => sum + group.rows.length, 0);
-  const custom = customMetadata(element);
-  const hasReferences = custom.some(([, value]) => (referenceIds(value)?.length ?? 0) > 0);
+  // Every type has every element property, after the standard ones, by name.
+  const defined = sortElementDefinitions(graph.elementProperties);
+  const custom = customMetadata(element, defined);
 
   const copy = (text: string, done: string) => {
     void navigator.clipboard.writeText(text).then(
@@ -430,7 +495,7 @@ export function DetailsPanel({
         </section>
       )}
 
-      {!edit && properties.length > 0 && (
+      {!edit && (properties.length > 0 || defined.length > 0) && (
         <section>
           <h3>Properties</h3>
           <dl className="props">
@@ -439,6 +504,23 @@ export function DetailsPanel({
                 <dt>{row.label}</dt>
                 <dd>
                   <PropertyValue row={row} />
+                </dd>
+              </div>
+            ))}
+            {defined.map((definition) => (
+              <div key={`defined:${definition.key}`}>
+                <dt>{definition.name}</dt>
+                <dd>
+                  <DefinedElementValue
+                    definition={definition}
+                    value={
+                      Object.hasOwn(element.metadata, definition.key)
+                        ? element.metadata[definition.key]
+                        : undefined
+                    }
+                    graph={graph}
+                    onFocusElement={onFocusElement}
+                  />
                 </dd>
               </div>
             ))}
@@ -575,12 +657,7 @@ export function DetailsPanel({
 
       {!edit && custom.length > 0 && (
         <section>
-          <details
-            className="meta"
-            key={element.id}
-            // Open from the start when it holds references to show (the person can close it).
-            open={hasReferences || undefined}
-          >
+          <details className="meta" key={element.id}>
             <summary>
               <Icon name="chev-right" size="sm" />
               Custom metadata <span className="count">{custom.length}</span>
@@ -588,9 +665,19 @@ export function DetailsPanel({
             <dl className="props">
               {custom.map(([key, value]) => {
                 const ids = referenceIds(value);
+                // A standard property of another type: its label, tagged.
+                const was = isElementStandardKey(key);
                 return (
                   <div key={key}>
-                    <dt>{key}</dt>
+                    <dt title={was ? key : undefined}>
+                      {was ? standardProperties[key].label : key}
+                      {was && (
+                        <>
+                          {' '}
+                          <span className="tag">Was a property</span>
+                        </>
+                      )}
+                    </dt>
                     <dd>
                       {ids !== undefined ? (
                         <ReferenceLinks

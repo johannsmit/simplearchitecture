@@ -21,6 +21,7 @@ import {
   type StoredView,
   type ElementChangeResult,
   type JgfDocument,
+  type ElementPropertyDefinition,
   type RelationshipPropertyDefinition,
   type ChangedView,
   type JgfEdge,
@@ -42,7 +43,13 @@ import {
   type RefObject,
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
-import { ApiRequestError, getElement, getModel, listProperties } from '../api';
+import {
+  ApiRequestError,
+  getElement,
+  getModel,
+  listProperties,
+  type DefinedPropertyLists,
+} from '../api';
 import { useMe } from '../auth';
 import { UnsavedDialog } from '../modelling/dialogs';
 import { withEdge, withNode, withoutEdge, withoutElement } from '../modelling/document';
@@ -233,15 +240,16 @@ function useModelDocument(
   return [load.modelId === modelId ? load.value : { status: 'loading' }, retry, update];
 }
 
-type PropertiesLoad = 'loading' | 'failed' | readonly RelationshipPropertyDefinition[];
+type PropertiesLoad = 'loading' | 'failed' | DefinedPropertyLists;
 
 const noProperties: readonly RelationshipPropertyDefinition[] = [];
+const noElementProperties: readonly ElementPropertyDefinition[] = [];
 
 /**
- * The properties an Admin defined for relationships, read with the model (and again on `reload`,
- * after a save refused a property that is gone).
+ * The properties an Admin defined for relationships and for elements, read with the model (and
+ * again on `reload`, after a save refused a property that is gone).
  */
-function useRelationshipProperties(modelId: string): [PropertiesLoad, () => void] {
+function useDefinedProperties(modelId: string): [PropertiesLoad, () => void] {
   const [load, setLoad] = useState<PropertiesLoad>('loading');
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -646,8 +654,11 @@ function Explorer({
   const [shownPath = '', shownSearch = ''] = url.split('?');
   const params = useMemo(() => new URLSearchParams(shownSearch), [shownSearch]);
   const [load, retry, updateDocument] = useModelDocument(modelId);
-  const [propertiesLoad, reloadProperties] = useRelationshipProperties(modelId);
-  const definitions = typeof propertiesLoad === 'string' ? noProperties : propertiesLoad;
+  const [propertiesLoad, reloadProperties] = useDefinedProperties(modelId);
+  const definitions =
+    typeof propertiesLoad === 'string' ? noProperties : propertiesLoad.relationship;
+  const elementDefinitions =
+    typeof propertiesLoad === 'string' ? noElementProperties : propertiesLoad.element;
   const { list, editable: canEdit, reload: reloadModels } = useModels();
   const editable = space === 'modelling' && canEdit === true;
   const readOnlyModelling = space === 'modelling' && canEdit === false;
@@ -690,8 +701,8 @@ function Explorer({
     list.status === 'ready' ? list.models.find((m) => m.id === modelId)?.name : undefined;
   const document_ = load.status === 'ready' ? load.document : undefined;
   const graph = useMemo(
-    () => (document_ ? buildModelGraph(document_, definitions) : undefined),
-    [document_, definitions],
+    () => (document_ ? buildModelGraph(document_, definitions, elementDefinitions) : undefined),
+    [document_, definitions, elementDefinitions],
   );
   const lineFields = useMemo(() => (graph ? relationshipViewFields(graph) : []), [graph]);
   // What the cards can be grouped by: Type and the element properties the model has.
@@ -2381,6 +2392,8 @@ function Explorer({
                 onStored={onStored}
                 onRemoved={onRemoved}
                 onAnnounce={setAnnouncement}
+                propertiesFailed={propertiesLoad === 'failed'}
+                onPropertiesStale={reloadProperties}
                 relationships={relationshipTools(selected)}
                 headExtra={showOnCanvas(selected.id)}
                 usedIn={usedInViews(selected.id)}

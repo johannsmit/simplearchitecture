@@ -201,15 +201,21 @@ describe('a blank or long element property stored before this version', () => {
     expect(await storedMetadata('bench')).toEqual({ type: 'Infrastructure', colour: 'Green' });
   });
 
-  it('can be renamed: the old name removed and a new one set in one change', async () => {
+  it('can’t be renamed by a Modeller: a new name is no property, and nothing is stored', async () => {
     const { target, cookie } = await signedInAs(['Modeller']);
+    const before = await storedMetadata('bench');
     const res = await call(target, 'PATCH', elementUrl('bench'), cookie, {
       version: 1,
       metadata: { [longOne]: null, warranty: 'Long value' },
     });
-    expect(res.statusCode).toBe(200);
-    expect(await storedMetadata('bench')).toMatchObject({ warranty: 'Long value' });
-    expect(await storedMetadata('bench')).not.toHaveProperty(longOne);
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ fields: unknown[] }>().fields).toEqual([
+      {
+        field: 'metadata.warranty',
+        message: "“warranty” isn't a property here. An Admin can add it in Admin → Properties.",
+      },
+    ]);
+    expect(await storedMetadata('bench')).toEqual(before);
   });
 
   it('still refuses a new blank or long name', async () => {

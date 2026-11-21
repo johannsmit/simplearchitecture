@@ -1,13 +1,14 @@
 import {
-  elementMetadataNames,
   elementPropertyValues,
+  isElementStandardKey,
   isIsoCountryCode,
-  isStandardPropertyOf,
   nodeTypes,
+  sortElementDefinitions,
   standardProperties,
   type DeletedElementResult,
   type ElementChangeResult,
   type ElementFieldIssue,
+  type ElementPropertyDefinition,
   type ModelElement,
   type ModelGraph,
 } from '@simplearchitecture/shared';
@@ -25,6 +26,7 @@ import { ApiRequestError, deleteElement, getElement, updateElement } from '../ap
 import { Icon } from '../icons';
 import { choiceValues, TypeMark } from '../metamodel-ui';
 import { CustomMetadataFields } from './CustomMetadataFields';
+import { DefinedElementField } from './DefinedElementField';
 import { DetailsPanel, type RelationshipTools } from '../viewing/explorer/DetailsPanel';
 import {
   changesOf,
@@ -32,18 +34,23 @@ import {
   draftOf,
   elementOfNode,
   fieldKeys,
+  propertySlot,
   referenceSlot,
+  rowKey,
+  rowOfKey,
   sameNameCount,
   sameNameNote,
   serverErrors,
   typeChangeNote,
+  withDefinedReferences,
+  withDefinedText,
+  withoutKey,
   withType,
   type Draft,
   type ErrorSlot,
   type FieldKey,
 } from './draft';
 import { deleteSummary, DeleteElementDialog, UnsavedDialog } from './dialogs';
-import { metadataNameTypes } from './fieldTypes';
 import { versionToSave } from './save';
 import { ValueField } from './ValueField';
 
@@ -99,7 +106,13 @@ interface ElementEditorProps {
   headExtra?: ReactNode;
   /** The "Used in views" section. */
   usedIn?: ReactNode;
+  /** The element properties couldn't be read: their values aren't saved until they are. */
+  propertiesFailed?: boolean;
+  /** A save was refused for a property an Admin deleted: read the definitions again. */
+  onPropertiesStale?: () => void;
 }
+
+const noDefinitions: readonly ElementPropertyDefinition[] = [];
 
 type Conflict = 'changed' | 'deleted' | null;
 
@@ -179,6 +192,20 @@ export function ElementEditor(props: ElementEditorProps) {
     focusTarget.current = id;
   };
   const trash = useRef<HTMLButtonElement>(null);
+  // An element property a save was refused for, because an Admin deleted it meanwhile.
+  const [deletedProperty, setDeletedProperty] = useState<string | null>(null);
+  const propertiesFailed = props.propertiesFailed === true;
+  // Every element type has every element property, by name.
+  const definitions = useMemo(
+    () => (propertiesFailed ? noDefinitions : sortElementDefinitions(graph.elementProperties)),
+    [propertiesFailed, graph.elementProperties],
+  );
+  const definedKeys = new Set(definitions.map((definition) => definition.key));
+  /** An element property's control id, by its place in the list (keys may hold any character). */
+  const propertyId = (key: string): string =>
+    `ef-prop-${String(definitions.findIndex((definition) => definition.key === key))}`;
+  const controlId = (slot: ErrorSlot): string =>
+    slot.startsWith('prop:') ? propertyId(slot.slice('prop:'.length)) : slotId(slot);
 
   const change = changesOf(initial, draft);
   const dirty = change !== undefined;
@@ -249,19 +276,24 @@ export function ElementEditor(props: ElementEditorProps) {
     }
   };
 
-  const slotOrder = (d: Draft): ErrorSlot[] => [
-    'name',
-    'type',
-    'description',
-    ...fieldKeys(d.type).map((key) => `field:${key}`),
-    ...d.custom.flatMap((row) => [`row:${row.id}`, referenceSlot(row)]),
-  ];
+  const slotOrder = (d: Draft): ErrorSlot[] => {
+    const fields = fieldKeys(d.type);
+    return [
+      'name',
+      'type',
+      'description',
+      ...fields.filter((key) => key !== 'functions').map((key) => `field:${key}`),
+      ...definitions.map((definition) => propertySlot(definition.key)),
+      ...fields.filter((key) => key === 'functions').map((key) => `field:${key}`),
+      ...d.custom.flatMap((row) => [`row:${row.id}`, referenceSlot(row)]),
+    ];
+  };
 
   const refuse = (found: ReadonlyMap<ErrorSlot, string>, top: TopAlert | null) => {
     setErrors(found);
     setAlert(top);
     const first = slotOrder(draft).find((slot) => found.has(slot));
-    setFocusTarget(first !== undefined ? slotId(first) : top ? 'ef-alert' : null);
+    setFocusTarget(first !== undefined ? controlId(first) : top ? 'ef-alert' : null);
   };
 
   const headingFocus = () => {
@@ -279,19 +311,32 @@ export function ElementEditor(props: ElementEditorProps) {
   const save = async (): Promise<boolean> => {
     if (!change) return true;
     if (!canSave || saving) return false;
-    const found = clientErrors(draft, base.metadata, {
-      ownId: element.id,
-      isElement: (id) => graph.elements.has(id),
-    });
+    const found = clientErrors(
+      draft,
+      base.metadata,
+      { ownId: element.id, isElement: (id) => graph.elements.has(id) },
+      definitions,
+    );
     if (found.size > 0) {
       refuse(found, null);
       return false;
     }
     setSaving(true);
     setAlert(null);
+    setDeletedProperty(null);
     try {
       const version = await currentVersion();
-      const result = await updateElement(props.modelId, element.id, { version, ...change });
+      // Until the element properties are read, metadata isn't sent: only the other fields.
+      const { metadata, ...rest } = change;
+      const sent = propertiesFailed ? rest : change;
+      if (propertiesFailed && Object.keys(rest).length === 0 && metadata !== undefined) {
+        refuse(new Map(), {
+          title: "Couldn't load the defined properties. Reload to try again.",
+          messages: [],
+        });
+        return false;
+      }
+      const result = await updateElement(props.modelId, element.id, { version, ...sent });
       stored(result);
       setSaved(true);
       headingFocus();
@@ -301,8 +346,25 @@ export function ElementEditor(props: ElementEditorProps) {
       const status = error instanceof ApiRequestError ? error.status : 0;
       const body = error instanceof ApiRequestError ? error.body : undefined;
       const fields = status === 422 ? rejectedFields(body) : undefined;
-      if (fields) {
-        const mapped = serverErrors(draft, fields);
+      // An Admin deleted a property filled in here: its value can't be saved. The definitions
+      // are read again, so its field goes, and saving again keeps the other changes.
+      const gone = fields?.find((issue) => {
+        const key = issue.field.startsWith('metadata.')
+          ? issue.field.slice('metadata.'.length)
+          : undefined;
+        return (
+          key !== undefined && definedKeys.has(key) && issue.message.includes("isn't a property")
+        );
+      });
+      if (gone !== undefined) {
+        const key = gone.field.slice('metadata.'.length);
+        setDeletedProperty(definitions.find((definition) => definition.key === key)?.name ?? key);
+        // A value the element didn't hold goes with the field; one it held stays to remove.
+        if (!Object.hasOwn(base.metadata, key)) setDraft(withoutKey(draft, key));
+        setFocusTarget('ef-deleted-property');
+        props.onPropertiesStale?.();
+      } else if (fields) {
+        const mapped = serverErrors(draft, fields, definitions);
         const general = mapped.get('');
         mapped.delete('');
         const messages = general?.split('\n') ?? [];
@@ -434,7 +496,12 @@ export function ElementEditor(props: ElementEditorProps) {
   const shortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
 
   const valuesOf = (key: string) => elementPropertyValues(graph).get(key) ?? [];
-  const nameTypes = useMemo(() => metadataNameTypes(graph, element.id), [graph, element.id]);
+  // Custom metadata: what the element holds under no element property (Was a property values).
+  const storedKeys = new Set(initial.custom.map((row) => rowKey(row)));
+  const customRows = draft.custom.filter((row) => !definedKeys.has(rowKey(row)));
+  const shownCustomRows = customRows.filter(
+    (row) => storedKeys.has(rowKey(row)) || row.wasProperty === true,
+  );
   const setField = (key: FieldKey, value: string) => {
     edit(`field:${key}`, { ...draft, fields: { ...draft.fields, [key]: value } });
   };
@@ -541,6 +608,19 @@ export function ElementEditor(props: ElementEditorProps) {
     );
   };
 
+  const standardField = (key: FieldKey): ReactNode => (
+    <div className="field" key={key}>
+      <label htmlFor={slotId(`field:${key}`)}>{standardProperties[key].label}</label>
+      {fieldControl(key)}
+      <FieldError slot={`field:${key}`} errors={errors} />
+      {key === 'functions' && (
+        <p className="hint" id={`${slotId('field:functions')}-hint`}>
+          One function per line.
+        </p>
+      )}
+    </div>
+  );
+
   const form = (
     <form
       className="d-form"
@@ -596,6 +676,26 @@ export function ElementEditor(props: ElementEditorProps) {
                 {alert.messages.length > 5 && <li>and {alert.messages.length - 5} more</li>}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {deletedProperty !== null && (
+        <div className="form-alert" role="alert">
+          <Icon name="alert" />
+          <div>
+            <p id="ef-deleted-property" tabIndex={-1}>
+              An Admin deleted {deletedProperty}, so its value wasn&apos;t saved. Save again to keep
+              your other changes.
+            </p>
+          </div>
+        </div>
+      )}
+      {propertiesFailed && (
+        <div className="form-alert" role="alert">
+          <Icon name="alert" />
+          <div>
+            <p>Couldn&apos;t load the defined properties. Reload to try again.</p>
           </div>
         </div>
       )}
@@ -681,46 +781,88 @@ export function ElementEditor(props: ElementEditorProps) {
         </div>
       </section>
 
-      {keys.length > 0 && (
+      {(keys.length > 0 || definitions.length > 0) && (
         <section className="form-block">
           <h3>Properties</h3>
-          {keys.map((key) => (
-            <div className="field" key={key}>
-              <label htmlFor={slotId(`field:${key}`)}>{standardProperties[key].label}</label>
-              {fieldControl(key)}
-              <FieldError slot={`field:${key}`} errors={errors} />
-              {key === 'functions' && (
-                <p className="hint" id={`${slotId('field:functions')}-hint`}>
-                  One function per line.
-                </p>
-              )}
-            </div>
-          ))}
+          {keys.filter((key) => key !== 'functions').map((key) => standardField(key))}
+          {definitions.map((definition) => {
+            const slot = propertySlot(definition.key);
+            const id = propertyId(definition.key);
+            const invalid = errors.has(slot);
+            return (
+              <DefinedElementField
+                key={definition.key}
+                id={id}
+                definition={definition}
+                row={rowOfKey(draft, definition.key)}
+                stored={
+                  Object.hasOwn(base.metadata, definition.key)
+                    ? base.metadata[definition.key]
+                    : undefined
+                }
+                graph={graph}
+                ownId={element.id}
+                suggestions={valuesOf(definition.key)}
+                readOnly={saving}
+                error={
+                  invalid ? (
+                    <p className="field-error" id={`${id}-error`}>
+                      <Icon name="alert" size="sm" />
+                      <span className="pre-wrap">{errors.get(slot)}</span>
+                    </p>
+                  ) : null
+                }
+                errorId={invalid ? `${id}-error` : undefined}
+                onText={(text) => {
+                  edit(slot, withDefinedText(draft, definition.key, text));
+                }}
+                onReferences={(ids) => {
+                  edit(slot, withDefinedReferences(draft, definition.key, ids));
+                }}
+                onRemove={() => {
+                  edit(slot, withoutKey(draft, definition.key));
+                  setFocusTarget(id);
+                }}
+              />
+            );
+          })}
+          {keys.filter((key) => key === 'functions').map((key) => standardField(key))}
         </section>
       )}
 
-      <section className="form-block">
-        <CustomMetadataFields
-          rows={draft.custom}
-          saving={saving}
-          addId="ef-add-field"
-          slotId={slotId}
-          errorId={errorId}
-          renderError={(slot) => <FieldError slot={slot} errors={errors} />}
-          invalid={(slot) => errors.has(slot)}
-          valuesOf={(key) => (isStandardPropertyOf(draft.type, key) ? [] : valuesOf(key))}
-          names={elementMetadataNames(graph)}
-          onEdit={(slot, rows) => {
-            edit(slot, { ...draft, custom: rows });
-          }}
-          onAdd={(rows, focusId) => {
-            setDraft({ ...draft, custom: rows });
-            setFocusTarget(focusId);
-          }}
-          onRemoved={setFocusTarget}
-          references={{ graph, ownId: element.id, nameTypes }}
-        />
-      </section>
+      {shownCustomRows.length > 0 && (
+        <section className="form-block">
+          <CustomMetadataFields
+            rows={shownCustomRows}
+            canAdd={false}
+            saving={saving || propertiesFailed}
+            addId="ef-new-properties"
+            slotId={slotId}
+            errorId={errorId}
+            renderError={(slot) => <FieldError slot={slot} errors={errors} />}
+            invalid={(slot) => errors.has(slot)}
+            valuesOf={(key) => (isElementStandardKey(key) ? [] : valuesOf(key))}
+            names={[]}
+            keyLabel={(key) => (isElementStandardKey(key) ? standardProperties[key].label : key)}
+            isWasProperty={isElementStandardKey}
+            onEdit={(slot, rows) => {
+              // The rows shown are the custom ones: the others (element properties) stay.
+              const shown = new Set(shownCustomRows);
+              edit(slot, {
+                ...draft,
+                custom: [...draft.custom.filter((row) => !shown.has(row)), ...rows],
+              });
+            }}
+            onAdd={() => undefined}
+            onRemoved={setFocusTarget}
+          />
+        </section>
+      )}
+
+      <p className="hint new-properties-hint" id="ef-new-properties" tabIndex={-1}>
+        <Icon name="info" size="sm" />
+        New properties are added by an Admin, in Admin → Properties.
+      </p>
 
       {dirty || saving ? (
         <div className="d-form-foot">

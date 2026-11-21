@@ -423,7 +423,7 @@ describe('relationships take defined keys only', () => {
     }
   });
 
-  it('still lets a Modeller add new custom names on an element, defining no property', async () => {
+  it('a relationship property’s key is no element property: a new key on an element is refused', async () => {
     const { target, cookie } = await signedInAs(['Modeller']);
     const before = await list(target, cookie);
     // A relationship property's key and a name no relationship has.
@@ -431,14 +431,13 @@ describe('relationships take defined keys only', () => {
       version: 1,
       metadata: { region: 'Made-up west', deskNumber: '7' },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ fields: { field: string }[] }>().fields.map((issue) => issue.field)).toEqual([
+      'metadata.region',
+      'metadata.deskNumber',
+    ]);
     const node = (await store.get(modelId))?.graph.nodes?.clerk;
-    expect(node?.metadata).toEqual({
-      type: 'Stakeholder',
-      badge: 'element-only',
-      region: 'Made-up west',
-      deskNumber: '7',
-    });
+    expect(node?.metadata).toEqual({ type: 'Stakeholder', badge: 'element-only' });
     expect(await list(target, cookie)).toEqual(before);
   });
 

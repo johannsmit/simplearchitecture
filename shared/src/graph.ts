@@ -5,6 +5,7 @@
  *
  * The data says node and edge; these helpers (like the UI) say element and relationship.
  */
+import type { ElementPropertyDefinition } from './element-properties.js';
 import type { JgfDocument, JgfEdge } from './jgf.js';
 import type { RelationshipPropertyDefinition } from './relationship-properties.js';
 import {
@@ -70,17 +71,24 @@ export interface ModelGraph {
    * with them: labels, Show Viewpoints and the form read them from here.
    */
   relationshipProperties: readonly RelationshipPropertyDefinition[];
+  /**
+   * The properties an Admin defined for elements (every type), as the graph was built with them:
+   * the filters, Group by and the catalog read them from here.
+   */
+  elementProperties: readonly ElementPropertyDefinition[];
 }
 
 const noRelationships: readonly ModelRelationship[] = [];
 
 /**
  * Builds the index of a JGF model. Nodes with a type outside the metamodel count as Other.
- * `relationshipProperties`: the defined properties, which the graph carries for its readers.
+ * `relationshipProperties` and `elementProperties`: the defined properties, which the graph carries
+ * for its readers.
  */
 export function buildModelGraph(
   document: JgfDocument,
   relationshipProperties: readonly RelationshipPropertyDefinition[] = [],
+  elementProperties: readonly ElementPropertyDefinition[] = [],
 ): ModelGraph {
   const graph = document.graph;
   const elements = new Map<string, ModelElement>();
@@ -122,6 +130,7 @@ export function buildModelGraph(
     relationshipsByElement,
     skippedRelationships,
     relationshipProperties,
+    elementProperties,
   };
 }
 
@@ -943,11 +952,19 @@ export function metadataText(value: unknown, elements?: ReadonlyMap<string, Mode
 }
 
 /**
- * Metadata that isn't the type and isn't a standard property of this element's type (including
- * the original `archimateType`), sorted by key.
+ * Metadata that isn't the type, a standard property of this element's type or an element property
+ * (of `definitions`): what was a property of another type, and anything else kept as stored (such
+ * as `archimateType` before it is defined). Sorted by key.
  */
-export function customMetadata(element: ModelElement): [string, unknown][] {
+export function customMetadata(
+  element: ModelElement,
+  definitions: readonly ElementPropertyDefinition[] = [],
+): [string, unknown][] {
+  const defined = new Set(definitions.map((definition) => definition.key));
   return Object.entries(element.metadata)
-    .filter(([key]) => key !== nodeTypeKey && !isStandardPropertyOf(element.type, key))
+    .filter(
+      ([key]) =>
+        key !== nodeTypeKey && !isStandardPropertyOf(element.type, key) && !defined.has(key),
+    )
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }

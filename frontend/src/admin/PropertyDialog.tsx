@@ -1,10 +1,15 @@
 import {
+  elementPropertyKeyProblem,
+  elementPropertyNameProblem,
   keyFromName,
   propertyKeyProblem,
   propertyNameProblem,
   propertyOptionsProblems,
-  type DefinedPropertyKind,
   type ElementFieldIssue,
+  type ElementPropertyDefinition,
+  type ElementPropertyKind,
+  type ElementPropertyUsage,
+  type PropertyList,
   type RelationshipPropertyDefinition,
   type RelationshipPropertyUsage,
 } from '@simplearchitecture/shared';
@@ -14,10 +19,55 @@ import { Icon } from '../icons';
 import { Modal } from '../modelling/dialogs';
 import { counted, formatNumber } from '../words';
 
+/** A definition of either list. */
+export type AnyDefinition = RelationshipPropertyDefinition | ElementPropertyDefinition;
+/** How a key of either list is used in the models. */
+export type AnyUsage = RelationshipPropertyUsage | ElementPropertyUsage;
+
+/** The number of values under a key: relationships (Relations and Contains), or elements. */
+export function valueCount(usage: AnyUsage | undefined): number {
+  if (usage === undefined) return 0;
+  return 'elements' in usage ? usage.elements : usage.relations + usage.contains;
+}
+
 /** How many values in how many models: "48 values in 3 models". */
-export function valuesInModels(usage: RelationshipPropertyUsage | undefined): string {
-  const values = (usage?.relations ?? 0) + (usage?.contains ?? 0);
-  return `${counted(values, 'value')} in ${counted(usage?.models ?? 0, 'model')}`;
+export function valuesInModels(usage: AnyUsage | undefined): string {
+  return `${counted(valueCount(usage), 'value')} in ${counted(usage?.models ?? 0, 'model')}`;
+}
+
+/** The list's word: "element property" or "relation property". */
+export const listWord = (list: PropertyList): string =>
+  list === 'element' ? 'element property' : 'relation property';
+
+const kindWords: Record<ElementPropertyKind, string> = {
+  text: 'Text',
+  choice: 'Choice',
+  reference: 'Reference',
+};
+
+/**
+ * The note under Kind when an element property changes to or from Reference with values that
+ * then don't fit: how many, and how they show. Undefined when there are none.
+ */
+export function kindChangeNote(
+  from: ElementPropertyKind,
+  to: ElementPropertyKind,
+  usage: ElementPropertyUsage | undefined,
+): string | undefined {
+  if (usage === undefined || from === to) return undefined;
+  const models = counted(usage.models, 'model');
+  if (to === 'reference') {
+    const count = usage.shapes.text + usage.shapes.other;
+    if (count === 0) return undefined;
+    return `${counted(count, 'value')} in ${models} ${count === 1 ? 'is' : 'are'} text, not elements. ${count === 1 ? 'It stays' : 'They stay'} as ${count === 1 ? 'it is' : 'they are'} and show${count === 1 ? 's' : ''} as “not a reference” until someone changes ${count === 1 ? 'it' : 'them'}.`;
+  }
+  if (from === 'reference') {
+    const count = usage.shapes.reference;
+    if (count === 0) return undefined;
+    const shown = to === 'choice' ? 'not a choice' : 'not text';
+    return `${counted(count, 'value')} in ${models} ${count === 1 ? 'is' : 'are'} elements. ${count === 1 ? 'It stays' : 'They stay'} as ${count === 1 ? 'it is' : 'they are'} and show${count === 1 ? 's' : ''} as “${shown}” until someone changes ${count === 1 ? 'it' : 'them'}.`;
+  }
+  return undefined;
 }
 
 /** The fields of a 422 body, if it has them. */
@@ -36,14 +86,16 @@ let nextOptionId = 1;
 const optionRow = (text: string): OptionRow => ({ id: nextOptionId++, text });
 
 interface PropertyDialogProps {
+  /** The list it is in: element properties, or relation properties. */
+  list: PropertyList;
   /** The property to edit; undefined for a new one. */
-  property: RelationshipPropertyDefinition | undefined;
-  /** Every property, for the dialog's own checks of names and keys. */
-  all: readonly RelationshipPropertyDefinition[];
+  property: AnyDefinition | undefined;
+  /** Every property of the list, for the dialog's own checks of names and keys. */
+  all: readonly AnyDefinition[];
   /** How the key is used in the models (Admin), when known. */
-  usage: RelationshipPropertyUsage | undefined;
+  usage: AnyUsage | undefined;
   onCancel: () => void;
-  onSaved: (property: RelationshipPropertyDefinition, created: boolean) => void;
+  onSaved: (property: AnyDefinition, created: boolean) => void;
   /** Someone else deleted the property meanwhile. */
   onGone: () => void;
   onAnnounce: (text: string) => void;
@@ -55,23 +107,27 @@ interface PropertyDialogProps {
  * shows the server's refusals at their fields.
  */
 export function PropertyDialog(props: PropertyDialogProps) {
-  const { property, usage } = props;
+  const { property, usage, list } = props;
   const editing = property !== undefined;
+  const forElements = list === 'element';
+  const nameProblem = forElements ? elementPropertyNameProblem : propertyNameProblem;
+  const keyProblem = forElements ? elementPropertyKeyProblem : propertyKeyProblem;
+  const kinds: readonly ElementPropertyKind[] = forElements
+    ? ['text', 'choice', 'reference']
+    : ['text', 'choice'];
   const nameInput = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(property?.name ?? '');
   const [key, setKey] = useState(property?.key ?? '');
   // A new property's key follows the name until the Admin types in it.
   const [keyTyped, setKeyTyped] = useState(editing);
-  const [kind, setKind] = useState<DefinedPropertyKind>(property?.kind ?? 'text');
+  const [kind, setKind] = useState<ElementPropertyKind>(property?.kind ?? 'text');
   const [options, setOptions] = useState<OptionRow[]>(() =>
     (property?.options ?? []).map(optionRow),
   );
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [alert, setAlert] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
-  const [keyLocked, setKeyLocked] = useState(
-    editing && (usage?.relations ?? 0) + (usage?.contains ?? 0) > 0,
-  );
+  const [keyLocked, setKeyLocked] = useState(editing && valueCount(usage) > 0);
   const [saving, setSaving] = useState(false);
   const focusTarget = useRef<string | null>(null);
   // Whether Kind was last changed from the keyboard (arrow keys) rather than by a click.
@@ -149,12 +205,12 @@ export function PropertyDialog(props: PropertyDialogProps) {
   const check = (): Map<string, string> => {
     const found = new Map<string, string>();
     if (!editing || name.trim() !== property.name) {
-      const nameProblem = propertyNameProblem(name, others);
-      if (nameProblem !== undefined) found.set('name', nameProblem);
+      const problem = nameProblem(name, others);
+      if (problem !== undefined) found.set('name', problem);
     }
     if (!keyLocked && keyChanged) {
-      const keyProblem = propertyKeyProblem(key, others);
-      if (keyProblem !== undefined) found.set('key', keyProblem);
+      const problem = keyProblem(key, others);
+      if (problem !== undefined) found.set('key', problem);
     }
     if (kind === 'choice') {
       const kept = options.filter((row) => row.text.trim() !== '');
@@ -193,19 +249,26 @@ export function PropertyDialog(props: PropertyDialogProps) {
     const choiceOptions = kind === 'choice' ? kept.map((row) => row.text.trim()) : undefined;
     setSaving(true);
     const call = editing
-      ? updateProperty(property.key, {
-          version: property.version,
-          name: name.trim(),
-          ...(keyLocked || !keyChanged ? {} : { key: key.trim() }),
-          kind,
-          ...(choiceOptions === undefined ? {} : { options: choiceOptions }),
-        })
-      : createProperty({
-          name: name.trim(),
-          key: key.trim(),
-          kind,
-          ...(choiceOptions === undefined ? {} : { options: choiceOptions }),
-        });
+      ? updateProperty(
+          property.key,
+          {
+            version: property.version,
+            name: name.trim(),
+            ...(keyLocked || !keyChanged ? {} : { key: key.trim() }),
+            kind,
+            ...(choiceOptions === undefined ? {} : { options: choiceOptions }),
+          },
+          list,
+        )
+      : createProperty(
+          {
+            name: name.trim(),
+            key: key.trim(),
+            kind,
+            ...(choiceOptions === undefined ? {} : { options: choiceOptions }),
+          },
+          list,
+        );
     call
       .then((saved) => {
         props.onSaved(saved, !editing);
@@ -262,6 +325,11 @@ export function PropertyDialog(props: PropertyDialogProps) {
     ) : null;
 
   const nameChanged = editing && name.trim() !== property.name;
+  const labels = usage !== undefined && 'labels' in usage ? usage.labels : 0;
+  const kindNote =
+    forElements && editing
+      ? kindChangeNote(property.kind, kind, usage as ElementPropertyUsage | undefined)
+      : undefined;
   const describe = (...ids: (string | false | undefined)[]) =>
     ids.filter(Boolean).join(' ') || undefined;
 
@@ -283,11 +351,15 @@ export function PropertyDialog(props: PropertyDialogProps) {
         }}
       >
         <div className="property-dialog-body">
-          <h2 id="property-title">{editing ? 'Edit property' : 'New property'}</h2>
+          <h2 id="property-title">
+            {editing ? 'Edit' : 'New'} {listWord(list)}
+          </h2>
           <p id="property-text">
             {editing
               ? "Changes show in every model. Values in models don't change."
-              : 'Shows on every Relation, in every model.'}
+              : forElements
+                ? 'Shows on every element, in every model.'
+                : 'Shows on every Relation, in every model.'}
           </p>
           {alert !== null && (
             <p className="alert" role="alert">
@@ -307,7 +379,7 @@ export function PropertyDialog(props: PropertyDialogProps) {
               aria-describedby={describe(
                 errors.has('name') && 'property-name-error',
                 'property-name-hint',
-                nameChanged && (usage?.labels ?? 0) > 0 && 'property-name-labels',
+                nameChanged && labels > 0 && 'property-name-labels',
               )}
               value={name}
               readOnly={saving}
@@ -320,10 +392,16 @@ export function PropertyDialog(props: PropertyDialogProps) {
             />
             {fieldError('name', 'property-name-error')}
             <p className="hint" id="property-name-hint">
-              Shown on the relationship form and panel and in Show Viewpoints, and used in labels as{' '}
-              {`{${name.trim() || 'Name'}}`}.
+              {forElements ? (
+                "Shown on every element's form and panel and in the catalog."
+              ) : (
+                <>
+                  Shown on the relationship form and panel and in Show Viewpoints, and used in
+                  labels as {`{${name.trim() || 'Name'}}`}.
+                </>
+              )}
             </p>
-            {nameChanged && (usage?.labels ?? 0) > 0 && (
+            {nameChanged && labels > 0 && (
               <p className="hint" id="property-name-labels">
                 <Icon name="info" size="sm" />
                 Labels that use {`{${property.name}}`} need the new name.
@@ -371,6 +449,7 @@ export function PropertyDialog(props: PropertyDialogProps) {
               className="seg-radios"
               role="radiogroup"
               aria-label="Kind"
+              aria-describedby={kind === 'reference' ? 'property-reference-hint' : undefined}
               onKeyDown={() => {
                 kindByKeyboard.current = true;
               }}
@@ -378,7 +457,7 @@ export function PropertyDialog(props: PropertyDialogProps) {
                 kindByKeyboard.current = false;
               }}
             >
-              {(['text', 'choice'] as const).map((each) => (
+              {kinds.map((each) => (
                 <label key={each} className={kind === each ? 'is-checked' : undefined}>
                   <input
                     type="radio"
@@ -400,9 +479,24 @@ export function PropertyDialog(props: PropertyDialogProps) {
                       }
                     }}
                   />
-                  {each === 'text' ? 'Text' : 'Choice'}
+                  {kindWords[each]}
                 </label>
               ))}
+            </div>
+            {kind === 'reference' && (
+              <p className="hint" id="property-reference-hint">
+                <Icon name="info" size="sm" />
+                Other elements of the same model, picked with @ on the element&apos;s form. Not
+                offered in Group by or the filters.
+              </p>
+            )}
+            <div aria-live="polite">
+              {kindNote !== undefined && (
+                <p className="type-note">
+                  <Icon name="info" />
+                  <span>{kindNote}</span>
+                </p>
+              )}
             </div>
           </fieldset>
           {kind === 'choice' && (
@@ -575,8 +669,9 @@ export function PropertyDialog(props: PropertyDialogProps) {
 }
 
 interface DeletePropertyDialogProps {
-  property: RelationshipPropertyDefinition;
-  usage: RelationshipPropertyUsage | undefined;
+  list: PropertyList;
+  property: AnyDefinition;
+  usage: AnyUsage | undefined;
   onCancel: () => void;
   onDeleted: (values: number, models: number) => void;
   onGone: () => void;
@@ -584,19 +679,23 @@ interface DeletePropertyDialogProps {
 
 /** Delete a property: says what goes, and deletes only once the Admin has typed its name. */
 export function DeletePropertyDialog(props: DeletePropertyDialogProps) {
-  const { property, usage } = props;
+  const { property, usage, list } = props;
   const input = useRef<HTMLInputElement>(null);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const matches = typed.trim().toLowerCase() === property.name.trim().toLowerCase();
-  const values = (usage?.relations ?? 0) + (usage?.contains ?? 0);
+  const values = valueCount(usage);
+  const referenceNote =
+    property.kind === 'reference'
+      ? ' The elements in them no longer show these under Referenced by.'
+      : '';
 
   const confirm = () => {
     if (!matches || busy) return;
     setBusy(true);
     setError(null);
-    deleteProperty(property.key)
+    deleteProperty(property.key, list)
       .then((result) => {
         props.onDeleted(result.values, result.models);
       })
@@ -619,11 +718,13 @@ export function DeletePropertyDialog(props: DeletePropertyDialogProps) {
       initialFocus={input}
       describedBy="delete-property-text"
     >
-      <h2 id="delete-property-title">Delete the property {property.name}?</h2>
+      <h2 id="delete-property-title">
+        Delete the {listWord(list)} {property.name}?
+      </h2>
       <p id="delete-property-text">
         {values > 0
-          ? `This deletes ${property.name} and its ${counted(values, 'value')} from ${counted(usage?.models ?? 0, 'model')}. It can't be undone.`
-          : "No relationship has a value for it. It can't be undone."}
+          ? `This deletes ${property.name} and its ${counted(values, 'value')} from ${counted(usage?.models ?? 0, 'model')}.${referenceNote} It can't be undone.`
+          : `No ${list === 'element' ? 'element' : 'relationship'} has a value for it. It can't be undone.`}
       </p>
       <div className="field">
         <label htmlFor="delete-property-name">Type {property.name} to confirm</label>

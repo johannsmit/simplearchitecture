@@ -1,5 +1,6 @@
 import {
   buildModelGraph,
+  elementDefinitionsForKeys,
   catalogCell,
   catalogTable,
   elementGroupValue,
@@ -30,6 +31,7 @@ import { DatabaseService } from '../src/db/service.js';
 import { ElementRejectedError, ElementService } from '../src/editing/element-service.js';
 import { validateJgf } from '../src/jgf/validate.js';
 import { McpReadService } from '../src/mcp/read-service.js';
+import { insertElementDefinitions } from '../src/properties/property-store.js';
 import { PostgresModelStore } from '../src/storage/postgres-model-store.js';
 import {
   buildTestApp,
@@ -285,6 +287,15 @@ async function setup() {
   await resetTestDb(db);
   const store = await PostgresModelStore.open(db, { log: { warn: () => undefined } });
   const summary = await store.save(library, seeder);
+  // Reference properties an Admin defined, which the tests set (the save defined the model's).
+  const keys = ['feeds', 'usedBy', 'more', 'holds', 'constructor', 'toString'];
+  await insertElementDefinitions(
+    db,
+    elementDefinitionsForKeys(
+      keys.map((key) => ({ key, references: true })),
+      [],
+    ),
+  );
   return { store, service: new ElementService(store), modelId: summary.id };
 }
 
@@ -297,9 +308,11 @@ async function fields(promise: Promise<unknown>) {
   return error.fields;
 }
 
+/** The element audit rows (not the property rows the save wrote). */
 const audit = () =>
   db.query<{ action: string; element_id: string; details: unknown }>(
-    'select action, element_id, details from audit order by id',
+    `select action, element_id, details from audit where action not like '%property%'
+     order by id`,
   );
 
 describe('ElementService: Reference fields', () => {
@@ -328,8 +341,9 @@ describe('ElementService: Reference fields', () => {
     expect(JSON.stringify(rows)).not.toContain('desk');
   });
 
-  it('lets the same key be Text on one element and a Reference on another', async () => {
+  it('keeps a Reference under a Text property (a key used both ways), and refuses a new one there', async () => {
     const { store, service, modelId } = await setup();
+    // `uses` holds text and References in the model: the save made it a Text property.
     await service.updateElement(
       modelId,
       'scanner',
@@ -339,16 +353,23 @@ describe('ElementService: Reference fields', () => {
     const nodes = (await store.get(modelId))?.graph.nodes;
     expect(nodes?.scanner?.metadata?.uses).toBe('Batteries');
     expect(nodes?.desk?.metadata?.uses).toEqual(ref('catalogue', 'scanner'));
-    // And a field can go from Text to a Reference in one change.
+    // Sent back unchanged, the Reference stays; a new one under the Text property is refused.
     await service.updateElement(
       modelId,
-      'scanner',
-      { version: 2, metadata: { uses: ref('catalogue') } },
+      'desk',
+      { version: 1, name: 'Desk', metadata: { uses: ref('catalogue', 'scanner') } },
       modeller,
     );
-    expect((await store.get(modelId))?.graph.nodes?.scanner?.metadata?.uses).toEqual(
-      ref('catalogue'),
-    );
+    expect(
+      await fields(
+        service.updateElement(
+          modelId,
+          'scanner',
+          { version: 2, metadata: { uses: ref('catalogue') } },
+          modeller,
+        ),
+      ),
+    ).toEqual([{ field: 'metadata.uses', message: 'Must be text.' }]);
   });
 
   const refusals: [string, unknown, string][] = [
@@ -482,21 +503,20 @@ describe('ElementService: Reference fields', () => {
 
   it('refuses a type change that would turn a Reference into a standard property', async () => {
     const { service, modelId } = await setup();
-    await service.updateElement(
-      modelId,
-      'scanner',
-      { version: 1, metadata: { stakeholderKind: ref('desk') } },
-      modeller,
+    // A model may hold one under another type's standard key (no one can set it there now).
+    await db.query(
+      `update elements set metadata = $2::jsonb where model_id = $1::uuid and id = 'scanner'`,
+      [modelId, JSON.stringify({ stakeholderKind: ref('desk') })],
     );
     const refused = await fields(
-      service.updateElement(modelId, 'scanner', { version: 2, type: 'Stakeholder' }, modeller),
+      service.updateElement(modelId, 'scanner', { version: 1, type: 'Stakeholder' }, modeller),
     );
     expect(refused.map((issue) => issue.field)).toEqual(['type']);
     // Removing the field in the same change lets it through.
     await service.updateElement(
       modelId,
       'scanner',
-      { version: 2, type: 'Stakeholder', metadata: { stakeholderKind: null } },
+      { version: 1, type: 'Stakeholder', metadata: { stakeholderKind: null } },
       modeller,
     );
   });
@@ -682,11 +702,11 @@ describe('references through the API', () => {
     const url = (id: string) => `/api/models/${modelId}/elements/${id}`;
     const refused = await call('PATCH', url('desk'), {
       version: 1,
-      metadata: { uses: ref('desk') },
+      metadata: { seeAlso: ref('desk') },
     });
     expect(refused.statusCode).toBe(422);
     expect(refused.json<{ fields: unknown }>().fields).toEqual([
-      { field: 'metadata.uses', message: referenceMessages.itself },
+      { field: 'metadata.seeAlso', message: referenceMessages.itself },
     ]);
     const deleted = await call('DELETE', `${url('catalogue')}?version=1`);
     expect(deleted.statusCode).toBe(200);

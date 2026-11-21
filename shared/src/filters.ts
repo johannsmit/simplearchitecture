@@ -3,6 +3,7 @@
  * match a set of filters. Pure functions, linear in the model size, so the web app's element list
  * and a future MCP server filter the same way.
  */
+import { elementDefinitionOf, type ElementPropertyDefinition } from './element-properties.js';
 import { compareNames, normaliseForSearch, type ModelElement, type ModelGraph } from './graph.js';
 import {
   isStandardPropertyOf,
@@ -28,7 +29,10 @@ export interface FilterValueCount {
 export interface FilterField {
   /** The metadata key, e.g. `architectureState` or a custom key. */
   key: string;
-  /** The standard property's label (e.g. Architecture state), else the key itself. */
+  /**
+   * The standard property's label (e.g. Architecture state), an element property's name, else the
+   * key itself.
+   */
   label: string;
   /** True for a metamodel standard property, false for custom metadata. */
   standard: boolean;
@@ -119,8 +123,14 @@ function elementFilterValue(
  * then custom keys by name. A key is a field when at least one element has a value for it. A
  * custom key that holds a list or an object on any element is left out (every value differs),
  * except a Reference, which counts as not set: a key held only as a Reference is never a field.
+ *
+ * Element properties (`graph.elementProperties`) are fields by their names, in name order with the
+ * other custom keys, whatever their key (`archimateType` too): text and choice ones only (a choice's
+ * values in its options' order; a value of another kind counts as not set), never a Reference
+ * property.
  */
 export function filterFields(graph: ModelGraph): FilterField[] {
+  const definitions = graph.elementProperties;
   const counts = new Map<string, Map<string, number>>();
   const structured = new Set<string>();
   let total = 0;
@@ -129,13 +139,17 @@ export function filterFields(graph: ModelGraph): FilterField[] {
   for (const element of graph.elements.values()) {
     total += 1;
     for (const key of Object.keys(element.metadata)) {
-      if (!isFilterableKey(key)) continue;
+      const definition = elementDefinitionOf(definitions, key);
+      // An element property is a field whatever its key (`archimateType` too).
+      if (!isFilterableKey(key) && definition === undefined) continue;
       if (!countsFor(element, key, readAsOf(key))) continue;
+      if (definition?.kind === 'reference') continue;
       const raw = element.metadata[key];
       // A Reference is never a filter value; the key's text values on other elements still are.
       if (isReference(raw) && !isStandardPropertyOf(element.type, key)) continue;
       if (typeof raw === 'object' && raw !== null && !isElementStandardKey(key)) {
-        structured.add(key);
+        // Under an element property, a value of another kind is only not set.
+        if (definition === undefined) structured.add(key);
         continue;
       }
       const value = filterValueOf(element, key);
@@ -169,8 +183,8 @@ export function filterFields(graph: ModelGraph): FilterField[] {
   for (const [key, values] of counts) {
     if (structured.has(key)) continue;
     const standard = isElementStandardKey(key);
-    const rule = standard ? standardProperties[key].value : undefined;
-    const options: readonly string[] = rule?.kind === 'choice' ? rule.options : [];
+    const definition = standard ? undefined : elementDefinitionOf(definitions, key);
+    const options = choiceOptions(key, definition);
     const list = [...values].map(([value, count]) => ({ value, count }));
     list.sort((a, b) => {
       const ai = options.indexOf(a.value);
@@ -181,7 +195,7 @@ export function filterFields(graph: ModelGraph): FilterField[] {
     const withValue = list.reduce((sum, entry) => sum + entry.count, 0);
     fields.push({
       key,
-      label: standard ? standardProperties[key].label : key,
+      label: standard ? standardProperties[key].label : (definition?.name ?? key),
       standard,
       values: list,
       notSetCount: (readAsTotals.get(key) ?? total) - withValue,
@@ -190,8 +204,20 @@ export function filterFields(graph: ModelGraph): FilterField[] {
   return fields.sort((a, b) => {
     if (a.standard !== b.standard) return a.standard ? -1 : 1;
     if (a.standard) return standardOrder.indexOf(a.key) - standardOrder.indexOf(b.key);
-    return compareText(a.key, b.key);
+    return compareText(a.label, b.label) || compareText(a.key, b.key);
   });
+}
+
+/** The options of a choice field, in order: a standard property's, or an element property's. */
+function choiceOptions(
+  key: string,
+  definition: ElementPropertyDefinition | undefined,
+): readonly string[] {
+  if (isElementStandardKey(key)) {
+    const rule = standardProperties[key].value;
+    return rule.kind === 'choice' ? rule.options : [];
+  }
+  return definition?.kind === 'choice' ? (definition.options ?? []) : [];
 }
 
 export function compareText(a: string, b: string): number {

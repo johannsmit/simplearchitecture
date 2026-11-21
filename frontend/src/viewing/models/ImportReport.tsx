@@ -1,4 +1,5 @@
 import {
+  type AddedElementProperty,
   type AddedRelationshipProperty,
   type ChangedPropertyKey,
   type ChangedRelationshipKey,
@@ -104,6 +105,7 @@ export function summaryChips(
   changedKeys: readonly ChangedRelationshipKey[] = [],
   changedElementKeys: readonly ChangedPropertyKey[] = [],
   leftOutReferences: readonly LeftOutReferences[] = [],
+  newElementProperties: readonly AddedElementProperty[] = [],
 ): Chip[] {
   const chips: Chip[] = [];
   if (warningCount > 0) {
@@ -114,11 +116,12 @@ export function summaryChips(
       warn: true,
     });
   }
-  if (newProperties.length > 0) {
+  const added = newProperties.length + newElementProperties.length;
+  if (added > 0) {
     chips.push({
       key: 'new-properties',
       icon: 'plus',
-      text: counted(newProperties.length, 'new property', 'new properties'),
+      text: counted(added, 'new property', 'new properties'),
     });
   }
   const changedCount = changedKeys.length + changedElementKeys.length;
@@ -412,6 +415,8 @@ export function ReportSections(props: {
   validation: JgfValidationResult;
   /** Custom keys on the model's relationships, added as defined properties by the save. */
   newProperties?: readonly AddedRelationshipProperty[];
+  /** Custom keys on the model's elements, added as element properties by the save. */
+  newElementProperties?: readonly AddedElementProperty[];
   /** Keys on the model's relationships that were too long (shortened) or blank (left out). */
   changedKeys?: readonly ChangedRelationshipKey[];
   /** The same for the custom metadata on the model's elements. */
@@ -454,15 +459,7 @@ export function ReportSections(props: {
     const byArchimateType = nonZeroDescending(report.elements.mappedByElementType);
     const foldedByType = nonZeroDescending(report.elements.folded);
     const mappedProperties = sum(Object.values(properties.mapped));
-    // On relationships, custom keys become defined properties (New properties): elements only here.
-    const onRelationships = properties.onRelationships.keptAsCustom;
-    const keptOnElements = Object.fromEntries(
-      Object.entries(properties.keptAsCustom).map(([key, count]) => [
-        key,
-        count - (onRelationships[key] ?? 0),
-      ]),
-    );
-    const keptAsCustom = sum(Object.values(keptOnElements));
+    // Custom keys on elements and relationships become defined properties (New properties).
     const notTranslated = sum(Object.values(properties.valuesNotTranslated));
 
     sections.push(
@@ -639,7 +636,7 @@ export function ReportSections(props: {
         key="properties"
         id="properties"
         title="Properties"
-        summary={`${formatNumber(mappedProperties)} mapped · ${formatNumber(keptAsCustom)} kept as custom · ${counted(notTranslated, 'value')} not translated`}
+        summary={`${formatNumber(mappedProperties)} mapped · ${counted(notTranslated, 'value')} not translated`}
       >
         <CountTable
           caption="Mapped to standard properties"
@@ -659,10 +656,6 @@ export function ReportSections(props: {
               ],
             ),
           ]}
-        />
-        <CountTable
-          caption="Kept as custom metadata"
-          rows={nonZeroDescending(keptOnElements).map(([key, count]) => [key, count, key])}
         />
         <CountTable
           caption="Other"
@@ -703,22 +696,31 @@ export function ReportSections(props: {
   }
 
   const added = props.newProperties ?? [];
-  if (added.length > 0) {
+  const addedOnElements = props.newElementProperties ?? [];
+  if (added.length > 0 || addedOnElements.length > 0) {
+    const fromElements = `${formatNumber(addedOnElements.length)} added from elements`;
+    const fromRelationships =
+      addedOnElements.length > 0
+        ? `${formatNumber(added.length)} from relationships`
+        : `${formatNumber(added.length)} added from relationships`;
+    const rowsOf = (list: readonly { key: string; values: number }[]) =>
+      list.map((property): [ReactNode, number, string] => [
+        property.key,
+        property.values,
+        property.key,
+      ]);
     sections.push(
       <Section
         key="new-properties"
         id="new-properties"
         title="New properties"
-        summary={`${formatNumber(added.length)} added from relationships`}
+        summary={[
+          ...(addedOnElements.length > 0 ? [fromElements] : []),
+          ...(added.length > 0 ? [fromRelationships] : []),
+        ].join(', ')}
       >
-        <CountTable
-          caption="Added to Admin → Properties"
-          rows={added.map((property): [ReactNode, number, string] => [
-            property.key,
-            property.values,
-            property.key,
-          ])}
-        />
+        <CountTable caption="Added to Element properties" rows={rowsOf(addedOnElements)} />
+        <CountTable caption="Added to Relation properties" rows={rowsOf(added)} />
         <p>
           Check their names and kinds in <Link to="/admin/properties">Admin → Properties</Link>.
         </p>

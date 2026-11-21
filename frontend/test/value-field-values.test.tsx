@@ -1,8 +1,8 @@
-import { prototypeKeyMessage, type JgfDocument, type JgfEdge } from '@simplearchitecture/shared';
+import type { JgfDocument, JgfEdge } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { addField, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // A typed value is never changed or lost, and a stored number stays one. Made-up data.
 
@@ -17,7 +17,7 @@ const model = (): JgfDocument => ({
       ...bakeryModel.graph.nodes,
       shop: {
         ...bakeryModel.graph.nodes?.shop,
-        metadata: { ...bakeryModel.graph.nodes?.shop?.metadata, ...metadata },
+        metadata: { ...bakeryModel.graph.nodes?.shop?.metadata, ...metadata, html: 'plain' },
       },
       till: {
         ...bakeryModel.graph.nodes?.till,
@@ -99,14 +99,6 @@ function typeAndTake(form: HTMLElement, key: string, typed: string, row: string)
   fireEvent.click(screen.getByRole('option', { name: row }));
 }
 
-function addRow(form: HTMLElement, key: string, value: string) {
-  addField(form, key);
-  const name = `Value of ${key}`;
-  const field =
-    within(form).queryByRole('textbox', { name }) ?? within(form).getByRole('combobox', { name });
-  fireEvent.change(field, { target: { value } });
-}
-
 const save = (form: HTMLElement) => {
   fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
 };
@@ -120,14 +112,13 @@ describe.each(['element', 'relationship'] as const)('on the %s form', (kind) => 
     // Nothing differs from what is stored, so there is nothing to save.
     expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
 
-    // Only the row that changes is sent. A relationship takes no new keys: its stored row changes.
-    if (kind === 'element') addRow(form, 'zone', 'North');
-    else fireEvent.change(valueOf(form, 'flag'), { target: { value: 'North' } });
+    // Only the row that changes is sent. Neither form takes new keys: a stored row changes.
+    fireEvent.change(valueOf(form, 'flag'), { target: { value: 'North' } });
     save(form);
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
-    expect(sent[0]?.metadata).toEqual(kind === 'element' ? { zone: 'North' } : { flag: 'North' });
+    expect(sent[0]?.metadata).toEqual({ flag: 'North' });
   });
 
   it('stores another row as text, exactly as typing it would', async () => {
@@ -140,26 +131,20 @@ describe.each(['element', 'relationship'] as const)('on the %s form', (kind) => 
     expect(sent[0]?.metadata).toEqual({ port: '443' });
   });
 
-  // Assigning `__proto__` on a plain object does nothing, so the typed value was never sent, and
-  // nothing said so. The element form refuses the key with the server's message; a relationship
-  // takes no typed keys (an Admin defines them, and Admin → Properties refuses this one too).
-  it('says something about a value typed under the key __proto__', async () => {
-    const { form, sent } = await openForm(kind);
-    if (kind === 'relationship') {
-      expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
-      return;
-    }
-    addRow(form, '__proto__', 'Made-up');
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect(await within(form).findByText(prototypeKeyMessage)).toBeDefined();
-    expect(sent).toHaveLength(0);
+  // Assigning `__proto__` on a plain object does nothing, so a typed value was never sent, and
+  // nothing said so. Neither form takes typed keys now (an Admin defines them, and Admin →
+  // Properties refuses this one with the server's message).
+  it('takes no typed key, so no value can go under __proto__', async () => {
+    const { form } = await openForm(kind);
+    expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
+    expect(within(form).queryByLabelText('Key')).toBeNull();
   });
 });
 
 describe('odd values', () => {
   it('shows HTML in a value as text, in the row and its title', async () => {
     const { form } = await openForm('element');
-    addRow(form, 'html', '<');
+    fireEvent.change(valueOf(form, 'html'), { target: { value: '<' } });
     const option = screen.getByRole('option', { name: html });
     expect(option.textContent).toBe(html);
     expect(option.getAttribute('title')).toBe(html);
