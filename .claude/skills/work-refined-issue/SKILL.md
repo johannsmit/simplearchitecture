@@ -57,7 +57,8 @@ If a check still fails and you can't fix it within the issue's scope, open the p
 - Push the branch and open a pull request against `main`:
   - title: the change in a few words;
   - body: `Closes #<N>`, what changed for the user, the acceptance criteria with how each was checked, the checks actually run with their results (test count included), anything skipped or left open, and what the maintainer should try by hand.
-- Don't bump the version, tag, merge, or push to `main`. The maintainer does those.
+- Before you open the pull request, set its version as `CLAUDE.md` says (minor for a feature, patch for fixes only), with its release notes. Then run `npm install --package-lock-only` with npm 11 to check that the lockfile agrees. Give the new version in the pull request body.
+- Don't tag, merge, or push to `main`. The maintainer does those.
 - On the issue, swap `in-progress` for `in-review` and comment with the pull request link.
 
 Then stop.
