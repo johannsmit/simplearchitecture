@@ -38,6 +38,7 @@ const referencedByText =
 
 const modelId = z.string().max(100).describe('The model id, from list_models.');
 const elementId = z.string().max(1000).describe('The element id, from search_elements.');
+const viewId = z.string().max(100).describe('The view id, from list_views.');
 
 /** What the log line says about a result: counts only. */
 type Counts = Record<string, number>;
@@ -49,6 +50,7 @@ export function buildMcpServer(service: McpReadService, auth: McpAuth, log: Tool
     {
       instructions:
         'Read-only access to the IT architecture models this user can see in SimpleArchitecture. Start with list_models, then get_model_summary, then search_elements. ' +
+        "A model's views (the diagrams architects saved) are listed by list_views and read with get_view. " +
         untrusted,
     },
   );
@@ -191,6 +193,40 @@ export function buildMcpServer(service: McpReadService, auth: McpAuth, log: Tool
         'get_neighbours',
         model_id,
         () => service.neighbours(model_id, element_id, depth, relationship_types),
+        (r) => ({ elements: r.elements.length, relationships: r.relationships.length }),
+      ),
+  );
+
+  server.registerTool(
+    'list_views',
+    {
+      title: 'List views',
+      description: `Lists a model's views (the diagrams architects saved), by name: id, name, folder (when in one), counts of elements and relationships, version and last change. Use get_view for a view's contents. ${untrusted}`,
+      inputSchema: z.object({ model_id: modelId }),
+      annotations: readOnly,
+    },
+    async ({ model_id }) =>
+      run(
+        'list_views',
+        model_id,
+        () => service.listViews(model_id),
+        (r) => ({ views: r.views.length }),
+      ),
+  );
+
+  server.registerTool(
+    'get_view',
+    {
+      title: 'Get view',
+      description: `One view: its name, its folder and what it is grouped by (\`groupBy\`: the property's key and label) when set, its elements (in short) and its relationships with their source and target, read against the model as it is now. No layout. An id the model no longer has is left out and counted in \`missing\`. Use get_element for an element in full. ${kinds} ${labels} ${untrusted}`,
+      inputSchema: z.object({ model_id: modelId, view_id: viewId }),
+      annotations: readOnly,
+    },
+    async ({ model_id, view_id }) =>
+      run(
+        'get_view',
+        model_id,
+        () => service.view(model_id, view_id),
         (r) => ({ elements: r.elements.length, relationships: r.relationships.length }),
       ),
   );

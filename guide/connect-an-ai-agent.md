@@ -53,13 +53,15 @@ Click **Allow** only if you started connecting this agent yourself, just now. If
 
 ## What the agent can ask
 
-The agent gets five read-only tools:
+The agent gets seven read-only tools:
 
 - **List models**: the models you can see, with their size.
 - **Model summary**: how many elements of each type, and how many relationships.
 - **Search elements**: by name, type and properties, 50 at a time.
 - **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity, Identity Context and its two data lists (`sourceToTargetData`, `targetToSourceData`), when set.
 - **Get neighbours**: the elements up to three relationship steps away, as on the canvas, with the same details for each relationship.
+- **List views**: a model's [views](views.md), by name, with their folder and how many elements and relationships each holds.
+- **Get view**: one view's name, folder and Group by, with its elements and its relationships (each with its source and target, and the same details as above), as the model is now. An element or relationship deleted from the model is left out. Where the cards are on the canvas is not included.
 
 Every element comes with its type. A Stakeholder also has its Kind, `stakeholderKind`: `Human` or `AI Agent`, with Human when none is set. So you can ask, for example, which AI agents use an application: the agent searches Stakeholders with the filter `{"stakeholderKind": ["AI Agent"]}`.
 

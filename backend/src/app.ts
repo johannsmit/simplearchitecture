@@ -328,7 +328,8 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   await app.register(propertyRoutes(properties));
   await app.register(elementRoutes(new ElementService(modelStore)));
   await app.register(relationshipRoutes(new RelationshipService(modelStore)));
-  await app.register(viewRoutes(new ViewService(modelStore, properties)));
+  const views = new ViewService(modelStore, properties);
+  await app.register(viewRoutes(views));
   await app.register(databaseRoutes(database, now));
   await app.register(brandingRoutes(new BrandingService(db), uploads));
   await app.register(
@@ -341,7 +342,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   await app.register(agentRoutes(oauth));
   await app.register(
     mcpRoutes({
-      service: new McpReadService(modelStore, properties),
+      service: new McpReadService(modelStore, properties, views),
       resource: oauth.addresses.resource,
       now,
     }),

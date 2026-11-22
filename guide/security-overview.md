@@ -69,7 +69,7 @@ How people connect agents, and which paths a host opens for them, is in [Connect
 - Authorization codes are used once, within a minute, and are bound to the agent, its redirect address and the PKCE challenge. Using one twice ends the connection it started.
 - Access tokens last 1 hour. Refresh tokens change on every use, and using an old one again ends the whole connection. A connection ends 7 days after the user allowed it, however often it refreshes, and keeps the roles the user had at that moment until then.
 - Tokens are random, stored only as hashes, never logged, and work only on `/mcp`, which accepts nothing else, never the session cookie. Disconnecting, by the user or by an Admin for anyone, stops them at once.
-- Agents read exactly what Viewing shows that user, through five read-only tools. Model content is returned as data, marked as untrusted, never as instructions.
+- Agents read exactly what Viewing shows that user, through seven read-only tools. Model content is returned as data, marked as untrusted, never as instructions.
 
 ## Logs and the audit trail
 
