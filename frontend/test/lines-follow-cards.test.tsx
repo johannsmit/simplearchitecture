@@ -84,7 +84,7 @@ function modelApi(id: string, model: JgfDocument, summary: ModelSummary): Handle
   const nodes = new Map(Object.entries(model.graph.nodes ?? {}));
   const elementsUrl = `/api/models/${id}/elements/`;
   return ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${id}`) return Response.json(model);
     if (!url.startsWith(elementsUrl)) return undefined;
     const elementId = decodeURIComponent(url.slice(elementsUrl.length).split('?')[0] ?? '');

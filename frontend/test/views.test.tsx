@@ -100,7 +100,7 @@ function server(initial: StoredView[] = []) {
   };
   const handler: Handler = ({ url, method, body }) => {
     if (method === 'GET' && url === '/api/models') {
-      return Response.json({ models: [summary], editable: true });
+      return Response.json({ models: [summary] });
     }
     if (method === 'GET' && url === `/api/models/${libraryId}`) return Response.json(library);
     const usedIn = new RegExp(`^/api/models/${libraryId}/elements/([^/]+)/views$`).exec(url);

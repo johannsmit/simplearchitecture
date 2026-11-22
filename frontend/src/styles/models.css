@@ -693,11 +693,6 @@ th[aria-sort] .sort {
   overflow-wrap: anywhere;
 }
 
-.db-not-configured {
-  margin: 0;
-  font-size: 13px;
-}
-
 .db-actions {
   display: flex;
   flex-wrap: wrap;
@@ -733,7 +728,7 @@ th[aria-sort] .sort {
   font-size: 12px;
 }
 
-/* Modelling → Models without a database. */
+/* An information notice (the agent consent page). */
 .info-notice {
   display: flex;
   gap: 8px;

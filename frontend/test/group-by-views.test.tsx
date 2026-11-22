@@ -91,7 +91,7 @@ function server(initial: StoredView, document: JgfDocument = orchard) {
   const handler: Handler = ({ url, method, body }) => {
     const parsed =
       typeof body === 'string' ? (JSON.parse(body) as Record<string, unknown>) : undefined;
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(document);
     if (url.startsWith(`/api/models/${modelId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1] ?? '');

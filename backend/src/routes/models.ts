@@ -231,8 +231,6 @@ export function modelRoutes({
 
     app.get<{ Reply: ModelListResponse }>('/api/models', { config: viewing }, async () => ({
       models: await store.list(),
-      // Always true now that the API needs a database; the web app still reads it.
-      editable: true,
     }));
 
     // Damaged or unreadable models: ids only, for Admins, so they can be deleted.

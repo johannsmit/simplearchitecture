@@ -34,19 +34,6 @@ const sample: Branding = {
   version: 3,
 };
 
-const database = (configured: boolean) => ({
-  configured,
-  connected: configured,
-  host: null,
-  port: null,
-  database: null,
-  user: null,
-  tls: false,
-  tlsVerified: false,
-  serverVersion: null,
-  migrations: { applied: null, total: 4 },
-});
-
 interface Server {
   handler: Handler;
   /** The changes sent, in order. */
@@ -56,16 +43,13 @@ interface Server {
   failNext: ((url: string, method: string) => Response | undefined) | null;
 }
 
-function brandingServer(initial: Branding, configured = true): Server {
+function brandingServer(initial: Branding): Server {
   const server: Server = {
     writes: [],
     state: { ...initial },
     failNext: null,
     handler: ({ url, method, body }) => {
       if (url === '/api/branding' && method === 'GET') return Response.json(server.state);
-      if (url === '/api/admin/database' && method === 'GET') {
-        return Response.json(database(configured));
-      }
       if (!url.startsWith('/api/admin/branding')) return undefined;
       server.writes.push(`${method} ${url}`);
       const failure = server.failNext?.(url, method);
@@ -424,23 +408,22 @@ describe('Admin → Branding', () => {
     renderBranded('/admin/branding');
     await screen.findByRole('heading', { name: "You don't have access to Admin" });
     expect(screen.queryByRole('textbox', { name: 'Primary colour' })).toBeNull();
-    expect(requests(fetchMock)).not.toContain('GET /api/admin/database');
+    expect(requests(fetchMock)).not.toContain('PUT /api/admin/branding');
   });
 
-  it('says branding needs a database, with a link to Admin → Database', async () => {
-    await openPage(brandingServer(neutral, false));
-    await screen.findByText('Branding needs a database.');
-    const link = screen.getByRole('link', { name: 'Admin → Database' });
-    expect(link.getAttribute('href')).toBe('/admin/database');
-    expect(screen.queryByRole('textbox', { name: 'Primary colour' })).toBeNull();
-    expect(screen.queryByRole('figure')).toBeNull();
+  // The server always has a database: the page doesn't ask for its status.
+  it('opens the form without asking for the database status', async () => {
+    const fetchMock = await openPage(brandingServer(neutral));
+    await screen.findByRole('textbox', { name: 'Primary colour' });
+    expect(requests(fetchMock)).not.toContain('GET /api/admin/database');
+    expect(screen.queryByText(/needs a database/)).toBeNull();
   });
 
   it('shows a load error with Try again', async () => {
     let fail = true;
     const server = brandingServer(neutral);
     stubApi(admin, (request) =>
-      request.url === '/api/admin/database' && fail
+      request.url === '/api/branding' && fail
         ? apiError(500, 'Something went wrong')
         : server.handler(request),
     );
@@ -716,15 +699,16 @@ describe('Admin → Branding', () => {
     expect(primaryField()).toHaveProperty('value', '#1d6b5f');
   });
 
-  it('a 501 on save switches to "Branding needs a database."', async () => {
+  it('a 501 on save is a plain failure: the form stays', async () => {
     const server = brandingServer(neutral);
     await openPage(server);
     await screen.findByRole('textbox', { name: 'Primary colour' });
     fireEvent.change(primaryField(), { target: { value: '#1d6b5f' } });
-    server.failNext = () => apiError(501, 'Branding needs a database.');
+    server.failNext = () => apiError(501, 'Made-up failure.');
     fireEvent.click(saveButton());
-    await screen.findByText(/This server keeps models in files/);
-    expect(screen.queryByRole('textbox', { name: 'Primary colour' })).toBeNull();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain("The branding wasn't saved.");
+    expect(primaryField()).toHaveProperty('value', '#1d6b5f');
   });
 
   it('Discard changes brings back what is saved', async () => {

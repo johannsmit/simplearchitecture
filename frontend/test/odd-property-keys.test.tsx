@@ -33,7 +33,7 @@ function api(metadata: Record<string, unknown>) {
   const sent: Record<string, unknown>[] = [];
   const handler: Handler = (request) => {
     if (request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.url === '/api/properties') return Response.json({ properties: definitions });
     if (request.url === `/api/models/${bakeryId}`) return Response.json(document);
@@ -131,7 +131,7 @@ function elementApi(metadata: Record<string, unknown>) {
   const sent: Record<string, unknown>[] = [];
   const handler: Handler = (request) => {
     if (request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.url === '/api/properties') return Response.json({ properties: [] });
     if (request.url === `/api/models/${bakeryId}`) return Response.json(document);

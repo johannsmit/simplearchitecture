@@ -25,7 +25,7 @@ function api(opened: Record<string, unknown>) {
   const sent: Record<string, unknown>[] = [];
   const handler: Handler = (request) => {
     if (request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.url === `/api/models/${bakeryId}`) return Response.json(document);
     const element = /\/elements\/([^/?]+)/.exec(request.url);

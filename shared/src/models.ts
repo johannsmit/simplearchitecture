@@ -42,8 +42,6 @@ export interface ModelSummary {
 /** Response body of `GET /api/models`. Newest first. */
 export interface ModelListResponse {
   models: ModelSummary[];
-  /** Whether elements can be edited (Modelling). Always true: the API needs a database. */
-  editable: boolean;
 }
 
 /** A stored model file that can't be read or doesn't pass validation. Only its id is shared. */

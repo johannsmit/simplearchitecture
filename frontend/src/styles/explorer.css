@@ -2517,12 +2517,6 @@
   line-height: 16px;
 }
 
-.mode-pill.is-readonly {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-  color: var(--text-muted);
-}
-
 .toolbar .open-modelling {
   flex: none;
 }

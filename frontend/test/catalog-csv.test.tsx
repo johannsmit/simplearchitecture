@@ -147,7 +147,7 @@ describe('Download CSV in the catalog', () => {
   };
   const api: Handler = ({ url, method }) => {
     if (method !== 'GET') return undefined;
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${id}`) return Response.json(cafe);
     if (url === `/api/models/${id}/views`) return Response.json({ views: [] });
     return undefined;

@@ -129,7 +129,6 @@ interface Server {
 /** A small stand-in for the editing API, with versions. `answer` can override any request. */
 function api(
   options: {
-    editable?: boolean;
     answer?: (request: Parameters<Handler>[0]) => Response | undefined;
   } = {},
 ): {
@@ -146,7 +145,7 @@ function api(
     const custom = options.answer?.(request);
     if (custom) return custom;
     if (request.method === 'GET' && request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: options.editable ?? true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.method === 'GET' && request.url === `/api/models/${bakeryId}`) {
       return Response.json(bakeryModel);
@@ -226,7 +225,7 @@ describe('Modelling explorer', () => {
     const { form } = await openForm(at('till'));
 
     expect(screen.getByRole('region', { name: 'Explorer, editing' })).toBeTruthy();
-    // Modelling is editing mode, so there is no Editing pill (only Read-only has one).
+    // Modelling is editing mode, so there is no Editing pill.
     expect(document.querySelector('.mode-pill')).toBeNull();
     expect(screen.getByRole('button', { name: 'New element' })).toBeTruthy();
     expect(nameField(form)).toHaveProperty('value', 'Till');
@@ -488,28 +487,26 @@ describe('Modelling explorer', () => {
   });
 });
 
-describe('Modelling without a database', () => {
-  it('says editing is off and opens models read-only', async () => {
-    const { handler } = api({ editable: false });
+// The models list carries no editing flag: Modelling always edits.
+describe('Modelling with a models list that has no editing flag', () => {
+  it('lists the models without an editing-off notice', async () => {
+    const { handler } = api();
     stubApi(modeller, handler);
     renderAt('/modelling');
-    expect(
-      await screen.findByText(/Editing is off on this server\. It needs a database/),
-    ).toBeTruthy();
+    expect(await screen.findByRole('link', { name: bakerySummary.name })).toBeTruthy();
+    expect(screen.queryByText(/Editing is off/)).toBeNull();
   });
 
-  it('shows the Read-only pill and the Viewing panel', async () => {
-    const { handler } = api({ editable: false });
+  it('opens a model for editing, with no Read-only pill', async () => {
+    const { handler } = api();
     stubApi(modeller, handler);
     renderAt(at('till'));
 
-    expect(await screen.findByText('Read-only', { selector: '.mode-pill' })).toBeTruthy();
-    // The list can answer before the model does: the pill may come before the panel.
-    expect(await screen.findByText('Editing is off: it needs a database.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'New element' })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'New element' })).toBeTruthy();
     await within(details()).findByRole('heading', { level: 2, name: 'Till' });
-    expect(screen.queryByRole('form')).toBeNull();
-    expect(within(details()).queryByRole('button', { name: 'Delete element' })).toBeNull();
+    expect(within(details()).getByRole('button', { name: 'Delete element' })).toBeTruthy();
+    expect(screen.queryByText('Read-only', { selector: '.mode-pill' })).toBeNull();
+    expect(screen.queryByText(/Editing is off/)).toBeNull();
   });
 });
 

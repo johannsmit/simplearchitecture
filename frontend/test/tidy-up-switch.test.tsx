@@ -105,7 +105,7 @@ function server() {
   const original = structuredClone(views);
   const calls: Call[] = [];
   const handler: Handler = ({ url, method }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(bakery);
     if (url.startsWith(`/api/models/${modelId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1] ?? '');

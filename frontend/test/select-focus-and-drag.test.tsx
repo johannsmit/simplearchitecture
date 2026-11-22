@@ -37,10 +37,10 @@ const model: JgfDocument = {
   },
 };
 
-function api(editable: boolean): Handler {
+function api(): Handler {
   return ({ url, method }) => {
     if (method !== 'GET') return undefined;
-    if (url === '/api/models') return Response.json({ models: [bakerySummary], editable });
+    if (url === '/api/models') return Response.json({ models: [bakerySummary] });
     if (url === `/api/models/${bakeryId}`) return Response.json(model);
     if (url.startsWith(`/api/models/${bakeryId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1]?.split('?')[0] ?? '');
@@ -62,8 +62,8 @@ function api(editable: boolean): Handler {
   };
 }
 
-function open(path: string, me: MeResponse = viewer, editable = false) {
-  const fetchMock = stubApi(me, api(editable));
+function open(path: string, me: MeResponse = viewer) {
+  const fetchMock = stubApi(me, api());
   renderAt(path);
   return fetchMock;
 }
@@ -180,7 +180,7 @@ describe('select and focus', () => {
   });
 
   it('in Modelling, a single click opens the selected element’s form without moving the canvas', async () => {
-    open(`/modelling/models/${bakeryId}/elements/shop?depth=1`, modeller, true);
+    open(`/modelling/models/${bakeryId}/elements/shop?depth=1`, modeller);
     await screen.findByRole('form', { name: 'Edit Web Shop' });
     await shopCanvas();
     fireEvent.click(card('till')?.querySelector('.card-main') as HTMLElement);
@@ -193,8 +193,8 @@ describe('select and focus', () => {
 });
 
 describe('relationship information in Viewing', () => {
-  async function openE1(me: MeResponse, editable = false) {
-    const fetchMock = open(viewingAt('shop'), me, editable);
+  async function openE1(me: MeResponse) {
+    const fetchMock = open(viewingAt('shop'), me);
     await shopCanvas();
     fireEvent.click(
       within(details()).getByRole('button', { name: /^Open relationship: .*Customer/ }),
@@ -262,7 +262,7 @@ describe('relationship information in Viewing', () => {
   });
 
   it('gives a Modeller "Open in Modelling", which opens the same relationship editable', async () => {
-    await openE1(modeller, true);
+    await openE1(modeller);
     const link = within(details()).getByRole('link', { name: 'Open in Modelling' });
     await act(async () => {
       fireEvent.click(link);

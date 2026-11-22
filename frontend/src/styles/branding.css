@@ -253,14 +253,6 @@
   min-width: 76px;
 }
 
-.brand-no-db {
-  max-width: 640px;
-}
-
-.brand-no-db p + p {
-  margin-top: 4px;
-}
-
 /* Preview: a picture of the app with the draft tokens; the figure sets them inline. */
 .pv-grid {
   display: grid;

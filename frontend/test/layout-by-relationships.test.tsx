@@ -90,7 +90,7 @@ function server(initial: StoredView): Handler {
   let view = structuredClone(initial);
   const base = `/api/models/${modelId}/views/${initial.id}`;
   return ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(observatory);
     if (url === `/api/models/${modelId}/views`) {
       return Response.json({ views: [{ ...view, elementIds: undefined, layout: undefined }] });

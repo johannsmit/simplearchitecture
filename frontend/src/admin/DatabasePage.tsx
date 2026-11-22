@@ -137,14 +137,7 @@ export function DatabasePage() {
               <Icon name="layers" />
               PostgreSQL
             </h2>
-            {database.configured ? (
-              <Fields database={database} />
-            ) : (
-              <p className="db-not-configured">
-                <b>Not configured: using file storage.</b> Models are stored as files in DATA_DIR on
-                the server, and sessions are kept in memory.
-              </p>
-            )}
+            <Fields database={database} />
             <div className="db-actions">
               <button
                 className="btn"

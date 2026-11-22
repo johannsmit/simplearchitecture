@@ -540,7 +540,7 @@ describe('a defined property in the read-only panel', () => {
   it('shows defined properties after the standard rows, marks a value outside the list', async () => {
     const handler: Handler = (request) => {
       if (request.url === '/api/models') {
-        return Response.json({ models: [bakerySummary], editable: true });
+        return Response.json({ models: [bakerySummary] });
       }
       if (request.url === `/api/models/${bakeryId}`) return Response.json(document_);
       if (request.url === '/api/properties') {

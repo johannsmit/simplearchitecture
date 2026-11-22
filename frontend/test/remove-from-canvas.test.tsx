@@ -22,7 +22,7 @@ import {
 function apiFor(id: string, model: JgfDocument, summary: object): Handler {
   return ({ url, method }) => {
     if (method !== 'GET') return undefined;
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${id}`) return Response.json(model);
     if (url.startsWith(`/api/models/${id}/elements/`)) {
       const elementId = decodeURIComponent(url.split('/elements/')[1]?.split('?')[0] ?? '');

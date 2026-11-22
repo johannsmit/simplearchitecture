@@ -44,7 +44,7 @@ function api() {
       unknown
     >;
     if (request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.url === `/api/models/${bakeryId}`) return Response.json(document);
     if (request.method === 'PATCH') sent.push(body);

@@ -19,8 +19,6 @@ export type ModelList =
 
 interface ModelsValue {
   list: ModelList;
-  /** Whether elements can be edited on this server (Modelling); undefined until the list loads. */
-  editable: boolean | undefined;
   /** Loads the list if it hasn't been loaded yet. */
   ensureLoaded: () => void;
   reload: () => void;
@@ -38,7 +36,6 @@ const ModelsContext = createContext<ModelsValue | null>(null);
  */
 export function ModelsProvider({ children }: { children: ReactNode }) {
   const [list, setList] = useState<ModelList>({ status: 'idle' });
-  const [editable, setEditable] = useState<boolean | undefined>(undefined);
   const controller = useRef<AbortController | null>(null);
 
   const reload = useCallback(() => {
@@ -47,10 +44,9 @@ export function ModelsProvider({ children }: { children: ReactNode }) {
     controller.current = current;
     setList((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
     listModels(current.signal)
-      .then(({ models, editable: canEdit }) => {
+      .then(({ models }) => {
         if (current.signal.aborted) return;
         setList({ status: 'ready', models });
-        setEditable(canEdit);
       })
       .catch((error: unknown) => {
         if (current.signal.aborted) return;
@@ -99,8 +95,8 @@ export function ModelsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ list, editable, ensureLoaded, reload, added, removed }),
-    [list, editable, ensureLoaded, reload, added, removed],
+    () => ({ list, ensureLoaded, reload, added, removed }),
+    [list, ensureLoaded, reload, added, removed],
   );
   return <ModelsContext value={value}>{children}</ModelsContext>;
 }

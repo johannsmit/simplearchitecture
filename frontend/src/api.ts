@@ -149,10 +149,7 @@ function isModelSummary(value: unknown): value is ModelSummary {
   );
 }
 
-/**
- * GET /api/models: every stored model, newest first, and whether elements can be edited (it
- * needs the database). A missing flag counts as not editable.
- */
+/** GET /api/models: every stored model, newest first. Any other field is ignored. */
 export async function listModels(signal?: AbortSignal): Promise<ModelListResponse> {
   const body = await json(await request('/api/models', signal ? { signal } : {}));
   const list = body as Partial<ModelListResponse> | null;
@@ -160,7 +157,7 @@ export async function listModels(signal?: AbortSignal): Promise<ModelListRespons
   if (!Array.isArray(models) || !models.every(isModelSummary)) {
     throw new ApiRequestError(200, 'The server sent an unexpected model list.');
   }
-  return { models, editable: list?.editable === true };
+  return { models };
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -259,7 +256,6 @@ function isDatabaseStatus(value: unknown): value is DatabaseStatus {
   if (!isObject(value) || !isObject(value.migrations)) return false;
   const { migrations } = value;
   return (
-    typeof value.configured === 'boolean' &&
     typeof value.connected === 'boolean' &&
     isText(value.host) &&
     (value.port === null || typeof value.port === 'number') &&
