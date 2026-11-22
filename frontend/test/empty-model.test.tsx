@@ -16,10 +16,10 @@ const summary: ModelSummary = {
   edgeCount: 0,
 };
 
-function api(editable: boolean): Handler {
+function api(): Handler {
   return ({ url, method, body }) => {
     if (url === '/api/models' && method === 'GET') {
-      return Response.json({ models: [summary], editable });
+      return Response.json({ models: [summary] });
     }
     if (url === `/api/models/${emptyId}` && method === 'GET') {
       return Response.json({
@@ -54,7 +54,7 @@ const list = () => screen.getByRole('complementary', { name: 'Elements and views
 
 describe('an empty model', () => {
   it('opens in Modelling with the empty states, and New element adds the first element', async () => {
-    stubApi(modeller, api(true));
+    stubApi(modeller, api());
     renderAt(`/modelling/models/${emptyId}`);
 
     expect(
@@ -86,21 +86,8 @@ describe('an empty model', () => {
     expect(screen.queryByRole('heading', { name: 'This model has no elements yet' })).toBeNull();
   });
 
-  it('opens in Modelling with editing off, read-only', async () => {
-    stubApi(modeller, api(false));
-    renderAt(`/modelling/models/${emptyId}`);
-
-    expect(
-      await screen.findByRole('heading', { name: 'This model has no elements yet' }),
-    ).toBeTruthy();
-    expect(screen.getByText('Elements added in Modelling show here.')).toBeTruthy();
-    expect(within(list()).getByText('Editing is off: it needs a database.')).toBeTruthy();
-    expect(within(list()).getByText('No elements yet.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'New element' })).toBeNull();
-  });
-
   it('asks to show the list first when it is hidden', async () => {
-    stubApi(modeller, api(true));
+    stubApi(modeller, api());
     renderAt(`/modelling/models/${emptyId}`);
     await screen.findByRole('heading', { name: 'This model has no elements yet' });
 
@@ -119,7 +106,7 @@ describe('a model whose last element is deleted', () => {
     const deleted: string[] = [];
     stubApi(modeller, ({ url, method }) => {
       if (url === '/api/models' && method === 'GET') {
-        return Response.json({ models: [onlySummary], editable: true });
+        return Response.json({ models: [onlySummary] });
       }
       if (url === `/api/models/${onlyId}` && method === 'GET') {
         return Response.json({

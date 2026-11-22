@@ -103,7 +103,7 @@ function server(initial: StoredView) {
   const calls: Call[] = [];
   const base = `/api/models/${modelId}/views/${initial.id}`;
   const handler: Handler = ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(plant);
     if (url === `/api/models/${modelId}/views`) {
       return Response.json({ views: [{ ...view, elementIds: undefined, layout: undefined }] });

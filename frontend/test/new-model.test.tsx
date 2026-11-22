@@ -28,11 +28,10 @@ const created: ModelSummary = {
 function api(
   answer: (body: unknown) => Response | Promise<Response> = () =>
     Response.json({ model: created }, { status: 201 }),
-  editable = true,
 ): Handler {
   return ({ url, method, body }) => {
     if (url === '/api/models' && method === 'GET') {
-      return Response.json({ models: [bakerySummary], editable });
+      return Response.json({ models: [bakerySummary] });
     }
     if (url === '/api/admin/models/damaged') return Response.json({ models: [] });
     if (url === '/api/models/new' && method === 'POST') {
@@ -192,14 +191,12 @@ describe('New model', () => {
     expect(document.activeElement).toBe(newModelButton());
   });
 
-  it('says the new model opens read-only when editing is off', async () => {
-    await openDialog(api(undefined, false));
+  it('opens the new model in Modelling from the result', async () => {
+    await openDialog();
     fireEvent.change(nameField(), { target: { value: 'Made-up harbour' } });
     submit();
     const heading = await screen.findByRole('heading', { name: 'Created “Made-up harbour”' });
-    expect(heading.closest('section')?.textContent).toContain(
-      'An empty model. Editing is off on this server, so it opens read-only.',
-    );
+    expect(heading.closest('section')?.textContent).not.toContain('read-only');
     fireEvent.click(
       within(heading.closest('section') as HTMLElement).getByRole('link', {
         name: 'Open in Modelling',

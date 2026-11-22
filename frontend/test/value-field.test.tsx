@@ -326,7 +326,7 @@ function api(model: JgfDocument) {
   const handler: Handler = (request) => {
     const body: unknown = typeof request.body === 'string' ? JSON.parse(request.body) : undefined;
     if (request.method === 'GET' && request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.method === 'GET' && request.url === `/api/models/${bakeryId}`) {
       return Response.json(model);

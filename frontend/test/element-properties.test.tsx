@@ -81,7 +81,7 @@ function api() {
   const handler: Handler = (request) => {
     const body: unknown = typeof request.body === 'string' ? JSON.parse(request.body) : undefined;
     if (request.url === '/api/models') {
-      return Response.json({ models: [summary], editable: true });
+      return Response.json({ models: [summary] });
     }
     if (request.url === `/api/models/${modelId}`) return Response.json(model);
     if (/\/views(\?|$)/.test(request.url)) return Response.json({ views: [] });

@@ -234,7 +234,7 @@ function appsApi(
   remove: () => Response = () => new Response(null, { status: 204 }),
 ): Handler {
   return ({ url, method }) => {
-    if (url === '/api/models') return Response.json({ models: [], editable: true });
+    if (url === '/api/models') return Response.json({ models: [] });
     if (url === '/api/branding') return Response.json({ logo: null, colours: null });
     if (url === '/api/agents' && method === 'GET') return Response.json({ apps: list });
     if (url.startsWith('/api/agents/') && method === 'DELETE') return remove();
@@ -336,7 +336,7 @@ const everyone: AdminConnectedApp[] = [
 
 function adminApi(list: AdminConnectedApp[]): Handler {
   return ({ url, method }) => {
-    if (url === '/api/models') return Response.json({ models: [], editable: true });
+    if (url === '/api/models') return Response.json({ models: [] });
     if (url === '/api/admin/models/damaged') return Response.json({ models: [] });
     if (url === '/api/branding') return Response.json({ logo: null, colours: null });
     if (url === '/api/admin/agents' && method === 'GET') return Response.json({ apps: list });

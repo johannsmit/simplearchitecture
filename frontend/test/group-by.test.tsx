@@ -75,7 +75,7 @@ function api(document: JgfDocument = harbour) {
   const patches: { id: string; body: unknown }[] = [];
   const elementsUrl = `/api/models/${modelId}/elements/`;
   const handler: Handler = ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(document);
     if (url === `/api/models/${modelId}/views`) return Response.json({ views: [] });
     if (!url.startsWith(elementsUrl)) return undefined;

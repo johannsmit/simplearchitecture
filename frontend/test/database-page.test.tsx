@@ -16,7 +16,6 @@ import {
 /** Admin → Database shows the PostgreSQL connection, read-only. */
 
 const connected: DatabaseStatus = {
-  configured: true,
   connected: true,
   host: 'db.example.test',
   port: 5432,
@@ -28,20 +27,7 @@ const connected: DatabaseStatus = {
   migrations: { applied: 1, total: 1 },
 };
 
-const notConfigured: DatabaseStatus = {
-  configured: false,
-  connected: false,
-  host: null,
-  port: null,
-  database: null,
-  user: null,
-  tls: false,
-  tlsVerified: false,
-  serverVersion: null,
-  migrations: { applied: null, total: 1 },
-};
-
-function api(status: DatabaseStatus, test: () => Response): Handler {
+function api(status: DatabaseStatus | Record<string, unknown>, test: () => Response): Handler {
   return ({ url, method }) => {
     if (url === '/api/admin/database' && method === 'GET') return Response.json(status);
     if (url === '/api/admin/database/test' && method === 'POST') return test();
@@ -122,18 +108,16 @@ describe('Admin → Database', () => {
     });
   });
 
-  it('says when there is no database: file storage', async () => {
+  // An older server also sent `configured`; the extra field is ignored.
+  it('shows the details from a status that still has the old configured flag', async () => {
     stubApi(
       admin,
-      api(notConfigured, () =>
-        Response.json({ ok: false, message: 'Not configured: using file storage.' }),
-      ),
+      api({ ...connected, configured: false }, () => Response.json({ ok: true, message: 'x' })),
     );
     renderAt('/admin/database');
     await screen.findByRole('region', { name: 'PostgreSQL' });
-    expect(card().textContent).toContain('Not configured: using file storage.');
-    expect(within(card()).queryAllByRole('term')).toHaveLength(0);
-    await expectNoSeriousAxeViolations();
+    expect(fields().Status).toBe('Connected');
+    expect(card().textContent).not.toContain('file storage');
   });
 
   it('is linked from the Admin pages, next to Models', async () => {

@@ -23,7 +23,7 @@ describe('relationship panel renders text as text', () => {
   it('shows markup in the label, description and metadata literally', async () => {
     stubApi(viewer, ({ url, method }) => {
       if (method !== 'GET') return undefined;
-      if (url === '/api/models') return Response.json({ models: [bakerySummary], editable: false });
+      if (url === '/api/models') return Response.json({ models: [bakerySummary] });
       if (url === `/api/models/${bakeryId}`) return Response.json(model);
       return undefined;
     });

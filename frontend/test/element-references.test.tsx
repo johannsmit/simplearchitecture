@@ -528,7 +528,7 @@ function api() {
     const body: unknown = typeof request.body === 'string' ? JSON.parse(request.body) : undefined;
     if (request.method !== 'GET') bodies.push({ method: request.method, url: request.url, body });
     if (request.method === 'GET' && request.url === '/api/models') {
-      return Response.json({ models: [summary], editable: true });
+      return Response.json({ models: [summary] });
     }
     if (request.method === 'GET' && request.url === `/api/models/${modelId}`) {
       return Response.json(model);

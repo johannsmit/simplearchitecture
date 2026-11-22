@@ -5,11 +5,10 @@ import {
   type Branding,
 } from '@simplearchitecture/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import {
   ApiRequestError,
   getBranding,
-  getDatabaseStatus,
   removeBrandingLogo,
   resetBranding,
   saveBrandingColours,
@@ -28,7 +27,6 @@ import { checkLogoFile, kilobytes, logoMessages, type PickedLogo } from './brand
 type Load =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'no-database' }
   | { status: 'ready'; saved: Branding };
 
 /** The draft logo: unchanged (what's saved), removed, or a new file. */
@@ -134,12 +132,8 @@ export function BrandingPage() {
 
   const loadPage = useCallback(
     (signal?: AbortSignal, then?: Focus) => {
-      Promise.all([getBranding(signal), getDatabaseStatus(signal)])
-        .then(([branding, database]) => {
-          if (!database.configured) {
-            setLoad({ status: 'no-database' });
-            return;
-          }
+      getBranding(signal)
+        .then((branding) => {
           setLoad({ status: 'ready', saved: branding });
           startFrom(branding);
           updateApp(branding);
@@ -267,10 +261,6 @@ export function BrandingPage() {
     });
   };
 
-  const noDatabase = () => {
-    setLoad({ status: 'no-database' });
-  };
-
   /** Shows why a save failed. `coloursSaved`: the colours went through, the logo didn't. */
   const failed = (error: unknown, stage: 'colours' | 'logo', coloursSaved: boolean) => {
     if (!(error instanceof ApiRequestError)) {
@@ -278,10 +268,6 @@ export function BrandingPage() {
       return;
     }
     if (error.status === 401) return; // The shell shows the session ended.
-    if (error.status === 501) {
-      noDatabase();
-      return;
-    }
     if (error.status === 409) {
       setConflict(true);
       return;
@@ -403,9 +389,6 @@ export function BrandingPage() {
       .catch((error: unknown) => {
         if (error instanceof ApiRequestError && error.status === 409) {
           setReset({ busy: false, error: brandingConflictMessage, stale: true });
-        } else if (error instanceof ApiRequestError && error.status === 501) {
-          setReset(null);
-          noDatabase();
         } else {
           setReset({
             busy: false,
@@ -482,22 +465,6 @@ export function BrandingPage() {
             <button className="btn" type="button" onClick={reload}>
               Try again
             </button>
-          </div>
-        )}
-
-        {load.status === 'no-database' && (
-          <div className="info-notice brand-no-db">
-            <Icon name="info" />
-            <div>
-              <p>
-                <b>Branding needs a database.</b>
-              </p>
-              <p>
-                This server keeps models in files (no DATABASE_URL), so everyone sees the neutral
-                look. Branding can be set once the server uses PostgreSQL. See{' '}
-                <Link to="/admin/database">Admin → Database</Link>.
-              </p>
-            </div>
           </div>
         )}
 

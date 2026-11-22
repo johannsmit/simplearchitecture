@@ -21,10 +21,10 @@ for (const edge of model.graph.edges ?? []) {
 }
 model.graph.edges?.push({ id: 'c1', source: 'server', target: 'till', relation: 'Contains' });
 
-function api(editable = false): Handler {
+function api(): Handler {
   return ({ url, method }) => {
     if (method !== 'GET') return undefined;
-    if (url === '/api/models') return Response.json({ models: [bakerySummary], editable });
+    if (url === '/api/models') return Response.json({ models: [bakerySummary] });
     if (url === `/api/models/${bakeryId}`) return Response.json(model);
     if (url.startsWith(`/api/models/${bakeryId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1]?.split('?')[0] ?? '');
@@ -69,7 +69,7 @@ const positions = () =>
 const details = () => screen.getByRole('complementary', { name: 'Details' });
 
 async function open(space: Space, path = at(space)) {
-  stubApi(space === 'viewing' ? viewer : modeller, api(space === 'modelling'));
+  stubApi(space === 'viewing' ? viewer : modeller, api());
   renderAt(path);
   await waitFor(() => {
     expect(card('shop')).toBeTruthy();
@@ -268,7 +268,7 @@ describe('Show relationships in Modelling', () => {
   });
 
   it('is not offered as a change to the model: switching it sends nothing', async () => {
-    const fetchMock = stubApi(modeller, api(true));
+    const fetchMock = stubApi(modeller, api());
     renderAt(at('modelling'));
     await linesDrawn();
     fireEvent.click(linesSwitch());

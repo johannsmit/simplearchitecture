@@ -35,7 +35,7 @@ const summary: ModelSummary = {
 async function open(space: 'viewing' | 'modelling') {
   stubApi(space === 'viewing' ? viewer : admin, ({ url, method }) => {
     if (method !== 'GET') return undefined;
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(model);
     const element = /\/elements\/([^?]+)$/.exec(url)?.[1];
     if (element !== undefined) {

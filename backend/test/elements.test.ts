@@ -173,7 +173,7 @@ describe('element routes: editing', () => {
     const { target, cookie } = await signedInAs(['Modeller']);
     const logs = captureLogs(target);
     const list = await call(target, 'GET', '/api/models', { cookie });
-    expect(list.json<ModelListResponse>().editable).toBe(true);
+    expect(list.json<ModelListResponse>()).not.toHaveProperty('editable');
 
     const added = await call(target, 'POST', `/api/models/${modelId}/elements`, {
       cookie,

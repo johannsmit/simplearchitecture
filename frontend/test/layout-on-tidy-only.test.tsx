@@ -104,7 +104,7 @@ function bakeryApi(): Handler {
     );
   return ({ url, method, body }) => {
     const parsed = typeof body === 'string' ? (JSON.parse(body) as Record<string, unknown>) : {};
-    if (url === '/api/models') return Response.json({ models: [bakerySummary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [bakerySummary] });
     if (url === `/api/models/${bakeryId}`) return Response.json(bakeryModel);
     if (url.startsWith(elementsUrl)) {
       const id = decodeURIComponent(url.slice(elementsUrl.length + 1).split('?')[0] ?? '');
@@ -360,7 +360,7 @@ const librarySummary: ModelSummary = {
 
 function libraryApi(view: StoredView): Handler {
   return ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [librarySummary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [librarySummary] });
     if (url === `/api/models/${libraryId}`) return Response.json(library);
     if (url.startsWith(`/api/models/${libraryId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1] ?? '');

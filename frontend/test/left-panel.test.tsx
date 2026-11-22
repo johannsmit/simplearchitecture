@@ -53,7 +53,7 @@ const view = (index: number, folder: string | null): ViewSummary => ({
 
 const api: Handler = ({ url, method }) => {
   if (method !== 'GET') return undefined;
-  if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+  if (url === '/api/models') return Response.json({ models: [summary] });
   if (url === `/api/models/${modelId}`) return Response.json(model);
   if (url === `/api/models/${modelId}/views`) return Response.json({ views });
   if (url.startsWith(`/api/models/${modelId}/elements/`)) {

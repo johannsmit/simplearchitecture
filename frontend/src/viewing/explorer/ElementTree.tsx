@@ -83,7 +83,7 @@ interface ElementTreeProps {
   onSelectElement?: (id: string) => void;
   /** Shift+Enter on a row (dragging a row onto the canvas does the same). */
   onAddToCanvas?: (id: string) => void;
-  /** Shown above the search row: + New element in Modelling, or why editing is off. */
+  /** Shown above the search row: + New element in Modelling. */
   top?: ReactNode;
   /** Shown instead of the search and the tree when the model has no elements. */
   emptyText?: string;

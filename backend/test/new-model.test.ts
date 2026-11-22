@@ -321,15 +321,15 @@ describe('POST /api/models/new', () => {
 });
 
 describe('a new model with PostgreSQL', () => {
-  it('is stored, listed as editable, and takes its first element', async () => {
+  it('is stored, listed, and takes its first element', async () => {
     const { target, cookie } = await start({ roles: ['Admin'] });
     const res = await post(target, { cookie });
     expect(res.statusCode).toBe(201);
     const { model } = res.json<NewModelResult>();
 
     const listed = await list(target, cookie);
-    expect(listed.editable).toBe(true);
-    expect(listed.models).toEqual([model]);
+    // The list is only the models: no editing flag.
+    expect(listed).toEqual({ models: [model] });
 
     const read = await target.inject({
       method: 'GET',

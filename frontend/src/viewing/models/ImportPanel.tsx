@@ -23,7 +23,7 @@ export type ImportState =
   | { kind: 'rejected'; fileName: string; body: ModelRejected }
   | { kind: 'failed'; fileName: string; format: ImportFormat; status: number; message: string }
   /** A new, empty model was created (New model). Shown in the same place as an import result. */
-  | { kind: 'created'; model: ModelSummary; editable: boolean };
+  | { kind: 'created'; model: ModelSummary };
 
 interface ImportPanelProps {
   state: ImportState;
@@ -167,11 +167,7 @@ export function ImportPanel({ state, onDismiss, onChooseFile }: ImportPanelProps
               <h2 id="import-result-title" ref={heading} tabIndex={-1}>
                 Created “{model.name}”
               </h2>
-              <p>
-                {state.editable
-                  ? 'An empty model. Open it in Modelling to add its first element.'
-                  : 'An empty model. Editing is off on this server, so it opens read-only.'}
-              </p>
+              <p>An empty model. Open it in Modelling to add its first element.</p>
             </div>
             <div className="actions">
               <Link className="btn primary" to={modelPath(model.id, 'modelling')}>

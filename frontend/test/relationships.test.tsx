@@ -71,7 +71,7 @@ function api(answer?: (method: string, url: string, body: unknown) => Response |
     const custom = answer?.(request.method, request.url, body);
     if (custom) return custom;
     if (request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.url === `/api/models/${bakeryId}`) return Response.json(bakeryModel);
     if (request.url.startsWith(`/api/models/${bakeryId}/elements`)) {

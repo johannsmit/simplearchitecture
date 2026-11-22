@@ -102,7 +102,7 @@ function server(initial: StoredView[]) {
   const views = new Map(initial.map((each) => [each.id, structuredClone(each)]));
   const calls: Call[] = [];
   const handler: Handler = ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(orchard);
     if (url.startsWith(`/api/models/${modelId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1]?.split('/')[0] ?? '');

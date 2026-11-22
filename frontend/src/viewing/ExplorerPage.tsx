@@ -659,9 +659,8 @@ function Explorer({
     typeof propertiesLoad === 'string' ? noProperties : propertiesLoad.relationship;
   const elementDefinitions =
     typeof propertiesLoad === 'string' ? noElementProperties : propertiesLoad.element;
-  const { list, editable: canEdit, reload: reloadModels } = useModels();
-  const editable = space === 'modelling' && canEdit === true;
-  const readOnlyModelling = space === 'modelling' && canEdit === false;
+  const { list, reload: reloadModels } = useModels();
+  const editable = space === 'modelling';
   const home = spaceHome(space);
   const allTrail = useTrail(modelId, elementId);
   const tree = usePanel('tree');
@@ -1683,8 +1682,6 @@ function Explorer({
       isOnCanvas={(id) => onCanvas.has(id)}
       {...(view === 'catalog' ? { existingLabel: 'Show in catalog' } : {})}
     />
-  ) : readOnlyModelling ? (
-    <p className="editing-off">Editing is off: it needs a database.</p>
   ) : undefined;
 
   return (
@@ -1814,13 +1811,6 @@ function Explorer({
           />
         )}
         <div className="toolbar">
-          {/* Modelling is editing mode: only Read-only gets a pill. */}
-          {readOnlyModelling && (
-            <span className="mode-pill is-readonly">
-              <Icon name="lock" size="sm" />
-              Read-only
-            </span>
-          )}
           <button
             type="button"
             className="icon-btn"
@@ -2351,10 +2341,7 @@ function Explorer({
                 onBack={deselect}
                 onFocusElement={followElement}
                 openInModelling={
-                  space === 'viewing' &&
-                  canEdit === true &&
-                  me.spaces.includes('modelling') &&
-                  elementId !== undefined
+                  space === 'viewing' && me.spaces.includes('modelling') && elementId !== undefined
                     ? {
                         to: elementPath(
                           modelId,

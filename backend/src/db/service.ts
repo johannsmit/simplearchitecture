@@ -204,7 +204,6 @@ export class DatabaseService {
     const total = this.migrations.length;
     const { db, connection } = this;
     const shown = {
-      configured: true,
       host: connection.host,
       port: connection.port,
       database: connection.database,

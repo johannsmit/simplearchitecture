@@ -53,7 +53,7 @@ function api(answer?: (request: Parameters<Handler>[0]) => Response | undefined)
     const custom = answer?.(request);
     if (custom) return custom;
     if (request.method === 'GET' && request.url === '/api/models') {
-      return Response.json({ models: [bakerySummary], editable: true });
+      return Response.json({ models: [bakerySummary] });
     }
     if (request.method === 'GET' && request.url === `/api/models/${bakeryId}`) {
       return Response.json(bakeryModel);

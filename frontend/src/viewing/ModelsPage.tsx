@@ -55,7 +55,7 @@ interface ModelsPageProps {
 export function ModelsPage({ mode }: ModelsPageProps) {
   const me = useMe();
   const canModel = mode === 'manage' && me.spaces.includes('admin');
-  const { list, editable, reload, added, removed } = useModels();
+  const { list, reload, added, removed } = useModels();
   const [params, setParams] = useSearchParams();
   const sort = parseSort(params.get('sort'), params.get('dir'));
 
@@ -199,7 +199,7 @@ export function ModelsPage({ mode }: ModelsPageProps) {
   const modelCreated = (model: ModelSummary) => {
     setNewModelOpen(false);
     // Replaces any import result; focus goes to its heading.
-    setImportState({ kind: 'created', model, editable: editable === true });
+    setImportState({ kind: 'created', model });
     if (list.status === 'ready') added(model);
     else reload();
     setNewId(model.id);
@@ -319,21 +319,6 @@ export function ModelsPage({ mode }: ModelsPageProps) {
             </div>
           )}
         </div>
-
-        {mode === 'model' && editable === false && (
-          <div className="notice info-notice">
-            <Icon name="info" />
-            <p>
-              Editing is off on this server. It needs a database, so models open read-only.
-              {me.spaces.includes('admin') && (
-                <>
-                  {' '}
-                  See <Link to="/admin/database">Admin → Database</Link>.
-                </>
-              )}
-            </p>
-          </div>
-        )}
 
         {canModel && (
           <>

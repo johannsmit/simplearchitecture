@@ -334,8 +334,8 @@ describe('the API with PostgreSQL', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['cache-control']).toBe('no-store');
       const status = res.json<DatabaseStatus>();
+      // No `configured` flag: the API always has a database.
       expect(status).toEqual({
-        configured: true,
         connected: true,
         host: 'db.example.test',
         port: 5432,
@@ -451,7 +451,8 @@ describe('the API with PostgreSQL', () => {
         silent,
       );
       const status = await broken.status();
-      expect(status).toMatchObject({ configured: true, connected: false, serverVersion: null });
+      expect(status).toMatchObject({ connected: false, serverVersion: null });
+      expect(status).not.toHaveProperty('configured');
       expect(status.migrations.applied).toBeNull();
     });
   });

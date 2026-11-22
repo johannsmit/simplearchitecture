@@ -92,7 +92,7 @@ function server(initial: StoredView) {
   const next: { failWith?: Response } = {};
   const base = `/api/models/${modelId}/views/${initial.id}`;
   const handler: Handler = ({ url, method, body }) => {
-    if (url === '/api/models') return Response.json({ models: [summary], editable: true });
+    if (url === '/api/models') return Response.json({ models: [summary] });
     if (url === `/api/models/${modelId}`) return Response.json(greenhouse);
     if (url.startsWith(`/api/models/${modelId}/elements/`)) {
       const id = decodeURIComponent(url.split('/elements/')[1] ?? '');
