@@ -38,6 +38,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.67.1](releases/v0.67.1.md): lines from a card inside a container cross its header beside the name.
   - [0.67.0](releases/v0.67.0.md): lines between cards above and below each other use the facing top and bottom.
   - [0.66.0](releases/v0.66.0.md): select several cards and move them together.
   - [0.65.2](releases/v0.65.2.md): straight lines between a Stakeholder circle and a card.
