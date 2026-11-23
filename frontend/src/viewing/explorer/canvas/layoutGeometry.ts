@@ -82,6 +82,23 @@ export function groupTextArea(box: Box, width: number): Box {
   return { x: box.x + textInset - clear, y: box.y, width: shown + 2 * clear, height: header };
 }
 
+/**
+ * Where a container's name (type mark and name) is, with 8px around it that lines keep clear of:
+ * centred in its 40px header, `width` wide (or as wide as the 1px border and 12px padding either
+ * side let it be: a longer name is cut).
+ */
+export function containerNameArea(box: Box, width: number): Box {
+  const clear = 8;
+  const inset = 1 + 12;
+  const shown = Math.max(0, Math.min(width, box.width - 2 * inset));
+  return {
+    x: box.x + (box.width - shown) / 2 - clear,
+    y: box.y,
+    width: shown + 2 * clear,
+    height: Math.min(box.height, containerBox.header),
+  };
+}
+
 /** The header and padding of a box that holds cards: a group box's, or a container's. */
 export function frameOf(id: string | undefined): {
   header: number;

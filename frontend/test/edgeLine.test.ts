@@ -723,6 +723,48 @@ describe('a line without a route goes round the cards in its way', () => {
     expect(line?.points).toHaveLength(2);
   });
 
+  // A 600px container with a 100px name: centred in its header, 8px kept clear either side.
+  const depot = at(0, 200, { width: 600, height: 172, headerWidth: 100 });
+  const depotName = { x: 242, y: 200, width: 116, height: 40 };
+
+  it('crosses a container’s header beside its name, from a card in it to a card above it', () => {
+    // Under the left or right end of the header, and with the card above off to one side.
+    for (const [inner, above] of [
+      [16, 16],
+      [424, 424],
+      [16, 120],
+      [424, 300],
+    ] as const) {
+      const boxes = {
+        depot,
+        crate: at(inner, 256, { parent: 'depot' }),
+        office: at(above, 0),
+      };
+      const line = lineOf(boxes, 'crate', 'office');
+      const where = `inner ${String(inner)}, above ${String(above)}`;
+      expect([line?.start.side, line?.end.side], where).toEqual(['top', 'bottom']);
+      expect(crossesAny(line?.points ?? [], [depotName]), where).toBe(false);
+      // Out over the top, not round by the container's side.
+      expect(Math.min(...(line?.points ?? []).map((point) => point.x)), where).toBeGreaterThan(0);
+      expect(Math.max(...(line?.points ?? []).map((point) => point.x)), where).toBeLessThan(600);
+    }
+  });
+
+  it('still keeps off a container’s name when the facing line would run through it', () => {
+    // The card in it and the card above are both right under a 200px name.
+    const boxes = {
+      depot: { ...depot, headerWidth: 200 },
+      crate: at(220, 256, { parent: 'depot' }),
+      office: at(220, 0),
+    };
+    const line = lineOf(boxes, 'crate', 'office');
+    expect(line).toBeDefined();
+    expect(crossesAny(line?.points ?? [], [{ x: 192, y: 200, width: 216, height: 40 }])).toBe(
+      false,
+    );
+    expect(crossesAny(line?.points ?? [], [boxes.office])).toBe(false);
+  });
+
   it('runs straight past cards far from it, on a large canvas', () => {
     // 400 cards far away: none is in the line's way.
     const boxes: Record<string, EndBox> = { a: at(0, 0), b: at(400, 0) };

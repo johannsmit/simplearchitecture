@@ -4,7 +4,7 @@ import {
   type ModelGraph,
 } from '@simplearchitecture/shared';
 import { cardShape } from '../../../metamodel-ui';
-import { cardNameCut, isCircleNameCut, isContainerNameCut } from './cardSize';
+import { cardNameCut, containerNameWidth, isCircleNameCut, isContainerNameCut } from './cardSize';
 import {
   zIndexes,
   type CanvasNode,
@@ -50,7 +50,8 @@ export function groupHeadsOf(laid: Laid | null): Map<string, GroupHead> {
 
 /**
  * The cards as a line's ends see them: a Stakeholder's lines end on its circle, not its box. Group
- * boxes too: a line keeps out of a box it neither starts nor ends in, and off its header text.
+ * boxes too: a line keeps out of a box it neither starts nor ends in, and off its header text. A
+ * container's name too, as wide as its header draws it: a line crosses the header beside it.
  */
 export function endBoxesOf(
   absolute: ReadonlyMap<string, Box>,
@@ -67,12 +68,20 @@ export function endBoxesOf(
       element !== undefined &&
       cardShape(element.type) === 'circle';
     const parent = shown.get(id)?.parent;
-    const head = groupHeads.get(id);
+    const headerWidth =
+      groupHeads.get(id)?.width ??
+      (element !== undefined && laid?.containers.has(id) === true
+        ? containerNameWidth({
+            name: element.name,
+            focused: id === laid.hood.focusId,
+            userIcon: nodeTypeDefinitions[element.type].icon === 'user',
+          })
+        : undefined);
     boxes.set(id, {
       ...box,
       ...(circle ? { circle } : {}),
       ...(parent === undefined ? {} : { parent }),
-      ...(head ? { headerWidth: head.width } : {}),
+      ...(headerWidth === undefined ? {} : { headerWidth }),
     });
   }
   return boxes;

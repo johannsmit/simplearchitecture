@@ -1,5 +1,8 @@
 import { buildModelGraph, containsType, type JgfDocument } from '@simplearchitecture/shared';
 import { describe, expect, it } from 'vitest';
+import { endBoxesOf } from '../src/viewing/explorer/canvas/canvasCards';
+import type { Laid } from '../src/viewing/explorer/canvas/canvasModel';
+import { containerNameWidth } from '../src/viewing/explorer/canvas/cardSize';
 import type { PlacedCard } from '../src/viewing/explorer/canvas/elkLayout';
 import { laidForCanvas, nameArea } from '../src/viewing/explorer/canvas/laidRoutes';
 import { fitContainers } from '../src/viewing/explorer/canvas/positions';
@@ -192,5 +195,24 @@ describe('on the made-up models', () => {
     expect(total.containers).toBeGreaterThan(40);
     expect(total.crossedNames / total.containers).toBeLessThanOrEqual(0.1);
     expect(total.overlaps).toBe(0);
+  });
+});
+
+describe('the ends of lines without a route', () => {
+  it('know how wide each container’s name is drawn, so a line may cross its header beside it', () => {
+    const graph = buildModelGraph(desks);
+    const absolute = new Map([
+      ['b1', { x: 0, y: 0, width: 168, height: 44 }],
+      ['k', { x: 0, y: 200, width: 400, height: 116 }],
+      ['a1', { x: 16, y: 256, width: 168, height: 44 }],
+    ]);
+    const shown = new Map([['a1', { parent: 'k' } as PlacedCard]]);
+    const laid = { containers: new Set(['k']), hood: { focusId: 'b1' } } as unknown as Laid;
+    const boxes = endBoxesOf(absolute, graph, laid, shown, new Map());
+    expect(boxes.get('k')?.headerWidth).toBe(
+      containerNameWidth({ name: 'Policy Platform', focused: false, userIcon: false }),
+    );
+    expect(boxes.get('a1')?.headerWidth).toBeUndefined();
+    expect(boxes.get('b1')?.headerWidth).toBeUndefined();
   });
 });

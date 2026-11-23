@@ -304,7 +304,15 @@ export async function canvasOf(
     const circle =
       !containers.has(id) && element !== undefined && cardShape(element.type) === 'circle';
     const parent = placed.get(id)?.parent;
-    const header = headerWidths.get(id);
+    const header =
+      headerWidths.get(id) ??
+      (containers.has(id) && element
+        ? containerNameWidth({
+            name: element.name,
+            focused: id === focusId,
+            userIcon: nodeTypeDefinitions[element.type].icon === 'user',
+          })
+        : undefined);
     endBoxes.set(id, {
       ...box,
       ...(circle ? { circle } : {}),
