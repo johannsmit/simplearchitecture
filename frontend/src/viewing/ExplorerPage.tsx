@@ -1,125 +1,73 @@
 import {
   buildModelGraph,
   type CatalogTab,
-  canRemoveFromCanvas,
-  containerOf,
-  degree,
   findElements,
   groupByChoices,
-  maxDepth,
-  mostConnected,
-  neighbourhood,
-  nodeTypes,
-  withAddedElements,
-  withContainers,
-  withoutElements,
-  type DeletedRelationshipResult,
-  relationshipOfEdge,
-  relationshipsOf,
   relationshipViewFields,
   dataViewKey,
-  type StoredView,
-  type ElementChangeResult,
-  type JgfDocument,
-  type ElementPropertyDefinition,
-  type RelationshipPropertyDefinition,
-  type ChangedView,
-  type JgfEdge,
-  type ModelRelationship,
-  type NestingChange,
   type NodeType,
-  type RelationshipChangeResult,
 } from '@simplearchitecture/shared';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   useCallback,
   useEffect,
-  useImperativeHandle,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
   type RefObject,
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
-import {
-  ApiRequestError,
-  getElement,
-  getModel,
-  listProperties,
-  type DefinedPropertyLists,
-} from '../api';
 import { useMe } from '../auth';
-import { UnsavedDialog } from '../modelling/dialogs';
-import { withEdge, withNode, withoutEdge, withoutElement } from '../modelling/document';
-import { RelationshipEditor } from '../modelling/RelationshipEditor';
-import { AddRelationshipBox, relationshipSentence } from '../modelling/relationships';
-import { ElementEditor, type EditorHandle, type EditorState } from '../modelling/ElementEditor';
+import { type EditorHandle, type EditorState } from '../modelling/ElementEditor';
 import { NewElement } from '../modelling/NewElement';
 import { ErrorBoundary } from '../ErrorBoundary';
-import { Icon, type IconName } from '../icons';
-import { TypeMark } from '../metamodel-ui';
+import { Icon } from '../icons';
 import { useModels } from '../models';
-import { Popover } from '../shell/Popover';
-import { counted, formatNumber } from '../words';
 import { ExplorerCanvas } from './explorer/canvas/ExplorerCanvas';
-import { storedWidths } from './explorer/canvas/viewLayout';
-import {
-  hasMovedCards,
-  noMovedPositions,
-  withMovedCard,
-  type MovedPositions,
-  type Point,
-} from './explorer/canvas/positions';
-import { isGroupId } from './explorer/canvas/layoutGeometry';
-import { DetailsPanel, type RelationshipTools } from './explorer/DetailsPanel';
-import { ElementTree } from './explorer/ElementTree';
+import { CanvasMessage } from './explorer/CanvasMessage';
+import { ExplorerDetails } from './explorer/ExplorerDetails';
+import { ExplorerMessage } from './explorer/ExplorerMessage';
+import { ExplorerToolbar } from './explorer/ExplorerToolbar';
+import { ExplorerViewDialogs } from './explorer/ExplorerViewDialogs';
+import { parseExplorerPath } from './explorer/parseExplorerPath';
 import { Legend } from './explorer/Legend';
-import { RelationshipDetails } from './explorer/RelationshipDetails';
-import {
-  panels,
-  parseDepth,
-  readDepth,
-  readPanelOpen,
-  readPanelWidth,
-  readNestContained,
-  readShowLines,
-  readViewsOpen,
-  writeDepth,
-  writePanelOpen,
-  writePanelWidth,
-  writeNestContained,
-  writeShowLines,
-  writeViewsOpen,
-  type PanelName,
-} from './explorer/prefs';
+import { readShowLines, writeShowLines } from './explorer/prefs';
 import { Catalog, catalogTabOnEntry } from './explorer/catalog/Catalog';
+import { useRelationshipChanges } from './explorer/useRelationshipChanges';
 import { ResizeHandle } from './explorer/ResizeHandle';
 import { useElementSearch } from './explorer/search';
-import { useOpenView } from './explorer/useOpenView';
-import { ViewBar } from './explorer/ViewBar';
-import { DeleteViewDialog, RenameViewDialog, SaveViewDialog } from './explorer/ViewDialogs';
+import { useElementChanges } from './explorer/useElementChanges';
+import { StartPage } from './explorer/StartPage';
+import { useTrail } from './explorer/trail';
+import { TreePanel } from './explorer/TreePanel';
+import { UnsavedGuard, type Ask } from './explorer/UnsavedGuard';
+import { useCanvasCards } from './explorer/useCanvasCards';
+import { useCanvasLayout } from './explorer/useCanvasLayout';
+import { useEditorBridge } from './explorer/useEditorBridge';
+import { useFocusAndDepth } from './explorer/useFocusAndDepth';
+import { useLitRelationship } from './explorer/useLitRelationship';
 import {
-  canvasContents,
-  noFocus,
-  viewCap,
-  viewHood,
-  withElementInView,
-  withoutDeleted,
-  withoutElementInView,
-  withRelationshipInView,
-  type ViewContents,
-} from './explorer/views';
-import { UsedInViews } from './explorer/UsedInViews';
-import { useViewList, ViewsSection } from './explorer/ViewsSection';
+  noElementProperties,
+  noProperties,
+  useDefinedProperties,
+  useModelDocument,
+} from './explorer/useModelDocument';
+import { useNewElementKey } from './explorer/useNewElementKey';
+import { useOpenView } from './explorer/useOpenView';
+import { usePanel } from './explorer/usePanel';
+import { useSelection } from './explorer/useSelection';
+import { useStoredVersion } from './explorer/useStoredVersion';
+import { useViewPanel } from './explorer/useViewPanel';
+import { ViewBar } from './explorer/ViewBar';
+import { ViewNotice } from './explorer/ViewNotice';
+import { noFocus } from './explorer/views';
+import { useViewList } from './explorer/ViewsSection';
 import {
   elementPath,
   explorerSearch,
   modelPath,
   modelStartPath,
   readExplorerView,
-  viewPath,
   viewSearchCleaned,
   spaceHome,
   groupBySearch,
@@ -130,195 +78,9 @@ import {
   type ExplorerView,
 } from './paths';
 
-/** A stable empty list, so memos don't see a new one on every render. */
-const noIds: readonly string[] = [];
-const noWidths: ReadonlyMap<string, number> = new Map();
-const noIdSet: ReadonlySet<string> = new Set();
-
-/** The most elements the breadcrumb trail keeps; the oldest drops off. */
-export const trailLength = 5;
-const suggestions = 5;
-
-function decode(segment: string): string | undefined {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Reads `/viewing|modelling/models/:modelId[/elements/:elementId | /views/:viewId]` from the raw
- * (still encoded) path, so element ids may hold any character, including "/".
- */
-export function parseExplorerPath(pathname: string):
-  | {
-      space: ExplorerSpace;
-      modelId: string;
-      elementId: string | undefined;
-      viewId: string | undefined;
-    }
-  | undefined {
-  const match =
-    /^\/(viewing|modelling)\/models\/([^/]+)(?:\/elements\/([^/]+)|\/views\/([^/]+))?\/?$/.exec(
-      pathname,
-    );
-  const modelId = match?.[2] === undefined ? undefined : decode(match[2]);
-  if (modelId === undefined) return undefined;
-  const space: ExplorerSpace = match?.[1] === 'modelling' ? 'modelling' : 'viewing';
-  const element = match?.[3];
-  const view = match?.[4];
-  // A segment that can't be decoded can't be in the model: show "not in this model".
-  return {
-    space,
-    modelId,
-    elementId: element === undefined ? undefined : (decode(element) ?? element),
-    viewId: view === undefined ? undefined : (decode(view) ?? view),
-  };
-}
-
-/** Shown when a model arrives but can't be read: never the browser's own error text. */
-export const unreadableModelMessage =
-  "The model's data isn't in a form the explorer can read. It may be damaged.";
-
-type Load =
-  | { status: 'loading' }
-  | { status: 'ready'; document: JgfDocument }
-  | { status: 'missing' }
-  | { status: 'failed'; message: string };
-
-/** The model, its retry, and an update for changes the server accepted (Modelling). */
-function useModelDocument(
-  modelId: string,
-): [Load, () => void, (change: (document: JgfDocument) => JgfDocument) => void] {
-  const [load, setLoad] = useState<{ modelId: string; value: Load }>({
-    modelId,
-    value: { status: 'loading' },
-  });
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    getModel(modelId, controller.signal)
-      .then((document) => {
-        setLoad({ modelId, value: { status: 'ready', document } });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        // The API's messages are written for people; anything else (a model the client can't
-        // read) gets a plain message, and the details go to the console only.
-        if (!(error instanceof ApiRequestError)) console.error(error);
-        const status = error instanceof ApiRequestError ? error.status : 0;
-        setLoad({
-          modelId,
-          value:
-            status === 404 || status === 400
-              ? { status: 'missing' }
-              : {
-                  status: 'failed',
-                  message:
-                    error instanceof ApiRequestError ? error.message : unreadableModelMessage,
-                },
-        });
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [modelId, attempt]);
-
-  const retry = useCallback(() => {
-    setLoad({ modelId, value: { status: 'loading' } });
-    setAttempt((n) => n + 1);
-  }, [modelId]);
-  const update = useCallback((change: (document: JgfDocument) => JgfDocument) => {
-    setLoad((current) =>
-      current.value.status === 'ready'
-        ? { ...current, value: { status: 'ready', document: change(current.value.document) } }
-        : current,
-    );
-  }, []);
-  return [load.modelId === modelId ? load.value : { status: 'loading' }, retry, update];
-}
-
-type PropertiesLoad = 'loading' | 'failed' | DefinedPropertyLists;
-
-const noProperties: readonly RelationshipPropertyDefinition[] = [];
-const noElementProperties: readonly ElementPropertyDefinition[] = [];
-
-/**
- * The properties an Admin defined for relationships and for elements, read with the model (and
- * again on `reload`, after a save refused a property that is gone).
- */
-function useDefinedProperties(modelId: string): [PropertiesLoad, () => void] {
-  const [load, setLoad] = useState<PropertiesLoad>('loading');
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    listProperties(controller.signal)
-      .then((properties) => {
-        setLoad(properties);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setLoad('failed');
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [modelId, attempt]);
-  const reload = useCallback(() => {
-    setAttempt((n) => n + 1);
-  }, []);
-  return [load, reload];
-}
-
-/**
- * The trail after focusing an element: back to it when it is in the trail already (a crumb click
- * or Back), otherwise added at the end, keeping the last `trailLength` elements.
- */
-export function nextTrail(trail: readonly string[], elementId: string): string[] {
-  const at = trail.lastIndexOf(elementId);
-  return at >= 0 ? trail.slice(0, at + 1) : [...trail, elementId].slice(-trailLength);
-}
-
-/** The last elements focused in this tab, per model (reset when the model changes). */
-function useTrail(modelId: string, elementId: string | undefined): string[] {
-  const [trail, setTrail] = useState<{ modelId: string; elementId?: string; ids: string[] }>({
-    modelId,
-    ...(elementId === undefined ? {} : { elementId }),
-    ids: elementId === undefined ? [] : [elementId],
-  });
-  // Updated while rendering (not in an effect), so the trail never lags the URL.
-  if (trail.modelId !== modelId || trail.elementId !== elementId) {
-    let ids: string[];
-    if (trail.modelId !== modelId) ids = elementId === undefined ? [] : [elementId];
-    else if (elementId === undefined) ids = trail.ids;
-    else ids = nextTrail(trail.ids, elementId);
-    setTrail({ modelId, ...(elementId === undefined ? {} : { elementId }), ids });
-    return ids;
-  }
-  return trail.ids;
-}
-
-function usePanel(panel: PanelName) {
-  const [open, setOpen] = useState(() => readPanelOpen(panel));
-  const [width, setWidth] = useState(() => readPanelWidth(panel));
-  return {
-    open,
-    width,
-    toggle: () => {
-      setOpen(!open);
-      writePanelOpen(panel, !open);
-    },
-    resize: (next: number, done: boolean) => {
-      setWidth(next);
-      if (done) writePanelWidth(panel, next);
-    },
-    reset: () => {
-      setWidth(panels[panel].fallback);
-      writePanelWidth(panel, null);
-    },
-  };
-}
+export { nextTrail, trailLength } from './explorer/trail';
+export { parseExplorerPath } from './explorer/parseExplorerPath';
+export { unreadableModelMessage } from './explorer/useModelDocument';
 
 /**
  * The explorer for one stored model: element tree, canvas and details. Read-only in Viewing; in
@@ -349,241 +111,10 @@ export function ExplorerPage() {
       backTo={home}
       backLabel="Back to models"
     >
-      <UnsavedGuard
-        space={parsed.space}
-        modelId={parsed.modelId}
-        elementId={parsed.elementId}
-        viewId={parsed.viewId}
-      />
+      <UnsavedGuard modelId={parsed.modelId} elementId={parsed.elementId} viewId={parsed.viewId}>
+        {(guarded) => <Explorer space={parsed.space} {...guarded} />}
+      </UnsavedGuard>
     </ErrorBoundary>
-  );
-}
-
-/** Asks before unsaved changes are dropped; runs `proceed` when they may be. */
-type Ask = (proceed: () => void, keep?: () => void) => void;
-
-interface Shown {
-  modelId: string;
-  elementId: string | undefined;
-  viewId: string | undefined;
-  url: string;
-  view: ExplorerView;
-}
-
-/**
- * Holds unsaved changes in the editing form. The explorer shows the
- * element the guard lets through: when the address moves on (a card, a crumb, browser Back)
- * while the form has changes, the explorer stays where it is and asks first; Keep editing puts
- * the address back. Links out of the explorer and closing the tab ask too.
- */
-function UnsavedGuard(props: {
-  space: ExplorerSpace;
-  modelId: string;
-  elementId: string | undefined;
-  viewId: string | undefined;
-}) {
-  const navigate = useNavigate();
-  const { pathname, search } = useLocation();
-  const url = `${pathname}${search}`;
-  const view = readExplorerView(new URLSearchParams(search)).view;
-  const [shown, setShown] = useState<Shown>({
-    modelId: props.modelId,
-    elementId: props.elementId,
-    viewId: props.viewId,
-    url,
-    view,
-  });
-  const [editorState, setEditorState] = useState<EditorState | null>(null);
-  const dirty = editorState?.dirty === true;
-  // Read by `ask` at once, so a click replayed right after a catalog cell saved isn't asked
-  // about changes that are already saved.
-  const dirtyNow = useRef(false);
-  const reportState = useCallback((state: EditorState | null) => {
-    dirtyNow.current = state?.dirty === true;
-    setEditorState(state);
-  }, []);
-  const setClean = () => {
-    dirtyNow.current = false;
-    setEditorState((current) => current && { ...current, dirty: false });
-  };
-  const [dialog, setDialog] = useState<{ proceed: () => void; keep?: () => void } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const editor = useRef<EditorHandle | null>(null);
-
-  const ask = useCallback<Ask>((proceed, keep) => {
-    if (dirtyNow.current) setDialog({ proceed, ...(keep ? { keep } : {}) });
-    else proceed();
-  }, []);
-
-  // The address the user chose to stay away from (Keep editing), until the address is put back.
-  const [held, setHeld] = useState<string | null>(null);
-  if (held !== null && url !== held) setHeld(null);
-
-  // The address moved: follow it, or (with changes) hold it and ask. Adjusted while rendering.
-  if (shown.url !== url && dialog === null && url !== held) {
-    // An open catalog cell is dropped by a view change too; the details form stays with it.
-    const moved =
-      shown.modelId !== props.modelId ||
-      shown.elementId !== props.elementId ||
-      shown.viewId !== props.viewId ||
-      (editorState?.cell === true && shown.view !== view);
-    const next = {
-      modelId: props.modelId,
-      elementId: props.elementId,
-      viewId: props.viewId,
-      url,
-      view,
-    };
-    if (!moved || !dirty) setShown(next);
-    else {
-      setDialog({
-        proceed: () => {
-          setShown(next);
-        },
-        keep: () => {
-          setHeld(url);
-          void navigate(shown.url, { replace: true });
-        },
-      });
-    }
-  }
-
-  // Links out of the explorer (space switcher, model picker, any page) while there are changes.
-  useEffect(() => {
-    if (!dirty) return;
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const link = (event.target as Element | null)?.closest('a[href]');
-      if (!(link instanceof HTMLAnchorElement) || link.target === '_blank' || link.download) return;
-      const target = new URL(link.href, window.location.href);
-      if (target.origin !== window.location.origin) return;
-      const path = `${target.pathname}${target.search}`;
-      if (path === `${window.location.pathname}${window.location.search}`) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setDialog({
-        proceed: () => {
-          void navigate(path);
-        },
-      });
-    };
-    const onUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    document.addEventListener('click', onClick, true);
-    window.addEventListener('beforeunload', onUnload);
-    return () => {
-      document.removeEventListener('click', onClick, true);
-      window.removeEventListener('beforeunload', onUnload);
-    };
-  }, [dirty, navigate]);
-
-  const close = () => {
-    setDialog(null);
-  };
-
-  return (
-    <>
-      <Explorer
-        url={shown.url}
-        space={props.space}
-        modelId={shown.modelId}
-        elementId={shown.elementId}
-        viewId={shown.viewId}
-        ask={ask}
-        editor={editor}
-        onEditorState={reportState}
-      />
-      {dialog && (
-        <UnsavedDialog
-          kind="leave"
-          name={editorState?.name ?? ''}
-          subject={editorState?.subject ?? 'element'}
-          saving={saving}
-          canSave={editorState?.canSave ?? false}
-          onKeep={() => {
-            close();
-            dialog.keep?.();
-          }}
-          onDiscard={() => {
-            editor.current?.discard();
-            setClean();
-            close();
-            dialog.proceed();
-          }}
-          onSave={() => {
-            setSaving(true);
-            void (editor.current?.save() ?? Promise.resolve(true)).then((ok) => {
-              setSaving(false);
-              close();
-              if (ok) {
-                setClean();
-                dialog.proceed();
-              } else {
-                dialog.keep?.();
-              }
-            });
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-/** What Tidy up does: its tooltip, and its line in the tidy menu. */
-const tidyUpText = 'Put every card and line back in the automatic layout';
-
-/**
- * One action in the tidy menu: its name, a line on what it does, and its key, if any. A disabled
- * one stays in the menu (the arrow keys reach it) and does nothing.
- */
-function TidyItem(props: {
-  id: string;
-  icon: IconName;
-  name: string;
-  description: string;
-  shortcut?: string;
-  disabled: boolean;
-  onChoose: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className="menu-item tidy-item"
-      aria-labelledby={`${props.id}-name`}
-      aria-describedby={`${props.id}-text`}
-      aria-disabled={props.disabled}
-      aria-keyshortcuts={props.shortcut}
-      onClick={() => {
-        if (!props.disabled) props.onChoose();
-      }}
-    >
-      <Icon name={props.icon} />
-      <span className="menu-item-text">
-        <span id={`${props.id}-name`} className="menu-item-name">
-          {props.name}
-        </span>
-        <span id={`${props.id}-text`} className="menu-item-description">
-          {props.description}
-        </span>
-      </span>
-      {props.shortcut !== undefined && <kbd aria-hidden="true">{props.shortcut}</kbd>}
-    </button>
-  );
-}
-
-function ExplorerMessage(props: { title: string; text: string; action: ReactNode }) {
-  return (
-    <main id="canvas" tabIndex={-1} className="page-scroll">
-      <div className="empty explorer-message">
-        <Icon name="layers" />
-        <h1>{props.title}</h1>
-        <p>{props.text}</p>
-        {props.action}
-      </div>
-    </main>
   );
 }
 
@@ -609,46 +140,11 @@ function Explorer({
   editor,
   onEditorState,
 }: ExplorerProps) {
-  // Two places can hold unsaved changes: the details panel's form and an open catalog cell. The
-  // guard sees the cell while it has changes, else the form.
-  // Passed on at once (not in an effect), so the guard never asks about changes just saved.
-  const panelEditor = useRef<EditorHandle | null>(null);
-  const cellEditor = useRef<EditorHandle | null>(null);
-  const panelStateNow = useRef<EditorState | null>(null);
-  const cellStateNow = useRef<EditorState | null>(null);
-  const cellActive = () => cellStateNow.current?.dirty === true;
-  const setPanelState = useCallback(
-    (state: EditorState | null) => {
-      panelStateNow.current = state;
-      onEditorState(cellStateNow.current?.dirty === true ? cellStateNow.current : state);
-    },
-    [onEditorState],
+  const { panelEditor, cellEditor, setPanelState, setCellState } = useEditorBridge(
+    editor,
+    onEditorState,
   );
-  const setCellState = useCallback(
-    (state: EditorState | null) => {
-      cellStateNow.current = state;
-      onEditorState(state?.dirty === true ? state : panelStateNow.current);
-    },
-    [onEditorState],
-  );
-  useImperativeHandle(editor, () => {
-    const active = () => (cellActive() ? cellEditor : panelEditor).current;
-    const state = () => (cellActive() ? cellStateNow : panelStateNow).current;
-    return {
-      save: () => active()?.save() ?? Promise.resolve(true),
-      discard: () => {
-        active()?.discard();
-      },
-      get name() {
-        return state()?.name ?? '';
-      },
-      get canSave() {
-        return state()?.canSave ?? false;
-      },
-    };
-  }, []);
   const navigate = useNavigate();
-  const location = useLocation();
   const me = useMe();
   // The address the guard lets through (it stays while the unsaved changes dialog asks).
   const [shownPath = '', shownSearch = ''] = url.split('?');
@@ -665,13 +161,19 @@ function Explorer({
   const allTrail = useTrail(modelId, elementId);
   const tree = usePanel('tree');
   const details = usePanel('details');
-  const [rememberedDepth, setRememberedDepth] = useState(readDepth);
-  const depth = parseDepth(params.get('depth')) ?? rememberedDepth;
   // The relationship properties the lines show. Only the address holds them.
   const shownAsked = useMemo(() => readShownProperties(params), [params]);
   // Group by outside a view: only the address holds it (a view keeps its own).
   const groupAsked = viewId === undefined ? readGroupBy(params) : undefined;
-  const [nest, setNest] = useState(readNestContained);
+  const { depth, focusElement, setDepth } = useFocusAndDepth({
+    navigate,
+    params,
+    modelId,
+    elementId,
+    space,
+    shownAsked,
+    groupAsked,
+  });
   const [lines, setLines] = useState(readShowLines);
   // An open view: its contents, saved at once on every change (Modelling with editing on).
   const inView = viewId !== undefined;
@@ -730,173 +232,30 @@ function Explorer({
   // A deleted element leaves the trail's names (it is no longer in the model).
   const trail = graph ? allTrail.filter((id) => graph.elements.has(id)) : allTrail;
 
-  // Elements added from a card's related elements. Kept here, not in the URL, and dropped when
-  // the focused element changes. They stay on a depth change: the depth decides how far down
-  // their contents reach. A view keeps its own contents instead.
+  // The canvas: the cards added and taken off, moved and resized, nesting, Group by and tidying.
   const canvasKey = viewId !== undefined ? `view:${viewId}` : (elementId ?? '');
-  const addedKey = canvasKey;
-  const [added, setAdded] = useState<{ key: string; ids: string[] }>({ key: addedKey, ids: [] });
-  // Forget them as soon as the focus changes (even if it later changes back).
-  if (added.key !== addedKey) setAdded({ key: addedKey, ids: [] });
-  const addedIds = added.key === addedKey ? added.ids : noIds;
-  // Cards taken off the canvas: visual only, never saved. Like the added ones, they are forgotten
-  // when the focus changes, and stay off through a depth change or Tidy up.
-  const [removed, setRemoved] = useState<{ key: string; ids: string[] }>({
-    key: addedKey,
-    ids: [],
+  const layout = useCanvasLayout({
+    graph,
+    element,
+    elementId,
+    canvasKey,
+    inView,
+    openView,
+    viewEditable,
+    viewBlocked,
+    depth,
+    groupAsked,
   });
-  if (removed.key !== addedKey) setRemoved({ key: addedKey, ids: [] });
-  const removedIds = removed.key === addedKey ? removed.ids : noIds;
-  const addElement = useCallback(
-    (id: string) => {
-      setAdded((current) => ({
-        key: addedKey,
-        ids: [...(current.key === addedKey ? current.ids : []), id],
-      }));
-      // Back on the canvas, with the containers it is drawn inside.
-      setRemoved((current) => {
-        if (current.key !== addedKey || current.ids.length === 0) return current;
-        const back = new Set([id]);
-        if (graph) {
-          for (let up = containerOf(graph, id); up !== undefined && !back.has(up);) {
-            back.add(up);
-            up = containerOf(graph, up);
-          }
-        }
-        return { key: addedKey, ids: current.ids.filter((removedId) => !back.has(removedId)) };
-      });
-    },
-    [addedKey, graph],
-  );
-
-  // Cards moved on the canvas: never in the model or the URL, and dropped on a focus or depth
-  // change, or by Tidy up. An open view saves its layout from what the canvas shows.
-  const movedKey = inView ? canvasKey : `${elementId ?? ''}|${depth}`;
-  const [moved, setMoved] = useState<{ key: string; positions: MovedPositions }>({
-    key: movedKey,
-    positions: noMovedPositions,
-  });
-  if (moved.key !== movedKey) setMoved({ key: movedKey, positions: noMovedPositions });
-  const movedPositions = moved.key === movedKey ? moved.positions : noMovedPositions;
-  // In a view, its Group by; changed for the page in Viewing (and, in Modelling, until the change is
-  // saved), and forgotten when the view is opened or read again.
-  const [viewGroup, setViewGroup] = useState<{ key: string; group: string | undefined } | null>(
-    null,
-  );
-  const groupBy = inView
-    ? viewGroup?.key === openView.key
-      ? viewGroup.group
-      : (openView.view?.groupBy ?? undefined)
-    : groupAsked;
-  const moveCard = useCallback(
-    (id: string, position: Point | undefined) => {
-      setMoved((current) => ({
-        key: movedKey,
-        positions: withMovedCard(
-          current.key === movedKey ? current.positions : noMovedPositions,
-          id,
-          position,
-        ),
-      }));
-    },
-    [movedKey],
-  );
-  const [tidyCount, setTidyCount] = useState(0);
-  // Tidy relations: each choice redraws every line from the cards; the canvas says when it can.
-  const [relationsTidyCount, setRelationsTidyCount] = useState(0);
-  const [canTidyRelations, setCanTidyRelations] = useState(false);
-  // The canvas is laid out only when it is a new one; changes in between keep every card in place.
-  const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}|${groupBy === undefined ? '' : `group:${groupBy}`}`;
-  const layoutKey = `${canvasLayoutKey}|${tidyCount}`;
-  // An open view's stored layout: a new canvas opens with it (cards where they were left, with
-  // their widths). A focus canvas has none.
-  const storedLayout = inView ? openView.view?.layout : undefined;
-  // And its lines' routes given by hand, read with it.
-  const storedRoutes = inView ? openView.view?.routes : undefined;
-  const baseWidths = useMemo(
-    () => (storedLayout === undefined ? noWidths : storedWidths(storedLayout)),
-    [storedLayout],
-  );
-  // Card widths set by hand on the canvas, kept through Tidy up until the canvas is a new one,
-  // which starts from the view's stored widths (none on a focus canvas). Saved only in a view.
-  const [widths, setWidths] = useState<{
-    key: string;
-    widths: ReadonlyMap<string, number> | undefined;
-  }>({ key: canvasLayoutKey, widths: undefined });
-  if (widths.key !== canvasLayoutKey) setWidths({ key: canvasLayoutKey, widths: undefined });
-  const cardWidths = (widths.key === canvasLayoutKey ? widths.widths : undefined) ?? baseWidths;
-  const resizeCard = useCallback(
-    (id: string, width: number | undefined) => {
-      setWidths((current) => {
-        const next = new Map(
-          (current.key === canvasLayoutKey ? current.widths : undefined) ?? baseWidths,
-        );
-        if (width === undefined) next.delete(id);
-        else next.set(id, width);
-        return { key: canvasLayoutKey, widths: next };
-      });
-    },
-    [canvasLayoutKey, baseWidths],
-  );
-  // Adding or taking off cards, and Tidy up, in a view that can change: once the canvas shows the
-  // change, it reports where its cards are, and the view's layout is saved.
-  const [arrangeRequest, setArrangeRequest] = useState(0);
-  const requestArrange = () => {
-    setArrangeRequest((n) => n + 1);
-  };
+  const { nest, toggleNest, addElement, groupBy, requestArrange, hood, onCanvas } = layout;
   const saveViewLayout = openView.saveLayout;
-  /** The canvas changed without a new layout (its key then): Tidy up has something to do. */
-  const [keptFor, setKeptFor] = useState<string | null>(null);
-
-  const viewContents = openView.contents;
   const viewReady = openView.load.status === 'ready';
-  const hood = useMemo(() => {
-    if (!graph) return undefined;
-    // A view: exactly its elements and relationships, with no containers brought in.
-    if (inView) return viewReady ? viewHood(graph, viewContents) : undefined;
-    if (!element) return undefined;
-    const shown = withAddedElements(graph, neighbourhood(graph, element.id, { depth }), addedIds, {
-      depth,
-    });
-    // A nested element's containers are always brought onto the canvas, so nesting shows; they
-    // count towards the cap.
-    return withoutElements(graph, nest ? withContainers(graph, shown) : shown, removedIds, {
-      nest,
-    });
-  }, [graph, element, depth, addedIds, removedIds, nest, inView, viewReady, viewContents]);
-
-  // The cards with a remove button: on a focus canvas, all but the focused element and the cards
-  // it is drawn inside; in a view that can change, every card.
-  const removableIds = useMemo(() => {
-    if (!graph || !hood) return noIdSet;
-    if (inView) return viewEditable && !viewBlocked ? new Set(hood.hops.keys()) : noIdSet;
-    return new Set(
-      [...hood.hops.keys()].filter((id) => canRemoveFromCanvas(graph, hood, id, { nest })),
-    );
-  }, [graph, hood, inView, viewEditable, viewBlocked, nest]);
-  // The element types on the canvas, for the legend.
-  const typesOnCanvas = useMemo(() => {
-    const present = new Set(
-      [...(hood?.hops.keys() ?? [])].map((id) => graph?.elements.get(id)?.type),
-    );
-    return nodeTypes.filter((type) => present.has(type));
-  }, [graph, hood]);
-
-  // "Nest contained elements" lays the canvas out again, like Tidy up.
-  const toggleNest = useCallback(() => {
-    setNest((current) => {
-      writeNestContained(!current);
-      return !current;
-    });
-    setMoved({ key: movedKey, positions: noMovedPositions });
-  }, [movedKey]);
 
   // Group by lays the canvas out again, like the Nest switch: in a view in Modelling, the new
   // grouping and layout are saved, as after Tidy up; in Viewing, a view's is changed for the page.
   const changeGroupBy = (key: string | undefined) => {
-    setMoved({ key: movedKey, positions: noMovedPositions });
+    layout.resetMoved();
     if (inView) {
-      setViewGroup({ key: openView.key, group: key });
+      layout.groupView(key);
       if (viewEditable && !viewBlocked) requestArrange();
       return;
     }
@@ -909,211 +268,103 @@ function Explorer({
     writeShowLines(on);
   }, []);
 
-  const focusElement = useCallback(
-    (id: string) => {
-      void navigate(elementPath(modelId, id, depth, space, shownAsked, groupAsked));
-    },
-    [navigate, modelId, depth, space, shownAsked, groupAsked],
-  );
-
-  const setDepth = useCallback(
-    (next: number) => {
-      if (next < 1 || next > maxDepth) return;
-      setRememberedDepth(next);
-      writeDepth(next);
-      if (elementId !== undefined) {
-        void navigate(elementPath(modelId, elementId, next, space, shownAsked, groupAsked), {
-          replace: true,
-        });
-      }
-    },
-    [navigate, modelId, elementId, space, shownAsked, groupAsked],
-  );
-
-  // After following a relationship in the details panel, focus goes to the new element's name.
-  const [headingFocusFor, setHeadingFocusFor] = useState<string | null>(null);
-  const clearHeadingFocus = useCallback(() => {
-    setHeadingFocusFor(null);
-  }, []);
-
-  // The selected element (single click), shown in the details panel, apart from the
-  // focus element (double click: the canvas, the breadcrumbs and the URL). It is the focus element
-  // until another is picked, and goes back to it when the focus changes.
+  // The selected element and relationship, apart from the focus element. Dropped when the focus
+  // changes.
   const selectionKey = canvasKey;
-  const [picked, setPicked] = useState<{ key: string; id: string } | null>(null);
-  const pickedId =
-    picked !== null && picked.key === selectionKey && graph?.elements.has(picked.id) === true
-      ? picked.id
-      : undefined;
-  const selectedId = pickedId ?? elementId;
-  const selected = graph && selectedId !== undefined ? graph.elements.get(selectedId) : undefined;
+  const selection = useSelection({
+    graph,
+    selectionKey,
+    elementId,
+    inView,
+    ask,
+    details,
+    focusElement,
+    showLines,
+  });
+  const {
+    setHeadingFocusFor,
+    setPicked,
+    selectedId,
+    selected,
+    setNameFocusFor,
+    setSelection,
+    selectedRelationship,
+    setAddBoxFor,
+    openRelationship,
+    deselect,
+    selectElement,
+    addRelationshipFrom,
+  } = selection;
 
   // Modelling: the selected element's version, read from the server for the next save or delete.
-  const [stored, setStored] = useState<{ id: string; version: number } | null>(null);
-  const version = stored !== null && stored.id === selectedId ? stored.version : undefined;
-  const [nameFocusFor, setNameFocusFor] = useState<string | null>(null);
-  const clearNameFocus = useCallback(() => {
-    setNameFocusFor(null);
-  }, []);
-  const [announcement, setAnnouncement] = useState('');
-  const selectedKnown = selected !== undefined;
-  useEffect(() => {
-    if (!editable || selectedId === undefined || !selectedKnown) return;
-    const controller = new AbortController();
-    getElement(modelId, selectedId, controller.signal)
-      .then((result) => {
-        setStored({ id: result.element.id, version: result.element.version });
-        // The server's copy wins (it may be newer); an open form with changes keeps them.
-        updateDocument((current) => withNode(current, result.element.id, result.element.node));
-      })
-      .catch(() => {
-        // The form reads it again when it saves, and reports what went wrong there.
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [editable, modelId, selectedId, selectedKnown, updateDocument]);
-
-  const onStored = useCallback(
-    (result: ElementChangeResult) => {
-      setStored({ id: result.element.id, version: result.element.version });
-      updateDocument((current) => withNode(current, result.element.id, result.element.node));
-    },
-    [updateDocument],
+  const { version, versionOf, onStored } = useStoredVersion(
+    editable,
+    modelId,
+    selectedId,
+    selected !== undefined,
+    updateDocument,
   );
+  const [announcement, setAnnouncement] = useState('');
 
-  /** A catalog cell found the element deleted by someone else: it leaves the model. */
-  /** An element deleted from the model: the server took it out of every view already. */
-  const pruneElement = (id: string) => {
-    if (!inView || !graph) return;
-    const relationshipIds = relationshipsOf(graph, id).map((r) => r.id);
-    openView.adopt((current) => withoutDeleted(current, { elementIds: [id], relationshipIds }));
-  };
-  const onGone = (id: string) => {
-    pruneElement(id);
-    updateDocument((current) => withoutElement(current, id));
-    reloadModels();
-    setPicked(null);
-    if (id === elementId) {
-      void navigate(`${modelPath(modelId, space)}${explorerSearch(params, 'catalog', tab)}`);
-    }
-  };
+  // The relationship just added, lit for 3s.
+  const [litId, setLitId] = useLitRelationship();
 
-  const onCreated = (result: ElementChangeResult) => {
-    onStored(result);
-    reloadModels();
-    setNameFocusFor(result.element.id);
-    const name = result.element.node.label ?? '';
-    setAnnouncement(`Created “${name}”. Add details, then Save.`);
-    // The catalog stays and selects the new row (it moves to its type's tab itself). An open
-    // view stays too, with the new element added to it.
-    if (view === 'catalog') setPicked({ key: selectionKey, id: result.element.id });
-    else if (inView) {
-      addNewToView(result.element.id);
-      setPicked({ key: selectionKey, id: result.element.id });
-    } else
-      void navigate(elementPath(modelId, result.element.id, depth, space, shownAsked, groupAsked));
-  };
-
-  const onRemoved = (id: string) => {
-    setPanelState(null);
-    pruneElement(id);
-    updateDocument((current) => withoutElement(current, id));
-    reloadModels();
-    setPicked(null);
-    // An open view stays open, without the element.
-    if (inView) {
-      setSelection(null);
-      document.getElementById('canvas')?.focus();
-      return;
-    }
-    // The catalog stays; it selects the next row itself.
-    if (view === 'catalog') {
-      if (id === elementId)
-        void navigate(`${modelPath(modelId, space)}${explorerSearch(params, 'catalog', tab)}`);
-      return;
-    }
-    // A selected element that wasn't the focus: the panel goes back to the focus element.
-    if (id !== elementId && elementId !== undefined) {
-      setHeadingFocusFor(elementId);
-      return;
-    }
-    // Back to the previous element in the trail.
-    const previous = trail.filter((other) => other !== id).at(-1);
-    if (previous !== undefined) {
-      setHeadingFocusFor(previous);
-      void navigate(elementPath(modelId, previous, depth, space, shownAsked, groupAsked));
-    } else {
-      void navigate(`${modelPath(modelId, space)}${explorerSearch(params, 'canvas')}`);
-      requestAnimationFrame(() => {
-        const row = window.document.querySelector<HTMLElement>(
-          '.tree-panel [role="treeitem"][tabindex="0"], .tree-panel .new-btn',
-        );
-        row?.focus();
-      });
-    }
-  };
-
-  // The relationship open in the details panel (dropped when the focus changes), the
-  // one just added (lit for 3s), the Add relationship box, and `N` requests.
-  const [selection, setSelection] = useState<{ key: string; id: string } | null>(null);
-  const selectedRelationshipId =
-    selection !== null && selection.key === selectionKey ? selection.id : undefined;
-  const selectedRelationship =
-    graph && selectedRelationshipId !== undefined
-      ? graph.relationships.find((r) => r.id === selectedRelationshipId)
-      : undefined;
-  const [relHeadingFocus, setRelHeadingFocus] = useState(false);
-  const clearRelHeadingFocus = useCallback(() => {
-    setRelHeadingFocus(false);
-  }, []);
-  const [litId, setLitId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (litId === undefined) return;
-    const timer = setTimeout(() => {
-      setLitId(undefined);
-    }, 3000);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [litId]);
-  const [addBoxFor, setAddBoxFor] = useState<string | null>(null);
-  const addBoxOpen = addBoxFor !== null && addBoxFor === selectedId;
-  const [newElementRequest, setNewElementRequest] = useState(0);
-  const onCanvas = useMemo(() => new Set(hood?.hops.keys() ?? []), [hood]);
-
-  const openRelationship = (id: string) => {
-    ask(() => {
-      // In a view no card is selected at first: the line's source is, so the panel can show.
-      const source = graph?.relationships.find((r) => r.id === id)?.source;
-      if (inView && selectedId === undefined && source !== undefined) {
-        setPicked({ key: selectionKey, id: source });
-      }
-      setSelection({ key: selectionKey, id });
-      setRelHeadingFocus(true);
-      if (!details.open) details.toggle();
-    });
-  };
-  const deselect = () => {
-    if (selectedRelationshipId === undefined) return;
-    ask(() => {
-      setSelection(null);
-      if (selectedId !== undefined) setHeadingFocusFor(selectedId);
-    });
-  };
-  /** A single click on a card or list row: the details panel shows it; the canvas stays. */
-  const selectElement = (id: string, then?: () => void) => {
-    if (id === selectedId && selectedRelationshipId === undefined) {
-      if (then) ask(then);
-      return;
-    }
-    ask(() => {
-      setPicked({ key: selectionKey, id });
+  const { reveal, viewFull, bringElement, addToView, addNewToView, removeCard } = useCanvasCards({
+    graph,
+    element,
+    inView,
+    viewEditable,
+    viewBlocked,
+    openView,
+    hood,
+    onCanvas,
+    removableIds: layout.removableIds,
+    nest,
+    selectedId,
+    hasOwnId,
+    focusElement,
+    selectElement,
+    addElement,
+    takeOffCanvas: layout.takeOffCanvas,
+    requestArrange,
+    ask,
+    clearSelection: () => {
+      setPicked(null);
       setSelection(null);
       setAddBoxFor(null);
-      then?.();
-    });
-  };
+    },
+    announce: setAnnouncement,
+  });
+
+  const { onGone, onCreated, onRemoved, onCanvasElementCreated } = useElementChanges({
+    modelId,
+    space,
+    graph,
+    elementId,
+    inView,
+    view,
+    params,
+    tab,
+    depth,
+    shownAsked,
+    groupAsked,
+    trail,
+    selectionKey,
+    openView,
+    navigate,
+    updateDocument,
+    reloadModels,
+    onStored,
+    setPanelState,
+    setPicked,
+    setSelection,
+    setHeadingFocusFor,
+    setNameFocusFor,
+    addElement,
+    addNewToView,
+    announce: setAnnouncement,
+  });
+
   /** The switch: entering the catalog opens the selected element's tab; the canvas, with no
    * focused element, focuses the selected one. */
   const showView = (next: ExplorerView) => {
@@ -1130,259 +381,41 @@ function Explorer({
       void navigate(viewUrl('canvas'));
     }
   };
-  /** A link to an element in the details panel: back to it when selected, else it is focused. */
-  const followElement = (id: string) => {
-    if (id === selectedId) {
-      deselect();
-    } else if (id === elementId) {
-      ask(() => {
-        setPicked(null);
+
+  const { onRelationshipAdded, onRelationshipStored, onRelationshipRemoved } =
+    useRelationshipChanges({
+      graph,
+      document: document_,
+      element,
+      elementId,
+      viewId,
+      inView,
+      viewEditable,
+      depth,
+      nest,
+      openView,
+      onCanvas,
+      addElement,
+      requestArrange,
+      updateDocument,
+      showLines,
+      light: setLitId,
+      announce: setAnnouncement,
+      reloadModels,
+      clearPanelState: () => {
+        setPanelState(null);
+      },
+      closeRelationship: () => {
         setSelection(null);
-        setHeadingFocusFor(id);
-      });
-    } else {
-      setHeadingFocusFor(id);
-      focusElement(id);
-    }
-  };
-
-  // "Open in Modelling" on a relationship in Viewing: the relationship (and the element it was
-  // opened from) come along in the history entry's state, not in the URL. Once per entry; adjusted
-  // while rendering.
-  const [openedFor, setOpenedFor] = useState<string | null>(null);
-  const opened = location.state as { relationship?: unknown; element?: unknown } | null;
-  if (typeof opened?.relationship === 'string' && openedFor !== location.key) {
-    setOpenedFor(location.key);
-    if (typeof opened.element === 'string') setPicked({ key: selectionKey, id: opened.element });
-    setSelection({ key: selectionKey, id: opened.relationship });
-    setRelHeadingFocus(true);
-  }
-  /** A Contains change moved a nesting: the cards stay put, and Tidy up shows it. */
-  const nestingNote = (changes: readonly NestingChange[]) =>
-    changes.length > 0 && nest ? ' Tidy up to update the nesting.' : '';
-  const sentenceOf = (result: RelationshipChangeResult) => {
-    const relationship = relationshipOfEdge(result.relationship.edge);
-    return graph && relationship ? relationshipSentence(graph, relationship) : '';
-  };
-  const onRelationshipAdded = (result: RelationshipChangeResult) => {
-    updateDocument((current) => withEdge(current, result.relationship.edge));
-    // Lines come back on, so the new one shows.
-    showLines(true);
-    setLitId(result.relationship.id);
-    // In a view, added to it when both of its elements are in it.
-    const { edge } = result.relationship;
-    const notInView =
-      viewEditable &&
-      !openView.change((current) =>
-        withRelationshipInView(current, {
-          id: result.relationship.id,
-          source: edge.source,
-          target: edge.target,
-        }),
-      );
-    setAnnouncement(
-      `Added: ${sentenceOf(result)}.${nestingNote(result.nestingChanges)}${notInView ? " It isn't in this view." : ''}`,
-    );
-    reloadModels();
-  };
-  const onRelationshipStored = (result: RelationshipChangeResult, saved: boolean) => {
-    const { id, edge } = result.relationship;
-    const before = graph?.relationships.find((r) => r.id === id);
-    updateDocument((current) => withEdge(current, edge));
-    if (!saved) return;
-    const brought = before ? followNewEnds(before, edge, result.viewsChanged ?? []) : [];
-    const names = brought.map((other) => `“${graph?.elements.get(other)?.name || '(unnamed)'}”`);
-    const where = inView ? 'view' : 'canvas';
-    setAnnouncement(
-      `Saved.${names.length > 0 ? ` Added ${names.join(' and ')} to the ${where}.` : ''}${nestingNote(result.nestingChanges)}`,
-    );
-    reloadModels();
-  };
-  /**
-   * A relationship's ends changed: a new end not on the canvas joins it at a free spot, and the
-   * old ends stay. In a view the server has added the new ends already, and dropped the route the
-   * line was given there (also after a reverse), with a new version for the view; the view's
-   * layout is then saved as for any added card. Returns the elements added.
-   */
-  function followNewEnds(
-    before: ModelRelationship,
-    edge: JgfEdge & { id: string },
-    viewsChanged: readonly ChangedView[],
-  ): string[] {
-    const ends = [edge.source, edge.target];
-    const fresh = ends.filter((end) => end !== before.source && end !== before.target);
-    const moved = edge.source !== before.source || edge.target !== before.target;
-    if (!moved || !graph || !document_) return [];
-    if (inView) {
-      const { contents } = openView;
-      const changed = viewsChanged.find((changedView) => changedView.id === viewId);
-      const missing = contents.relationshipIds.includes(before.id)
-        ? fresh.filter((end) => !contents.elementIds.includes(end))
-        : [];
-      if (changed === undefined && missing.length === 0) return [];
-      openView.adopt(
-        (current) => ({
-          ...current,
-          elementIds: [
-            ...current.elementIds,
-            ...missing.filter((end) => !current.elementIds.includes(end)),
-          ],
-        }),
-        changed?.version,
-        [before.id],
-      );
-      if (missing.length > 0) requestArrange();
-      return missing;
-    }
-    if (fresh.length === 0 || element === undefined) return [];
-    // An end the focus doesn't reach after the change is kept on the canvas as an added card: an
-    // old end that was there, and a new end.
-    const after = buildModelGraph(withEdge(document_, edge));
-    const reached = neighbourhood(after, element.id, { depth }).hops;
-    for (const old of [before.source, before.target]) {
-      if (onCanvas.has(old) && !reached.has(old)) addElement(old);
-    }
-    const missing = fresh.filter((end) => !onCanvas.has(end));
-    for (const end of missing) if (!reached.has(end)) addElement(end);
-    return missing;
-  }
-  const onRelationshipRemoved = (
-    id: string,
-    result: DeletedRelationshipResult | undefined,
-    words: string,
-  ) => {
-    setPanelState(null);
-    if (inView) openView.adopt((current) => withoutDeleted(current, { relationshipIds: [id] }));
-    updateDocument((current) => withoutEdge(current, id));
-    const note = nestingNote(result?.nestingChanges ?? []);
-    setSelection(null);
-    if (elementId !== undefined) setHeadingFocusFor(elementId);
-    if (words !== '') setAnnouncement(`${words}${note}`);
-    reloadModels();
-  };
-  // New element's "Add to canvas": nothing is created; the focus stays the same.
-  const [reveal, setReveal] = useState<{ id: string; n: number } | undefined>(undefined);
-  // Also a row dropped on the canvas, or Shift+Enter on it.
-  const bringElement = (id: string) => {
-    const name = graph?.elements.get(id)?.name || '(unnamed)';
-    if (inView) {
-      addToView(id);
-      return;
-    }
-    if (element === undefined) {
-      focusElement(id);
-      return;
-    }
-    if (onCanvas.has(id)) {
-      selectElement(id);
-      setReveal((current) => ({ id, n: (current?.n ?? 0) + 1 }));
-      setAnnouncement(`${name} is on the canvas.`);
-      return;
-    }
-    // The canvas places the card (with its container chain) where it was dropped or asked for.
-    addElement(id);
-    setAnnouncement(`Added “${name}” to the canvas.`);
-  };
-
-  const onCanvasElementCreated = (result: ElementChangeResult) => {
-    onStored(result);
-    reloadModels();
-    if (inView) addNewToView(result.element.id);
-    else addElement(result.element.id);
-    setAnnouncement(`Created “${result.element.node.label ?? ''}”.`);
-  };
-
-  // Changing an open view (Modelling): each change is saved at once.
-  const [viewFull, setViewFull] = useState<string | null>(null);
-  const viewFullText = `The view is full (${formatNumber(viewCap)} elements). Remove a card to make room.`;
-  /** Add to canvas in a view: the element, with its relationships to elements in the view. */
-  function addToView(id: string) {
-    if (!graph) return;
-    const name = graph.elements.get(id)?.name || '(unnamed)';
-    if (!viewEditable) {
-      setAnnouncement('Views can be changed in Modelling.');
-      return;
-    }
-    if (onCanvas.has(id)) {
-      selectElement(id);
-      setReveal((current) => ({ id, n: (current?.n ?? 0) + 1 }));
-      setAnnouncement(`${name} is on the canvas.`);
-      return;
-    }
-    if (viewBlocked) {
-      setAnnouncement('Reload the view first.');
-      return;
-    }
-    if (onCanvas.size >= viewCap) {
-      setViewFull(viewFullText);
-      setAnnouncement(viewFullText);
-      return;
-    }
-    let added: { contents: ViewContents; relationships: number } | undefined;
-    const changed = openView.change((current) => {
-      added = withElementInView(graph, current, id, hasOwnId);
-      return added?.contents;
+      },
+      focusHeadingOf: setHeadingFocusFor,
     });
-    if (!changed || added === undefined) return;
-    requestArrange();
-    setViewFull(null);
-    const count = added.relationships;
-    setAnnouncement(
-      `Added “${name}” to the view${count > 0 ? `, with ${counted(count, 'relationship')}` : ''}.`,
-    );
-  }
-  /** A new element made in a view: added to it (it has no relationships yet). */
-  function addNewToView(id: string) {
-    if (onCanvas.size >= viewCap) {
-      setViewFull(viewFullText);
-      return;
-    }
-    const changed = openView.change((current) =>
-      current.elementIds.includes(id)
-        ? undefined
-        : { ...current, elementIds: [...current.elementIds, id] },
-    );
-    if (changed) requestArrange();
-  }
-  const addRelationshipFrom = (id: string) => {
-    ask(() => {
-      setSelection(null);
-      // The element is selected (the canvas stays), not focused.
-      setPicked({ key: selectionKey, id });
-      setAddBoxFor(id);
-      showLines(true);
-      if (!details.open) details.toggle();
-    });
-  };
 
   // `N`: a new element at the centre of the view (Modelling with editing on, not while typing,
   // and not over an open dialog or popover).
   const canPlaceElement =
     editable && view === 'canvas' && (inView ? viewReady && !viewBlocked : element !== undefined);
-  useEffect(() => {
-    if (!canPlaceElement) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'n' && event.key !== 'N') return;
-      if (event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement &&
-          (target.isContentEditable || target.closest('.rel-pop, .new-pop, .add-rel') !== null))
-      ) {
-        return;
-      }
-      if (window.document.querySelector('dialog[open]')) return;
-      event.preventDefault();
-      setNewElementRequest((n) => n + 1);
-    };
-    window.document.addEventListener('keydown', onKey);
-    return () => {
-      window.document.removeEventListener('keydown', onKey);
-    };
-  }, [canPlaceElement]);
+  const newElementRequest = useNewElementKey(canPlaceElement);
 
   const openViewName = inView ? openView.view?.name : undefined;
   useEffect(() => {
@@ -1394,53 +427,8 @@ function Explorer({
   }, [element, graph, summaryName, openViewName]);
 
   // Views in the left panel, and the view bar.
-  const viewsHeader = useRef<HTMLButtonElement>(null);
-  const saveViewButton = useRef<HTMLButtonElement>(null);
-  const renameButton = useRef<HTMLButtonElement>(null);
-  const [viewsOpen, setViewsOpen] = useState(readViewsOpen);
-  const [viewsRefresh, setViewsRefresh] = useState(0);
-  const [viewHeadingFocus, setViewHeadingFocus] = useState(false);
-  const [viewDialog, setViewDialog] = useState<'save' | 'rename' | 'delete' | null>(null);
-  const toggleViews = () => {
-    setViewsOpen(!viewsOpen);
-    writeViewsOpen(!viewsOpen);
-  };
-  /** After the page has drawn: focus on `target`, or on the canvas area when it isn't there. */
-  const focusInPanel = (target: RefObject<HTMLButtonElement | null>) => {
-    requestAnimationFrame(() => {
-      if (target.current?.isConnected === true) target.current.focus();
-      else document.getElementById('canvas')?.focus();
-    });
-  };
-  const focusViewsHeader = () => {
-    focusInPanel(viewsHeader);
-  };
-  // Leaving a view for the start page (Close view, Delete view): focus goes to the Views header,
-  // or to the start page's canvas area with the panel hidden. Only once that page is drawn: the
-  // address changes in a transition, so a frame can come before it and find the view's canvas.
-  const focusOnArrival = useRef<string | null>(null);
-  const leaveViewFor = (path: string, replace = false) => {
-    focusOnArrival.current = path;
-    void navigate(path, replace ? { replace: true } : undefined);
-  };
-  useEffect(() => {
-    const path = focusOnArrival.current;
-    if (path === null) return;
-    // Any move clears it; only arriving at the start page asked for takes the focus.
-    focusOnArrival.current = null;
-    if (url !== path) return;
-    if (viewsHeader.current?.isConnected === true) viewsHeader.current.focus();
-    else document.getElementById('canvas')?.focus();
-  }, [url]);
-  /** "All views" on the start page: the panel shows, with Views open and focus on its header. */
-  const showAllViews = () => {
-    if (!tree.open) tree.toggle();
-    if (!viewsOpen) {
-      setViewsOpen(true);
-      writeViewsOpen(true);
-    }
-    focusViewsHeader();
-  };
+  const views = useViewPanel(url, tree, navigate);
+  const { setViewHeadingFocus, setViewDialog, leaveViewFor } = views;
   // The start page offers up to 5 views.
   const startPage = !inView && elementId === undefined && view === 'canvas' && graph !== undefined;
   const [startViews] = useViewList(modelId, startPage);
@@ -1471,193 +459,26 @@ function Explorer({
       />
     );
   }
-  const canTidy =
-    hood !== undefined &&
-    (keptFor === layoutKey ||
-      hasMovedCards(movedPositions, hood.hops) ||
-      [...movedPositions.keys()].some(isGroupId));
   // The legend: only while a canvas is drawn (a focused element or an open view).
   const legendShown = view === 'canvas' && hood !== undefined;
   // Save as view: on a focus canvas in Modelling with editing on.
   const canSaveAsView = editable && view === 'canvas' && !inView && element !== undefined && !!hood;
-  const viewsEmptyText = !editable
-    ? 'No views yet. Views are saved in Modelling.'
-    : canSaveAsView
-      ? 'No views yet.'
-      : 'No views yet. Focus an element, then use Save as view here.';
+  const canOpenModelling = space === 'viewing' && me.spaces.includes('modelling');
   const closeView = () => {
     leaveViewFor(modelStartPath(modelId, space, shownAsked));
   };
   const viewNotice =
     !inView || openView.problem === undefined ? undefined : (
-      <>
-        <span>
-          {openView.problem === 'conflict'
-            ? "Someone else changed this view. Your change wasn't saved."
-            : openView.problem === 'deleted'
-              ? "Someone else deleted this view. Your change wasn't saved."
-              : openView.problem === 'rejected'
-                ? "Your change to the view wasn't saved: part of it was deleted from the model meanwhile. Reload the page and try again."
-                : "Your change to the view wasn't saved. Check your connection and try again."}
-        </span>{' '}
-        {openView.problem === 'conflict' ? (
-          <button
-            type="button"
-            className="linkbtn"
-            onClick={() => {
-              setViewHeadingFocus(true);
-              openView.reload();
-            }}
-          >
-            Reload view
-          </button>
-        ) : openView.problem === 'deleted' ? (
-          <button type="button" className="linkbtn" onClick={closeView}>
-            Close view
-          </button>
-        ) : (
-          <button type="button" className="linkbtn" onClick={openView.dismiss}>
-            Dismiss
-          </button>
-        )}
-      </>
+      <ViewNotice
+        problem={openView.problem}
+        onReload={() => {
+          setViewHeadingFocus(true);
+          openView.reload();
+        }}
+        onClose={closeView}
+        onDismiss={openView.dismiss}
+      />
     );
-  /**
-   * The remove button on a card: takes it off the canvas (visual only), or out of the open view
-   * (saved at once), with the cards drawn inside it. The element stays in the model. The
-   * selection only goes when it was on a card that leaves, and only then are unsaved changes asked
-   * about.
-   */
-  const removeCard = (id: string) => {
-    if (!graph || !hood || !removableIds.has(id)) return;
-    const name = graph.elements.get(id)?.name || '(unnamed)';
-    const after = inView
-      ? viewHood(graph, withoutElementInView(graph, viewContents, id, nest))
-      : withoutElements(graph, hood, [id], { nest });
-    const takesSelection = selectedId !== undefined && !after.hops.has(selectedId);
-    const apply = () => {
-      if (inView) {
-        if (openView.change((current) => withoutElementInView(graph, current, id, nest))) {
-          requestArrange();
-        }
-        setViewFull(null);
-      } else {
-        setRemoved((current) => ({
-          key: addedKey,
-          ids: [...(current.key === addedKey ? current.ids : []), id],
-        }));
-      }
-      if (takesSelection) {
-        setPicked(null);
-        setSelection(null);
-        setAddBoxFor(null);
-      }
-      setAnnouncement(
-        `Removed “${name}” from the ${inView ? 'view' : 'canvas'}. It stays in the model.`,
-      );
-      // The button goes with its card: keep keyboard focus on the canvas, never on <body>.
-      document.getElementById('canvas')?.focus();
-    };
-    if (takesSelection) ask(apply);
-    else apply();
-  };
-  const tidyUp = () => {
-    setMoved({ key: movedKey, positions: noMovedPositions });
-    setTidyCount((n) => n + 1);
-    // In a view, the new layout is saved.
-    if (inView) requestArrange();
-    // The button is disabled now: keep keyboard focus on the canvas, never on <body>.
-    document.getElementById('canvas')?.focus();
-  };
-  /**
-   * Tidy relations: every card stays, and every line is drawn again from the cards (lines moved by
-   * hand too). In a view, the result is saved. From the menu, focus goes to the canvas.
-   */
-  const tidyRelations = (fromMenu: boolean) => {
-    if (!canTidyRelations) return;
-    setRelationsTidyCount((n) => n + 1);
-    // The canvas is no longer the automatic layout: Tidy up has something to do.
-    setKeptFor(layoutKey);
-    if (inView) requestArrange();
-    if (fromMenu) document.getElementById('canvas')?.focus();
-  };
-
-  const tidyRelationsByKey = () => {
-    tidyRelations(false);
-  };
-
-  const relationshipTools = (focused: NonNullable<typeof element>): RelationshipTools => ({
-    action: (
-      <button
-        type="button"
-        className="linkbtn add-rel-btn"
-        aria-expanded={addBoxOpen}
-        aria-controls="add-rel-box"
-        onClick={() => {
-          setAddBoxFor(addBoxOpen ? null : focused.id);
-          if (!addBoxOpen) showLines(true);
-        }}
-      >
-        <Icon name="plus" size="sm" />
-        Add relationship
-      </button>
-    ),
-    box:
-      addBoxOpen && graph ? (
-        <div id="add-rel-box">
-          <AddRelationshipBox
-            modelId={modelId}
-            graph={graph}
-            element={focused}
-            onCanvas={onCanvas}
-            nest={nest}
-            onAdded={onRelationshipAdded}
-            onClose={() => {
-              setAddBoxFor(null);
-              requestAnimationFrame(() => {
-                window.document.querySelector<HTMLElement>('.add-rel-btn')?.focus();
-              });
-            }}
-            onShow={openRelationship}
-          />
-        </div>
-      ) : null,
-    onOpen: openRelationship,
-    ...(litId === undefined ? {} : { highlightId: litId }),
-  });
-
-  /** The pointer's way from a catalog row to the canvas. */
-  const showOnCanvas = (id: string): ReactNode =>
-    view === 'catalog' ? (
-      <button
-        type="button"
-        className="btn"
-        onClick={() => {
-          focusElement(id);
-        }}
-      >
-        Show on canvas
-      </button>
-    ) : null;
-
-  /**
-   * The views holding the element, read again after this person saves, renames or deletes a view,
-   * and after each save of the open view (its contents may have gained or lost the element).
-   */
-  const usedInViews = (id: string): ReactNode => (
-    <UsedInViews
-      modelId={modelId}
-      elementId={id}
-      space={space}
-      shown={shownAsked}
-      currentViewId={viewId}
-      refresh={`${viewsRefresh}\n${viewId ?? ''}\n${openView.savedCount}`}
-      onOpenView={() => {
-        setViewHeadingFocus(true);
-      }}
-    />
-  );
-
   const detailsVisible = details.open && selected !== undefined;
   const style = {
     '--tree-w': `${tree.width}px`,
@@ -1684,6 +505,50 @@ function Explorer({
     />
   ) : undefined;
 
+  // What both canvases (an open view's and a focused element's) are given alike.
+  const canvasProps = {
+    lineFields,
+    shownProperties,
+    onShownProperties: (keys: string[]) => {
+      void navigate(`${shownPath}${shownPropertiesSearch(params, keys)}`, {
+        replace: true,
+      });
+    },
+    groupChoices,
+    groupBy,
+    onGroupBy: changeGroupBy,
+    onFocusElement: focusElement,
+    selectedId,
+    onSelectElement: selectElement,
+    fitKey,
+    moved: layout.movedPositions,
+    onMove: layout.moveCard,
+    widths: layout.cardWidths,
+    onResize: layout.resizeCard,
+    tidyCount: layout.tidyCount,
+    layoutKey: layout.layoutKey,
+    onKept: layout.setKeptFor,
+    relationsTidyCount: layout.relationsTidyCount,
+    onRelationsTidyable: layout.setCanTidyRelations,
+    onTidyRelations: layout.tidyRelationsByKey,
+    nest,
+    onToggleNest: toggleNest,
+    lines,
+    onLines: showLines,
+    modelId,
+    selectedRelationshipId: selectedRelationship?.id,
+    litRelationshipId: litId,
+    onOpenRelationship: openRelationship,
+    onDeselect: deselect,
+    onRelationshipAdded,
+    onElementCreated: onCanvasElementCreated,
+    onAddRelationshipFrom: addRelationshipFrom,
+    newElementRequest,
+    reveal,
+    removable: layout.removableIds,
+    onRemoveCard: removeCard,
+  };
+
   return (
     <div
       className="explorer"
@@ -1699,96 +564,44 @@ function Explorer({
         {announcement}
       </p>
       {tree.open && (
-        <>
-          <aside className="tree-panel" aria-label="Elements and views">
-            {graph ? (
-              <ElementTree
-                key={modelId}
-                modelId={modelId}
-                graph={graph}
-                selectedId={selectedId}
-                onFocusElement={focusElement}
-                onSelectElement={selectElement}
-                onAddToCanvas={(id) => {
-                  bringElement(id);
+        <TreePanel
+          modelId={modelId}
+          space={space}
+          graph={graph}
+          editable={editable}
+          selectedId={selectedId}
+          viewId={viewId}
+          shownAsked={shownAsked}
+          search={search}
+          searchElsewhere={view === 'catalog'}
+          top={treeTop}
+          onFocusElement={focusElement}
+          onSelectElement={selectElement}
+          onAddToCanvas={(id) => {
+            bringElement(id);
+          }}
+          views={views}
+          canSaveAsView={canSaveAsView}
+          onAnnounce={setAnnouncement}
+          onFolderChanged={(changed) => {
+            const open = changed.find((one) => one.id === viewId);
+            if (open !== undefined) openView.refiled(open.folder);
+          }}
+          legend={
+            legendShown && (
+              <Legend
+                types={layout.typesOnCanvas}
+                nest={nest}
+                onToggleNest={toggleNest}
+                lines={lines}
+                onToggleLines={() => {
+                  showLines(!lines);
                 }}
-                search={search}
-                searchElsewhere={view === 'catalog'}
-                top={treeTop}
-                emptyText={
-                  editable
-                    ? 'No elements yet. Add the first one with New element.'
-                    : 'No elements yet.'
-                }
+                dataShown={shownProperties.includes(dataViewKey)}
               />
-            ) : (
-              <>
-                <div className="search">
-                  <Icon name="search" />
-                  <input
-                    type="search"
-                    aria-label="Search elements"
-                    placeholder="Search elements…"
-                    disabled
-                  />
-                </div>
-                <ul className="tree-skeleton" aria-hidden="true">
-                  {Array.from({ length: 8 }, (_, index) => (
-                    <li key={index}>
-                      <span
-                        className="skeleton"
-                        style={{ width: `${55 + ((index * 17) % 40)}%` }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {/* Views and the legend share the space the element list leaves. */}
-            <div className="psecs">
-              <ViewsSection
-                modelId={modelId}
-                space={space}
-                shown={shownAsked}
-                currentViewId={viewId}
-                emptyText={viewsEmptyText}
-                onSaveAsView={
-                  canSaveAsView
-                    ? () => {
-                        setViewDialog('save');
-                      }
-                    : undefined
-                }
-                open={viewsOpen}
-                onToggle={toggleViews}
-                refresh={viewsRefresh}
-                headerRef={viewsHeader}
-                saveRef={saveViewButton}
-                onOpenView={() => {
-                  setViewHeadingFocus(true);
-                }}
-                editable={editable}
-                onAnnounce={setAnnouncement}
-                onFolderChanged={(changed) => {
-                  const open = changed.find((one) => one.id === viewId);
-                  if (open !== undefined) openView.refiled(open.folder);
-                }}
-              />
-              {legendShown && (
-                <Legend
-                  types={typesOnCanvas}
-                  nest={nest}
-                  onToggleNest={toggleNest}
-                  lines={lines}
-                  onToggleLines={() => {
-                    showLines(!lines);
-                  }}
-                  dataShown={shownProperties.includes(dataViewKey)}
-                />
-              )}
-            </div>
-          </aside>
-        </>
+            )
+          }
+        />
       )}
 
       <main className="main">
@@ -1810,174 +623,29 @@ function Explorer({
             onReset={details.reset}
           />
         )}
-        <div className="toolbar">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-pressed={tree.open}
-            aria-label={tree.open ? 'Hide the element list' : 'Show the element list'}
-            title={tree.open ? 'Hide the element list' : 'Show the element list'}
-            onClick={tree.toggle}
-          >
-            <Icon name="panel-left" />
-          </button>
-          <div className="segmented view-switch" role="group" aria-label="Show as">
-            {(['canvas', 'catalog'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={value === view}
-                onClick={() => {
-                  if (value !== view) showView(value);
-                }}
-              >
-                {value === 'canvas' ? 'Canvas' : 'Catalog'}
-              </button>
-            ))}
-          </div>
-          {view === 'catalog' || inView ? (
-            <span className="toolbar-gap" />
-          ) : (
-            <>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Back"
-                title="Back"
-                disabled={trail.length <= 1}
-                onClick={() => {
-                  void navigate(-1);
-                }}
-              >
-                <Icon name="back" />
-              </button>
-              <nav className="crumbs" aria-label="Visited elements">
-                <ol>
-                  {trail.map((id, index) => {
-                    const name = graph?.elements.get(id)?.name || '(unnamed)';
-                    return index === trail.length - 1 ? (
-                      <li key={`${id}-${index}`}>
-                        <span aria-current="page">{name}</span>
-                      </li>
-                    ) : (
-                      <li key={`${id}-${index}`}>
-                        <Link to={elementPath(modelId, id, depth, space, shownAsked, groupAsked)}>
-                          {name}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </nav>
-            </>
-          )}
-          {view === 'canvas' && (
-            <div className="split">
-              <button
-                type="button"
-                className="btn tidy"
-                aria-label="Tidy up"
-                title={tidyUpText}
-                disabled={!canTidy}
-                onClick={tidyUp}
-              >
-                <Icon name="wand-sparkles" />
-                <span className="tidy-label">Tidy up</span>
-              </button>
-              <Popover
-                id="tidy"
-                role="menu"
-                buttonClassName="btn tidy-more"
-                buttonLabel="More ways to tidy"
-                buttonTitle="More ways to tidy"
-                buttonContent={<Icon name="chev-down" size="sm" />}
-                buttonDisabled={!canTidy && !canTidyRelations}
-                popoverClassName="tidy-pop"
-              >
-                {(_close, leave) => (
-                  <>
-                    <TidyItem
-                      id="tidy-up"
-                      icon="wand-sparkles"
-                      name="Tidy up"
-                      description={tidyUpText}
-                      disabled={!canTidy}
-                      onChoose={() => {
-                        leave();
-                        tidyUp();
-                      }}
-                    />
-                    <TidyItem
-                      id="tidy-relations"
-                      icon="spline"
-                      name="Tidy relations"
-                      description="Redraw every line, including lines moved by hand. No card moves."
-                      shortcut="T"
-                      disabled={!canTidyRelations}
-                      onChoose={() => {
-                        leave();
-                        tidyRelations(true);
-                      }}
-                    />
-                  </>
-                )}
-              </Popover>
-            </div>
-          )}
-          {view === 'canvas' && !inView && (
-            <div className="segmented" role="group" aria-label="Relationship depth">
-              <span className="seg-label" aria-hidden="true">
-                Depth
-              </span>
-              {Array.from({ length: maxDepth }, (_, index) => index + 1).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={value === depth}
-                  title={`Show elements up to ${counted(value, 'relationship')} away`}
-                  onClick={() => {
-                    setDepth(value);
-                  }}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          )}
-          <button
-            type="button"
-            className="icon-btn"
-            aria-pressed={details.open}
-            aria-label={details.open ? 'Hide the details' : 'Show the details'}
-            title={details.open ? 'Hide the details' : 'Show the details'}
-            onClick={details.toggle}
-          >
-            <Icon name="panel-right" />
-          </button>
-          {space === 'viewing' && me.spaces.includes('modelling') && (
-            <Link
-              className="btn open-modelling"
-              aria-label="Open in Modelling"
-              title="Open in Modelling"
-              to={
-                inView
-                  ? viewPath(modelId, viewId, 'modelling', shownAsked)
-                  : view === 'catalog'
-                    ? `${
-                        elementId !== undefined
-                          ? elementPath(modelId, elementId, undefined, 'modelling')
-                          : modelPath(modelId, 'modelling')
-                      }${explorerSearch(params, 'catalog', tab)}`
-                    : elementId !== undefined
-                      ? elementPath(modelId, elementId, depth, 'modelling', shownAsked, groupAsked)
-                      : modelPath(modelId, 'modelling')
-              }
-            >
-              <Icon name="pencil" size="sm" />
-              <span className="open-label">Open in Modelling</span>
-            </Link>
-          )}
-        </div>
+        <ExplorerToolbar
+          modelId={modelId}
+          space={space}
+          graph={graph}
+          elementId={elementId}
+          viewId={viewId}
+          view={view}
+          tab={tab}
+          params={params}
+          depth={depth}
+          shownAsked={shownAsked}
+          groupAsked={groupAsked}
+          trail={trail}
+          tree={tree}
+          details={details}
+          canOpenModelling={canOpenModelling}
+          onShowView={showView}
+          onDepth={setDepth}
+          canTidy={layout.canTidy}
+          canTidyRelations={layout.canTidyRelations}
+          onTidyUp={layout.tidyUp}
+          onTidyRelations={layout.tidyRelations}
+        />
 
         {inView && viewReady && openView.view && (
           <ViewBar
@@ -1993,11 +661,11 @@ function Explorer({
               setViewDialog('delete');
             }}
             onClose={closeView}
-            focusHeading={viewHeadingFocus}
+            focusHeading={views.viewHeadingFocus}
             onHeadingFocused={() => {
               setViewHeadingFocus(false);
             }}
-            renameRef={renameButton}
+            renameRef={views.renameButton}
           />
         )}
         {!graph || (inView && openView.load.status === 'loading') ? (
@@ -2008,27 +676,27 @@ function Explorer({
             </p>
           </div>
         ) : inView && openView.load.status === 'missing' ? (
-          <div id="canvas" tabIndex={-1} className="canvas canvas-state">
-            <div className="empty">
-              <Icon name="alert" />
-              <h2>This view doesn&apos;t exist.</h2>
-              <p>It may have been deleted, or the link is wrong.</p>
+          <CanvasMessage
+            icon="alert"
+            title="This view doesn't exist."
+            text="It may have been deleted, or the link is wrong."
+            action={
               <button type="button" className="btn" onClick={closeView}>
                 Close view
               </button>
-            </div>
-          </div>
+            }
+          />
         ) : inView && openView.load.status === 'failed' ? (
-          <div id="canvas" tabIndex={-1} className="canvas canvas-state">
-            <div className="empty">
-              <Icon name="alert" />
-              <h2>The view couldn&apos;t be loaded.</h2>
-              <p>{openView.load.message}</p>
+          <CanvasMessage
+            icon="alert"
+            title="The view couldn't be loaded."
+            text={openView.load.message}
+            action={
               <button type="button" className="btn" onClick={openView.reload}>
                 Try again
               </button>
-            </div>
-          </div>
+            }
+          />
         ) : inView && hood ? (
           <ErrorBoundary
             resetKey={`${modelId}|${canvasKey}`}
@@ -2038,6 +706,7 @@ function Explorer({
           >
             <ReactFlowProvider>
               <ExplorerCanvas
+                {...canvasProps}
                 graph={graph}
                 hood={hood}
                 refused={0}
@@ -2061,53 +730,13 @@ function Explorer({
                     </p>
                   </>
                 }
-                lineFields={lineFields}
-                shownProperties={shownProperties}
-                onShownProperties={(keys) => {
-                  void navigate(`${shownPath}${shownPropertiesSearch(params, keys)}`, {
-                    replace: true,
-                  });
-                }}
-                groupChoices={groupChoices}
-                groupBy={groupBy}
-                onGroupBy={changeGroupBy}
-                onFocusElement={focusElement}
-                selectedId={selectedId}
-                onSelectElement={selectElement}
                 onDepth={() => undefined}
-                fitKey={fitKey}
-                moved={movedPositions}
-                onMove={moveCard}
-                widths={cardWidths}
-                onResize={resizeCard}
-                tidyCount={tidyCount}
-                layoutKey={layoutKey}
-                onKept={setKeptFor}
-                relationsTidyCount={relationsTidyCount}
-                onRelationsTidyable={setCanTidyRelations}
-                onTidyRelations={tidyRelationsByKey}
-                nest={nest}
-                onToggleNest={toggleNest}
-                lines={lines}
-                onLines={showLines}
                 editable={viewEditable && !viewBlocked}
-                modelId={modelId}
-                selectedRelationshipId={selectedRelationship?.id}
-                litRelationshipId={litId}
-                onOpenRelationship={openRelationship}
-                onDeselect={deselect}
-                onRelationshipAdded={onRelationshipAdded}
-                onElementCreated={onCanvasElementCreated}
-                onAddRelationshipFrom={addRelationshipFrom}
-                newElementRequest={newElementRequest}
                 {...(viewEditable ? { onBringElement: bringElement } : {})}
-                reveal={reveal}
-                removable={removableIds}
-                onRemoveCard={removeCard}
-                storedLayout={storedLayout}
-                storedRoutes={storedRoutes}
+                storedLayout={layout.storedLayout}
+                storedRoutes={layout.storedRoutes}
                 storedGroupBy={openView.view?.groupBy ?? undefined}
-                arrangeRequest={arrangeRequest}
+                arrangeRequest={layout.arrangeRequest}
                 {...(viewEditable && !viewBlocked ? { onArranged: saveViewLayout } : {})}
               />
             </ReactFlowProvider>
@@ -2142,8 +771,7 @@ function Explorer({
             {...(editable
               ? {
                   editing: {
-                    versionOf: (id: string) =>
-                      stored !== null && stored.id === id ? stored.version : undefined,
+                    versionOf,
                     onStored,
                     onGone,
                     onAnnounce: setAnnouncement,
@@ -2154,87 +782,31 @@ function Explorer({
               : {})}
           />
         ) : elementId === undefined ? (
-          <div id="canvas" tabIndex={-1} className="canvas canvas-state">
-            <div className="empty">
-              <Icon name="layers" />
-              {graph.elements.size === 0 ? (
-                <>
-                  <h2>This model has no elements yet</h2>
-                  <p>
-                    {!editable
-                      ? 'Elements added in Modelling show here.'
-                      : tree.open
-                        ? 'Add the first one with New element.'
-                        : 'Show the element list, then use New element.'}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h2>Choose an element to explore</h2>
-                  <p>Pick one in the list, or start with one of the most connected:</p>
-                </>
-              )}
-              {graph.elements.size > 0 && (
-                <ul className="suggestions">
-                  {mostConnected(graph, suggestions).map((suggestion) => (
-                    <li key={suggestion.id}>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => {
-                          focusElement(suggestion.id);
-                        }}
-                      >
-                        <TypeMark type={suggestion.type} metadata={suggestion.metadata} />
-                        {suggestion.name || '(unnamed)'}
-                        <span className="count">{degree(graph, suggestion.id)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {startViews.status === 'ready' && startViews.views.length > 0 && (
-                <div className="start-views">
-                  <p>Or open a view:</p>
-                  <ul className="suggestions">
-                    {startViews.views.slice(0, suggestions).map((item) => (
-                      <li key={item.id}>
-                        <Link
-                          className="btn"
-                          to={viewPath(modelId, item.id, space, shownAsked)}
-                          title={item.name}
-                          onClick={() => {
-                            setViewHeadingFocus(true);
-                          }}
-                        >
-                          <Icon name="bookmark" />
-                          {item.name || '(unnamed)'}
-                        </Link>
-                      </li>
-                    ))}
-                    {startViews.views.length > suggestions && (
-                      <li className="all-views">
-                        <button type="button" className="linkbtn" onClick={showAllViews}>
-                          All views ({formatNumber(startViews.views.length)})
-                        </button>
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
+          <StartPage
+            modelId={modelId}
+            space={space}
+            graph={graph}
+            editable={editable}
+            treeOpen={tree.open}
+            shownAsked={shownAsked}
+            startViews={startViews}
+            onFocusElement={focusElement}
+            onOpenView={() => {
+              setViewHeadingFocus(true);
+            }}
+            onAllViews={views.showAllViews}
+          />
         ) : !element || !hood ? (
-          <div id="canvas" tabIndex={-1} className="canvas canvas-state">
-            <div className="empty">
-              <Icon name="alert" />
-              <h2>This element isn&apos;t in this model.</h2>
-              <p>It may have been removed by a newer import.</p>
+          <CanvasMessage
+            icon="alert"
+            title="This element isn't in this model."
+            text="It may have been removed by a newer import."
+            action={
               <Link className="btn" to={modelPath(modelId, space)}>
                 Clear
               </Link>
-            </div>
-          </div>
+            }
+          />
         ) : (
           <ErrorBoundary
             resetKey={`${modelId}|${element.id}|${depth}`}
@@ -2244,55 +816,16 @@ function Explorer({
           >
             <ReactFlowProvider>
               <ExplorerCanvas
+                {...canvasProps}
                 graph={graph}
                 hood={hood}
                 refused={hood.refused.length}
                 onAddElement={addElement}
                 focusId={element.id}
                 depth={depth}
-                lineFields={lineFields}
-                shownProperties={shownProperties}
-                onShownProperties={(keys) => {
-                  void navigate(`${shownPath}${shownPropertiesSearch(params, keys)}`, {
-                    replace: true,
-                  });
-                }}
-                groupChoices={groupChoices}
-                groupBy={groupBy}
-                onGroupBy={changeGroupBy}
-                onFocusElement={focusElement}
-                selectedId={selectedId}
-                onSelectElement={selectElement}
                 onDepth={setDepth}
-                fitKey={fitKey}
-                moved={movedPositions}
-                onMove={moveCard}
-                widths={cardWidths}
-                onResize={resizeCard}
-                tidyCount={tidyCount}
-                layoutKey={layoutKey}
-                onKept={setKeptFor}
-                relationsTidyCount={relationsTidyCount}
-                onRelationsTidyable={setCanTidyRelations}
-                onTidyRelations={tidyRelationsByKey}
-                nest={nest}
-                onToggleNest={toggleNest}
-                lines={lines}
-                onLines={showLines}
                 editable={editable}
-                modelId={modelId}
-                selectedRelationshipId={selectedRelationship?.id}
-                litRelationshipId={litId}
-                onOpenRelationship={openRelationship}
-                onDeselect={deselect}
-                onRelationshipAdded={onRelationshipAdded}
-                onElementCreated={onCanvasElementCreated}
-                onAddRelationshipFrom={addRelationshipFrom}
-                newElementRequest={newElementRequest}
                 onBringElement={bringElement}
-                reveal={reveal}
-                removable={removableIds}
-                onRemoveCard={removeCard}
               />
             </ReactFlowProvider>
           </ErrorBoundary>
@@ -2300,176 +833,55 @@ function Explorer({
       </main>
 
       {detailsVisible && graph && (
-        <>
-          <aside className="details" aria-label="Details">
-            <button
-              type="button"
-              className="icon-btn details-close"
-              aria-label="Close the details"
-              title="Close the details"
-              onClick={details.toggle}
-            >
-              <Icon name="x" />
-            </button>
-            {editable && selectedRelationship ? (
-              <RelationshipEditor
-                key={selectedRelationship.id}
-                modelId={modelId}
-                graph={graph}
-                relationship={selectedRelationship}
-                focusId={selected.id}
-                nest={nest}
-                onBack={deselect}
-                onFocusElement={followElement}
-                onShow={openRelationship}
-                handle={panelEditor}
-                onState={setPanelState}
-                onStored={onRelationshipStored}
-                onRemoved={onRelationshipRemoved}
-                onAnnounce={setAnnouncement}
-                focusHeading={relHeadingFocus}
-                onHeadingFocused={clearRelHeadingFocus}
-                propertiesFailed={propertiesLoad === 'failed'}
-                onPropertiesStale={reloadProperties}
-              />
-            ) : selectedRelationship ? (
-              <RelationshipDetails
-                key={selectedRelationship.id}
-                graph={graph}
-                relationship={selectedRelationship}
-                backId={selected.id}
-                onBack={deselect}
-                onFocusElement={followElement}
-                openInModelling={
-                  space === 'viewing' && me.spaces.includes('modelling') && elementId !== undefined
-                    ? {
-                        to: elementPath(
-                          modelId,
-                          elementId,
-                          depth,
-                          'modelling',
-                          shownAsked,
-                          groupAsked,
-                        ),
-                        state: { relationship: selectedRelationship.id, element: selected.id },
-                      }
-                    : undefined
-                }
-                focusHeading={relHeadingFocus}
-                onHeadingFocused={clearRelHeadingFocus}
-              />
-            ) : editable ? (
-              <ElementEditor
-                key={selected.id}
-                modelId={modelId}
-                graph={graph}
-                element={selected}
-                version={version}
-                link={elementPath(modelId, selected.id, depth, space, shownAsked, groupAsked)}
-                onFocusElement={(id) => {
-                  setHeadingFocusFor(id);
-                  focusElement(id);
-                }}
-                focusHeading={headingFocusFor === selected.id}
-                onHeadingFocused={clearHeadingFocus}
-                focusName={nameFocusFor === selected.id}
-                onNameFocused={clearNameFocus}
-                handle={panelEditor}
-                onState={setPanelState}
-                onStored={onStored}
-                onRemoved={onRemoved}
-                onAnnounce={setAnnouncement}
-                propertiesFailed={propertiesLoad === 'failed'}
-                onPropertiesStale={reloadProperties}
-                relationships={relationshipTools(selected)}
-                headExtra={showOnCanvas(selected.id)}
-                usedIn={usedInViews(selected.id)}
-              />
-            ) : (
-              <DetailsPanel
-                key={selected.id}
-                graph={graph}
-                element={selected}
-                link={elementPath(modelId, selected.id, depth, space, shownAsked, groupAsked)}
-                onFocusElement={(id) => {
-                  setHeadingFocusFor(id);
-                  focusElement(id);
-                }}
-                focusHeading={headingFocusFor === selected.id}
-                onHeadingFocused={clearHeadingFocus}
-                relationships={{ action: null, box: null, onOpen: openRelationship }}
-                headExtra={showOnCanvas(selected.id)}
-                usedIn={usedInViews(selected.id)}
-              />
-            )}
-          </aside>
-        </>
-      )}
-      {viewDialog === 'save' && hood && element && (
-        <SaveViewDialog
+        <ExplorerDetails
           modelId={modelId}
-          initialName={element.name}
-          contents={canvasContents(hood, hasOwnId)}
-          groupBy={
-            groupBy !== undefined && groupChoices.some((choice) => choice.key === groupBy)
-              ? groupBy
-              : undefined
-          }
-          onCancel={() => {
-            setViewDialog(null);
-            focusInPanel(saveViewButton);
-          }}
-          onSaved={(saved: StoredView) => {
-            setViewDialog(null);
-            setViewsRefresh((n) => n + 1);
-            setViewHeadingFocus(true);
-            setAnnouncement(
-              `Saved the view “${saved.name}”${saved.folder === null ? '' : ` in “${saved.folder}”`}: ${counted(saved.elementIds.length, 'element')}, ${counted(saved.relationshipIds.length, 'relationship')}.`,
-            );
-            void navigate(viewPath(modelId, saved.id, space, shownAsked));
-          }}
+          space={space}
+          graph={graph}
+          editable={editable}
+          view={view}
+          elementId={elementId}
+          viewId={viewId}
+          depth={depth}
+          shownAsked={shownAsked}
+          groupAsked={groupAsked}
+          canOpenModelling={canOpenModelling}
+          selected={selected}
+          selectedRelationship={selectedRelationship}
+          version={version}
+          selection={selection}
+          views={views}
+          viewSavedCount={openView.savedCount}
+          nest={nest}
+          onCanvas={onCanvas}
+          litId={litId}
+          panelEditor={panelEditor}
+          onPanelState={setPanelState}
+          onFocusElement={focusElement}
+          onShowLines={showLines}
+          onStored={onStored}
+          onRemoved={onRemoved}
+          onRelationshipAdded={onRelationshipAdded}
+          onRelationshipStored={onRelationshipStored}
+          onRelationshipRemoved={onRelationshipRemoved}
+          onAnnounce={setAnnouncement}
+          propertiesFailed={propertiesLoad === 'failed'}
+          onPropertiesStale={reloadProperties}
+          onClose={details.toggle}
         />
       )}
-      {viewDialog === 'rename' && openView.view && (
-        <RenameViewDialog
-          modelId={modelId}
-          view={openView.view}
-          onCancel={() => {
-            setViewDialog(null);
-            requestAnimationFrame(() => renameButton.current?.focus());
-          }}
-          onRenamed={(renamed) => {
-            openView.renamed(renamed);
-            setViewDialog(null);
-            setViewsRefresh((n) => n + 1);
-            setAnnouncement(`Renamed to “${renamed.name}”.`);
-            requestAnimationFrame(() => renameButton.current?.focus());
-          }}
-        />
-      )}
-      {viewDialog === 'delete' && openView.view && (
-        <DeleteViewDialog
-          modelId={modelId}
-          view={openView.view}
-          onCancel={() => {
-            setViewDialog(null);
-          }}
-          onDeleted={(already) => {
-            const name = openView.view?.name ?? '';
-            setViewDialog(null);
-            setViewsRefresh((n) => n + 1);
-            setAnnouncement(
-              already ? 'The view was already deleted.' : `Deleted the view “${name}”.`,
-            );
-            // In place of the view's entry, so Back doesn't open a deleted view.
-            leaveViewFor(modelStartPath(modelId, space, shownAsked), true);
-          }}
-          onReload={() => {
-            setViewDialog(null);
-            openView.reload();
-          }}
-        />
-      )}
+      <ExplorerViewDialogs
+        modelId={modelId}
+        space={space}
+        shownAsked={shownAsked}
+        views={views}
+        openView={openView}
+        hood={hood}
+        element={element}
+        hasOwnId={hasOwnId}
+        groupBy={groupBy}
+        groupChoices={groupChoices}
+        onAnnounce={setAnnouncement}
+      />
     </div>
   );
 }
