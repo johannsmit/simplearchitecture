@@ -1,7 +1,7 @@
 import { getSmoothStepPath, Position } from '@xyflow/react';
 import { circleAngles, circleDiameter, circleNodeWidth } from './circle';
 import type { LinkRoute, Side } from './elkLayout';
-import { containerBox, crossesAny, groupTextArea, isGroupId, spacing } from './layoutGeometry';
+import { containerNameArea, crossesAny, groupTextArea, isGroupId, spacing } from './layoutGeometry';
 import { orthogonalRoute, reverse, type Heading } from './orthogonalRoute';
 import type { Box, Point } from './positions';
 import {
@@ -211,7 +211,10 @@ export interface EndBox extends Box {
   circle?: boolean;
   /** The container it is drawn inside: a line may cross its own cards' containers. */
   parent?: string;
-  /** A group box's header text (value and count), as wide as drawn: lines keep clear of it. */
+  /**
+   * A group box's header text (value and count), or a container's name (type mark and name), as
+   * wide as drawn: lines keep clear of it.
+   */
   headerWidth?: number;
 }
 
@@ -439,8 +442,8 @@ function bestLine(
 
 /**
  * The headers of the containers one card is in and the other isn't (nor is it one of them): a line
- * between the two would run over a container's name there. Of a group box, only its value and
- * count, with room around them: a line may come in beside them.
+ * between the two would run over a container's name there. Only the name (of a group box, its
+ * value and count), with room around it: a line may cross the header beside it.
  */
 function headersCrossed(boxes: ReadonlyMap<string, EndBox>, source: string, target: string): Box[] {
   const chainOf = (id: string) => {
@@ -457,12 +460,8 @@ function headersCrossed(boxes: ReadonlyMap<string, EndBox>, source: string, targ
   for (const id of [...fromSource, ...fromTarget]) {
     const box = boxes.get(id);
     if (shared.has(id) || !box) continue;
-    if (isGroupId(id)) {
-      result.push(groupTextArea(box, box.headerWidth ?? box.width));
-      continue;
-    }
-    const height = Math.min(box.height, containerBox.header);
-    result.push({ x: box.x, y: box.y, width: box.width, height });
+    const width = box.headerWidth ?? box.width;
+    result.push(isGroupId(id) ? groupTextArea(box, width) : containerNameArea(box, width));
   }
   return result;
 }
@@ -778,7 +777,7 @@ function finalDetour(start: LineEnd, end: LineEnd, way: DetourWay): Point[] | un
  * detour, is chosen again for the ends' final places. A line between cards that face each other
  * with room for it runs straight: its ends move along their sides, keeping their order and
  * spacing (`straightEnds`), where that runs through no other card. A line into or out of a
- * container keeps off its header, where the name is, coming in by a side below it, when it can.
+ * container keeps off its name: it crosses the header beside the name, or comes in by a side.
  * On a circle, the ends sit on the circle, as its routed handles do, and a card facing it lines its
  * end up with the circle's. Only cards near a line are
  * checked, and a detour is kept while nothing it depends on moves, so this keeps up with a drag.
@@ -801,8 +800,8 @@ export function floatingEnds(
     if (!source || !target) continue;
     const free = freeOf(boxes, link.source, link.target);
     const near = blockersOf(boxes, link.source, link.target, free);
-    // The headers of the containers it goes into or out of, where their names are: it comes in
-    // or leaves by a container's side below them.
+    // The names in the headers of the containers it goes into or out of: it crosses a header
+    // beside the name, or comes in or leaves by a container's side below it.
     const headers = headersCrossed(boxes, link.source, link.target);
     // Its own two cards too: a line never runs back through them.
     const ownFree = [...near.map((entry) => entry.box), ...headers];
