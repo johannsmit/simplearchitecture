@@ -10,7 +10,9 @@ import {
   type LayoutCard,
   type PlacedCard,
 } from '../src/viewing/explorer/canvas/elkLayout';
-import type { Point } from '../src/viewing/explorer/canvas/positions';
+import { laidLine } from '../src/viewing/explorer/canvas/lineRoutes';
+import type { Box, Point } from '../src/viewing/explorer/canvas/positions';
+import { straightLaid } from '../src/viewing/explorer/canvas/straightLines';
 
 // Lines run straight where two cards face each other with room for it. Made-up data only.
 
@@ -312,5 +314,226 @@ describe('straight lines without a route', () => {
     };
     const [line] = draw(boxes, [['wide', 'under']]);
     expect(line?.points).toHaveLength(2);
+  });
+});
+
+describe('straight lines between a circle and a card level with it', () => {
+  // A Stakeholder circle's end sits on its circle (24px down its box with one line on a side), not
+  // where ELK put the port, so the card's end moves to line up with it.
+  const isCircle = (id: string) => id === 'clerk';
+  const circleCard = (route: { x: number; y: number }): PlacedCard => ({
+    id: 'clerk',
+    x: 12,
+    y: 12,
+    width: 120,
+    height: 70,
+    handles: [
+      {
+        id: portId('l0', 'source'),
+        kind: 'source',
+        side: 'right',
+        offset: 35,
+        route: { bends: [], target: route },
+      },
+    ],
+  });
+  /** The line from the circle to the desk as the canvas draws it after the layout. */
+  const drawnLine = (placed: Map<string, PlacedCard>, link = 'l0') => {
+    const boxes = absoluteBoxes(placed);
+    const box = (id: string) => ({ ...(boxes.get(id) as Box), circle: isCircle(id) });
+    const source = [...placed.values()].find((card) =>
+      card.handles.some((h) => h.id === portId(link, 'source')),
+    ) as PlacedCard;
+    const target = [...placed.values()].find((card) =>
+      card.handles.some((h) => h.id === portId(link, 'target')),
+    ) as PlacedCard;
+    const handle = source.handles.find((h) => h.id === portId(link, 'source'));
+    const at = boxes.get(source.id) as Box;
+    const bends = (handle?.route?.bends ?? []).map((b) => ({ x: b.x + at.x, y: b.y + at.y }));
+    return laidLine(
+      bends,
+      { handles: source.handles, box: box(source.id), port: portId(link, 'source') },
+      { handles: target.handles, box: box(target.id), port: portId(link, 'target') },
+    );
+  };
+
+  it('runs straight after Tidy up when it is the only line on the card’s side', () => {
+    const placed = new Map<string, PlacedCard>([
+      ['clerk', circleCard({ x: 288, y: -12 })],
+      [
+        'desk',
+        {
+          id: 'desk',
+          x: 300,
+          y: 0,
+          width: 390,
+          height: 100,
+          handles: [{ id: portId('l0', 'target'), kind: 'target', side: 'left', offset: 47 }],
+        },
+      ],
+    ]);
+    const line = drawnLine(straightLaid(placed, isCircle));
+    expect(line).toHaveLength(2);
+    expect(line?.[0]).toEqual({ x: 96, y: 36 });
+    expect(line?.[1]?.y).toBe(36);
+  });
+
+  it('runs straight after Tidy up with another line ending on the same side of the card', () => {
+    const placed = new Map<string, PlacedCard>([
+      ['clerk', circleCard({ x: 288, y: -12 })],
+      [
+        'ledger',
+        {
+          id: 'ledger',
+          x: 12,
+          y: 150,
+          width: 200,
+          height: 60,
+          handles: [
+            {
+              id: portId('l1', 'source'),
+              kind: 'source',
+              side: 'right',
+              offset: 30,
+              route: {
+                bends: [
+                  { x: 238, y: 30 },
+                  { x: 238, y: -70 },
+                ],
+                target: { x: 288, y: -150 },
+              },
+            },
+          ],
+        },
+      ],
+      [
+        'desk',
+        {
+          id: 'desk',
+          x: 300,
+          y: 0,
+          width: 390,
+          height: 100,
+          handles: [
+            { id: portId('l0', 'target'), kind: 'target', side: 'left', offset: 45 },
+            { id: portId('l1', 'target'), kind: 'target', side: 'left', offset: 80 },
+          ],
+        },
+      ],
+    ]);
+    const laid = straightLaid(placed, isCircle);
+    const line = drawnLine(laid);
+    expect(line).toHaveLength(2);
+    expect(line?.[0]?.y).toBe(36);
+    expect(line?.[1]?.y).toBe(36);
+    // The other line keeps its end and its route.
+    const other = laid.get('desk')?.handles.find((h) => h.id === portId('l1', 'target'));
+    expect(other?.offset).toBe(80);
+    expect(drawnLine(laid, 'l1')).toHaveLength(4);
+    expectPortSpacing(laid);
+  });
+
+  it('keeps the route where the card isn’t level with the circle’s end', () => {
+    const placed = new Map<string, PlacedCard>([
+      ['clerk', circleCard({ x: 288, y: 88 })],
+      [
+        'desk',
+        {
+          id: 'desk',
+          x: 300,
+          y: 100,
+          width: 390,
+          height: 100,
+          handles: [{ id: portId('l0', 'target'), kind: 'target', side: 'left', offset: 20 }],
+        },
+      ],
+    ]);
+    expect(straightLaid(placed, isCircle)).toEqual(placed);
+  });
+
+  const at = (x: number, y: number, width = 390, height = 100): EndBox => ({ x, y, width, height });
+  const clerk: EndBox = { ...at(12, 12, 120, 70), circle: true };
+
+  it('runs straight without a route when it is the only line on the card’s side', () => {
+    const lines = floatingEnds(
+      [{ id: 'l0', source: 'clerk', target: 'desk' }],
+      new Map([
+        ['clerk', clerk],
+        ['desk', at(300, 0)],
+      ]),
+    );
+    const line = lines.get('l0');
+    expect(line?.start).toEqual({ x: 96, y: 36, side: 'right' });
+    expect(line?.end.y).toBe(36);
+    expect(line?.points).toHaveLength(2);
+  });
+
+  it('runs straight without a route with another line ending on the same side of the card', () => {
+    const boxes = new Map<string, EndBox>([
+      ['clerk', clerk],
+      ['ledger', at(12, 300, 200, 60)],
+      ['desk', at(300, 0, 390, 400)],
+    ]);
+    const lines = floatingEnds(
+      [
+        { id: 'l0', source: 'clerk', target: 'desk' },
+        { id: 'l1', source: 'ledger', target: 'desk' },
+      ],
+      boxes,
+    );
+    const line = lines.get('l0');
+    expect(line?.end.side).toBe('left');
+    expect(line?.end.y).toBe(line?.start.y);
+    expect(line?.points).toHaveLength(2);
+    expect(lines.get('l1')?.end.side).toBe('left');
+    expect(crossings([...lines.values()].map((each) => each.points))).toBe(0);
+  });
+
+  it('runs straight without a route beside a routed line’s end on the card’s side', () => {
+    const lines = floatingEnds(
+      [{ id: 'l0', source: 'desk', target: 'clerk' }],
+      new Map([
+        ['clerk', { ...clerk, x: 600 }],
+        ['desk', at(12, 0, 390, 100)],
+      ]),
+      new Map([['desk', [{ side: 'right' as const, offset: 60 }]]]),
+    );
+    const line = lines.get('l0');
+    expect(line?.end).toEqual({ x: 636, y: 36, side: 'left' });
+    expect(line?.start.y).toBe(36);
+    expect(line?.points).toHaveLength(2);
+  });
+
+  it('runs straight without a route from a circle with two lines on its side', () => {
+    // The circle's ends spread on an arc, off its middle: the desk's end still lines up exactly.
+    const lines = floatingEnds(
+      [
+        { id: 'l0', source: 'clerk', target: 'desk' },
+        { id: 'l1', source: 'clerk', target: 'shelf' },
+      ],
+      new Map([
+        ['clerk', clerk],
+        ['desk', at(300, -50)],
+        ['shelf', at(300, 140)],
+      ]),
+    );
+    const line = lines.get('l0');
+    expect(line?.start.y).toBeLessThan(36);
+    expect(line?.end.y).toBe(line?.start.y);
+    expect(line?.points).toHaveLength(2);
+  });
+
+  it('keeps the card’s end where a straight line would run through a card in the way', () => {
+    const wall = at(200, 20, 40, 40);
+    const lines = floatingEnds(
+      [{ id: 'l0', source: 'clerk', target: 'desk' }],
+      new Map([
+        ['clerk', clerk],
+        ['wall', wall],
+        ['desk', at(300, 0)],
+      ]),
+    );
+    // In the middle of the desk's side, as before: not level with the circle's end.
+    expect(lines.get('l0')?.end).toEqual({ x: 300, y: 50, side: 'left' });
   });
 });

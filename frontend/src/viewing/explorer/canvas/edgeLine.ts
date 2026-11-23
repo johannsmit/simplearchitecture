@@ -4,7 +4,13 @@ import type { LinkRoute, Side } from './elkLayout';
 import { containerBox, crossesAny, groupTextArea, isGroupId, spacing } from './layoutGeometry';
 import { orthogonalRoute, reverse, type Heading } from './orthogonalRoute';
 import type { Box, Point } from './positions';
-import { opposite, straightEnds, straightRoom, type StraightCandidate } from './straightLines';
+import {
+  opposite,
+  straightEnds,
+  straightRoom,
+  type SideEnd,
+  type StraightCandidate,
+} from './straightLines';
 
 export { crossesAny } from './layoutGeometry';
 
@@ -767,7 +773,8 @@ function finalDetour(start: LineEnd, end: LineEnd, way: DetourWay): Point[] | un
  * with room for it runs straight: its ends move along their sides, keeping their order and
  * spacing (`straightEnds`), where that runs through no other card. A line into or out of a
  * container keeps off its header, where the name is, coming in by a side below it, when it can.
- * On a circle, the ends sit on the circle, as its routed handles do. Only cards near a line are
+ * On a circle, the ends sit on the circle, as its routed handles do, and a card facing it lines its
+ * end up with the circle's. Only cards near a line are
  * checked, and a detour is kept while nothing it depends on moves, so this keeps up with a drag.
  */
 export function floatingEnds(
@@ -901,38 +908,32 @@ export function floatingEnds(
       points.set(key(end), pointOn(box, end.side, offset));
     });
   }
-  // Lines between cards that face each other with room for it run straight (circles keep theirs).
+  // Lines between cards that face each other with room for it run straight. A circle's end stays
+  // where the circle puts it, and the card's end lines up with it.
   const offsetOf = (point: LineEnd, box: Box) =>
     leavesSideways(point.side) ? point.y - box.y : point.x - box.x;
+  const sideEnd = (card: string, box: EndBox, end: LineEnd) => ({
+    card,
+    side: end.side,
+    offset: offsetOf(end, box),
+    ...(box.circle === true ? { point: { x: end.x, y: end.y } } : {}),
+  });
   const straightLinks: StraightCandidate[] = [];
-  // The other ends stay, and are kept clear of: routed lines' and a circle's lines' other ends.
-  const staying = new Map([...taken].map(([card, ends]) => [card, [...ends]]));
   for (const link of links) {
     const from = points.get(`${link.id}\nstart`);
     const to = points.get(`${link.id}\nend`);
     const source = boxes.get(link.source);
     const target = boxes.get(link.target);
     if (!from || !to || !source || !target) continue;
-    if (source.circle === true || target.circle === true) {
-      for (const [card, box, end] of [
-        [link.source, source, from],
-        [link.target, target, to],
-      ] as const) {
-        if (box.circle === true) continue;
-        staying.set(card, [
-          ...(staying.get(card) ?? []),
-          { side: end.side, offset: offsetOf(end, box) },
-        ]);
-      }
-      continue;
-    }
+    if (source.circle === true && target.circle === true) continue;
     straightLinks.push({
       id: link.id,
-      start: { card: link.source, side: from.side, offset: offsetOf(from, source) },
-      end: { card: link.target, side: to.side, offset: offsetOf(to, target) },
+      start: sideEnd(link.source, source, from),
+      end: sideEnd(link.target, target, to),
     });
   }
-  const straight = straightEnds(straightLinks, boxes, staying, (line, from, to) => {
+  // Routed lines' ends stay, and are kept clear of.
+  const straight = straightEnds(straightLinks, boxes, taken, (line, from, to) => {
     const [source, target] = [boxes.get(line.start.card), boxes.get(line.end.card)];
     const others = (blockers.get(line.id) ?? []).filter((box) => box !== source && box !== target);
     return !crossesAny([from, to], others);
@@ -942,8 +943,18 @@ export function floatingEnds(
     if (!offsets) continue;
     const source = boxes.get(line.start.card) as Box;
     const target = boxes.get(line.end.card) as Box;
-    points.set(`${line.id}\nstart`, pointOn(source, line.start.side, offsets.start));
-    points.set(`${line.id}\nend`, pointOn(target, line.end.side, offsets.end));
+    // Level with a circle's end to the last bit, so the line counts as straight.
+    const lined = (end: LineEnd, other: SideEnd): LineEnd => {
+      if (!other.point) return end;
+      return leavesSideways(end.side) ? { ...end, y: other.point.y } : { ...end, x: other.point.x };
+    };
+    if (!line.start.point) {
+      const start = pointOn(source, line.start.side, offsets.start);
+      points.set(`${line.id}\nstart`, lined(start, line.end));
+    }
+    if (!line.end.point) {
+      points.set(`${line.id}\nend`, lined(pointOn(target, line.end.side, offsets.end), line.start));
+    }
   }
   const result = new Map<string, FloatingLine>();
   for (const link of links) {
