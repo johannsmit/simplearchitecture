@@ -228,6 +228,8 @@ interface Size {
 export interface Holding {
   id: string;
   sizes: ReadonlyMap<string, Size>;
+  /** The other cards dragged with it (several selected cards): their containers only grow too. */
+  others?: readonly string[];
 }
 
 export interface FitOptions {
@@ -261,7 +263,10 @@ export function fitContainers(
     }
     return chain;
   };
-  const held = new Set(options.holding ? chainOf(options.holding.id) : []);
+  const holding = options.holding;
+  const held = new Set(
+    holding ? [holding.id, ...(holding.others ?? [])].flatMap((card) => chainOf(card)) : [],
+  );
   const depth = new Map([...new Set(which)].map((id) => [id, chainOf(id).length]));
   const innermostFirst = [...depth.keys()]
     .filter((id) => cards.has(id))

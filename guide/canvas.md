@@ -58,6 +58,7 @@ Outside a view, a removed card stays off until you focus another element or relo
 ## Moving and resizing cards
 
 - **Move a card:** drag it, or select it and press `M`, then the arrow keys (`Shift` for bigger steps), and `Enter` to drop it or `Esc` to put it back.
+- **Move several cards:** `Shift`+click or `Ctrl`+click (`⌘`+click on a Mac) cards to add them to the selection (again to take one out), then drag any of them. Each stays in its own container or box.
 - **Make a card wider or narrower:** drag the grip on its right edge (shown when you point at the card or select it), or use `Alt` + `←` `→` after `M`. Its name wraps and its height follows. Stakeholder circles and containers can't be resized this way.
 - A card dropped on top of others pushes them down, out of its way. Inside a container, cards don't push each other.
 

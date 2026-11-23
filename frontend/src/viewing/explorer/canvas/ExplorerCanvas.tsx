@@ -59,6 +59,7 @@ import { useCanvasGeometry } from './useCanvasGeometry';
 import { useCanvasKeyboard } from './useCanvasKeyboard';
 import { useCanvasNodes } from './useCanvasNodes';
 import { useCanvasPopovers } from './useCanvasPopovers';
+import { useCardSelection } from './useCardSelection';
 import { useConnectHot } from './useConnectHot';
 import { useFlowEvents } from './useFlowEvents';
 import { useHeldRoutes, useLineRoutes } from './useLineRoutes';
@@ -312,7 +313,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     settleAfterDrop({ laid, shown, moved, holding, onMove, wantArranged, dropped, settling });
   }, [laid, shown, moved, holding, onMove, wantArranged]);
   /** Every card's size as drawn now: where a hold starts from. */
-  const holdFrom = (id: string): Holding => holdingOf(shown, id);
+  const holdFrom = (id: string, others?: readonly string[]): Holding =>
+    holdingOf(shown, id, others);
   const shownRef = useRef(shown);
   useEffect(() => {
     shownRef.current = shown;
@@ -368,6 +370,15 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const moving = movingState?.focusId === focusId && shown.has(movingState.id) ? movingState : null;
   const movingId = moving?.id;
 
+  // The details card, and the cards picked with it (Shift, Ctrl or Cmd + click): a new canvas
+  // (another element or view, depth, Nest, Group by, Tidy up) leaves only the details card.
+  const { selected, selectedIds, pick, endPicks } = useCardSelection({
+    props,
+    canvasKey: `${focusId}|${props.layoutKey}`,
+    laid,
+    setNote,
+  });
+
   const { highlight, missing, nodes, cardBoxes } = useCanvasNodes({
     hover,
     laid,
@@ -382,7 +393,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     editable,
     connectHot,
     dropAt,
-    selectedId: props.selectedId,
+    selectedIds,
     removable: props.removable,
     resizeFromGrip,
     onRemoveCard: props.onRemoveCard,
@@ -682,6 +693,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     shown,
     absolute,
     domIds,
+    picked: selected.length,
+    endPicks,
     dragging,
     resizingCard,
     lineDragging: lineDrag !== null,
@@ -805,6 +818,10 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     elementIds,
     hold,
     holdFrom,
+    shown,
+    selected,
+    pick,
+    endPicks,
     wantArranged,
     openLink,
     setRelated,

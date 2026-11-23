@@ -38,7 +38,7 @@ export interface CardData extends Record<string, unknown> {
   missing: number;
   state: ArchitectureState | undefined;
   focused: boolean;
-  /** The selected element (shown in the details panel): drawn with the keyboard-focus ring. */
+  /** Selected (in the details panel, or picked with it): drawn with the keyboard-focus ring. */
   selected?: boolean;
   /** The card that takes keyboard focus when tabbing into the canvas (roving tabindex). */
   tabbable: boolean;

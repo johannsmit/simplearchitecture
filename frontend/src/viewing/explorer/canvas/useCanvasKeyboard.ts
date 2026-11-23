@@ -43,6 +43,10 @@ export interface CanvasKeyboardInput {
   shown: ReadonlyMap<string, PlacedCard>;
   absolute: ReadonlyMap<string, Box>;
   domIds: ReadonlyMap<string, string>;
+  /** How many cards are selected (the details card and any picked with it). */
+  picked: number;
+  /** Leaves only the details card selected. */
+  endPicks: () => void;
   /** Busy: a card or its width dragged, a bend dragged, or a relationship drawn. */
   dragging: boolean;
   resizingCard: boolean;
@@ -89,6 +93,8 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput) {
     shown,
     absolute,
     domIds,
+    picked,
+    endPicks,
     dragging,
     resizingCard,
     lineDragging,
@@ -146,6 +152,13 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput) {
       event.preventDefault();
       return;
     }
+    // After a line being drawn or a bend dragged (their own Esc), and the open relationship.
+    if (event.key === 'Escape' && picked > 1 && drawingFrom === null && !lineDragging) {
+      endPicks();
+      setNote({ laid, text: '1 card selected.', ...(laid ? { canvas: laid.canvas } : {}) });
+      event.preventDefault();
+      return;
+    }
     if (direction) {
       if (event.shiftKey) {
         const step = 80;
@@ -170,6 +183,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput) {
       const cardsOnly = [...absolute].filter(([id]) => !isGroupId(id));
       const next = nearestInDirection(centre([cardId, from]), cardsOnly.map(centre), direction);
       if (next) {
+        endPicks();
         focusCard(next);
         props.onSelectElement?.(next);
       }
@@ -212,6 +226,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput) {
 
   /** Keyboard move mode (the keyboard way to drag, WCAG 2.5.7): M on a card starts it. */
   const startMove = (id: string) => {
+    endPicks();
     setRelated(null);
     setHold(holdFrom(id));
     setMoving({

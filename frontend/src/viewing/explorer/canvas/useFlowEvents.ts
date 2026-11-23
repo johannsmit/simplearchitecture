@@ -1,8 +1,10 @@
 import { useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { ReactFlowProps } from '@xyflow/react';
 import { nearestLineAt } from './canvasDom';
+import { groupDragMoves, groupDragOf, isPickClick, type GroupDrag } from './cardSelection';
 import { clickAfterDrag, type CanvasNode, type Hover, type RelatedState } from './canvasModel';
 import type { ExplorerCanvasProps } from './explorerCanvasProps';
+import type { PlacedCard } from './elkLayout';
 import { draggedPositions, type Holding } from './positions';
 import type { RelationshipFlowEdge } from './RelationshipEdge';
 
@@ -28,7 +30,14 @@ export interface FlowEventsInput {
   /** React Flow's node id → element id. */
   elementIds: ReadonlyMap<string, string>;
   hold: Holding | null;
-  holdFrom: (id: string) => Holding;
+  holdFrom: (id: string, others?: readonly string[]) => Holding;
+  shown: ReadonlyMap<string, PlacedCard>;
+  /** The selected cards (the details card last): a drag of one of them moves them all. */
+  selected: readonly string[];
+  /** A modifier click on a card: in or out of the selection. */
+  pick: (id: string) => void;
+  /** Leaves only the details card selected. */
+  endPicks: () => void;
   wantArranged: () => void;
   openLink: (linkId: string, clientX: number, clientY: number) => void;
   setRelated: Dispatch<SetStateAction<RelatedState | null>>;
@@ -53,6 +62,10 @@ export function useFlowEvents(input: FlowEventsInput): FlowEvents {
     elementIds,
     hold,
     holdFrom,
+    shown,
+    selected,
+    pick,
+    endPicks,
     wantArranged,
     openLink,
     setRelated,
@@ -65,6 +78,8 @@ export function useFlowEvents(input: FlowEventsInput): FlowEvents {
   } = input;
   /** The card being dragged moved: its drop is the person's change to the arrangement. */
   const dragMovedRef = useRef(false);
+  /** A drag of several selected cards: React Flow moves only the grabbed one, the rest follow. */
+  const groupDragRef = useRef<GroupDrag | undefined>(undefined);
   return {
     onMoveStart: (event) => {
       // A pan or zoom by the user (not by code) leaves the popup behind its card: close it.
@@ -73,17 +88,26 @@ export function useFlowEvents(input: FlowEventsInput): FlowEvents {
     onNodesChange: (changes) => {
       const moves = draggedPositions(changes, (id) => elementIds.get(id));
       if (moves.length > 0) dragMovedRef.current = true;
-      for (const [id, position] of moves) props.onMove(id, position);
+      const group = groupDragRef.current;
+      for (const [id, position] of moves) {
+        const all = group?.grabbed === id ? groupDragMoves(group, position, shown) : undefined;
+        for (const [card, point] of all ?? [[id, position] as const]) props.onMove(card, point);
+      }
     },
     onNodeDragStart: (_event, node) => {
       const id = elementIds.get(node.id);
       if (id === undefined) return;
       setRelated(null);
-      setHold(holdFrom(id));
+      const group = groupDragOf(shown, selected, id);
+      groupDragRef.current = group;
+      // An unselected card (or a group box) moves alone, and the selection of several ends.
+      if (!group) endPicks();
+      setHold(holdFrom(id, group ? [...group.starts.keys()].filter((card) => card !== id) : []));
       setDraggingId(id);
       dragMovedRef.current = false;
     },
     onNodeDragStop: () => {
+      groupDragRef.current = undefined;
       setDraggingId(null);
       setHold(null);
       if (dragMovedRef.current && hold) droppedRef.current = hold;
@@ -96,6 +120,11 @@ export function useFlowEvents(input: FlowEventsInput): FlowEvents {
       // A single click (or tap) selects; the second click of a double click (or a double tap)
       // focuses. Counting clicks here, rather than on dblclick, works for touch too.
       const id = node.data.element.id;
+      if (isPickClick(event)) {
+        pick(id);
+        return;
+      }
+      endPicks();
       if (event.detail >= 2) {
         if (id !== focusId) props.onFocusElement(id);
       } else {
@@ -124,6 +153,7 @@ export function useFlowEvents(input: FlowEventsInput): FlowEvents {
       // Nor does the end of a bend drag whose handle went (bends that lined up) clear it.
       if (performance.now() - routeMovedAtRef.current < clickAfterDrag) return;
       setEdgeMenu(null);
+      endPicks();
       props.onDeselect?.();
     },
   };

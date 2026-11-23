@@ -1,7 +1,7 @@
 {
   "name": "@simplearchitecture/backend",
   "private": true,
-  "version": "0.65.3",
+  "version": "0.66.0",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
