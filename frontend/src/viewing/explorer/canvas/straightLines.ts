@@ -1,3 +1,4 @@
+import { circleHandles } from './circle';
 import type { PlacedCard, PlacedHandle, Side } from './elkLayout';
 import { absoluteBoxes, crossesAny, linkOfPort, portId, spacing } from './layoutGeometry';
 import type { Box, Point } from './positions';
@@ -26,6 +27,11 @@ export interface SideEnd {
   card: string;
   side: Side;
   offset: number;
+  /**
+   * An end that stays at this point on the canvas: on a Stakeholder circle, where the circle puts
+   * it. Only the line's other end moves, to line up with it.
+   */
+  point?: Point;
 }
 
 export interface StraightCandidate {
@@ -83,11 +89,28 @@ export function straightRoom(
   return low <= high ? { low, high } : undefined;
 }
 
+/**
+ * Where, across a line leaving a fixed `point` by `side` into `to` on the opposite side, `to` has
+ * room for its end with `cornerRoom` from its corners. Undefined when `to` doesn't lie out beyond
+ * the point.
+ */
+function roomBeyond(point: Point, side: Side, to: Box): { low: number; high: number } | undefined {
+  if (gapBetween({ ...point, width: 0, height: 0 }, to, side) <= 0) return undefined;
+  const { from, length } = along(to, opposite[side]);
+  const low = from + cornerRoom;
+  const high = from + length - cornerRoom;
+  return low <= high ? { low, high } : undefined;
+}
+
 interface Mark {
   /** The line's end it stands for, or undefined for an end that stays. */
   owner?: string;
   offset: number;
 }
+
+/** Where an end that stays at its point is, across its line; `otherwise` for any other end. */
+const pointAt = (end: SideEnd, otherwise: number) =>
+  end.point ? (upright(end.side) ? end.point.y : end.point.x) : otherwise;
 
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -97,7 +120,9 @@ const clamp = (value: number, low: number, high: number) => Math.min(Math.max(va
  * New places for the ends of lines that can run straight, by line id, as offsets along their sides.
  * A line qualifies when it leaves one card and enters another on facing sides, and the cards
  * overlap across it. The end on the side with fewer ends moves first, to line up with the other
- * end; else the other end moves; else both move to a place within the overlap. Every end keeps
+ * end; else the other end moves; else both move to a place within the overlap. An end with a
+ * `point` (on a circle) stays there, and the line qualifies when the other card lies out beyond it
+ * and has room level with it: only the other end moves. Every end keeps
  * `spacing.ports` from the other ends on its side and its place in their order, so no lines cross
  * that didn't, and keeps `cornerRoom` from the corners. Lines are taken in id order; a line that
  * can't be made straight isn't in the answer.
@@ -126,6 +151,8 @@ export function straightEnds(
       ['start', line.start],
       ['end', line.end],
     ] as const) {
+      // An end that stays at its point isn't on a card's side, so keeps no other end clear.
+      if (end.point) continue;
       const mark = { owner: `${line.id}\n${which}`, offset: end.offset };
       own.set(mark.owner, mark);
       add(end.card, end.side, mark);
@@ -135,7 +162,12 @@ export function straightEnds(
     list.sort((a, b) => a.offset - b.offset || byText(a.owner ?? '', b.owner ?? ''));
   }
   /** Where an end may go along its side, on the canvas's axis, keeping its order and spacing. */
-  const roomOf = (end: SideEnd, mark: Mark, box: Box) => {
+  const roomOf = (end: SideEnd, mark: Mark | undefined, box: Box) => {
+    // An end that stays at its point has no mark, and no room to move.
+    if (!mark) {
+      const at = pointAt(end, 0);
+      return { low: at, high: at, count: 0 };
+    }
     const list = marks.get(keyOf(end.card, end.side)) ?? [];
     const index = list.indexOf(mark);
     const before = list[index - 1];
@@ -155,14 +187,19 @@ export function straightEnds(
     const source = boxes.get(start.card);
     const target = boxes.get(end.card);
     if (!source || !target || start.side !== opposite[end.side]) continue;
-    const room = straightRoom(source, start.side, target);
+    if (start.point && end.point) continue;
+    const room = start.point
+      ? roomBeyond(start.point, start.side, target)
+      : end.point
+        ? roomBeyond(end.point, end.side, source)
+        : straightRoom(source, start.side, target);
     if (!room) continue;
-    const startMark = own.get(`${line.id}\nstart`) as Mark;
-    const endMark = own.get(`${line.id}\nend`) as Mark;
+    const startMark = own.get(`${line.id}\nstart`);
+    const endMark = own.get(`${line.id}\nend`);
     const startFrom = along(source, start.side).from;
     const endFrom = along(target, end.side).from;
-    const startAt = startFrom + startMark.offset;
-    const endAt = endFrom + endMark.offset;
+    const startAt = pointAt(start, startFrom + (startMark?.offset ?? 0));
+    const endAt = pointAt(end, endFrom + (endMark?.offset ?? 0));
     if (Math.abs(startAt - endAt) < 0.5) continue;
     const startRoom = roomOf(start, startMark, source);
     const endRoom = roomOf(end, endMark, target);
@@ -177,14 +214,18 @@ export function straightEnds(
     for (const each of ends) if (fits(each.other, room, each.room)) places.push(each.other);
     const low = Math.max(room.low, startRoom.low, endRoom.low);
     const high = Math.min(room.high, startRoom.high, endRoom.high);
-    if (low <= high) places.push(clamp((startAt + endAt) / 2, low, high));
+    if (low <= high && !start.point && !end.point)
+      places.push(clamp((startAt + endAt) / 2, low, high));
     for (const place of places) {
-      const from = pointOfEnd(source, start.side, place - startFrom);
-      const to = pointOfEnd(target, end.side, place - endFrom);
+      const from = start.point ?? pointOfEnd(source, start.side, place - startFrom);
+      const to = end.point ?? pointOfEnd(target, end.side, place - endFrom);
       if (!allows(line, from, to)) continue;
-      startMark.offset = place - startFrom;
-      endMark.offset = place - endFrom;
-      result.set(line.id, { start: startMark.offset, end: endMark.offset });
+      if (startMark) startMark.offset = place - startFrom;
+      if (endMark) endMark.offset = place - endFrom;
+      result.set(line.id, {
+        start: startMark?.offset ?? start.offset,
+        end: endMark?.offset ?? end.offset,
+      });
       break;
     }
   }
@@ -195,19 +236,34 @@ export function straightEnds(
  * The automatic layout with its lines made straight where they can be (`straightEnds`): the ends
  * move along their sides and the route loses its bends. Only lines ELK routed between two cards in
  * the same container (or both at the top level) are taken: a line into a container comes in beside
- * its name, and a circle's ends sit on its circle (`skip`), so those keep their routes. The other
- * routed ends stay where they are and are kept clear of. A straight line runs through no card and
- * crosses no more of the other lines than its route did. Cards don't move.
+ * its name, so keeps its route. A circle's end (`isCircle`) stays where the circle puts it
+ * (`circleHandles`), and only the card's end moves to line up with it; a line between two circles
+ * keeps its route. The other routed ends stay where they are and are kept clear of. A straight line
+ * runs through no card and crosses no more of the other lines than its route did. Cards don't move.
  */
 export function straightLaid(
   placed: ReadonlyMap<string, PlacedCard>,
-  skip: (id: string) => boolean,
+  isCircle: (id: string) => boolean,
 ): Map<string, PlacedCard> {
   const boxes = absoluteBoxes(placed);
   const handles = new Map<string, { card: string; handle: PlacedHandle }>();
   for (const card of placed.values()) {
     for (const handle of card.handles) handles.set(handle.id, { card: card.id, handle });
   }
+  /** A side end for a handle: on a circle, at the point the circle puts it. */
+  const sideEnd = (card: string, handle: PlacedHandle): SideEnd => {
+    if (!isCircle(card)) return { card, side: handle.side, offset: handle.offset };
+    const box = boxes.get(card) as Box;
+    const owner = placed.get(card) as PlacedCard;
+    const onCircle = circleHandles(owner.handles).find((each) => each.id === handle.id);
+    if (!onCircle) return { card, side: handle.side, offset: handle.offset };
+    return {
+      card,
+      side: onCircle.side,
+      offset: handle.offset,
+      point: { x: box.x + onCircle.x, y: box.y + onCircle.y },
+    };
+  };
   const candidates: StraightCandidate[] = [];
   const fixed = new Map<string, { side: Side; offset: number }[]>();
   const keep = (card: string, handle: PlacedHandle) => {
@@ -220,15 +276,15 @@ export function straightLaid(
       const target = handles.get(portId(link, 'target'));
       if (!target) continue;
       const together = placed.get(target.card)?.parent === card.parent;
-      if (!together || skip(card.id) || skip(target.card)) {
+      if (!together || (isCircle(card.id) && isCircle(target.card))) {
         keep(card.id, handle);
         keep(target.card, target.handle);
         continue;
       }
       candidates.push({
         id: link,
-        start: { card: card.id, side: handle.side, offset: handle.offset },
-        end: { card: target.card, side: target.handle.side, offset: target.handle.offset },
+        start: sideEnd(card.id, handle),
+        end: sideEnd(target.card, target.handle),
       });
     }
   }
