@@ -33,7 +33,7 @@ export interface CanvasNodesInput {
   editable: boolean;
   connectHot: string | null;
   dropAt: { id: string; ok: boolean } | null;
-  selectedId: string | undefined;
+  selectedIds: ReadonlySet<string>;
   removable: ReadonlySet<string> | undefined;
   resizeFromGrip: NonNullable<CardNode['data']['onResize']>;
   onRemoveCard: ((id: string) => void) | undefined;
@@ -65,7 +65,7 @@ export function useCanvasNodes(input: CanvasNodesInput) {
     editable,
     connectHot,
     dropAt,
-    selectedId,
+    selectedIds,
     removable,
     resizeFromGrip,
     onRemoveCard,
@@ -108,7 +108,7 @@ export function useCanvasNodes(input: CanvasNodesInput) {
         editable,
         connectHot,
         dropAt,
-        selectedId,
+        selectedIds,
         removable,
         resizeFromGrip,
         onRemoveCard,
@@ -127,7 +127,7 @@ export function useCanvasNodes(input: CanvasNodesInput) {
       editable,
       connectHot,
       dropAt,
-      selectedId,
+      selectedIds,
       removable,
       resizeFromGrip,
       onRemoveCard,

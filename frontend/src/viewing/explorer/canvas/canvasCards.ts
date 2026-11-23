@@ -109,7 +109,8 @@ export interface CardDataInput {
   editable: boolean;
   connectHot: string | null;
   dropAt: { id: string; ok: boolean } | null;
-  selectedId: string | undefined;
+  /** The selected cards: the details card, and any picked with it. */
+  selectedIds: ReadonlySet<string>;
   removable: ReadonlySet<string> | undefined;
   resizeFromGrip: NonNullable<CardNode['data']['onResize']>;
   onRemoveCard: ((id: string) => void) | undefined;
@@ -164,7 +165,7 @@ export function cardDataOf(input: CardDataInput): Map<string, CardNode['data']> 
       missing: missing.get(card.id) ?? 0,
       state: elementArchitectureState(element),
       focused,
-      selected: card.id === input.selectedId,
+      selected: input.selectedIds.has(card.id),
       tabbable: card.id === activeId,
       domId: domIds.get(card.id) ?? card.id,
       handles: card.handles,

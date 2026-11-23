@@ -3,13 +3,18 @@ import { setWidth, type LatestCallbacks, type Laid, type RelatedState } from './
 import type { PlacedCard } from './elkLayout';
 import { pushedByContainer, type Holding, type MovedPositions, type Point } from './positions';
 
-/** Every card's size as drawn now: where a hold starts from. */
-export function holdingOf(shown: ReadonlyMap<string, PlacedCard>, id: string): Holding {
+/** Every card's size as drawn now: where a hold starts from (`others`: cards dragged with it). */
+export function holdingOf(
+  shown: ReadonlyMap<string, PlacedCard>,
+  id: string,
+  others: readonly string[] = [],
+): Holding {
   return {
     id,
     sizes: new Map(
       [...shown].map(([key, card]) => [key, { width: card.width, height: card.height }]),
     ),
+    ...(others.length > 0 ? { others } : {}),
   };
 }
 
@@ -46,7 +51,16 @@ export function settleAfterDrop(input: SettleInput): void {
   const drop = dropped.current;
   if (drop) {
     dropped.current = null;
-    for (const [id, point] of pushedByContainer(shown, drop.id, drop.sizes)) {
+    // Cards dropped together don't push each other: only the cards beside them move.
+    const held = new Set([drop.id, ...(drop.others ?? [])]);
+    const pushed = new Map<string, Point>();
+    for (const card of held) {
+      for (const [id, point] of pushedByContainer(shown, card, drop.sizes)) {
+        const before = pushed.get(id);
+        if (!held.has(id) && (!before || point.y > before.y)) pushed.set(id, point);
+      }
+    }
+    for (const [id, point] of pushed) {
       onMove(id, point);
       changed = true;
     }
