@@ -261,6 +261,11 @@ export function facingSides(source: EndBox, target: EndBox): { start: Side; end:
   return { start, end: opposite[start] };
 }
 
+/** Whether two boxes have a gap between them across or up and down, as `facingSides` sees it. */
+function apart(a: Box, b: Box): boolean {
+  return b.x > a.x + a.width || a.x > b.x + b.width || b.y > a.y + a.height || a.y > b.y + b.height;
+}
+
 /** The point on a box's side at `offset` along it. */
 function pointOn(box: Box, side: Side, offset: number): LineEnd {
   switch (side) {
@@ -766,7 +771,8 @@ function finalDetour(start: LineEnd, end: LineEnd, way: DetourWay): Point[] | un
  * now. Every pair of sides is tried (a circle's lines leave sideways), with the bend at several
  * places, and the shortest line that runs through no other card is kept. When each one does, the
  * cheapest detour round the cards in the way is kept (`detourLine`), and only when there is none
- * the shortest line. Cards facing each other come first on a tie (`facingSides`). Several ends
+ * the shortest line. Cards apart keep the sides where they face each other (`facingSides`) when
+ * that line is clear; among the other pairs, the facing sides win a tie. Several ends
  * on one side are then spread evenly along it, ordered by where their other cards are, and kept
  * apart from the ends of routed lines there (`taken`, by card and side); the bend, or the
  * detour, is chosen again for the ends' final places. A line between cards that face each other
@@ -819,7 +825,20 @@ export function floatingEnds(
     const facing = facingSides(source, target);
     let chosen = facing;
     let best: { clear: boolean; length: number; bends: number } | undefined;
-    for (const startSide of source.circle === true ? circleSides : allSides) {
+    // Cards apart: the facing sides win whenever their line is clear, even over a shorter line
+    // with fewer bends, which would come into the other card by its side. Only otherwise are the
+    // other pairs of sides tried.
+    const facingClear =
+      source.circle !== true &&
+      target.circle !== true &&
+      apart(source, target) &&
+      bestLine(
+        candidateLines(...judgedEnds(source, facing.start, target, facing.end), others),
+        ownFree,
+      )?.clear === true;
+    if (facingClear) best = { clear: true, length: 0, bends: 0 };
+    const startSides = facingClear ? [] : source.circle === true ? circleSides : allSides;
+    for (const startSide of startSides) {
       for (const endSide of target.circle === true ? circleSides : allSides) {
         const found = bestLine(
           candidateLines(...judgedEnds(source, startSide, target, endSide), others),
