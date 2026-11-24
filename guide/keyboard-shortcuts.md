@@ -24,7 +24,7 @@ These keys work when the canvas, not the catalog, is shown. They wait while focu
 | `+` (or `=`) `-` | Zooms in or out                                                                                                                                                                                                                                                                                         |
 | `0`              | Fits everything in view                                                                                                                                                                                                                                                                                 |
 | `M`              | Starts moving the selected card (see the next table)                                                                                                                                                                                                                                                    |
-| `T`              | [Tidy relations](canvas.md#layout-tidy-up-and-tidy-relations): draws every line again; no card moves                                                                                                                                                                                                    |
+| `T`              | [Tidy relations](canvas.md#layout-and-tidy-relations): draws every line again; no card moves                                                                                                                                                                                                            |
 | `N`              | Modelling: a new element at the centre of the canvas; in an open view, it is added to the view                                                                                                                                                                                                          |
 | `R`              | Modelling, on a card: adds a relationship from this element (opens **Add relationship**)                                                                                                                                                                                                                |
 
@@ -197,7 +197,7 @@ The suggestion keys above, and:
 
 ## Menus and dialogs
 
-The theme menu, the menu of the small arrow next to **Tidy up**, and every dialog.
+The theme menu, and every dialog.
 
 | Key          | What it does                                        |
 | ------------ | --------------------------------------------------- |

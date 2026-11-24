@@ -95,7 +95,7 @@ The label is stored as typed, so a JSON Graph Format export keeps the braces.
 - An element can't be related to itself.
 - A Contains can't make a loop, and the same Contains can't be there twice.
 - An element may be in two containers, with a warning. It is drawn inside the first.
-- A Contains changed between cards already on the canvas shows as a line, or stops nesting, until you choose **Tidy up**.
+- A Contains changed between cards already on the canvas shows as a line, or stops nesting, and the cards stay where they are. The nesting is drawn again when the canvas is laid out again: when you open the element or view again, reload the page, or switch **Nest contained elements** off and on.
 
 ## Saving
 
