@@ -459,7 +459,7 @@ describe('line routes', () => {
     });
     const opened = await call(target, 'GET', `${views()}/${view.id}`, { cookie });
     expect(opened.json<ViewResult>().view).toEqual(laid);
-    // Tidy up: the cards without the route, which goes.
+    // Tidy relations: the cards without the route, which goes.
     const tidied = await call(target, 'PUT', url, {
       cookie,
       body: { version: 2, cards, routes: [] },

@@ -5,7 +5,7 @@ import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 import { settle } from './settle';
 
-// The canvas is laid out only by Tidy up and for a new canvas: adding or taking off cards, and
+// The canvas is laid out only for a new canvas: adding or taking off cards, and
 // any change to relationships or elements, leaves every other card where it is. Made-up data.
 
 const canvasEl = () => document.getElementById('canvas') as HTMLElement;
@@ -16,9 +16,7 @@ const cardIds = () =>
     (element) => element.getAttribute('data-element-id') ?? '',
   );
 const nodeOf = (id: string) => card(id)?.closest<HTMLElement>('.react-flow__node');
-const tidy = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy up' });
 const details = () => screen.getByRole('complementary', { name: 'Details' });
-const live = () => canvasEl().querySelector('[aria-live="polite"]')?.textContent ?? '';
 const dragType = 'application/x-simplearchitecture-element';
 /** Drops an element row on the canvas at a point (jsdom's drop event has no pointer). */
 function drop(id: string, clientX: number, clientY: number) {
@@ -175,7 +173,6 @@ const aroundShop = ['shop', 'customer', 'ordering', 'oven/planner #1', 'till', '
 describe.each(['viewing', 'modelling'] as const)('on a focus canvas in %s', (space) => {
   it('adds a related element next to its card, moving no other card', async () => {
     const before = await openBakery(space, 'customer', ['customer', 'shop']);
-    expect(tidy().disabled).toBe(true);
     fireEvent.click(
       within(card('shop') as HTMLElement).getByRole('button', {
         name: '4 related elements not on the canvas, show them',
@@ -190,8 +187,6 @@ describe.each(['viewing', 'modelling'] as const)('on a focus canvas in %s', (spa
     await settle();
     expectUnmoved(before);
     expectNoOverlapWith('server', ['customer', 'shop']);
-    // Tidy up has something to do now.
-    expect(tidy().disabled).toBe(false);
   });
 
   it('takes a card off with its ×, moving no other card', async () => {
@@ -222,25 +217,6 @@ describe.each(['viewing', 'modelling'] as const)('on a focus canvas in %s', (spa
     expect(box.x).toBeCloseTo((1500 - view.x) / view.zoom - 60, 6);
     expect(box.y).toBeCloseTo((900 - view.y) / view.zoom - 22, 6);
     expectNoOverlapWith('lonely', aroundShop);
-  });
-
-  it('lays everything out again on Tidy up only', async () => {
-    const before = await openBakery(space, 'shop', aroundShop);
-    fireEvent.click(
-      within(card('till') as HTMLElement).getByRole('button', { name: 'Remove Till from canvas' }),
-    );
-    await waitFor(() => {
-      expect(card('till')).toBeNull();
-    });
-    await settle();
-    expectUnmoved(before);
-    expect(tidy().disabled).toBe(false);
-    fireEvent.click(tidy());
-    await waitFor(() => {
-      expect(live()).toBe('Layout tidied up.');
-    });
-    expect(tidy().disabled).toBe(true);
-    expect(cardIds().sort()).toEqual(aroundShop.filter((id) => id !== 'till').sort());
   });
 });
 

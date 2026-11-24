@@ -5,9 +5,8 @@ import type {
   ViewCardLayout,
   ViewLineRoute,
 } from '@simplearchitecture/shared';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { linePath } from '../src/viewing/explorer/canvas/edgeLine';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 import { settle } from './settle';
 
@@ -358,49 +357,6 @@ describe('containers fit after an automatic layout', () => {
     expect(roomIn('site', ['hall'])).toEqual(noRoom);
     await settle();
     expect(layoutSaves(calls)).toEqual([]);
-  });
-
-  it('Tidy up saves the fitted layout, and the view opens again just as Tidy up drew it', async () => {
-    const fitted: ViewCardLayout[] = [
-      { elementId: 'site', x: 0, y: 0 },
-      { elementId: 'hall', x: 16, y: 56 },
-      { elementId: 'gauge', x: 32, y: 112 },
-      { elementId: 'pump', x: 232, y: 112 },
-      { elementId: 'tank', x: 1000, y: 300 },
-    ];
-    const fake = await open(siteView(all, fitted, [shifted(pumpRoute(232))]));
-    fireEvent.click(screen.getByRole('button', { name: 'Tidy up' }));
-    await waitFor(() => {
-      expect(layoutSaves(fake.calls)).toHaveLength(1);
-    });
-    await settle();
-    expect(roomIn('hall', ['gauge', 'pump'])).toEqual(noRoom);
-    expect(roomIn('site', ['hall'])).toEqual(noRoom);
-    const drawn = Object.fromEntries(all.map((id) => [id, boxOf(id)]));
-    const [save] = layoutSaves(fake.calls);
-    // Pump to Tank as Tidy up drew it, in place of the route given by hand.
-    const [route] = savedRoutes(save);
-    expect(savedRoutes(save)).toHaveLength(1);
-    expect(route?.relationshipId).toBe('r1');
-    expect(route?.points).not.toEqual(shifted(pumpRoute(232)).points);
-    for (const saved of savedCards(save)) {
-      expect(saved, saved.elementId).toMatchObject({
-        x: drawn[saved.elementId]?.x,
-        y: drawn[saved.elementId]?.y,
-      });
-    }
-
-    // Opened again: the same picture, and nothing saved.
-    cleanup();
-    stubApi(modeller, fake.handler);
-    renderAt(`/modelling/models/${modelId}/views/v-site`);
-    await waitFor(() => {
-      expect(card('tank')).not.toBeNull();
-    });
-    await settle();
-    for (const id of all) expect(boxOf(id), id).toEqual(drawn[id]);
-    expect(lineOf(/^Pump .* Tank$/)).toBe(linePath(route?.points ?? []));
-    expect(layoutSaves(fake.calls)).toHaveLength(1);
   });
 });
 

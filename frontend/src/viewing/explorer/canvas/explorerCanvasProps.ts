@@ -55,18 +55,14 @@ export interface ExplorerCanvasProps {
   widths: ReadonlyMap<string, number>;
   /** A card's width was set (its grip, or `Alt` + arrows in move mode); undefined drops it. */
   onResize: (id: string, width: number | undefined) => void;
-  /** Goes up by one on each "Tidy up": the view is fitted again and the change announced. */
-  tidyCount: number;
   /**
-   * Changes when the canvas is a new one (another element or view, a depth, the Nest switch, Tidy
-   * up): only then is it laid out. Any other change keeps every card where it is.
+   * Changes when the canvas is a new one (another element or view, a depth, the Nest switch, Group
+   * by): only then is it laid out. Any other change keeps every card where it is.
    */
   layoutKey: string;
-  /** Cards or lines came or went without a new layout: Tidy up has something to do. */
-  onKept?: (layoutKey: string) => void;
   /**
    * Goes up by one on each "Tidy relations": every card stays where it is, and every line is drawn
-   * again from the cards, its route from the layout or by hand dropped. No new layout.
+   * again from the cards, its route given by hand dropped. No new layout.
    */
   relationsTidyCount?: number;
   /** Whether Tidy relations can be used now: the canvas draws a line and isn't laying out. */
@@ -121,13 +117,12 @@ export interface ExplorerCanvasProps {
   /** The remove button on a card: takes it off the canvas (or out of the open view). */
   onRemoveCard?: (id: string) => void;
   /**
-   * An open view's stored layout: a new canvas (but not Tidy up) puts the cards with a position
-   * there, and the others at a free spot, in place of a layout by ELK. Read only then.
+   * An open view's stored layout: a new canvas puts the cards with a position there, and the
+   * others at a free spot, in place of a layout by ELK. Read only then.
    */
   storedLayout?: readonly ViewCardLayout[] | undefined;
   /**
    * An open view's stored line routes: read with `storedLayout`, when the canvas opens from it.
-   * Tidy up gives every line its automatic route instead.
    */
   storedRoutes?: readonly ViewLineRoute[] | undefined;
   /**
@@ -136,12 +131,12 @@ export interface ExplorerCanvasProps {
    */
   storedGroupBy?: string | undefined;
   /**
-   * Goes up by one when the person added or took off cards, or chose Tidy up: once the canvas
+   * Goes up by one when the person added or took off cards, or tidied the lines: once the canvas
    * shows it, it reports where its cards are (`onArranged`).
    */
   arrangeRequest?: number;
   /**
-   * Where every card is, and the route of every line moved by hand or drawn on the layout's route,
+   * Where every card is, and the route of every line moved by hand,
    * after the person moved or resized a card, moved a line, or after `arrangeRequest`. Never for a
    * layout, a placement or a route the canvas made on its own. Given, in a view, the lines' middle
    * stretches can be dragged.

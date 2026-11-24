@@ -105,13 +105,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   useEffect(() => {
     movedRef.current = props.moved;
   });
-  // The moved cards while the canvas is laid out: Tidy up clears them before its layout answers,
-  // so a Tidy up that fails puts them back.
-  const movedBeforeTidy = useRef(props.moved);
-  useEffect(() => {
-    if (laid?.key === props.layoutKey) movedBeforeTidy.current = props.moved;
-  });
-  /** What the live region says after a keyboard move, a tidy up or a moved line. */
+  /** What the live region says after a keyboard move, a tidy or a moved line. */
   const [note, setNote] = useState<Note | null>(null);
   /** The card being dragged with the mouse: edge labels are hidden until the drop. */
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -223,13 +217,12 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const laidRef = useRef(laid);
   const latest = useRef<LatestCallbacks>({
     onMove: props.onMove,
-    onKept: props.onKept,
     onResize: props.onResize,
     flow,
   });
   useEffect(() => {
     laidRef.current = laid;
-    latest.current = { onMove: props.onMove, onKept: props.onKept, onResize: props.onResize, flow };
+    latest.current = { onMove: props.onMove, onResize: props.onResize, flow };
   });
   /** Where new cards should go (a drop point, or next to a card), until they are placed. */
   const hints = useRef(new Map<string, PlaceHint>());
@@ -248,17 +241,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   });
   /** How many new canvases there have been: each one's routes given by hand start afresh. */
   const canvasCount = useRef(0);
-  /**
-   * The last Tidy up, and the canvas it was chosen for (`layoutKey` then). Once the canvas is
-   * another one (a view, focus, depth or the Nest switch), a Tidy up that hasn't finished is
-   * dropped (`key` null): the new canvas opens as it normally would.
-   */
-  const tidyAsked = useRef<{ count: number; key: string | null }>({
-    count: props.tidyCount,
-    key: null,
-  });
 
-  const { layoutKey, tidyCount, widths, groupBy } = props;
+  const { layoutKey, widths, groupBy } = props;
   // A new canvas is measured (after the fonts load) and laid out in ELK's worker. Any other change
   // (cards or lines added or taken off, an element edited) keeps every card where it is.
   useEffect(
@@ -270,17 +254,14 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         graph,
         nest,
         layoutKey,
-        tidyCount,
         widths,
         groupBy,
-        tidyAsked,
         laidRef,
         holdingRef,
         hints,
         section,
         latest,
         movedRef,
-        movedBeforeTidy,
         storedRef,
         canvasCount,
         arrangeWanted,
@@ -288,7 +269,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         setLayoutError,
         setNote,
       }),
-    [fontsReady, hood, links, graph, nest, layoutKey, tidyCount, widths, groupBy],
+    [fontsReady, hood, links, graph, nest, layoutKey, widths, groupBy],
   );
 
   // Where the cards are drawn: the layout, with the moved cards where the user put them, and the
@@ -371,7 +352,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const movingId = moving?.id;
 
   // The details card, and the cards picked with it (Shift, Ctrl or Cmd + click): a new canvas
-  // (another element or view, depth, Nest, Group by, Tidy up) leaves only the details card.
+  // (another element or view, depth, Nest, Group by) leaves only the details card.
   const { selected, selectedIds, pick, endPicks } = useCardSelection({
     props,
     canvasKey: `${focusId}|${props.layoutKey}`,
@@ -425,9 +406,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
   const hoveredLink = hover?.kind === 'link' ? hover.id : undefined;
   const bendsAllowed =
     linesMovable && !dragging && moving === null && !resizingCard && drawingFrom === null;
-  const { handRoutes, routes, floating, bendLinkIds } = useLineRoutes({
+  const { handRoutes, floating, bendLinkIds } = useLineRoutes({
     laid,
-    shown,
     absolute,
     endBoxes,
     held,
@@ -445,8 +425,8 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     onRelationsTidyable?.(relationsTidyable);
   }, [relationsTidyable, onRelationsTidyable]);
   // After "Tidy relations" (set while rendering, so a save asked for with it sees the result): the
-  // cards stay, the layout's routes and the routes given by hand go, and every line follows its
-  // cards. Said at once, as there is no layout to wait for.
+  // cards stay, the routes given by hand go, and every line follows its cards. Said at once, as
+  // there is no layout to wait for.
   const relationsTidyCount = props.relationsTidyCount ?? 0;
   const [relationsSeen, setRelationsSeen] = useState(relationsTidyCount);
   if (relationsSeen !== relationsTidyCount) {
@@ -546,7 +526,7 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     if (!arrangeWanted.current || !laid || settling.current) return;
     if (laid.key !== layoutKey || laid.hood !== hood || laid.widths !== widths) return;
     arrangeWanted.current = false;
-    onArranged?.(arrangedLayoutOf({ laid, shown, graph, widths, hood, routes, endBoxes, held }));
+    onArranged?.(arrangedLayoutOf({ laid, shown, graph, widths, hood, endBoxes, held }));
   }, [
     arrangeTick,
     arrangeRequest,
@@ -559,7 +539,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     onArranged,
     held,
     endBoxes,
-    routes,
   ]);
   useEffect(() => {
     bendLines.current = bendLinkIds;
@@ -575,7 +554,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
         dragging,
         chosen,
         fresh,
-        routes,
         floating,
         handRoutes,
         lineDrag,
@@ -609,7 +587,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
       dragging,
       chosen,
       fresh,
-      routes,
       floating,
       handRoutes,
       lineDrag,
@@ -652,14 +629,6 @@ export function ExplorerCanvas(props: ExplorerCanvasProps) {
     // Only when the space around the canvas changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.fitKey]);
-
-  // After "Tidy up": say so at once (set while rendering, as React recommends for state that
-  // follows a prop); the new layout says it again when it arrives.
-  const [tidySeen, setTidySeen] = useState(props.tidyCount);
-  if (tidySeen !== props.tidyCount) {
-    setTidySeen(props.tidyCount);
-    setNote({ laid, text: 'Layout tidied up.' });
-  }
 
   const closeRelated = useCallback((returnFocus: boolean) => {
     setRelated((current) => {

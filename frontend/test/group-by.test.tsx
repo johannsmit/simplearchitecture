@@ -450,12 +450,10 @@ describe('moving cards and boxes', () => {
     ).toBe('Ledger');
   });
 
-  it('keeps the boxes on Tidy up, and Tidy relations moves no card and no box', async () => {
+  it('Tidy relations moves no card and no box', async () => {
     await open(at('viewing', 'ledger', '&group=owningTeam'));
-    const laid = groups().map((group) => group.box);
-    fireEvent.click(screen.getByRole('button', { name: 'Tidy up' }));
     await settle();
-    expect(groups().map((group) => group.box)).toEqual(laid);
+    const laid = groups().map((group) => group.box);
     const cards = ['clerk', 'ledger', 'crane'].map(cardBox);
     mainOf('ledger').focus();
     fireEvent.keyDown(mainOf('ledger'), { key: 't' });

@@ -13,8 +13,8 @@ import { pushedBelow, type Box, type Point } from './positions';
 /**
  * Changes to the canvas without a new layout: cards that come and go, and new lines. Every card
  * already drawn keeps its place; a new card goes to a free spot, and a container grows to hold a
- * new card. Only Tidy up (and a new canvas) lays everything out again with ELK. Pure, so it is
- * tested without a browser.
+ * new card. Only a new canvas lays everything out again with ELK. Pure, so it is tested without a
+ * browser.
  */
 
 interface Size {
@@ -281,8 +281,8 @@ function placeInside(
 /**
  * The canvas after cards came or went, with no new layout. Cards already drawn stay exactly where
  * they are (a card whose container left, or whose Contains went, stays in place outside it, until
- * Tidy up). A new card goes to its hint's point, or next to its hinted or related card, or to the
- * middle of the view, at the nearest spot that covers no card; what it holds is packed inside it.
+ * the canvas is opened again). A new card goes to its hint's point, or next to its hinted or
+ * related card, or to the middle of the view, at the nearest spot that covers no card; what it holds is packed inside it.
  * A new card that belongs in a container on the canvas goes into a free spot there, and the
  * container grows to fit; when growing would cover another card, the new card goes outside,
  * next to it. Handles come from `relinkHandles`.
@@ -576,28 +576,4 @@ export function freeOffset(handles: readonly PlacedHandle[], side: Side, length:
     if (free(middle - step)) return middle - step;
   }
   return middle;
-}
-
-/** True when two canvases draw the same cards at the same places, with the same handles. */
-export function samePlacement(
-  a: ReadonlyMap<string, PlacedCard>,
-  b: ReadonlyMap<string, PlacedCard>,
-): boolean {
-  if (a.size !== b.size) return false;
-  for (const [id, card] of a) {
-    const other = b.get(id);
-    if (
-      !other ||
-      other.x !== card.x ||
-      other.y !== card.y ||
-      other.width !== card.width ||
-      other.height !== card.height ||
-      other.parent !== card.parent ||
-      other.handles.length !== card.handles.length ||
-      other.handles.some((handle, index) => handle.id !== card.handles[index]?.id)
-    ) {
-      return false;
-    }
-  }
-  return true;
 }

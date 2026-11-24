@@ -53,7 +53,6 @@ export const relPopHeight = 340;
 export interface Laid {
   /** The canvas it was made for (`layoutKey`). */
   key: string;
-  tidyCount: number;
   /**
    * A new canvas (laid out by ELK, or from a view's stored layout): the view is fitted to it.
    * Otherwise the previous canvas with cards added or taken off.
@@ -69,8 +68,6 @@ export interface Laid {
   parents: ReadonlyMap<string, string>;
   /** Elements drawn as containers (with elements inside). */
   containers: ReadonlySet<string>;
-  /** Each card's size when ELK laid it out: a line keeps ELK's route only while both stay so. */
-  layoutSizes: ReadonlyMap<string, { width: number; height: number }>;
   /** The widths set by hand it was made with. */
   widths: ReadonlyMap<string, number>;
   /** The new canvas it belongs to (one for each new canvas; kept as cards come and go). */
@@ -82,7 +79,7 @@ export interface Laid {
 }
 
 /**
- * What the live region says after a keyboard move or a tidy up (until the next layout), or, with
+ * What the live region says after a keyboard move or a tidy (until the next layout), or, with
  * `canvas`, until the canvas is a new one (a moved line's save redraws the same canvas).
  */
 export interface Note {
@@ -94,7 +91,6 @@ export interface Note {
 /** The latest page callbacks and React Flow instance, read without re-running the layout. */
 export interface LatestCallbacks {
   onMove: (id: string, position: Point | undefined) => void;
-  onKept: ((layoutKey: string) => void) | undefined;
   onResize: (id: string, width: number | undefined) => void;
   flow: CanvasFlow;
 }

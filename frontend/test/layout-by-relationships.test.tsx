@@ -4,12 +4,12 @@ import type {
   StoredView,
   ViewCardLayout,
 } from '@simplearchitecture/shared';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { renderAt, stubApi, viewer, type Handler } from './helpers';
 import { settle } from './settle';
 
-// The automatic layout (a new canvas, Tidy up) places cards by their relationships alone: an
+// The automatic layout (a new canvas) places cards by their relationships alone: an
 // element's type sets no row, on a focus canvas, in a view and inside a container. Each line here
 // points against the order the element types are listed in, so rows by type would turn it upside
 // down. Made-up data: a small observatory.
@@ -153,36 +153,6 @@ describe('the automatic layout keeps no rows by element type', () => {
     renderAt(`/viewing/models/${modelId}/views/v-stars`);
     await waitFor(() => {
       expect(cardIds()).toEqual(Object.keys(observatory.graph.nodes ?? {}).sort());
-    });
-    await settle();
-    expectPointingDown(chain);
-    expectPointingDown(inside);
-  });
-
-  it('after Tidy up in a view: a saved layout upside down is laid out by its lines', async () => {
-    // Saved with every line pointing up.
-    const upsideDown: ViewCardLayout[] = [
-      { elementId: 'visitor', x: 0, y: 0 },
-      { elementId: 'booking', x: 0, y: 120 },
-      { elementId: 'tracker', x: 0, y: 240 },
-      { elementId: 'lens', x: 0, y: 360 },
-      { elementId: 'dome', x: 0, y: 480 },
-      { elementId: 'site', x: 400, y: 0 },
-      { elementId: 'panel', x: 420, y: 60 },
-      { elementId: 'sensor', x: 420, y: 140 },
-      { elementId: 'cooler', x: 420, y: 220 },
-    ];
-    stubApi(modeller, server(stargazing(upsideDown)));
-    renderAt(`/modelling/models/${modelId}/views/v-stars`);
-    await waitFor(() => {
-      expect(cardIds()).toEqual(Object.keys(observatory.graph.nodes ?? {}).sort());
-    });
-    await settle();
-    // The stored layout opens as saved.
-    expect(boxOf('visitor').y).toBeLessThan(boxOf('dome').y);
-    fireEvent.click(screen.getByRole('button', { name: 'Tidy up' }));
-    await waitFor(() => {
-      expect(screen.getByText('Layout tidied up.')).toBeTruthy();
     });
     await settle();
     expectPointingDown(chain);

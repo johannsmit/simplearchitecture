@@ -1,7 +1,6 @@
 import { maxDepth, type CatalogTab, type ModelGraph } from '@simplearchitecture/shared';
 import { Link, useNavigate } from 'react-router';
-import { Icon, type IconName } from '../../icons';
-import { Popover } from '../../shell/Popover';
+import { Icon } from '../../icons';
 import { counted } from '../../words';
 import {
   elementPath,
@@ -12,49 +11,6 @@ import {
   type ExplorerView,
 } from '../paths';
 import type { Panel } from './usePanel';
-
-/** What Tidy up does: its tooltip, and its line in the tidy menu. */
-const tidyUpText = 'Put every card and line back in the automatic layout';
-
-/**
- * One action in the tidy menu: its name, a line on what it does, and its key, if any. A disabled
- * one stays in the menu (the arrow keys reach it) and does nothing.
- */
-function TidyItem(props: {
-  id: string;
-  icon: IconName;
-  name: string;
-  description: string;
-  shortcut?: string;
-  disabled: boolean;
-  onChoose: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className="menu-item tidy-item"
-      aria-labelledby={`${props.id}-name`}
-      aria-describedby={`${props.id}-text`}
-      aria-disabled={props.disabled}
-      aria-keyshortcuts={props.shortcut}
-      onClick={() => {
-        if (!props.disabled) props.onChoose();
-      }}
-    >
-      <Icon name={props.icon} />
-      <span className="menu-item-text">
-        <span id={`${props.id}-name`} className="menu-item-name">
-          {props.name}
-        </span>
-        <span id={`${props.id}-text`} className="menu-item-description">
-          {props.description}
-        </span>
-      </span>
-      {props.shortcut !== undefined && <kbd aria-hidden="true">{props.shortcut}</kbd>}
-    </button>
-  );
-}
 
 interface ExplorerToolbarProps {
   modelId: string;
@@ -75,15 +31,13 @@ interface ExplorerToolbarProps {
   canOpenModelling: boolean;
   onShowView: (next: ExplorerView) => void;
   onDepth: (next: number) => void;
-  canTidy: boolean;
   canTidyRelations: boolean;
-  onTidyUp: () => void;
-  onTidyRelations: (fromMenu: boolean) => void;
+  onTidyRelations: () => void;
 }
 
 /**
  * Above the canvas or catalog: the panel switches, Canvas | Catalog, the trail of visited
- * elements, Tidy up, the depth, and Open in Modelling.
+ * elements, Tidy relations, the depth, and Open in Modelling.
  */
 export function ExplorerToolbar({
   modelId,
@@ -103,9 +57,7 @@ export function ExplorerToolbar({
   canOpenModelling,
   onShowView,
   onDepth,
-  canTidy,
   canTidyRelations,
-  onTidyUp,
   onTidyRelations,
 }: ExplorerToolbarProps) {
   const navigate = useNavigate();
@@ -173,57 +125,18 @@ export function ExplorerToolbar({
         </>
       )}
       {view === 'canvas' && (
-        <div className="split">
-          <button
-            type="button"
-            className="btn tidy"
-            aria-label="Tidy up"
-            title={tidyUpText}
-            disabled={!canTidy}
-            onClick={onTidyUp}
-          >
-            <Icon name="wand-sparkles" />
-            <span className="tidy-label">Tidy up</span>
-          </button>
-          <Popover
-            id="tidy"
-            role="menu"
-            buttonClassName="btn tidy-more"
-            buttonLabel="More ways to tidy"
-            buttonTitle="More ways to tidy"
-            buttonContent={<Icon name="chev-down" size="sm" />}
-            buttonDisabled={!canTidy && !canTidyRelations}
-            popoverClassName="tidy-pop"
-          >
-            {(_close, leave) => (
-              <>
-                <TidyItem
-                  id="tidy-up"
-                  icon="wand-sparkles"
-                  name="Tidy up"
-                  description={tidyUpText}
-                  disabled={!canTidy}
-                  onChoose={() => {
-                    leave();
-                    onTidyUp();
-                  }}
-                />
-                <TidyItem
-                  id="tidy-relations"
-                  icon="spline"
-                  name="Tidy relations"
-                  description="Redraw every line, including lines moved by hand. No card moves."
-                  shortcut="T"
-                  disabled={!canTidyRelations}
-                  onChoose={() => {
-                    leave();
-                    onTidyRelations(true);
-                  }}
-                />
-              </>
-            )}
-          </Popover>
-        </div>
+        <button
+          type="button"
+          className="btn tidy"
+          aria-label="Tidy relations"
+          aria-keyshortcuts="T"
+          title="Redraw every line, including lines moved by hand. No card moves."
+          disabled={!canTidyRelations}
+          onClick={onTidyRelations}
+        >
+          <Icon name="spline" />
+          <span className="tidy-label">Tidy relations</span>
+        </button>
       )}
       {view === 'canvas' && !inView && (
         <div className="segmented" role="group" aria-label="Relationship depth">

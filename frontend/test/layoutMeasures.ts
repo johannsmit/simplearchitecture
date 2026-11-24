@@ -216,7 +216,7 @@ const elk = new ELK();
 
 /**
  * The canvas the explorer draws for a focus element at a depth, with nesting on. `widths` are
- * widths set by hand, kept by the layout as Tidy up keeps them. With `groupBy`, the top-level cards
+ * widths set by hand, kept by the layout. With `groupBy`, the top-level cards
  * are in group boxes, as Group by draws them: the boxes count as containers here, and their value
  * and count as their names.
  */

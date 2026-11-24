@@ -34,8 +34,6 @@ export interface RelationshipData extends Record<string, unknown> {
   state: ArchitectureState;
   /** Two-way: an arrow at the source too. */
   twoWay?: boolean;
-  /** ELK's bends on the canvas, while the route still holds (edgeLine.ts). */
-  bends?: readonly Point[];
   /**
    * Without a route: where the line leaves and enters, on the sides where its cards face each
    * other now (`floatingEnds`), in place of its handles.
@@ -99,31 +97,20 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   props: EdgeProps<RelationshipFlowEdge>,
 ) {
   const { data, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition } = props;
-  const bends = data?.bends;
   const floatingEnds = data?.ends;
   const route = data?.route;
   const automatic = useMemo(
     () =>
       route
         ? [...route]
-        : floatingEnds && !bends
+        : floatingEnds
           ? (floatingEnds.points ?? directLine(floatingEnds.start, floatingEnds.end))
           : edgeLine(
               { x: sourceX, y: sourceY, side: sourcePosition },
               { x: targetX, y: targetY, side: targetPosition },
-              bends,
+              undefined,
             ),
-    [
-      route,
-      sourceX,
-      sourceY,
-      sourcePosition,
-      targetX,
-      targetY,
-      targetPosition,
-      bends,
-      floatingEnds,
-    ],
+    [route, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, floatingEnds],
   );
   // While a bend is dragged, the canvas gives the line as it would be if dropped (`route`).
   const line = automatic;
@@ -155,7 +142,7 @@ export const RelationshipEdge = memo(function RelationshipEdge(
     if (!cards || hidden || !resting) return undefined;
     return placeRestingLabel(line, text, marked, cards);
   }, [resting, cards, line, text, marked, hidden]);
-  // Placed on layout, Tidy up and drop (when the cards move), not on hover.
+  // Placed on layout and drop (when the cards move), not on hover.
   const mark = useMemo(
     () => (marked && cards && !hidden ? placeStateMark(line, cards) : undefined),
     [marked, cards, line, hidden],

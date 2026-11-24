@@ -288,8 +288,6 @@ describe('drag from the element list onto the canvas', () => {
     openGroup('Other');
     const row = treeRow('Recipe Archive').querySelector('.trow') as HTMLElement;
     expect(row.getAttribute('draggable')).toBe('true');
-    const tidy = screen.getByRole('button', { name: 'Tidy up' });
-    expect((tidy as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.dragOver(canvasEl(), { dataTransfer: dataTransfer('lonely') });
     fireEvent.drop(canvasEl(), {
@@ -301,10 +299,6 @@ describe('drag from the element list onto the canvas', () => {
       expect(card('lonely')).toBeTruthy();
     });
     expect(currentLocation()).toBe(viewingAt('shop'));
-    // It was placed at the drop point (a moved card, so Tidy up can reset it).
-    await waitFor(() => {
-      expect((tidy as HTMLButtonElement).disabled).toBe(false);
-    });
     expect(changes(fetchMock)).toEqual([]);
   });
 

@@ -203,18 +203,12 @@ describe('the × on a card', () => {
 });
 
 describe('a removed card', () => {
-  it('stays off through Tidy up and a change of depth', async () => {
+  it('stays off through a change of depth', async () => {
     await open('viewing');
     await removeTill();
-    // Another element dropped on the canvas is a moved card, so Tidy up can run.
     fireEvent.drop(canvasEl(), { dataTransfer: dragged('lonely'), clientX: 300, clientY: 200 });
-    const tidy = screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy up' });
     await waitFor(() => {
-      expect(tidy.disabled).toBe(false);
-    });
-    fireEvent.click(tidy);
-    await waitFor(() => {
-      expect(tidy.disabled).toBe(true);
+      expect(card('lonely')).toBeTruthy();
     });
     expect(card('till')).toBeNull();
     const depth = screen.getByRole('group', { name: 'Relationship depth' });

@@ -251,7 +251,7 @@ function Explorer({
   const viewReady = openView.load.status === 'ready';
 
   // Group by lays the canvas out again, like the Nest switch: in a view in Modelling, the new
-  // grouping and layout are saved, as after Tidy up; in Viewing, a view's is changed for the page.
+  // grouping and layout are saved; in Viewing, a view's is changed for the page.
   const changeGroupBy = (key: string | undefined) => {
     layout.resetMoved();
     if (inView) {
@@ -525,12 +525,10 @@ function Explorer({
     onMove: layout.moveCard,
     widths: layout.cardWidths,
     onResize: layout.resizeCard,
-    tidyCount: layout.tidyCount,
     layoutKey: layout.layoutKey,
-    onKept: layout.setKeptFor,
     relationsTidyCount: layout.relationsTidyCount,
     onRelationsTidyable: layout.setCanTidyRelations,
-    onTidyRelations: layout.tidyRelationsByKey,
+    onTidyRelations: layout.tidyRelations,
     nest,
     onToggleNest: toggleNest,
     lines,
@@ -641,9 +639,7 @@ function Explorer({
           canOpenModelling={canOpenModelling}
           onShowView={showView}
           onDepth={setDepth}
-          canTidy={layout.canTidy}
           canTidyRelations={layout.canTidyRelations}
-          onTidyUp={layout.tidyUp}
           onTidyRelations={layout.tidyRelations}
         />
 

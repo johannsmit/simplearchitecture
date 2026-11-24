@@ -69,9 +69,9 @@ export function useRelationshipChanges({
   closeRelationship,
   focusHeadingOf,
 }: RelationshipChangeContext) {
-  /** A Contains change moved a nesting: the cards stay put, and Tidy up shows it. */
+  /** A Contains change moved a nesting: the cards stay put, and a new layout shows it. */
   const nestingNote = (changes: readonly NestingChange[]) =>
-    changes.length > 0 && nest ? ' Tidy up to update the nesting.' : '';
+    changes.length > 0 && nest ? ' The nesting updates when the canvas is opened again.' : '';
   const sentenceOf = (result: RelationshipChangeResult) => {
     const relationship = relationshipOfEdge(result.relationship.edge);
     return graph && relationship ? relationshipSentence(graph, relationship) : '';

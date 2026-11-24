@@ -1,5 +1,5 @@
 import type { JgfDocument, ModelSummary } from '@simplearchitecture/shared';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
 import type * as ElkLayout from '../src/viewing/explorer/canvas/elkLayout';
@@ -72,7 +72,6 @@ const cardIds = () =>
     .sort();
 const status = () =>
   [...canvas().querySelectorAll('.canvas-overlay')].map((each) => each.textContent).join(' ');
-const tidy = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy up' });
 
 /** No card covers another. */
 function apart() {
@@ -107,71 +106,12 @@ describe('a layout that fails', () => {
     await waitFor(() => {
       expect(status()).toContain("The diagram couldn't be laid out automatically");
     });
-    expect(status()).toContain('Tidy up');
+    expect(status()).toContain('Reload the page to try again.');
     expect(status()).not.toContain('Unknown error');
-    // Usable: every card is there, none on another, and Tidy up can try again.
+    // Usable: every card is there, none on another.
     expect(cardIds()).toEqual(['grower', 'ledger', 'scales']);
     expect(apart()).toBe(true);
     expect(canvas().querySelectorAll('.react-flow__edge')).toHaveLength(2);
-    expect(tidy().disabled).toBe(false);
-
-    // Tidy up tries again ("Laying out…"); once it works, the message goes.
-    vi.restoreAllMocks();
-    const slow = vi.spyOn(getElk(), 'layout');
-    let answer = () => undefined as unknown;
-    slow.mockImplementationOnce(
-      (graph) =>
-        new Promise((resolve) => {
-          answer = () => {
-            slow.mockRestore();
-            resolve(getElk().layout(graph));
-          };
-        }),
-    );
-    fireEvent.click(tidy());
-    await waitFor(() => {
-      expect(status()).toBe('Laying out…');
-    });
-    answer();
-    await waitFor(() => {
-      expect(status()).toBe('');
-    });
-    expect(cardIds()).toEqual(['grower', 'ledger', 'scales']);
-  });
-
-  it('on Tidy up, keeps every card where it was, a moved one too', async () => {
-    open();
-    await waitFor(() => {
-      expect(cardIds()).toEqual(['grower', 'ledger', 'scales']);
-    });
-    await waitFor(() => {
-      expect(status()).toBe('');
-    });
-    const transforms = () =>
-      [...canvas().querySelectorAll<HTMLElement>('.react-flow__node')].map(
-        (node) => node.style.transform,
-      );
-    const laidOut = transforms();
-    // A card moved with the keyboard: M, Shift + Down, Enter.
-    const main = canvas().querySelector<HTMLElement>('.card[data-element-id="scales"] .card-main');
-    main?.focus();
-    for (const key of [{ key: 'm' }, { key: 'ArrowDown', shiftKey: true }, { key: 'Enter' }]) {
-      fireEvent.keyDown(main as HTMLElement, key);
-    }
-    await waitFor(() => {
-      expect(transforms()).not.toEqual(laidOut);
-    });
-    const before = transforms();
-    vi.spyOn(getElk(), 'layout').mockRejectedValue(new Error('Made-up layout failure'));
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    fireEvent.click(tidy());
-    await waitFor(() => {
-      expect(status()).toBe(
-        "The diagram couldn't be laid out automatically, so its cards stay where they were. Choose Tidy up to try again.",
-      );
-    });
-    expect(transforms()).toEqual(before);
-    expect(tidy().disabled).toBe(false);
   });
 
   it('gives up after the time limit, stops the layout, and places the cards without it', async () => {
@@ -190,7 +130,6 @@ describe('a layout that fails', () => {
     expect(stop).toHaveBeenCalledTimes(1);
     expect(cardIds()).toEqual(['grower', 'ledger', 'scales']);
     expect(apart()).toBe(true);
-    expect(tidy().disabled).toBe(false);
   });
 });
 
@@ -224,11 +163,7 @@ describe('the time limit', () => {
       const error = await answer;
       expect(error).toBeInstanceOf(LayoutTimeoutError);
       expect(layoutFailureMessage(error)).toBe(
-        'The diagram took longer than 30 seconds to lay out, so its cards are placed simply. Choose Tidy up to try again, or show fewer elements.',
-      );
-      // After Tidy up, the cards stay where they were.
-      expect(layoutFailureMessage(error, { kept: true })).toBe(
-        'The diagram took longer than 30 seconds to lay out, so its cards stay where they were. Choose Tidy up to try again, or show fewer elements.',
+        'The diagram took longer than 30 seconds to lay out, so its cards are placed simply. Reload the page to try again, or show fewer elements.',
       );
     } finally {
       vi.useRealTimers();
