@@ -621,8 +621,9 @@ th[aria-sort] .sort {
   margin-left: auto;
 }
 
-/* Admin pages: the page links above each one */
-.admin-nav ul {
+/* Admin and help pages: the page links above each one */
+.admin-nav ul,
+.help-nav ul {
   display: flex;
   gap: 4px;
   margin: 0 0 20px;
@@ -631,7 +632,8 @@ th[aria-sort] .sort {
   list-style: none;
 }
 
-.admin-nav a {
+.admin-nav a,
+.help-nav a {
   display: inline-block;
   margin-bottom: -1px;
   padding: 8px 12px;
@@ -642,11 +644,13 @@ th[aria-sort] .sort {
   text-decoration: none;
 }
 
-.admin-nav a:hover {
+.admin-nav a:hover,
+.help-nav a:hover {
   color: var(--text);
 }
 
-.admin-nav a[aria-current='page'] {
+.admin-nav a[aria-current='page'],
+.help-nav a[aria-current='page'] {
   border-bottom-color: var(--accent);
   border-radius: var(--r-sm) var(--r-sm) 0 0;
   background: var(--select-soft);
