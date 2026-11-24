@@ -64,7 +64,7 @@ A new relationship runs one way, from the element you started at.
 
 Click the line, or its label, to open the relationship's form.
 
-- **From** and **To** are its two ends. Choose one to search the model's elements and pick another. The change is saved with the form, like any other field. When you save, a new end that isn't on the canvas joins it at a free spot, and in a view it is added to the view.
+- **From** and **To** are its two ends. Choose one to search the model's elements and pick another. The new end is saved as soon as you pick it. A new end that isn't on the canvas joins it at a free spot, and in a view it is added to the view.
 - **Reverse direction** swaps the two ends, and the two data lists with them, so the same data keeps flowing between the same two elements.
 - **Direction:** a Relation can be one-way or two-way. A two-way relationship has an arrow at both ends; its From end is the one stored as the source.
 - **Type:** changing a Relation to a Contains makes it one-way and removes its Identity, Identity Context and data lists. Values of properties an Admin defined are kept, as custom metadata.
@@ -99,8 +99,19 @@ The label is stored as typed, so a JSON Graph Format export keeps the braces.
 
 ## Saving
 
-- **Save**, or `Ctrl` + `Enter` (`⌘` + `Enter` on a Mac) anywhere in the form, saves the element or relationship. `Enter` in a one-line field never saves.
-- `Esc` in the form asks whether to discard your unsaved changes.
-- If someone else changed the same element or relationship after you opened it, your save is refused and the form says **Someone else changed this element** (or relationship). Choose **Reload** to see the latest version: this discards your changes, so copy anything you want to keep first. If they deleted it, the form says so, and you can only close it.
+Changes in the details panel are saved as you go. There is no **Save** button.
+
+- **Text fields**, such as Name, Description, Functions, a label or a property's value, are saved when you pause typing for a moment, or when you leave the field. A pause saves once, not every key you type, so the history has one entry per pause.
+- **Choices** are saved at once: a type, a list such as Architecture state, a Direction or State, **Reverse direction**, a new **From** or **To**, a suggestion you pick, and a chip you add or remove.
+- **Save now:** `Ctrl` + `Enter` (`⌘` + `Enter` on a Mac) anywhere in the form saves a change that is waiting for the pause. `Enter` in a one-line field never saves.
+- The head of the panel says **Saving…** while a change is being saved, then **Saved** until your next change. Screen readers hear "Saved" once per save.
+- You can keep typing while a change is being saved: what you type meanwhile is saved next, in order.
+- **A field with an error**, such as an empty Name, isn't saved: the field keeps its message, and the head says **Couldn't save: 1 field needs a fix**. Your changes to other fields are still saved.
+- **When a save fails**, for example when the connection drops, the head says **Couldn't save** and why, the form keeps what you typed, and **Try again** sends it again.
+- If someone else changed the same element or relationship after you opened it, your change isn't saved and the form says **Someone else changed this element** (or relationship). Nothing more is saved until you choose **Reload**, which shows the latest version and discards your changes, so copy anything you want to keep first. If they deleted it, the form says so, and you can only close it.
+- `Esc` in the form does nothing: there is nothing to discard.
+- **Leaving the form**, by picking another element, going back or following a link, first saves a change that is waiting. You are asked **Leave without saving?** only when your last change couldn't be saved. Closing the browser tab warns while a change is waiting, being saved, or couldn't be saved.
+
+**New element** and **Add relationship** still create only when you choose **Create** or **Add**, or press `Enter`. Once created, the element or relationship saves as you go.
 
 All keys for forms are in [Keyboard shortcuts](keyboard-shortcuts.md#forms-modelling).

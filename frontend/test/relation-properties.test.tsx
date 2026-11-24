@@ -100,16 +100,15 @@ describe('on the relationship form', () => {
       expect(within(form).getByRole('list', { name: `${name}: 1 value` })).toBeTruthy();
     }
     fireEvent.change(identity, { target: { value: '  ' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
+    // A value picked goes at once; what follows while it is sent goes next, together.
     await waitFor(() => {
-      expect(sent).toHaveLength(1);
+      expect(sent).toHaveLength(2);
     });
-    expect(sent[0]).toEqual({
-      version: 1,
-      identity: null,
-      sourceToTargetData: ['Orders'],
-      targetToSourceData: ['Orders'],
-    });
+    expect(sent).toEqual([
+      { version: 1, sourceToTargetData: ['Orders'] },
+      { version: 1, identity: null, targetToSourceData: ['Orders'] },
+    ]);
   });
 
   it('has none of them on a Contains, and says they go when the type changes', async () => {
@@ -125,7 +124,7 @@ describe('on the relationship form', () => {
     ).toBeNull();
     expect(
       within(form).getByText(
-        'Identity, Identity Context and the data in both directions are removed when you save.',
+        'Identity, Identity Context and the data in both directions were removed.',
       ),
     ).toBeTruthy();
   });
@@ -228,10 +227,11 @@ describe('Source to target data and Target to source data as chips', () => {
       expect(document.activeElement).toBe(input(form, 'Web Shop to Back Office Server'));
     });
     expect(chipsOf(form, 'Web Shop to Back Office Server')).toHaveLength(0);
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    // Each removal is saved at once, the last as none.
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, sourceToTargetData: null }]);
+      expect(sent.at(-1)).toEqual({ version: 1, sourceToTargetData: null });
     });
+    expect(sent[0]).toEqual({ version: 1, sourceToTargetData: ['Flour', 'Salt'] });
   });
 
   it('saves a value typed and not yet added, and shows an older single text as one chip', async () => {
@@ -241,7 +241,7 @@ describe('Source to target data and Target to source data as chips', () => {
     fireEvent.change(input(form, 'Back Office Server to Web Shop'), {
       target: { value: 'Loaves' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toEqual([{ version: 1, targetToSourceData: ['Loaves'] }]);
     });

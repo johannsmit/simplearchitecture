@@ -376,7 +376,7 @@ function referenceTypeMessage(key: string, type: NodeType): string {
 const referenceRefusals = new Set<string>(Object.values(referenceMessages));
 
 /**
- * The checks run on Save before anything is sent. A choice outside its options is refused unless
+ * The checks run before anything is saved. A choice outside its options is refused unless
  * it is the value the element holds (`stored`, its metadata): Kind may hold one from before it
  * was standard, kept until it is changed.
  */
@@ -430,6 +430,78 @@ export function clientErrors(
     .map((row) => referenceTypeMessage(row.key, draft.type));
   if (typeProblems.length > 0) errors.set('type', typeProblems.join('\n'));
   return errors;
+}
+
+/**
+ * The draft as stored once saved: each custom row's `original` is the value it was saved with, so
+ * a value typed back to what it was before is sent as typed (text), as the server now holds text.
+ */
+export function storedDraft(draft: Draft): Draft {
+  return { ...draft, custom: draft.custom.map(storedRow) };
+}
+
+function storedRow(row: CustomRow): CustomRow {
+  return row.editable && row.text !== asText(row.original) ? { ...row, original: row.text } : row;
+}
+
+/** The draft with each custom row's `original` as `stored` (by row) now holds it. */
+export function withOriginalsOf(stored: Draft, draft: Draft): Draft {
+  const originals = new Map(stored.custom.map((row) => [row.id, row.original]));
+  return {
+    ...draft,
+    custom: draft.custom.map((row) =>
+      row.editable && originals.has(row.id) ? { ...row, original: originals.get(row.id) } : row,
+    ),
+  };
+}
+
+/** The draft with a key's rows as `initial` holds them (none if it holds none). */
+export function withKeyOf(initial: Draft, draft: Draft, key: string): Draft {
+  return {
+    ...draft,
+    custom: [
+      ...draft.custom.filter((row) => rowKey(row) !== key),
+      ...initial.custom.filter((row) => rowKey(row) === key),
+    ],
+  };
+}
+
+/** The draft with one custom row (by id) as `initial` holds it, or without it if new. */
+function withRowOf(initial: Draft, draft: Draft, id: number): Draft {
+  const before = initial.custom.find((row) => row.id === id);
+  const custom = draft.custom.flatMap((row) => (row.id !== id ? [row] : before ? [before] : []));
+  if (before !== undefined && !custom.includes(before)) custom.push(before);
+  return { ...draft, custom };
+}
+
+/**
+ * The draft with each field that failed the checks put back as `initial` holds it, so the other
+ * changes can be saved without it. Undefined when nothing can be saved apart from it: an error at
+ * the type, or any error while the type changes (a type change moves values between fields).
+ */
+export function withoutInvalid(
+  initial: Draft,
+  draft: Draft,
+  errors: ReadonlyMap<ErrorSlot, string>,
+): Draft | undefined {
+  if (errors.size === 0) return draft;
+  if (draft.type !== initial.type) return undefined;
+  let next = draft;
+  for (const slot of errors.keys()) {
+    if (slot === 'name') next = { ...next, name: initial.name };
+    else if (slot === 'description') next = { ...next, description: initial.description };
+    else if (slot.startsWith('field:')) {
+      const key = slot.slice('field:'.length) as FieldKey;
+      next = { ...next, fields: { ...next.fields, [key]: initial.fields[key] ?? '' } };
+    } else if (slot.startsWith('prop:')) {
+      next = withKeyOf(initial, next, slot.slice('prop:'.length));
+    } else if (slot.startsWith('row:') || slot.startsWith('ref:')) {
+      next = withRowOf(initial, next, Number(slot.slice(4)));
+    } else {
+      return undefined;
+    }
+  }
+  return next;
 }
 
 /** Puts the server's 422 messages at their fields; the rest go to the top. */

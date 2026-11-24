@@ -672,7 +672,7 @@ describe('editing a cell (Modelling)', () => {
     await select('Till', 'Name');
     const field = screen.getByRole('combobox', { name: 'Owning team' });
     fireEvent.change(field, { target: { value: 'Panel team' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(cell('Till', 'Owning team').textContent).toBe('Panel team');
     });

@@ -169,7 +169,7 @@ describe('the element form', () => {
     fireEvent.change(within(form).getByRole('combobox', { name: 'Cost centre' }), {
       target: { value: 'CC-500' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches).toHaveLength(1);
     });
@@ -187,7 +187,7 @@ describe('the element form', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(field);
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches).toHaveLength(1);
     });
@@ -207,15 +207,18 @@ describe('the element form', () => {
     fireEvent.change(within(row).getByLabelText('Value of Sourcing'), {
       target: { value: 'Bought in' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
-      expect(patches).toHaveLength(1);
+      expect(patches).toHaveLength(2);
     });
-    expect(patches[0]).toEqual({
-      version: 1,
-      type: 'Infrastructure',
-      metadata: { sourcing: 'Bought in' },
-    });
+    // The type goes at once; the value typed meanwhile goes next, with the version it gave.
+    expect(patches).toEqual([
+      { version: 1, type: 'Infrastructure' },
+      { version: 2, metadata: { sourcing: 'Bought in' } },
+    ]);
+    expect(within(form).getByTitle('sourcing').closest('.meta-row')?.textContent).toContain(
+      'Was a property',
+    );
   });
 
   it('shows a Was a property value stored that way, and removes it', async () => {
@@ -223,7 +226,7 @@ describe('the element form', () => {
     const row = within(form).getByTitle('sourcing').closest('.meta-row') as HTMLElement;
     expect(row.textContent).toContain('Was a property');
     fireEvent.click(within(row).getByRole('button', { name: 'Remove Sourcing' }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches).toHaveLength(1);
     });

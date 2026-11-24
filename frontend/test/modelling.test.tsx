@@ -248,8 +248,10 @@ describe('Modelling explorer', () => {
   it('saves a change with the version and updates the list without a reload', async () => {
     const { form, server, fetchMock } = await openForm(at('till'));
 
+    act(() => {
+      nameField(form).focus();
+    });
     fireEvent.change(nameField(form), { target: { value: 'Till 2' } });
-    expect(within(form).getByRole('status').textContent).toBe('Unsaved changes');
     fireEvent.keyDown(nameField(form), { key: 'Enter', ctrlKey: true });
 
     await waitFor(() => {
@@ -263,10 +265,11 @@ describe('Modelling explorer', () => {
       },
     ]);
     expect(within(details()).getByRole('heading', { level: 2 }).textContent).toBe('Till 2');
-    expect(form.querySelector('.d-form-foot.is-saved')?.textContent).toContain('Saved');
     await waitFor(() => {
-      expect(document.activeElement?.id).toBe('ef-heading');
+      expect(details().querySelector('.save-status')?.textContent).toBe('Saved');
     });
+    // Focus stays in the field.
+    expect(document.activeElement).toBe(nameField(form));
     // The model isn't loaded again.
     expect(requests(fetchMock).filter((r) => r === `GET /api/models/${bakeryId}`)).toHaveLength(1);
 
@@ -278,17 +281,20 @@ describe('Modelling explorer', () => {
     });
   });
 
-  it('shows a blank name at the field, with focus on it, and sends nothing', async () => {
+  it('shows a blank name at the field and sends nothing', async () => {
     const { form, server } = await openForm(at('till'));
 
     fireEvent.change(nameField(form), { target: { value: '  ' } });
     fireEvent.submit(form);
 
     const field = nameField(form);
-    expect(field.getAttribute('aria-invalid')).toBe('true');
+    await waitFor(() => {
+      expect(field.getAttribute('aria-invalid')).toBe('true');
+    });
     expect(within(form).getByText('Enter a name.')).toBeTruthy();
-    expect(document.activeElement).toBe(field);
-    expect(within(form).getByRole('status').textContent).toBe('Not saved. 1 field needs a fix.');
+    expect(details().querySelector('.save-status')?.textContent).toBe(
+      "Couldn't save: 1 field needs a fix",
+    );
     expect(server.bodies).toEqual([]);
   });
 
@@ -310,7 +316,6 @@ describe('Modelling explorer', () => {
 
     expect(await within(form).findByText('Owning team is too long.')).toBeTruthy();
     expect(team.getAttribute('aria-invalid')).toBe('true');
-    expect(document.activeElement).toBe(team);
     expect(within(form).getByRole('alert').textContent).toContain('The model has an error.');
   });
 
@@ -322,12 +327,10 @@ describe('Modelling explorer', () => {
     fireEvent.change(nameField(form), { target: { value: 'Till (mine)' } });
     fireEvent.submit(form);
 
-    const title = await within(form).findByRole('heading', {
+    await within(form).findByRole('heading', {
       name: 'Someone else changed this element',
     });
-    expect(document.activeElement).toBe(title);
     expect(nameField(form)).toHaveProperty('value', 'Till (mine)');
-    expect(within(form).getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true);
 
     fireEvent.click(within(form).getByRole('button', { name: 'Reload' }));
     await waitFor(() => {
@@ -351,55 +354,17 @@ describe('Modelling explorer', () => {
     });
   });
 
-  it('asks before discarding with Esc, and only when there are changes', async () => {
-    const { form } = await openForm(at('till'));
-    fireEvent.keyDown(nameField(form), { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-
-    fireEvent.change(nameField(form), { target: { value: 'Till 2' } });
-    fireEvent.keyDown(nameField(form), { key: 'Escape' });
-    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard changes' }));
-
-    expect(nameField(form)).toHaveProperty('value', 'Till');
-    expect(form.querySelector('.d-form-foot')).toBeNull();
-  });
-
-  it('asks before switching element with unsaved changes', async () => {
-    const { form } = await openForm(at('till'));
-    fireEvent.change(nameField(form), { target: { value: 'Till 2' } });
-
-    fireEvent.click(within(tree()).getByText('Web Shop'));
-    let dialog = await screen.findByRole('dialog', { name: 'Save changes to “Till”?' });
-    expect(document.activeElement).toBe(
-      within(dialog).getByRole('button', { name: 'Keep editing' }),
-    );
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
-    await waitFor(() => {
-      expect(currentLocation()).toContain('/elements/till');
-    });
-    expect(nameField(form)).toHaveProperty('value', 'Till 2');
-
-    fireEvent.click(within(tree()).getByText('Web Shop'));
-    dialog = await screen.findByRole('dialog', { name: 'Save changes to “Till”?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }));
-    await waitFor(() => {
-      expect(within(details()).getByRole('heading', { level: 2 }).textContent).toBe('Web Shop');
-    });
-  });
-
-  it('asks before following a link out of the explorer with unsaved changes', async () => {
-    const { form } = await openForm(at('till'));
+  it('saves a change waiting for the pause before following a link out of the explorer', async () => {
+    const { form, server } = await openForm(at('till'));
     fireEvent.change(nameField(form), { target: { value: 'Till 2' } });
 
     const nav = screen.getByRole('navigation', { name: 'Spaces' });
     fireEvent.click(within(nav).getByRole('link', { name: 'Viewing' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Save changes to “Till”?' });
-    expect(currentLocation()).toContain('/modelling/');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }));
     await waitFor(() => {
       expect(currentLocation()).toBe('/viewing');
     });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(server.bodies.map((sent) => sent.body)).toEqual([{ version: 1, name: 'Till 2' }]);
   });
 
   it('creates an element from New element and opens its form', async () => {
@@ -544,7 +509,7 @@ describe('element of a node', () => {
 // The rows in CustomMetadataFields, shared with the relationship form.
 describe('custom metadata rows on the element form', () => {
   const save = (form: HTMLElement) => {
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
   };
   const patches = (fetchMock: ReturnType<typeof stubApi>) =>
     fetchMock.mock.calls

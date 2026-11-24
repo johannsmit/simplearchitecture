@@ -15,6 +15,7 @@ import {
   stubApi,
   type Handler,
 } from './helpers';
+import { settle } from './settle';
 
 /** A list of data's box on the form, by its stored key (its name follows the ends). */
 const dataField = (form: HTMLElement, key: string): HTMLInputElement | null =>
@@ -272,7 +273,9 @@ describe('The relationship form', () => {
         architectureState: 'Deprecate',
       });
     });
-    await within(form).findByText('Saved');
+    await waitFor(() => {
+      expect(document.querySelector('.save-status')?.textContent).toBe('Saved');
+    });
   });
 
   it('saves Direction: Both ways, hides Reverse for it, and Contains is one way', async () => {
@@ -298,7 +301,7 @@ describe('The relationship form', () => {
     ).toHaveProperty('checked', true);
 
     fireEvent.click(within(form).getByRole('radio', { name: /Both ways/ }));
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent.find((r) => r.method === 'PATCH')?.body).toEqual({ version: 1, twoWay: true });
     });
@@ -319,7 +322,7 @@ describe('The relationship form', () => {
     fireEvent.click(reverse);
     expect(reverse.getAttribute('aria-pressed')).toBe('true');
     expect(within(details()).getByText('Reversed')).toBeDefined();
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await within(form).findByText('Someone else changed this relationship');
     expect(sent.find((r) => r.method === 'PATCH')?.body).toEqual({ version: 1, reverse: true });
 
@@ -353,16 +356,16 @@ describe('The relationship form', () => {
     ).toHaveLength(1);
   });
 
-  it('asks before leaving a relationship with changes, in its own words', async () => {
-    await openShop();
+  it('goes back from a relationship with its change saved, without asking', async () => {
+    const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
     fireEvent.click(within(form).getByRole('radio', { name: /Target/ }));
     fireEvent.click(within(details()).getByRole('button', { name: 'Back to Web Shop' }));
-    const dialog = await screen.findByRole('dialog', {
-      name: 'Save changes to this relationship?',
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }));
     await screen.findByRole('form', { name: /^Edit / });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(sent.filter((r) => r.method === 'PATCH').map((r) => r.body)).toEqual([
+      { version: 1, architectureState: 'Target' },
+    ]);
   });
 });
 
@@ -372,7 +375,7 @@ describe('changing a relationship’s ends', () => {
     canvasEl().querySelector(`.card[data-element-id="${CSS.escape(id)}"]`) !== null;
   const ends = () => within(details()).getByRole('region', { name: 'Ends' });
 
-  it('picks a new end from a search, shows it unsaved, and saves it with the form', async () => {
+  it('picks a new end from a search, and saves it at once', async () => {
     const { sent } = await openShop();
     // Till relates to Web Shop; only that relationship brings the till onto the canvas.
     await waitFor(() => {
@@ -402,26 +405,13 @@ describe('changing a relationship’s ends', () => {
     fireEvent.keyDown(search, { key: 'Enter' });
 
     expect(within(ends()).queryByRole('combobox')).toBeNull();
-    expect(
-      within(ends()).getByRole('button', {
-        name: 'From: Recipe Archive, Other, changed, not saved yet',
-      }),
-    ).toBeDefined();
-    expect(within(form).getByText('Unsaved changes')).toBeDefined();
-    // The heading keeps the saved wording until the change is saved.
-    expect(
-      within(details()).getByRole('heading', { name: 'Till relates to Web Shop' }),
-    ).toBeDefined();
+    // Shown as changed until it is saved, then as it is stored.
     await waitFor(() => {
       expect(document.activeElement).toBe(
-        within(ends()).getByRole('button', {
-          name: 'From: Recipe Archive, Other, changed, not saved yet',
-        }),
+        within(ends()).getByRole('button', { name: /^From: Recipe Archive, Other/ }),
       );
     });
-    expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
-
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    expect(within(form).getByRole('radio', { name: 'Relation' })).toBeDefined();
     await waitFor(() => {
       expect(sent.find((r) => r.method === 'PATCH')).toEqual({
         method: 'PATCH',
@@ -521,8 +511,6 @@ describe('changing a relationship’s ends', () => {
     );
     const problem = within(ends()).getByText('Both ends are the same element.');
     expect(problem.closest('.field-error')?.id).toBe('rf-ends-error');
-    const save = within(form).getByRole<HTMLButtonElement>('button', { name: /^Save/ });
-    expect(save.disabled).toBe(true);
     expect(
       within(ends()).getByRole<HTMLButtonElement>('button', { name: 'Reverse direction' }).disabled,
     ).toBe(true);
@@ -534,7 +522,9 @@ describe('changing a relationship’s ends', () => {
     }
     fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
-      expect(document.activeElement?.id).toBe('rf-to');
+      expect(details().querySelector('.save-status')?.textContent).toBe(
+        "Couldn't save: 1 field needs a fix",
+      );
     });
     expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
     // Picking the server again undoes it.
@@ -545,10 +535,13 @@ describe('changing a relationship’s ends', () => {
       }),
     );
     expect(within(ends()).queryByText('Both ends are the same element.')).toBeNull();
-    expect(within(form).queryByText('Unsaved changes')).toBeNull();
+    await waitFor(() => {
+      expect(details().querySelector('.save-status')?.textContent).toBe('');
+    });
+    expect(sent.some((r) => r.method === 'PATCH')).toBe(false);
   });
 
-  it('sends a reversed relationship with a new end as its new source and target', async () => {
+  it('saves a Reverse, then a new end as the reversed relationship’s target', async () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
     fireEvent.click(within(ends()).getByRole('button', { name: 'Reverse direction' }));
@@ -563,13 +556,12 @@ describe('changing a relationship’s ends', () => {
     expect(
       within(ends()).getByRole('button', { name: /^To: Till, Application, changed/ }),
     ).toBeDefined();
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
-      expect(sent.find((r) => r.method === 'PATCH')?.body).toEqual({
-        version: 1,
-        source: 'server',
-        target: 'till',
-      });
+      expect(sent.filter((r) => r.method === 'PATCH').map((r) => r.body)).toEqual([
+        { version: 1, reverse: true },
+        { version: 2, target: 'till' },
+      ]);
     });
     expect(
       await within(details()).findByRole('heading', { name: 'Back Office Server relates to Till' }),
@@ -591,7 +583,7 @@ describe('changing a relationship’s ends', () => {
     fireEvent.click(
       within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
     );
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     const error = await within(ends()).findByText('Not possible: Till contains Web Shop.');
     expect(error.closest('.field-error')?.id).toBe('rf-ends-error');
     expect(
@@ -640,7 +632,7 @@ describe('changing a relationship’s ends', () => {
     fireEvent.change(search, { target: { value: 'oven' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     fireEvent.keyDown(search, { key: 'Enter' });
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await within(details()).findByRole('heading', { name: 'Oven Planner contains Till' });
     await waitFor(() => {
       expect(row('Oven Planner').getAttribute('aria-expanded')).not.toBeNull();
@@ -700,7 +692,7 @@ describe('the From and To fields', () => {
     fireEvent.change(search(), { target: { value: 'till' } });
     fireEvent.keyDown(search(), { key: 'ArrowDown' });
     fireEvent.keyDown(search(), { key: 'Enter' });
-    expect(screen.getByText('To: Till. Save to keep it.')).toBeDefined();
+    expect(screen.getByText('To: Till.')).toBeDefined();
     fireEvent.click(field(/^From:/));
     fireEvent.click(
       within(within(ends()).getByRole('listbox')).getByRole('option', { name: /^Web Shop/ }),
@@ -818,7 +810,7 @@ describe('the From and To fields', () => {
     expect(rule('.rel.rel-endrow .rname')).toMatch(/overflow-wrap: break-word;/);
   });
 
-  it('disables both fields while saving, so neither opens, and enables them after', async () => {
+  it('keeps both fields usable while saving', async () => {
     let answer: (response: Response) => void = () => undefined;
     const { handler } = api();
     const held: Handler = (request) =>
@@ -835,20 +827,22 @@ describe('the From and To fields', () => {
     fireEvent.change(search(), { target: { value: 'recipe' } });
     fireEvent.keyDown(search(), { key: 'ArrowDown' });
     fireEvent.keyDown(search(), { key: 'Enter' });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(field(/^To:/)).toHaveProperty('disabled', true);
+      expect(details().querySelector('.save-status')?.textContent).toBe('Saving…');
     });
-    expect(field(/^From:/)).toHaveProperty('disabled', true);
-    // A disabled button takes no click (nor focus, so no keys, in a browser).
+    expect(field(/^To:/)).toHaveProperty('disabled', false);
     fireEvent.click(field(/^From:/));
-    expect(within(ends()).queryByRole('combobox')).toBeNull();
-    expect(field(/^From:/).getAttribute('aria-expanded')).toBe('false');
+    expect(within(ends()).getByRole('combobox')).toBeDefined();
+    expect(field(/^From:/).getAttribute('aria-expanded')).toBe('true');
+    fireEvent.keyDown(search(), { key: 'Escape' });
     answer(apiError(503, 'The server is busy.'));
     await waitFor(() => {
-      expect(field(/^From:/)).toHaveProperty('disabled', false);
+      expect(details().querySelector('.save-status')?.textContent).toBe(
+        "Couldn't save: check your connection",
+      );
     });
     expect(field(/^To: Recipe Archive/)).toHaveProperty('disabled', false);
+    expect(within(form).getByRole('button', { name: 'Try again' })).toBeDefined();
   });
 
   // The section must not share a class with New relationship's "source → target" line, whose rule
@@ -1251,7 +1245,7 @@ describe('Relation properties on the forms', () => {
     // e7 and e9 run the same way between the same two cards: one line, until e9 is two-way.
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
     fireEvent.click(within(form).getByRole('radio', { name: /Both ways/ }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({ version: 1, twoWay: true });
     });
@@ -1295,17 +1289,19 @@ describe('Relation properties on the forms', () => {
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({ version: 1, label: 'Made-up label' });
     });
-    await within(form).findByText('Saved');
+    await waitFor(() => {
+      expect(document.querySelector('.save-status')?.textContent).toBe('Saved');
+    });
     fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
       target: { value: 'Second label' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({ version: 2, label: 'Second label' });
     });
   });
 
-  it('warns before saving Source to target data away as Contains, and Discard restores it', async () => {
+  it('saves a change to Contains at once, and says the data went with it', async () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
     const data = () => dataField(form, 'sourceToTargetData');
@@ -1313,24 +1309,31 @@ describe('Relation properties on the forms', () => {
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     expect(data()).toBeNull();
     expect(dataField(form, 'targetToSourceData')).toBeNull();
+    await waitFor(() => {
+      expect(sent.filter((r) => r.method === 'PATCH').map((r) => r.body)).toEqual([
+        { version: 1, type: 'Contains', sourceToTargetData: null },
+      ]);
+    });
+    // Still said once saved, while the form shows the type.
+    await settle();
     expect(
       within(form).getByText(
-        'Identity, Identity Context and the data in both directions are removed when you save.',
+        'Identity, Identity Context and the data in both directions were removed.',
       ),
     ).toBeDefined();
-    // Back to Relation: Source to target data is empty, so it still counts as a change.
+    // Back to Relation: the data list is empty.
     fireEvent.click(within(form).getByRole('radio', { name: 'Relation' }));
     expect(chipTexts(form, 'sourceToTargetData')).toEqual([]);
-    expect(within(form).getByRole('button', { name: 'Save' })).toBeDefined();
-    fireEvent.click(within(form).getByRole('button', { name: 'Discard changes' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /^Discard/ }));
-    expect(chipTexts(form, 'sourceToTargetData')).toEqual(['Orders']);
-
-    fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(
+      within(form).queryByText(
+        'Identity, Identity Context and the data in both directions were removed.',
+      ),
+    ).toBeNull();
     await waitFor(() => {
-      expect(sent.at(-1)?.body).toEqual({ version: 1, type: 'Contains', sourceToTargetData: null });
+      expect(sent.filter((r) => r.method === 'PATCH').at(-1)?.body).toEqual({
+        version: 2,
+        type: 'Relation',
+      });
     });
   });
 
@@ -1358,7 +1361,7 @@ describe('Relation properties on the forms', () => {
     fireEvent.change(dataField(form, 'targetToSourceData') as HTMLInputElement, {
       target: { value: 'Made-up' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     const message = await within(form).findByText('Each value must be at most 200 characters.');
     expect(
       (dataField(form, 'targetToSourceData') as HTMLInputElement).getAttribute('aria-describedby'),
@@ -1369,7 +1372,7 @@ describe('Relation properties on the forms', () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/, 1);
     fireEvent.click(within(form).getByRole('radio', { name: /Both ways/ }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent.at(-1)?.body).toEqual({ version: 1, twoWay: true });
     });
@@ -1380,7 +1383,7 @@ describe('Relation properties on the forms', () => {
 describe('properties defined by an Admin on the form', () => {
   const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const save = (form: HTMLElement) => {
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
   };
   const definitions = [
     { key: 'protocol', name: 'Protocol', kind: 'text', fromModels: false, version: 1 },
@@ -1511,13 +1514,13 @@ describe('properties defined by an Admin on the form', () => {
     save(form);
     expect(
       await within(form).findByText(
-        /An Admin deleted Protocol, so its value wasn.t saved\. Save again to keep your other changes\./,
+        /An Admin deleted Protocol, so its value wasn.t saved\. Your other changes are saved\./,
       ),
     ).toBeDefined();
     await waitFor(() => {
       expect(within(form).queryByLabelText('Protocol')).toBeNull();
     });
-    save(form);
+    // The rest goes again at once.
     await waitFor(() => {
       expect(sent.at(-1)).toMatchObject({
         method: 'PATCH',
@@ -1583,7 +1586,9 @@ describe('properties defined by an Admin on the form', () => {
       target: { value: 'REST' },
     });
     save(form);
-    await within(form).findByText('Saved');
+    await waitFor(() => {
+      expect(document.querySelector('.save-status')?.textContent).toBe('Saved');
+    });
     fireEvent.click(within(form).getByRole('radio', { name: 'Contains' }));
     expect(within(form).queryByLabelText('Protocol')).toBeNull();
     expect(within(form).getByText('Protocol is kept as custom metadata.')).toBeDefined();
@@ -1627,7 +1632,7 @@ describe('the form and what is stored', () => {
     }) as Parameters<typeof api>[0];
   const open = () => openRelationship(/^Open relationship: Relates to Back Office Server/, 1);
   const save = (form: HTMLElement) => {
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
   };
 
   it('shows stored text, numbers, true/false and lists, and sends only what changed', async () => {
@@ -1763,13 +1768,13 @@ describe('the form and what is stored', () => {
     expect(sent.at(-1)?.body).toEqual({ version: 1, label: 'Typed first' });
   });
 
-  it('discarding shows the copy from the server, not the old one', async () => {
+  it('saves only what was typed when the server’s copy arrives after it, keeping the rest', async () => {
     let arrive = () => {};
     const held = new Promise<void>((resolve) => {
       arrive = resolve;
     });
     const reply = stored({}, { addedElsewhere: 'Made-up' });
-    await openShop((method, url, body) => {
+    const { sent } = await openShop((method, url, body) => {
       if (method === 'GET' && url === `${relationshipsUrl}/e9`) {
         return held.then(() => reply?.(method, url, body)) as unknown as Response;
       }
@@ -1784,13 +1789,12 @@ describe('the form and what is stored', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(within(form).queryByRole('combobox', { name: 'Value of addedElsewhere' })).toBeNull();
-    fireEvent.click(within(form).getByRole('button', { name: 'Discard changes' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /^Discard/ }));
-    expect(
-      await within(form).findByRole('combobox', { name: 'Value of addedElsewhere' }),
-    ).toBeDefined();
-    expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(sent.at(-1)?.method).toBe('PATCH');
+    });
+    // The value added elsewhere isn't sent, so it stays.
+    expect(sent.at(-1)?.body).toEqual({ version: 1, label: 'Typed first' });
   });
 
   it('a change found only on Save, after the first read failed, is a conflict', async () => {
@@ -1895,13 +1899,13 @@ describe('the relationship’s label', () => {
   const label = (form: HTMLElement) =>
     within(form).getByRole<HTMLInputElement>('combobox', { name: 'Label' });
 
-  it('saves a trimmed label, with Save only for a change', async () => {
+  it('saves a trimmed label, and leaves the field as typed', async () => {
     const { sent } = await openShop();
     const form = await open();
     expect(label(form).value).toBe('');
     expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
     fireEvent.change(label(form), { target: { value: '  Nightly  ' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent.at(-1)).toMatchObject({
         method: 'PATCH',
@@ -1909,9 +1913,10 @@ describe('the relationship’s label', () => {
       });
     });
     await waitFor(() => {
-      expect(label(form).value).toBe('Nightly');
+      expect(details().querySelector('.save-status')?.textContent).toBe('Saved');
     });
-    expect(within(form).queryByRole('button', { name: 'Save' })).toBeNull();
+    // Not trimmed under the cursor: typing on keeps the space.
+    expect(label(form).value).toBe('  Nightly  ');
   });
 
   it('removes the label when emptied', async () => {
@@ -1919,7 +1924,7 @@ describe('the relationship’s label', () => {
     const form = await openRelationship(/^Open relationship: Relates to Oven Planner/);
     expect(label(form).value).toBe('Orders');
     fireEvent.change(label(form), { target: { value: '   ' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent.at(-1)).toMatchObject({ method: 'PATCH', body: { label: null } });
     });
@@ -1935,15 +1940,15 @@ describe('the relationship’s label', () => {
     );
     const form = await open();
     fireEvent.change(label(form), { target: { value: 'x'.repeat(201) } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     expect(await within(form).findByText('Must be at most 200 characters.')).toBeDefined();
     expect(label(form).getAttribute('aria-invalid')).toBe('true');
   });
 });
 
 describe('unsaved changes and the links', () => {
-  it('asks before the link in the panel leaves a catalog with no focus and unsaved changes', async () => {
-    const { handler } = api();
+  it('saves a change waiting in the panel before its link leaves a catalog with no focus', async () => {
+    const { handler, sent } = api();
     stubApi(modeller, handler);
     renderAt(`/modelling/models/${bakeryId}?view=catalog&type=Application`);
     const row = await screen.findByRole('row', { name: /Web Shop/ });
@@ -1956,14 +1961,17 @@ describe('unsaved changes and the links', () => {
     fireEvent.click(
       (await within(details()).findAllByRole('button', { name: /^Relates to / }))[0] as HTMLElement,
     );
-    const dialog = await screen.findByRole('dialog');
-    expect(screen.getByRole('form', { name: /^Edit / })).toBeDefined();
-    fireEvent.click(within(dialog).getByRole('button', { name: /Keep editing/ }));
+    await waitFor(() => {
+      expect(sent.some((r) => r.method === 'PATCH')).toBe(true);
+    });
+    // Saved, then followed without asking.
+    await waitFor(() => {
+      expect(currentLocation()).toContain('/elements/server');
+    });
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(
-      within(screen.getByRole('form', { name: /^Edit / })).getByRole('textbox', { name: /^Name/ }),
-    ).toHaveProperty('value', 'Typed name');
-    expect(currentLocation()).toContain('view=catalog');
+    expect(sent.filter((r) => r.method === 'PATCH').map((r) => r.body)).toEqual([
+      { version: 1, name: 'Typed name' },
+    ]);
   });
 });
 

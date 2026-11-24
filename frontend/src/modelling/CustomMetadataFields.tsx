@@ -29,8 +29,11 @@ interface CustomMetadataFieldsProps {
   valuesOf: (key: string) => readonly string[];
   /** The custom metadata names in the model, most used first, offered on the key field. */
   names: readonly string[];
-  /** A row was typed in or removed. `slot` is the row's, to clear its error. */
-  onEdit: (slot: string, rows: CustomRow[]) => void;
+  /**
+   * A row was typed in or removed. `slot` is the row's, to clear its error; `now` for a removal or
+   * a picked suggestion (saved at once), not for typing.
+   */
+  onEdit: (slot: string, rows: CustomRow[], now?: boolean) => void;
   /** A row was added: focus goes to `focusId` after the render. */
   onAdd: (rows: CustomRow[], focusId: string) => void;
   /** A row was removed: focus goes to `focusId` after the render. */
@@ -54,6 +57,7 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
     props.onEdit(
       `row:${rows[index]?.id ?? ''}`,
       rows.filter((_, i) => i !== index),
+      true,
     );
     props.onRemoved(next ? slotId(`row:${next.id}`) : props.addId);
   };
@@ -72,10 +76,11 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
         const slot = `row:${row.id}`;
         const key = row.key.trim();
         const invalid = props.invalid(slot);
-        const setRow = (next: Partial<CustomRow>) => {
+        const setRow = (next: Partial<CustomRow>, now = false) => {
           props.onEdit(
             slot,
             rows.map((r) => (r.id === row.id ? { ...r, ...next } : r)),
+            now,
           );
         };
         // A stored key is blank only when an earlier import left it so: it is named, not typed.
@@ -154,6 +159,9 @@ export function CustomMetadataFields(props: CustomMetadataFieldsProps) {
                   readOnly={saving}
                   onValue={(text) => {
                     setRow({ text });
+                  }}
+                  onPick={(text) => {
+                    setRow({ text }, true);
                   }}
                 />
               )

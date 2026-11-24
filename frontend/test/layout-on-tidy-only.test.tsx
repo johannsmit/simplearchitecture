@@ -267,7 +267,7 @@ describe('editing on the canvas (Modelling)', () => {
     );
     const form = await screen.findByRole('form', { name: /^Relationship / });
     fireEvent.click(within(details()).getByRole('button', { name: 'Reverse direction' }));
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     // The reversed relationship is drawn as its own line.
     await waitFor(() => {
       expect(lines()).toBe(count + 1);

@@ -251,6 +251,8 @@ interface ValueFieldProps extends Omit<
   values: readonly string[];
   label: string;
   onValue: (text: string) => void;
+  /** A suggestion was picked (default: `onValue`): a form that saves as you go saves it at once. */
+  onPick?: (text: string) => void;
   /** What the field makes of typed text (Supplier HQ Country: upper case). */
   normalise?: (text: string) => string;
   ref?: Ref<HTMLInputElement>;
@@ -265,6 +267,7 @@ export function ValueField({
   values,
   label,
   onValue,
+  onPick,
   normalise,
   readOnly,
   onKeyDown,
@@ -276,7 +279,7 @@ export function ValueField({
     values,
     label,
     disabled: readOnly === true,
-    onTake: onValue,
+    onTake: onPick ?? onValue,
   });
   const describedBy =
     [input['aria-describedby'], field.hintId].filter(Boolean).join(' ') || undefined;

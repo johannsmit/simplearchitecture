@@ -459,14 +459,14 @@ describe('a relationship’s new end in a view', () => {
     fireEvent.click(
       await within(panel).findByRole('button', { name: /^Open relationship: Relates to Pump/ }),
     );
-    const form = await screen.findByRole('form', { name: /^Relationship / });
+    await screen.findByRole('form', { name: /^Relationship / });
     const ends = within(panel).getByRole('region', { name: 'Ends' });
     fireEvent.click(within(ends).getByRole('button', { name: /^To: Pump/ }));
     const search = within(ends).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'shed' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });
+    // Picked: saved at once.
     fireEvent.keyDown(search, { key: 'Enter' });
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
     await waitFor(() => {
       expect(cardIds()).toEqual(['gardener', 'planner', 'pump', 'sensors', 'shed']);
     });
@@ -1153,14 +1153,14 @@ describe('moving a line', () => {
     fireEvent.click(
       await within(panel).findByRole('button', { name: /^Open relationship: Relates to Pump/ }),
     );
-    const form = await screen.findByRole('form', { name: /^Relationship / });
+    await screen.findByRole('form', { name: /^Relationship / });
     const ends = within(panel).getByRole('region', { name: 'Ends' });
     fireEvent.click(within(ends).getByRole('button', { name: /^To: Pump/ }));
     const search = within(ends).getByRole('combobox');
     fireEvent.change(search, { target: { value: 'shed' } });
     fireEvent.keyDown(search, { key: 'ArrowDown' });
+    // Picked: saved at once.
     fireEvent.keyDown(search, { key: 'Enter' });
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });

@@ -88,7 +88,7 @@ describe('the relationship form', () => {
     fireEvent.click(reverse);
     expect(texts(form, forward)).toEqual(['Orders']);
     fireEvent.click(reverse);
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
@@ -96,7 +96,7 @@ describe('the relationship form', () => {
     expect(sent[0]).toEqual({ version: 1, reverse: true });
   });
 
-  it('sends a list changed after Reverse as the list after the swap', async () => {
+  it('saves Reverse at once, and a list changed after it as the list after the swap', async () => {
     const { form, sent } = await openForm({ sourceToTargetData: ['Orders'] });
     fireEvent.click(within(details()).getByRole('button', { name: 'Reverse direction' }));
     expect(texts(form, forward)).toEqual([]);
@@ -104,14 +104,17 @@ describe('the relationship form', () => {
     const field = form.querySelector(`#rf-${forward}`) as HTMLInputElement;
     fireEvent.change(field, { target: { value: 'Stock' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(sent).toHaveLength(1);
+      expect(sent).toHaveLength(2);
     });
-    expect(sent[0]).toEqual({ version: 1, reverse: true, sourceToTargetData: ['Stock'] });
+    // The server swapped the lists with the ends; the list added to after it goes as it is.
+    expect(sent).toEqual([
+      { version: 1, reverse: true },
+      { version: 1, sourceToTargetData: ['Stock'] },
+    ]);
   });
 
-  it('sends the lists swapped with new ends already reversed, as no reverse goes', async () => {
+  it('saves Reverse, then a new end of the reversed relationship, leaving the swapped lists', async () => {
     const { form, sent } = await openForm({
       sourceToTargetData: ['Orders'],
       targetToSourceData: ['Order ids'],
@@ -122,17 +125,14 @@ describe('the relationship form', () => {
       within(within(details()).getByRole('listbox')).getByRole('option', { name: /^Till/ }),
     );
     expect(texts(form, forward)).toEqual(['Order ids']);
-    fireEvent.click(within(form).getByRole('button', { name: /^Save/ }));
     await waitFor(() => {
-      expect(sent).toHaveLength(1);
+      expect(sent).toHaveLength(2);
     });
-    expect(sent[0]).toEqual({
-      version: 1,
-      source: 'server',
-      target: 'till',
-      sourceToTargetData: ['Order ids'],
-      targetToSourceData: ['Orders'],
-    });
+    expect(sent).toEqual([
+      { version: 1, reverse: true },
+      { version: 1, target: 'till' },
+    ]);
+    expect(texts(form, forward)).toEqual(['Order ids']);
   });
 
   it('swaps them back when the relationship becomes two-way, which drops Reverse', async () => {

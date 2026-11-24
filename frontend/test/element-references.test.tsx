@@ -35,6 +35,7 @@ import {
   viewer,
   type Handler,
 } from './helpers';
+import { settle } from './settle';
 
 // References from an element to other elements: an element property of the kind Reference.
 // Made-up model and names only.
@@ -605,7 +606,7 @@ describe('a Reference field on the element form', () => {
       name: `Add element to ${name}`,
     });
 
-  it('saves the chips, never on Enter, and Esc on the list keeps the form', async () => {
+  it('saves a chip at once, never the search typed, and Esc opens no dialog', async () => {
     const { form, bodies } = await openForm('portal');
     const box = field(form, 'Depends on');
     act(() => {
@@ -613,16 +614,6 @@ describe('a Reference field on the element form', () => {
     });
     fireEvent.change(box, { target: { value: '@bill' } });
     fireEvent.keyDown(box, { key: 'Enter' });
-    expect(patches(bodies)).toEqual([]);
-    fireEvent.change(box, { target: { value: '@arch' } });
-    fireEvent.keyDown(box, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    // With the list closed, Esc asks as anywhere in the form.
-    fireEvent.keyDown(box, { key: 'Escape' });
-    expect(await screen.findByRole('dialog', { name: 'Discard changes?' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
-
-    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches(bodies)).toHaveLength(1);
     });
@@ -630,6 +621,15 @@ describe('a Reference field on the element form', () => {
       version: 1,
       metadata: { 'Depends on': ref('hub', 'fraud', 'billing') },
     });
+    fireEvent.change(box, { target: { value: '@arch' } });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // With the list closed, Esc does nothing in the form either.
+    fireEvent.keyDown(box, { key: 'Escape' });
+    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(patches(bodies)).toHaveLength(1);
   });
 
   it('saves a Reference property left with no element as not set, refusing nothing', async () => {
@@ -638,7 +638,7 @@ describe('a Reference field on the element form', () => {
     fireEvent.click(
       within(shares).getByRole('button', { name: 'Remove Payment hub, Application' }),
     );
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches(bodies)).toHaveLength(1);
     });
@@ -657,7 +657,7 @@ describe('a Reference field on the element form', () => {
     renderAt(at('portal'));
     const form = await screen.findByRole('form', { name: /^Edit / });
     fireEvent.click(within(form).getByRole('button', { name: 'Remove Fraud check, Application' }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     expect(await within(form).findByText(referenceGoneMessage)).toBeTruthy();
     expect(field(form, 'Depends on').getAttribute('aria-invalid')).toBe('true');
   });
@@ -715,7 +715,7 @@ describe('references in the explorer', () => {
     fireEvent.change(within(portal).getByRole('textbox', { name: /^Name/ }), {
       target: { value: 'Customer portal 2' },
     });
-    fireEvent.click(within(portal).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(portal, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches(bodies)).toHaveLength(1);
     });

@@ -100,7 +100,7 @@ function typeAndTake(form: HTMLElement, key: string, typed: string, row: string)
 }
 
 const save = (form: HTMLElement) => {
-  fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+  fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
 };
 
 describe.each(['element', 'relationship'] as const)('on the %s form', (kind) => {

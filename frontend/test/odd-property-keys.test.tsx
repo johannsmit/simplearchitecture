@@ -96,7 +96,7 @@ describe('a blank or long property key on the relationship form', () => {
     expect(blank.value).toBe('Blank value');
     fireEvent.change(long, { target: { value: 'Changed' } });
     fireEvent.change(blank, { target: { value: '' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
@@ -107,7 +107,7 @@ describe('a blank or long property key on the relationship form', () => {
     const { form, sent } = await openRelationship({ '': 'Empty key value', owner: 'Made-up' });
     expect(within(form).getByRole('group', { name: 'Custom metadata' })).toBeDefined();
     fireEvent.click(within(form).getByRole('button', { name: 'Remove the blank key' }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
@@ -175,7 +175,7 @@ describe('a blank or long custom name on the element form', () => {
       target: { value: 'Changed padded' },
     });
     fireEvent.click(within(form).getByRole('button', { name: 'Remove the blank key' }));
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
@@ -188,7 +188,7 @@ describe('a blank or long custom name on the element form', () => {
   it('never lets a blank name an import left block a save', async () => {
     const { form, sent } = await openElement({ '': 'Empty name value' });
     fireEvent.change(within(form).getByLabelText(/^Name/), { target: { value: 'Made-up till' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });

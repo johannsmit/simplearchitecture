@@ -2639,6 +2639,12 @@
   gap: 8px;
 }
 
+/* The save status shrinks (with an ellipsis); the buttons keep their size. */
+.d-actions > .btn,
+.d-actions > .icon-btn {
+  flex: none;
+}
+
 .d-head.is-editing {
   padding: 12px 16px;
 }
@@ -3195,46 +3201,58 @@
   color: var(--warning);
 }
 
-.d-form-foot {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+/* The details panel's save status, in its head before Delete. */
+.save-status {
   display: flex;
-  gap: 8px;
-  align-items: center;
-  min-height: 56px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: 0 -4px 8px light-dark(rgb(16 24 40 / 6%), rgb(0 0 0 / 30%));
-}
-
-.foot-status {
-  display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   gap: 4px;
   align-items: center;
-  margin: 0;
+  min-width: 0;
+  margin: 0 0 0 auto;
   color: var(--text-muted);
   font-size: 12.5px;
+  white-space: nowrap;
 }
 
-.foot-status.is-error {
-  color: var(--critical);
+.save-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.d-form-foot.is-saved .foot-status {
+.save-status .ico,
+.save-status .spinner {
+  flex: none;
+}
+
+.save-status.is-saved {
   color: var(--text);
   font-weight: 500;
 }
 
-.d-form-foot.is-saved .ico {
+.save-status.is-saved .ico {
   color: var(--positive);
 }
 
-.save-btn {
-  justify-content: center;
-  min-width: 76px;
+.save-status.is-failed {
+  color: var(--critical);
+}
+
+.save-status .spinner.sm {
+  border-color: var(--border);
+  border-top-color: var(--text-muted);
+}
+
+.save-status + .delete-element-btn {
+  margin-left: 0;
+}
+
+.rel-top-actions {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .spinner.sm {
@@ -3365,7 +3383,6 @@
     font-size: 16px;
   }
 
-  .d-form-foot .btn,
   .new-pop .btn,
   .delete-dialog .btn {
     height: 36px;
@@ -3404,20 +3421,6 @@
 
   .meta-row .value-list [role='option'] {
     min-height: 40px;
-  }
-
-  .d-form-foot {
-    flex-wrap: wrap;
-    padding: 10px 16px;
-  }
-
-  .d-form-foot .foot-status {
-    flex-basis: 100%;
-  }
-
-  .d-form-foot .btn {
-    flex: 1;
-    justify-content: center;
   }
 
   .delete-dialog .row {
