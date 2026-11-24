@@ -37,7 +37,6 @@ function open(path: string, model?: unknown) {
 }
 
 const canvas = () => screen.getByRole('region', { name: /^Diagram:/ });
-const tidy = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy up' });
 const live = () => canvas().querySelector('[aria-live="polite"]')?.textContent ?? '';
 
 async function card(name: string): Promise<HTMLElement> {
@@ -107,13 +106,12 @@ describe('dragging cards with the mouse', () => {
     });
   });
 
-  it('moves the card, its edges follow, and Tidy up puts it back', async () => {
+  it('moves the card, and its edges follow', async () => {
     open(elementUrl('shop'));
 
     const till = await card('Till');
     const start = position(till);
     const before = edgePaths();
-    expect(tidy().disabled).toBe(true);
 
     drag(till, 120, 80);
     // The view is zoomed to fit, so the card moves by the distance divided by the zoom.
@@ -128,16 +126,6 @@ describe('dragging cards with the mouse', () => {
     expect(Object.keys(localStorage).filter((key) => !key.startsWith('sa-'))).toEqual([]);
     const stored = Object.keys(localStorage).map((key) => localStorage.getItem(key));
     expect(JSON.stringify(stored)).not.toMatch(/till|"x"/i);
-    expect(tidy().disabled).toBe(false);
-
-    fireEvent.click(tidy());
-    await waitFor(() => {
-      expect(position(till)).toEqual(start);
-    });
-    expect(tidy().disabled).toBe(true);
-    // The button is now disabled: focus goes to the canvas, never to <body>.
-    expect(document.activeElement).toBe(canvas());
-    expect(live()).toBe('Layout tidied up.');
   });
 
   it('treats a movement under 4px as a click, which selects the element', async () => {
@@ -190,7 +178,6 @@ describe('moving a card with the keyboard (move mode)', () => {
     expect(screen.queryByText(/Arrow keys move it/)).toBeNull();
     expect(shop.closest('.card')?.classList.contains('is-moving')).toBe(false);
     expect(position(shop)).toEqual({ x: start.x + 8, y: start.y + 40 });
-    expect(tidy().disabled).toBe(false);
 
     // After the drop, arrows move between cards again.
     fireEvent.keyDown(shop, { key: 'ArrowUp' });
@@ -214,8 +201,7 @@ describe('moving a card with the keyboard (move mode)', () => {
       expect(position(shop)).toEqual(start);
     });
     expect(live()).toBe('Move cancelled.');
-    // Nothing moved, so there is nothing to tidy up; focus stays on the card.
-    expect(tidy().disabled).toBe(true);
+    // Focus stays on the card.
     expect(document.activeElement).toBe(shop);
   });
 
@@ -257,12 +243,12 @@ describe('moved cards and the layout', () => {
     const start = position(till);
     drag(till, 60, 0);
     await waitFor(() => {
-      expect(tidy().disabled).toBe(false);
+      expect(position(till).x).toBeGreaterThan(start.x);
     });
 
     fireEvent.click(screen.getByRole('button', { name: '2' }));
     await waitFor(() => {
-      expect(tidy().disabled).toBe(true);
+      expect(currentLocation()).toMatch(/depth=2/);
     });
     fireEvent.click(screen.getByRole('button', { name: '1' }));
     till = await card('Till');
@@ -272,14 +258,11 @@ describe('moved cards and the layout', () => {
 
     drag(till, 60, 0);
     await waitFor(() => {
-      expect(tidy().disabled).toBe(false);
+      expect(position(till).x).toBeGreaterThan(start.x);
     });
-    // Clicking a card focuses its element.
+    // Clicking a card focuses its element: a new canvas, laid out afresh.
     fireEvent.click(await card('Till'), { detail: 2 });
     expect(currentLocation()).toBe(elementUrl('till'));
-    await waitFor(() => {
-      expect(tidy().disabled).toBe(true);
-    });
   });
 
   it('keeps a moved card in its place when an element is added from the popup', async () => {
@@ -309,14 +292,6 @@ describe('moved cards and the layout', () => {
     expect(await positionOf('Web Shop')).toEqual(movedTo);
     // The focused card (not moved) stays put too: the new layout is aligned on it.
     expect(await positionOf('Customer')).toEqual(customerBefore);
-    expect(tidy().disabled).toBe(false);
-
-    // Tidy up lays out all three afresh.
-    fireEvent.click(tidy());
-    await waitFor(() => {
-      expect(tidy().disabled).toBe(true);
-    });
-    expect(canvas().querySelectorAll('.card')).toHaveLength(3);
   });
 });
 

@@ -6,16 +6,9 @@ import {
 } from '@simplearchitecture/shared';
 import { cardShape } from '../../../metamodel-ui';
 import { noRoutes, withoutRoute, zIndexes, type Highlight, type Laid } from './canvasModel';
-import { currentBends, floatingEnds, type EndBox, type FloatingLine } from './edgeLine';
+import { floatingEnds, type EndBox, type FloatingLine } from './edgeLine';
 import { portId, type PlacedCard, type Side } from './elkLayout';
-import {
-  endPlace,
-  followCards,
-  laidLine,
-  routesToSave,
-  withLaidRoutes,
-  type HeldRoute,
-} from './lineRoutes';
+import { endPlace, followCards, routesToSave, type HeldRoute } from './lineRoutes';
 import type { Box, Point } from './positions';
 import type { RelationshipFlowEdge } from './RelationshipEdge';
 import { isGrayed, linkDataParts, linkText } from './view';
@@ -49,36 +42,6 @@ export function handRoutesOf(
   return result;
 }
 
-/**
- * ELK's routes that still hold. Worked out apart from the edges, so a hover keeps the same bends
- * and doesn't place the labels again.
- */
-export function layoutRoutesOf(
-  laid: Laid | null,
-  shown: ReadonlyMap<string, PlacedCard>,
-  absolute: ReadonlyMap<string, Box>,
-  handRoutes: ReadonlyMap<string, Point[]>,
-): Map<string, Point[]> {
-  const result = new Map<string, Point[]>();
-  // A card whose size changed (a rename, a width set by hand) has lines that follow it, as after a
-  // move: ELK's ports on it no longer hold.
-  const sameSize = (id: string) => {
-    const before = laid?.layoutSizes.get(id);
-    const now = shown.get(id);
-    return before !== undefined && now?.width === before.width && now.height === before.height;
-  };
-  for (const link of laid?.drawn ?? []) {
-    if (handRoutes.has(link.id)) continue;
-    if (!sameSize(link.source) || !sameSize(link.target)) continue;
-    const handle = shown
-      .get(link.source)
-      ?.handles.find((candidate) => candidate.id === portId(link.id, 'source'));
-    const bends = currentBends(handle?.route, absolute.get(link.source), absolute.get(link.target));
-    if (bends) result.set(link.id, bends);
-  }
-  return result;
-}
-
 /** What the canvas reports as its arrangement (`onArranged`). */
 export interface ArrangedInput {
   laid: Laid;
@@ -86,17 +49,16 @@ export interface ArrangedInput {
   graph: ModelGraph;
   widths: ReadonlyMap<string, number>;
   hood: Neighbourhood;
-  routes: ReadonlyMap<string, Point[]>;
   endBoxes: ReadonlyMap<string, EndBox>;
   held: ReadonlyMap<string, HeldRoute>;
 }
 
 /**
- * Where every card is, and the route of every line moved by hand or on the layout's route: the
- * layout made for this canvas, its cards and its widths.
+ * Where every card is, and the route of every line moved by hand: the layout made for this canvas,
+ * its cards and its widths. Every other line is drawn by the canvas, so it saves no route.
  */
 export function arrangedLayoutOf(input: ArrangedInput): CanvasLayout {
-  const { laid, shown, graph, widths, hood, routes, endBoxes, held } = input;
+  const { laid, shown, graph, widths, hood, endBoxes, held } = input;
   const cards = layoutOfCanvas(
     shown,
     (id) => {
@@ -111,62 +73,28 @@ export function arrangedLayoutOf(input: ArrangedInput): CanvasLayout {
     laid.groupBy !== undefined,
   );
   const ends = new Map(hood.relationships.map((relationship) => [relationship.id, relationship]));
-  // Lines on the layout's route (after Tidy up) are saved as drawn, so the view opens with them.
-  const laidLines = new Map<string, Point[]>();
-  for (const link of laid.drawn) {
-    const bends = routes.get(link.id);
-    const source = endBoxes.get(link.source);
-    const target = endBoxes.get(link.target);
-    if (!bends || !source || !target) continue;
-    const line = laidLine(
-      bends,
-      {
-        handles: shown.get(link.source)?.handles ?? [],
-        box: source,
-        port: portId(link.id, 'source'),
-      },
-      {
-        handles: shown.get(link.target)?.handles ?? [],
-        box: target,
-        port: portId(link.id, 'target'),
-      },
-    );
-    if (line) laidLines.set(link.id, line);
-  }
   return {
     cards,
-    routes: withLaidRoutes(routesToSave(held, ends, endBoxes), laidLines, laid.drawn, endBoxes),
+    routes: routesToSave(held, ends, endBoxes),
     groupBy: laid.groupBy ?? null,
   };
 }
 
 /**
- * Lines without a route: their ends on the sides where their cards face each other now, so they
- * follow a moved card (live, while it is dragged) and take the shortest way.
+ * Every line not moved by hand: drawn by the canvas, never on the layout's route. Its ends are on
+ * the sides where its cards face each other now, so it follows a moved card (live, while it is
+ * dragged) and takes the shortest way, round cards in its way.
  */
 export function floatingOf(
   laid: Laid | null,
   absolute: ReadonlyMap<string, Box>,
   endBoxes: ReadonlyMap<string, EndBox>,
-  shown: ReadonlyMap<string, PlacedCard>,
-  routes: ReadonlyMap<string, Point[]>,
   handRoutes: ReadonlyMap<string, Point[]>,
 ): Map<string, FloatingLine> {
   if (!laid) return new Map<string, FloatingLine>();
   const boxes = endBoxes;
-  // The ends of routed lines keep their places: the others keep clear of them.
+  // The ends of lines moved by hand keep their places: the others keep clear of them.
   const taken = new Map<string, { side: Side; offset: number }[]>();
-  for (const link of laid.drawn) {
-    if (!routes.has(link.id)) continue;
-    for (const [card, end] of [
-      [link.source, 'source'],
-      [link.target, 'target'],
-    ] as const) {
-      const handle = shown.get(card)?.handles.find((h) => h.id === portId(link.id, end));
-      if (handle) taken.set(card, [...(taken.get(card) ?? []), handle]);
-    }
-  }
-  // So do the ends of lines moved by hand.
   for (const link of laid.drawn) {
     const points = handRoutes.get(link.id);
     if (!points) continue;
@@ -180,7 +108,7 @@ export function floatingOf(
     }
   }
   return floatingEnds(
-    laid.drawn.filter((link) => !routes.has(link.id) && !handRoutes.has(link.id)),
+    laid.drawn.filter((link) => !handRoutes.has(link.id)),
     boxes,
     taken,
   );
@@ -225,7 +153,6 @@ export interface EdgesInput {
   chosen: string | undefined;
   /** A relationship just added. */
   fresh: string | undefined;
-  routes: ReadonlyMap<string, Point[]>;
   floating: ReadonlyMap<string, FloatingLine>;
   handRoutes: ReadonlyMap<string, Point[]>;
   lineDrag: LineDrag | null;
@@ -250,7 +177,6 @@ export function relationshipEdgesOf(
     dragging,
     chosen,
     fresh,
-    routes,
     floating,
     handRoutes,
     lineDrag,
@@ -270,7 +196,6 @@ export function relationshipEdgesOf(
     const [only] = link.members;
     const resting = text !== '';
     const grayed = isGrayed(link, shownProperties);
-    const bends = routes.get(link.id);
     const ends = floating.get(link.id);
     const dragged = lineDrag?.linkId === link.id ? lineDrag.points : undefined;
     const route = dragged ?? handRoutes.get(link.id);
@@ -311,7 +236,6 @@ export function relationshipEdgesOf(
         lit,
         state: link.state,
         ...(link.twoWay ? { twoWay: true } : {}),
-        ...(bends ? { bends } : {}),
         ...(ends ? { ends } : {}),
         ...(route ? { route } : {}),
         ...(linesMovable && bendLinkIds.includes(link.id) ? { bendHandles: true } : {}),
@@ -327,8 +251,8 @@ export function relationshipEdgesOf(
 }
 
 /**
- * The canvas after Tidy relations: every card stays, and every line follows its cards, the layout's
- * routes and the routes given by hand dropped.
+ * The canvas after Tidy relations: every card stays, and every line follows its cards, the routes
+ * given by hand dropped.
  */
 export function withoutLineRoutes(laid: Laid): Laid {
   const placed = new Map<string, PlacedCard>();

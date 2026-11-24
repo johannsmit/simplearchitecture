@@ -541,12 +541,10 @@ export function withinTimeLimit<T>(
 
 /**
  * What the canvas says when its automatic layout failed or took too long: what happened and what to
- * do. The canvas can still be used: a new one's cards are placed without it (`keepCards`), and
- * after Tidy up (`kept`) every card stays where it was.
+ * do. The canvas can still be used: its cards are placed without it (`keepCards`).
  */
-export function layoutFailureMessage(error: unknown, { kept = false } = {}): string {
-  const cards = kept ? 'its cards stay where they were' : 'its cards are placed simply';
+export function layoutFailureMessage(error: unknown): string {
   return error instanceof LayoutTimeoutError
-    ? `The diagram took longer than ${String(Math.round(error.limit / 1000))} seconds to lay out, so ${cards}. Choose Tidy up to try again, or show fewer elements.`
-    : `The diagram couldn't be laid out automatically, so ${cards}. Choose Tidy up to try again.`;
+    ? `The diagram took longer than ${String(Math.round(error.limit / 1000))} seconds to lay out, so its cards are placed simply. Reload the page to try again, or show fewer elements.`
+    : `The diagram couldn't be laid out automatically, so its cards are placed simply. Reload the page to try again.`;
 }

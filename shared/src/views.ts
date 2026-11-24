@@ -6,11 +6,12 @@ import type { ModelAuthor } from './models.js';
 /**
  * Views: a named, stored set of elements and relationships of one model, by id. A view never
  * changes the model. Each card can keep where it was left (its layout), and each line the route it
- * was left on (given by hand, or drawn by Tidy up); a card without a position is placed, and a line without a route is drawn, by
- * the canvas when the view opens. A view can be in one folder (one level of folders): a folder is
- * only a name on its views, so there are no empty folders. Viewer and higher list and open views;
- * Modeller and higher create, rename, change, lay out, put in folders and delete them. Every view
- * is visible to everyone who can see the model.
+ * was left on (given by hand, or saved from an earlier automatic layout); a card without a
+ * position is placed, and a line without a route is drawn, by the canvas when the view opens. A
+ * view can be in one folder (one level of folders): a folder is only a name on its views, so there
+ * are no empty folders. Viewer and higher list and open views; Modeller and higher create,
+ * rename, change, lay out, put in folders and delete them. Every view is visible to everyone who
+ * can see the model.
  *
  * Deleting an element or a relationship from the model removes it from every view, and deleting a
  * model deletes its views. Views aren't part of the JGF export or import.
@@ -145,10 +146,10 @@ export interface ViewPoint {
 }
 
 /**
- * The route a relationship's line in a view was left on (given by hand, or drawn by Tidy up): its
- * points on the canvas, from the end at the source to the end at the target. Each stretch between two points runs straight
- * across or straight up and down (they share x or y), so the line keeps its right angles. From 2
- * points to `maxViewLineBends` + 2.
+ * The route a relationship's line in a view was left on (given by hand, or saved from an earlier
+ * automatic layout): its points on the canvas, from the end at the source to the end at the
+ * target. Each stretch between two points runs straight across or straight up and down (they share
+ * x or y), so the line keeps its right angles. From 2 points to `maxViewLineBends` + 2.
  */
 export interface ViewLineRoute {
   relationshipId: string;

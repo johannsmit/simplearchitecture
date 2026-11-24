@@ -175,7 +175,7 @@ describe('the Canvas | Catalog switch', () => {
     const listToggle = screen.getByRole('button', { name: 'Hide the element list' });
     expect(buttons.indexOf(viewButton('Canvas'))).toBe(buttons.indexOf(listToggle) + 1);
     expect(viewButton('Catalog').getAttribute('aria-pressed')).toBe('true');
-    for (const name of ['Back', 'Tidy up']) {
+    for (const name of ['Back', 'Tidy relations']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
     expect(screen.queryByRole('group', { name: 'Relationship depth' })).toBeNull();

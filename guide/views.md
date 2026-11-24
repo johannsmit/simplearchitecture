@@ -19,7 +19,7 @@ The view holds exactly what the canvas draws: every card and every relationship 
 
 Pick a view in the **Views** list, or on the model's start page. A view's address can be shared as a link.
 
-A view opens as it was left: each card in its place and at its width, each line on its saved route, and the cards in boxes if the view has a [Group by](canvas.md#group-by). The depth, **Show Viewpoints** and the legend's switches aren't saved in a view. A view has no focused element and no depth, and brings in no containers of its own: a card is drawn inside another only when the view holds both.
+A view opens as it was left: each card in its place and at its width, each line moved by hand on its saved route and every other line drawn between its cards, and the cards in boxes if the view has a [Group by](canvas.md#group-by). The depth, **Show Viewpoints** and the legend's switches aren't saved in a view. A view has no focused element and no depth, and brings in no containers of its own: a card is drawn inside another only when the view holds both.
 
 Double-click a card, or press `Enter` on it, to leave the view and explore that element; Back returns to the view. **Close view** goes to the model's start page.
 
@@ -59,8 +59,7 @@ A view keeps its cards where they were put. These save the layout at once, in Mo
 - moving a card, or setting its width;
 - adding or removing a card;
 - moving a line (see [Moving a line](#moving-a-line));
-- **Tidy up**, which lays the whole view out again, without asking;
-- changing **Group by**, or **Clear** in it, which lays the view out again in the same way and saves the view's Group by with it;
+- changing **Group by**, or **Clear** in it, which lays the view out again and saves the view's Group by with it;
 - **Tidy relations** (see [Tidy relations](#tidy-relations)).
 
 A view never laid out by hand is laid out automatically when it opens, and a card without a saved place goes to a free spot. In a grouped view, a card whose value has changed since goes to a free spot in its new box. None of this is saved until your next change.
@@ -83,7 +82,7 @@ The view keeps the route: when a card at one end moves later, only the stretch a
 
 ### Tidy relations
 
-**Tidy relations** ([The canvas](canvas.md#layout-tidy-up-and-tidy-relations) says how) draws every line again without moving a card, dropping the routes moved by hand. In a view in Modelling, the result is saved.
+**Tidy relations** ([The canvas](canvas.md#layout-and-tidy-relations) says how) draws every line again without moving a card, dropping the routes moved by hand. In a view in Modelling, the result is saved.
 
 ## When the model changes
 

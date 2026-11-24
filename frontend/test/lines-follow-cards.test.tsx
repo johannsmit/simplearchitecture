@@ -214,7 +214,6 @@ describe('a renamed card', () => {
 describe('a card width set by hand', () => {
   const grip = (id: string) => card(id)?.querySelector<HTMLElement>('.cresize') as HTMLElement;
   const widthOf = (id: string) => parseFloat(nodeOf(id)?.style.width ?? '');
-  const tidy = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy up' });
 
   /** A pointer event at a point (jsdom's has no pointer position of its own). */
   function pointer(
@@ -249,15 +248,6 @@ describe('a card width set by hand', () => {
         [till.x, till.x + till.width].some((x) => Math.abs(start.x - x) < 0.01) ||
           [till.y, till.y + till.height].some((y) => Math.abs(start.y - y) < 0.01),
       ).toBe(true);
-      // Tidy up lays out with the width as set.
-      const set = widthOf('till');
-      expect(tidy().disabled).toBe(false);
-      fireEvent.click(tidy());
-      await waitFor(() => {
-        expect(tidy().disabled).toBe(true);
-      });
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(widthOf('till')).toBeGreaterThanOrEqual(set);
     },
   );
 

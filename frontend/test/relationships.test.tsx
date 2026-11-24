@@ -41,7 +41,7 @@ describe('relationship rules in the UI', () => {
     ).toBe('Web Shop relates to Back Office Server');
     expect(containsNote(graph, 'server', 'shop', true)).toEqual({
       kind: 'info',
-      text: 'Tidy up then nests Web Shop in Back Office Server.',
+      text: 'Web Shop is nested in Back Office Server when the canvas is opened again.',
     });
   });
 });

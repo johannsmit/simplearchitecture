@@ -498,42 +498,6 @@ export function laidLine(
 }
 
 /**
- * The routes a view saves: those given by hand (`byHand`, from `routesToSave`), and for every
- * line drawn on the layout's route (after Tidy up, or in a view laid out when it opened) the line
- * as drawn, so the view opens with it again. Each relationship on such a line gets it, unless it
- * has a route given by hand. A line whose ends can't leave their cards outward (`fitEnds`) gets
- * none, and is drawn automatically.
- */
-export function withLaidRoutes(
-  byHand: readonly ViewLineRoute[],
-  laid: ReadonlyMap<string, readonly Point[]>,
-  links: readonly {
-    id: string;
-    source: string;
-    target: string;
-    relationshipIds: readonly string[];
-  }[],
-  boxes: ReadonlyMap<string, EndCard>,
-): ViewLineRoute[] {
-  const result = [...byHand];
-  const routed = new Set(byHand.map((route) => route.relationshipId));
-  for (const link of links) {
-    const line = laid.get(link.id);
-    const source = boxes.get(link.source);
-    const target = boxes.get(link.target);
-    const fitted = line && source && target ? fitEnds(line, source, target) : undefined;
-    const points = fitted && storedPoints(fitted);
-    if (!points) continue;
-    for (const relationshipId of link.relationshipIds) {
-      if (routed.has(relationshipId)) continue;
-      routed.add(relationshipId);
-      result.push({ relationshipId, points: points.map((point) => ({ ...point })) });
-    }
-  }
-  return result;
-}
-
-/**
  * The side of a box a line's end is on, and how far along it: the ends of lines moved by hand
  * keep their places, and automatic lines keep clear of them. Undefined when it is on no side.
  */

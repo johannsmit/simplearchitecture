@@ -357,7 +357,7 @@ describe('straight lines between a circle and a card level with it', () => {
     );
   };
 
-  it('runs straight after Tidy up when it is the only line on the card’s side', () => {
+  it('runs straight after the automatic layout when it is the only line on the card’s side', () => {
     const placed = new Map<string, PlacedCard>([
       ['clerk', circleCard({ x: 288, y: -12 })],
       [
@@ -378,7 +378,7 @@ describe('straight lines between a circle and a card level with it', () => {
     expect(line?.[1]?.y).toBe(36);
   });
 
-  it('runs straight after Tidy up with another line ending on the same side of the card', () => {
+  it('runs straight after the automatic layout with another line ending on the same side of the card', () => {
     const placed = new Map<string, PlacedCard>([
       ['clerk', circleCard({ x: 288, y: -12 })],
       [

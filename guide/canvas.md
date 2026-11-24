@@ -68,16 +68,15 @@ Outside a view, a removed card stays off until you focus another element or relo
 
 Outside a view, positions and widths are never saved: they last until the canvas is a new one. A [view](views.md) keeps them.
 
-## Layout: Tidy up and Tidy relations
+## Layout and Tidy relations
 
-The canvas lays itself out automatically only when it is new: when you open an element or a view, reload the page, change the depth, switch **Nest contained elements** or change **Group by**. After that, cards stay where they are.
+The canvas lays itself out automatically only when it is new: when you open an element or a view, reload the page, change the depth, switch **Nest contained elements** or change **Group by**. It places cards by their relationships: lines point down from the element they start at, with as few crossings as it finds. After that, cards stay where they are, and a card added later goes to a free spot.
 
-- **Tidy up** lays the whole canvas out again. It places cards by their relationships: lines point down from the element they start at, with as few crossings as it finds. A grouped canvas keeps its boxes.
-- **Tidy relations**, in the menu of the small arrow next to **Tidy up** (or `T`), moves no card. It draws every line again from where the cards are now, including lines moved by hand. It can't be chosen while **Show relationships** is off.
+**Tidy relations** in the toolbar (or `T`) moves no card. It draws every line again from where the cards are now, including lines moved by hand. It can't be chosen while **Show relationships** is off.
 
-Lines follow the cards: when you move a card, its lines take a short right-angled way between the sides where the two cards face each other: the bottom of the upper card and the top of the lower one, or facing left and right sides when the cards are as far or further apart sideways. When another card or a container's name is in that way, a line takes other sides, or goes round the cards in its way, keeping a little room from them and taking more corners where it must, but as few as it can. It crosses a card only when there is no way round, such as a card closed in by others. Where two cards face each other with room between them, the line runs straight, and so does a line between a Stakeholder circle and a card level with it. Other lines to and from a Stakeholder circle take the shortest way, and can still cross a card.
+The canvas draws every line that isn't moved by hand itself, never along the automatic layout's own route, so a line up from a card below to one above it takes the short way between them instead of running round every container. Lines follow the cards: when you move a card, its lines take a short right-angled way between the sides where the two cards face each other: the bottom of the upper card and the top of the lower one, or facing left and right sides when the cards are as far or further apart sideways. When another card or a container's name is in that way, a line takes other sides, or goes round the cards in its way, keeping a little room from them and taking more corners where it must, but as few as it can. It crosses a card only when there is no way round, such as a card closed in by others. Where two cards face each other with room between them, the line runs straight, and so does a line between a Stakeholder circle and a card level with it. Other lines to and from a Stakeholder circle take the shortest way, and can still cross a card.
 
-If the automatic layout fails or takes too long, it stops and the canvas says so. You can go on working: the cards are placed simply, or, after a failed **Tidy up**, stay where they were. Try **Tidy up** again, or show fewer elements.
+If the automatic layout fails or takes too long, it stops and the canvas says so. You can go on working: the cards are placed simply. Reload the page to try again, or show fewer elements.
 
 ## Zoom and pan
 

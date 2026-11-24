@@ -5,7 +5,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 ## Using the app
 
 - [Using the app](using-the-app.md): the spaces and roles, opening a model, the parts of the screen, finding elements, the catalog.
-- [The canvas](canvas.md): what the canvas shows, Show Viewpoints, Group by, adding, moving and removing cards, Tidy up.
+- [The canvas](canvas.md): what the canvas shows, Show Viewpoints, Group by, adding, moving and removing cards, Tidy relations.
 - [Modelling](modelling.md): creating and changing elements and relationships.
 - [Views](views.md): saving, opening, arranging and organising views.
 - [Keyboard shortcuts](keyboard-shortcuts.md): every key, in tables.
@@ -38,6 +38,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.68.0](releases/v0.68.0.md): lines take the short way between their cards, and Tidy up is removed.
   - [0.67.1](releases/v0.67.1.md): lines from a card inside a container cross its header beside the name.
   - [0.67.0](releases/v0.67.0.md): lines between cards above and below each other use the facing top and bottom.
   - [0.66.0](releases/v0.66.0.md): select several cards and move them together.

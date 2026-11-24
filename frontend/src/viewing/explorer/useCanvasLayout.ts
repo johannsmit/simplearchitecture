@@ -10,9 +10,7 @@ import {
   type ModelGraph,
 } from '@simplearchitecture/shared';
 import { useCallback, useMemo, useState } from 'react';
-import { isGroupId } from './canvas/layoutGeometry';
 import {
-  hasMovedCards,
   noMovedPositions,
   withMovedCard,
   type MovedPositions,
@@ -46,7 +44,7 @@ interface CanvasLayoutOptions {
 
 /**
  * What the canvas shows and how it is laid out: the cards added and taken off, cards moved and
- * resized by hand, nesting, Group by, Tidy up and Tidy relations.
+ * resized by hand, nesting, Group by and Tidy relations.
  */
 export function useCanvasLayout({
   graph,
@@ -71,7 +69,7 @@ export function useCanvasLayout({
   if (added.key !== addedKey) setAdded({ key: addedKey, ids: [] });
   const addedIds = added.key === addedKey ? added.ids : noIds;
   // Cards taken off the canvas: visual only, never saved. Like the added ones, they are forgotten
-  // when the focus changes, and stay off through a depth change or Tidy up.
+  // when the focus changes, and stay off through a depth change.
   const [removed, setRemoved] = useState<{ key: string; ids: string[] }>({
     key: addedKey,
     ids: [],
@@ -108,7 +106,7 @@ export function useCanvasLayout({
   };
 
   // Cards moved on the canvas: never in the model or the URL, and dropped on a focus or depth
-  // change, or by Tidy up. An open view saves its layout from what the canvas shows.
+  // change. An open view saves its layout from what the canvas shows.
   const movedKey = inView ? canvasKey : `${elementId ?? ''}|${depth}`;
   const [moved, setMoved] = useState<{ key: string; positions: MovedPositions }>({
     key: movedKey,
@@ -146,13 +144,11 @@ export function useCanvasLayout({
     },
     [movedKey],
   );
-  const [tidyCount, setTidyCount] = useState(0);
   // Tidy relations: each choice redraws every line from the cards; the canvas says when it can.
   const [relationsTidyCount, setRelationsTidyCount] = useState(0);
   const [canTidyRelations, setCanTidyRelations] = useState(false);
   // The canvas is laid out only when it is a new one; changes in between keep every card in place.
-  const canvasLayoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}|${groupBy === undefined ? '' : `group:${groupBy}`}`;
-  const layoutKey = `${canvasLayoutKey}|${tidyCount}`;
+  const layoutKey = `${movedKey}|${nest ? 'nest' : 'flat'}|${groupBy === undefined ? '' : `group:${groupBy}`}`;
   // An open view's stored layout: a new canvas opens with it (cards where they were left, with
   // their widths). A focus canvas has none.
   const storedLayout = inView ? openView.view?.layout : undefined;
@@ -162,35 +158,33 @@ export function useCanvasLayout({
     () => (storedLayout === undefined ? noWidths : storedWidths(storedLayout)),
     [storedLayout],
   );
-  // Card widths set by hand on the canvas, kept through Tidy up until the canvas is a new one,
+  // Card widths set by hand on the canvas, kept until the canvas is a new one,
   // which starts from the view's stored widths (none on a focus canvas). Saved only in a view.
   const [widths, setWidths] = useState<{
     key: string;
     widths: ReadonlyMap<string, number> | undefined;
-  }>({ key: canvasLayoutKey, widths: undefined });
-  if (widths.key !== canvasLayoutKey) setWidths({ key: canvasLayoutKey, widths: undefined });
-  const cardWidths = (widths.key === canvasLayoutKey ? widths.widths : undefined) ?? baseWidths;
+  }>({ key: layoutKey, widths: undefined });
+  if (widths.key !== layoutKey) setWidths({ key: layoutKey, widths: undefined });
+  const cardWidths = (widths.key === layoutKey ? widths.widths : undefined) ?? baseWidths;
   const resizeCard = useCallback(
     (id: string, width: number | undefined) => {
       setWidths((current) => {
         const next = new Map(
-          (current.key === canvasLayoutKey ? current.widths : undefined) ?? baseWidths,
+          (current.key === layoutKey ? current.widths : undefined) ?? baseWidths,
         );
         if (width === undefined) next.delete(id);
         else next.set(id, width);
-        return { key: canvasLayoutKey, widths: next };
+        return { key: layoutKey, widths: next };
       });
     },
-    [canvasLayoutKey, baseWidths],
+    [layoutKey, baseWidths],
   );
-  // Adding or taking off cards, and Tidy up, in a view that can change: once the canvas shows the
-  // change, it reports where its cards are, and the view's layout is saved.
+  // Adding or taking off cards, and Tidy relations, in a view that can change: once the canvas
+  // shows the change, it reports where its cards are, and the view's layout is saved.
   const [arrangeRequest, setArrangeRequest] = useState(0);
   const requestArrange = () => {
     setArrangeRequest((n) => n + 1);
   };
-  /** The canvas changed without a new layout (its key then): Tidy up has something to do. */
-  const [keptFor, setKeptFor] = useState<string | null>(null);
 
   const viewContents = openView.contents;
   const viewReady = openView.load.status === 'ready';
@@ -226,7 +220,7 @@ export function useCanvasLayout({
     return nodeTypes.filter((type) => present.has(type));
   }, [graph, hood]);
 
-  // "Nest contained elements" lays the canvas out again, like Tidy up.
+  // "Nest contained elements" lays the canvas out again.
   const toggleNest = useCallback(() => {
     setNest((current) => {
       writeNestContained(!current);
@@ -237,33 +231,14 @@ export function useCanvasLayout({
 
   const onCanvas = useMemo(() => new Set(hood?.hops.keys() ?? []), [hood]);
 
-  const canTidy =
-    hood !== undefined &&
-    (keptFor === layoutKey ||
-      hasMovedCards(movedPositions, hood.hops) ||
-      [...movedPositions.keys()].some(isGroupId));
-  const tidyUp = () => {
-    setMoved({ key: movedKey, positions: noMovedPositions });
-    setTidyCount((n) => n + 1);
-    // In a view, the new layout is saved.
-    if (inView) requestArrange();
-    // The button is disabled now: keep keyboard focus on the canvas, never on <body>.
-    document.getElementById('canvas')?.focus();
-  };
   /**
    * Tidy relations: every card stays, and every line is drawn again from the cards (lines moved by
-   * hand too). In a view, the result is saved. From the menu, focus goes to the canvas.
+   * hand too). In a view, the result is saved.
    */
-  const tidyRelations = (fromMenu: boolean) => {
+  const tidyRelations = () => {
     if (!canTidyRelations) return;
     setRelationsTidyCount((n) => n + 1);
-    // The canvas is no longer the automatic layout: Tidy up has something to do.
-    setKeptFor(layoutKey);
     if (inView) requestArrange();
-    if (fromMenu) document.getElementById('canvas')?.focus();
-  };
-  const tidyRelationsByKey = () => {
-    tidyRelations(false);
   };
 
   return {
@@ -276,7 +251,6 @@ export function useCanvasLayout({
     resetMoved,
     groupBy,
     groupView,
-    tidyCount,
     relationsTidyCount,
     canTidyRelations,
     setCanTidyRelations,
@@ -287,14 +261,10 @@ export function useCanvasLayout({
     resizeCard,
     arrangeRequest,
     requestArrange,
-    setKeptFor,
     hood,
     removableIds,
     typesOnCanvas,
     onCanvas,
-    canTidy,
-    tidyUp,
     tidyRelations,
-    tidyRelationsByKey,
   };
 }

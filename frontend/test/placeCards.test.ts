@@ -13,7 +13,6 @@ import {
   freeSpot,
   keepCards,
   relinkHandles,
-  samePlacement,
   type KeepInput,
 } from '../src/viewing/explorer/canvas/placeCards';
 import type { Box } from '../src/viewing/explorer/canvas/positions';
@@ -499,20 +498,5 @@ describe('facingSide and freeOffset', () => {
     const taken: PlacedHandle[] = [{ id: 'h', kind: 'source', side: 'top', offset: 80 }];
     expect(freeOffset(taken, 'top', 160)).toBe(92);
     expect(freeOffset(taken, 'left', 44)).toBe(22);
-  });
-});
-
-describe('samePlacement', () => {
-  it('tells a change of place, size or handles', () => {
-    const a = canvas(card('a', 0, 0));
-    expect(samePlacement(a, canvas(card('a', 0, 0)))).toBe(true);
-    expect(samePlacement(a, canvas(card('a', 1, 0)))).toBe(false);
-    expect(samePlacement(a, canvas(card('a', 0, 0), card('b', 300, 0)))).toBe(false);
-    expect(
-      samePlacement(
-        a,
-        canvas(card('a', 0, 0, { handles: [{ id: 'x', kind: 'source', side: 'top', offset: 1 }] })),
-      ),
-    ).toBe(false);
   });
 });

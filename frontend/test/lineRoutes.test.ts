@@ -14,7 +14,6 @@ import {
   routesToSave,
   squared,
   storedPoints,
-  withLaidRoutes,
   type HeldRoute,
 } from '../src/viewing/explorer/canvas/lineRoutes';
 
@@ -539,7 +538,7 @@ describe('stored routes', () => {
 });
 
 describe('a line from the automatic layout, moved by hand', () => {
-  // As the automatic layout draws a line after Tidy up: coordinates with rounding noise, the ends
+  // As the automatic layout draws a line: coordinates with rounding noise, the ends
   // on the cards' edges as laid out.
   const from = { x: 78.4999912780347, y: 0.999998482875064, width: 120, height: 70 };
   const to = { x: 269.000051177414, y: 178.49996732068794, width: 168, height: 44 };
@@ -617,7 +616,7 @@ describe('which bend a press grabs', () => {
   });
 });
 
-describe('lines on the layout’s route, as a view saves them', () => {
+describe('lines on the layout’s route', () => {
   const handles = [
     { id: 'l0:s', kind: 'source' as const, side: 'bottom' as const, offset: 60 },
     { id: 'l1:t', kind: 'target' as const, side: 'left' as const, offset: 30 },
@@ -663,64 +662,5 @@ describe('lines on the layout’s route, as a view saves them', () => {
       { x: 40, y: 100 },
       { x: 40, y: 200 },
     ]);
-  });
-
-  it('saves each relationship on such a line, after the routes given by hand', () => {
-    const top = { x: 0, y: 0, width: 168, height: 44 };
-    const below = { x: 0, y: 200, width: 168, height: 44 };
-    const line = [
-      { x: 84, y: 44 },
-      { x: 84, y: 100 },
-      { x: 40, y: 100 },
-      { x: 40, y: 200 },
-    ];
-    const byHand = [
-      {
-        relationshipId: 'r2',
-        points: [
-          { x: 1, y: 44 },
-          { x: 1, y: 200 },
-        ],
-      },
-    ];
-    const saved = withLaidRoutes(
-      byHand,
-      new Map([['l0', line]]),
-      [{ id: 'l0', source: 'a', target: 'b', relationshipIds: ['r1', 'r2', 'r3'] }],
-      new Map([
-        ['a', top],
-        ['b', below],
-      ]),
-    );
-    expect(saved).toEqual([
-      byHand[0],
-      { relationshipId: 'r1', points: line },
-      { relationshipId: 'r3', points: line },
-    ]);
-  });
-
-  it('saves none for a line whose ends can’t leave their cards outward', () => {
-    const top = { x: 0, y: 0, width: 168, height: 44 };
-    const close = { x: 0, y: 48, width: 168, height: 44 };
-    const saved = withLaidRoutes(
-      [],
-      new Map([
-        [
-          'l0',
-          [
-            { x: 84, y: 44 },
-            { x: 84, y: 46 },
-            { x: 40, y: 46 },
-            { x: 40, y: 48 },
-          ],
-        ],
-      ]),
-      [{ id: 'l0', source: 'a', target: 'b', relationshipIds: ['r1'] }],
-      new Map([
-        ['a', top],
-        ['b', close],
-      ]),
-    );
-    expect(saved).toEqual([]);
   });
 });

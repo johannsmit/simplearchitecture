@@ -5,7 +5,7 @@ import type {
   ViewCardLayout,
   ViewLineRoute,
 } from '@simplearchitecture/shared';
-import { cleanup, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
 import { apiError, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
@@ -173,10 +173,7 @@ const paths = () =>
     .map((edge) => `${edge.getAttribute('aria-label') ?? ''}: ${pathOf(edge)}`)
     .sort();
 const live = () => canvasEl().querySelector('[aria-live="polite"]')?.textContent ?? '';
-const tidyUp = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy up' });
-const arrow = () => screen.getByRole<HTMLButtonElement>('button', { name: 'More ways to tidy' });
-const menu = () => screen.getByRole('menu', { name: 'More ways to tidy' });
-const item = (name: string) => within(menu()).getByRole<HTMLButtonElement>('menuitem', { name });
+const tidyButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Tidy relations' });
 const layoutSaves = (calls: Call[]) => calls.filter((call) => call.url.endsWith('/layout'));
 const changes = (calls: Call[]) => calls.filter((call) => call.method !== 'GET');
 const linesSwitch = () =>
@@ -207,12 +204,6 @@ async function openFocus(space: 'viewing' | 'modelling', id = 'press') {
   return fake;
 }
 
-/** Opens the tidy menu and chooses an item in it. */
-function choose(name: string) {
-  fireEvent.click(arrow());
-  fireEvent.click(item(name));
-}
-
 afterEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
@@ -224,10 +215,8 @@ describe('Tidy relations in a view in Modelling', () => {
     const before = placesOf();
     const moved = pathOf(lineOf(/^Cider press .* Cold store$/));
     expect(moved.startsWith('M400 30')).toBe(true);
-    expect(tidyUp().disabled).toBe(false);
 
-    choose('Tidy relations');
-    expect(document.activeElement).toBe(canvasEl());
+    fireEvent.click(tidyButton());
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });
@@ -251,28 +240,22 @@ describe('Tidy relations in a view in Modelling', () => {
     expect(layoutSaves(fake.calls)).toHaveLength(1);
   });
 
-  it('drops the automatic layout’s routes too, enables Tidy up, and names no hand-moved line', async () => {
-    // No stored layout: the view opens laid out by ELK, with its routes.
+  it('on a view laid out when it opened, moves no card and names no hand-moved line', async () => {
+    // No stored layout: the view opens laid out by ELK.
     const fake = await openView(
       'modelling',
       view('v-harvest', ['trees', 'press', 'store', 'shop'], ['o1', 'o2', 'o3']),
     );
-    expect(tidyUp().disabled).toBe(true);
     const before = placesOf();
 
-    fireEvent.click(arrow());
-    // Tidy up can't be used, so the menu starts on Tidy relations.
-    expect(item('Tidy up').getAttribute('aria-disabled')).toBe('true');
-    expect(document.activeElement).toBe(item('Tidy relations'));
-    fireEvent.click(item('Tidy relations'));
+    fireEvent.click(tidyButton());
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });
     expect(live()).toBe('Relations tidied up. No card moved.');
     expect(placesOf()).toEqual(before);
-    // Tidy up would save a route for each line; after Tidy relations, none has one.
+    // No line has a route of its own: the canvas draws each one.
     expect(layoutSaves(fake.calls)[0]?.body?.routes ?? []).toEqual([]);
-    expect(tidyUp().disabled).toBe(false);
   });
 
   it('runs with T on the canvas or a card, either case, and not with Ctrl, ⌘ or Alt', async () => {
@@ -358,7 +341,7 @@ describe('Tidy relations where nothing is saved', () => {
   it('redraws in a view in Viewing, and saves nothing', async () => {
     const fake = await openView('viewing', harvest());
     const before = placesOf();
-    choose('Tidy relations');
+    fireEvent.click(tidyButton());
     expect(live()).toBe('Relations tidied up, including lines moved by hand. No card moved.');
     await settle();
     expect(placesOf()).toEqual(before);
@@ -384,45 +367,25 @@ describe('Tidy relations where nothing is saved', () => {
 });
 
 describe('when Tidy relations can be used', () => {
-  it('not with Show relationships off: then the arrow is off too while Tidy up is', async () => {
+  it('not with Show relationships off', async () => {
     const fake = await openView(
       'modelling',
       view('v-harvest', ['trees', 'press', 'store', 'shop'], ['o1', 'o2', 'o3']),
     );
-    expect(arrow().disabled).toBe(false);
+    expect(tidyButton().disabled).toBe(false);
     fireEvent.click(linesSwitch());
     await waitFor(() => {
-      expect(arrow().disabled).toBe(true);
+      expect(tidyButton().disabled).toBe(true);
     });
     fireEvent.keyDown(canvasEl(), { key: 't' });
     await settle();
     expect(changes(fake.calls)).toEqual([]);
     expect(live()).not.toContain('Relations tidied up');
-
-    // A card moved: Tidy up can be used, so the arrow can, with Tidy relations still off.
-    const main = mainOf('shop');
-    main.focus();
-    fireEvent.keyDown(main, { key: 'm' });
-    fireEvent.keyDown(main, { key: 'ArrowRight', shiftKey: true });
-    fireEvent.keyDown(main, { key: 'Enter' });
-    await waitFor(() => {
-      expect(arrow().disabled).toBe(false);
-    });
-    fireEvent.click(arrow());
-    expect(item('Tidy relations').getAttribute('aria-disabled')).toBe('true');
-    expect(document.activeElement).toBe(item('Tidy up'));
-    // A disabled item does nothing, and the menu stays open.
-    const saves = layoutSaves(fake.calls).length;
-    fireEvent.click(item('Tidy relations'));
-    expect(menu()).toBeTruthy();
-    await settle();
-    expect(layoutSaves(fake.calls)).toHaveLength(saves);
   });
 
   it('not on a canvas with no line', async () => {
     await openView('modelling', view('v-sheds', ['barn', 'trees'], []));
-    expect(tidyUp().disabled).toBe(true);
-    expect(arrow().disabled).toBe(true);
+    expect(tidyButton().disabled).toBe(true);
   });
 
   it('not while the canvas is laid out', async () => {
@@ -444,106 +407,40 @@ describe('when Tidy relations can be used', () => {
     await waitFor(() => {
       expect(canvasEl().textContent).toContain('Laying out…');
     });
-    expect(arrow().disabled).toBe(true);
+    expect(tidyButton().disabled).toBe(true);
     fireEvent.keyDown(canvasEl(), { key: 't' });
     answer();
     await waitFor(() => {
-      expect(arrow().disabled).toBe(false);
+      expect(tidyButton().disabled).toBe(false);
     });
     expect(live()).not.toContain('Relations tidied up');
   });
 });
 
-describe('the tidy menu', () => {
-  it('is a menu button with both actions, described, and works from the keyboard', async () => {
-    await openView('modelling', harvest());
-    const button = arrow();
-    expect(button.getAttribute('aria-haspopup')).toBe('menu');
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(button.getAttribute('title')).toBe('More ways to tidy');
-    expect(document.getElementById(button.getAttribute('aria-controls') ?? '')).toBeTruthy();
-    // Tidy up is unchanged.
-    expect(tidyUp().getAttribute('title')).toBe(
-      'Put every card and line back in the automatic layout',
-    );
-
-    button.focus();
-    fireEvent.click(button);
-    expect(button.getAttribute('aria-expanded')).toBe('true');
-    const items = within(menu()).getAllByRole('menuitem');
-    expect(items.map((each) => each.textContent)).toEqual([
-      'Tidy upPut every card and line back in the automatic layout',
-      'Tidy relationsRedraw every line, including lines moved by hand. No card moves.T',
-    ]);
-    const described = (element: HTMLElement) =>
-      document.getElementById(element.getAttribute('aria-describedby') ?? '')?.textContent;
-    expect(described(item('Tidy up'))).toBe('Put every card and line back in the automatic layout');
-    expect(described(item('Tidy relations'))).toBe(
+describe('the toolbar', () => {
+  it('has Tidy relations, with its key, and no Tidy up', async () => {
+    const fake = await openView('modelling', harvest());
+    const button = tidyButton();
+    expect(button.getAttribute('title')).toBe(
       'Redraw every line, including lines moved by hand. No card moves.',
     );
-    expect(item('Tidy relations').getAttribute('aria-keyshortcuts')).toBe('T');
-    expect(item('Tidy relations').querySelector('kbd')?.getAttribute('aria-hidden')).toBe('true');
-
-    // Both can be used: focus starts on the first; the arrow keys wrap.
-    expect(document.activeElement).toBe(item('Tidy up'));
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(item('Tidy relations'));
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(item('Tidy up'));
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' });
-    expect(document.activeElement).toBe(item('Tidy relations'));
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Home' });
-    expect(document.activeElement).toBe(item('Tidy up'));
-
-    // Esc closes it, back on the arrow.
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(button);
-
-    // Tab closes it and leaves focus to move on from the arrow.
-    fireEvent.click(button);
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' });
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(button);
-  });
-
-  it('closes on a press on the canvas or a card, and does nothing else', async () => {
-    const fake = await openView('modelling', harvest());
-    const pane = canvasEl().querySelector<HTMLElement>('.react-flow__pane') as HTMLElement;
-    const node = card('store')?.closest<HTMLElement>('.react-flow__node') as HTMLElement;
-    for (const target of [pane, node]) {
-      fireEvent.click(arrow());
-      expect(arrow().getAttribute('aria-expanded')).toBe('true');
-      // As a browser sends it: from this window, which the canvas's pan and drag read.
-      for (const type of ['mouseDown', 'mouseUp'] as const) {
-        const event = createEvent[type](target, { bubbles: true, button: 0 });
-        Object.defineProperty(event, 'view', { value: window });
-        fireEvent(target, event);
-        if (type === 'mouseDown') expect(arrow().getAttribute('aria-expanded')).toBe('false');
-      }
-    }
-    await settle();
-    expect(changes(fake.calls)).toEqual([]);
-    expect(live()).not.toContain('Relations tidied up');
-  });
-
-  it('chooses Tidy up as the main button does', async () => {
-    const fake = await openView('modelling', harvest());
-    choose('Tidy up');
-    expect(document.activeElement).toBe(canvasEl());
+    expect(button.getAttribute('aria-keyshortcuts')).toBe('T');
+    expect(button.getAttribute('aria-haspopup')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tidy up' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'More ways to tidy' })).toBeNull();
+    // T on the canvas does what the button does.
+    fireEvent.keyDown(canvasEl(), { key: 't' });
     await waitFor(() => {
       expect(layoutSaves(fake.calls)).toHaveLength(1);
     });
-    // Tidy up's routes: every line gets one.
-    const routes = (layoutSaves(fake.calls)[0]?.body?.routes ?? []) as ViewLineRoute[];
-    expect(routes.map((route) => route.relationshipId).sort()).toEqual(['o1', 'o2', 'o3']);
+    expect(live()).toBe('Relations tidied up, including lines moved by hand. No card moved.');
   });
 
-  it('shows no arrow in the catalog', async () => {
+  it('shows no Tidy relations in the catalog', async () => {
     await openView('modelling', harvest());
     fireEvent.click(screen.getByRole('button', { name: 'Catalog' }));
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'More ways to tidy' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Tidy relations' })).toBeNull();
     });
   });
 });

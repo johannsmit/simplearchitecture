@@ -34,7 +34,7 @@ export interface OpenView {
   /**
    * Saves where the view's cards are, and its lines' routes, after a change of contents on its way,
    * with the view's Group by when the layout's differs from the one saved.
-   * Only for what the person did on the canvas (Tidy up included): a layout the canvas made on its
+   * Only for what the person did on the canvas (a regroup included): a layout the canvas made on its
    * own is never saved. Refused (false) as `change` is. Cards and lines no longer in the view
    * are left out.
    */
