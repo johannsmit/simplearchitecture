@@ -231,7 +231,11 @@ interface FloatingEnd {
   end: 'start' | 'end';
   card: string;
   side: Side;
-  /** Where the other card is, along this side: ends are ordered by it, so lines don't cross. */
+  /**
+   * Where the other card is, along this side: ends are ordered by `rank`, then by it, so lines
+   * don't cross (`endOrder`).
+   */
+  rank: number;
   towards: number;
 }
 
@@ -242,7 +246,8 @@ const circleSides: readonly Side[] = ['left', 'right'];
  * The sides of two cards a line without a route leaves and enters: where the cards face each other.
  * Apart more sideways than up or down, the line runs sideways (right to left, or left to right);
  * otherwise up or down. A circle's line always leaves sideways (its label is below it). Cards that
- * overlap (one inside the other) use the direction between their centres.
+ * overlap (one inside the other) use the direction between their centres. Cards apart both across
+ * and up or down are first tried with one corner instead (`cornerSides`).
  */
 export function facingSides(source: EndBox, target: EndBox): { start: Side; end: Side } {
   const dx = target.x + target.width / 2 - (source.x + source.width / 2);
@@ -264,9 +269,51 @@ export function facingSides(source: EndBox, target: EndBox): { start: Side; end:
   return { start, end: opposite[start] };
 }
 
+/**
+ * For two cards (no circles) apart both across and up or down: the sides of the line with one
+ * corner, out of the upper card's side that faces the lower card and into the lower card's top,
+ * whichever of them is the source. Undefined otherwise.
+ */
+function cornerSides(source: EndBox, target: EndBox): { start: Side; end: Side } | undefined {
+  if (source.circle === true || target.circle === true) return undefined;
+  const sourceAbove = source.y + source.height < target.y;
+  const targetAbove = target.y + target.height < source.y;
+  const sourceLeft = source.x + source.width < target.x;
+  const targetLeft = target.x + target.width < source.x;
+  if (!(sourceAbove || targetAbove) || !(sourceLeft || targetLeft)) return undefined;
+  if (sourceAbove) return { start: sourceLeft ? 'right' : 'left', end: 'top' };
+  return { start: 'top', end: targetLeft ? 'right' : 'left' };
+}
+
 /** Whether two boxes have a gap between them across or up and down, as `facingSides` sees it. */
 function apart(a: Box, b: Box): boolean {
   return b.x > a.x + a.width || a.x > b.x + b.width || b.y > a.y + a.height || a.y > b.y + b.height;
+}
+
+const centreOf = (box: Box): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+/**
+ * Where an end on a card's side goes in the order of the ends there. A line that leaves straight
+ * out, or turns back to a side facing the same way, is ordered by where its other card is along
+ * the side (rank 1). A line with one corner into a side across (a top or bottom from a left or
+ * right side, or the other way) turns towards one end of the side: the lines turning to the start
+ * of the side come first (rank 0) and those turning to its end last (rank 2). Among them, the
+ * further its corner, the nearer the line's end is to where it turns, so the lines nest.
+ */
+function endOrder(
+  box: Box,
+  side: Side,
+  other: Box,
+  otherSide: Side,
+): { rank: number; towards: number } {
+  const [here, there] = [centreOf(box), centreOf(other)];
+  const sideways = leavesSideways(side);
+  const along = sideways ? there.y : there.x;
+  if (sideways === leavesSideways(otherSide)) return { rank: 1, towards: along };
+  const corner = Math.abs(sideways ? there.x - here.x : there.y - here.y);
+  return along < (sideways ? here.y : here.x)
+    ? { rank: 0, towards: corner }
+    : { rank: 2, towards: -corner };
 }
 
 /** The point on a box's side at `offset` along it. */
@@ -770,14 +817,17 @@ function finalDetour(start: LineEnd, end: LineEnd, way: DetourWay): Point[] | un
  * now. Every pair of sides is tried (a circle's lines leave sideways), with the bend at several
  * places, and the shortest line that runs through no other card is kept. When each one does, the
  * cheapest detour round the cards in the way is kept (`detourLine`), and only when there is none
- * the shortest line. Cards apart keep the sides where they face each other (`facingSides`) when
- * that line is clear; among the other pairs, the facing sides win a tie. Several ends
- * on one side are then spread evenly along it, ordered by where their other cards are, and kept
- * apart from the ends of routed lines there (`taken`, by card and side); the bend, or the
- * detour, is chosen again for the ends' final places. A line between cards that face each other
- * with room for it runs straight: its ends move along their sides, keeping their order and
- * spacing (`straightEnds`), where that runs through no other card. A line into or out of a
- * container keeps off its name: it crosses the header beside the name, or comes in by a side.
+ * the shortest line. Cards apart both across and up or down are joined with one corner, from the
+ * side of the upper card into the top of the lower one (`cornerSides`), when no card is in its
+ * way (it may cross a container's name). Otherwise cards apart keep the sides where they face
+ * each other (`facingSides`) when that line is clear; among the other pairs, the facing sides win
+ * a tie. Several ends on one side are then spread evenly along it, ordered by where their other
+ * cards are so the lines nest (`endOrder`), and kept apart from the ends of routed lines there
+ * (`taken`, by card and side); the bend, or the detour, is chosen again for the ends' final
+ * places. A line between cards that face each other with room for it runs straight: its ends move
+ * along their sides, keeping their order and spacing (`straightEnds`), where that runs through no
+ * other card. A line into or out of a container keeps off its name: it crosses the header beside
+ * the name, or comes in by a side.
  * On a circle, the ends sit on the circle, as its routed handles do, and a card facing it lines its
  * end up with the circle's. Only cards near a line are
  * checked, and a detour is kept while nothing it depends on moves, so this keeps up with a drag.
@@ -822,21 +872,29 @@ export function floatingEnds(
       ...headers,
     ];
     const facing = facingSides(source, target);
-    let chosen = facing;
-    let best: { clear: boolean; length: number; bends: number } | undefined;
-    // Cards apart: the facing sides win whenever their line is clear, even over a shorter line
-    // with fewer bends, which would come into the other card by its side. Only otherwise are the
+    const clearBy = (sides: { start: Side; end: Side }, by: readonly Box[] = ownFree) =>
+      bestLine(candidateLines(...judgedEnds(source, sides.start, target, sides.end), others), by)
+        ?.clear === true;
+    // Cards apart both across and up or down: one corner, from the upper card's side into the
+    // lower card's top, whenever no card is in its way; it may cross a container's name. Otherwise,
+    // cards apart: the facing sides win whenever their line is clear, even over a shorter line
+    // with fewer bends, which would come into the lower card by its side. Only otherwise are the
     // other pairs of sides tried.
-    const facingClear =
-      source.circle !== true &&
-      target.circle !== true &&
-      apart(source, target) &&
-      bestLine(
-        candidateLines(...judgedEnds(source, facing.start, target, facing.end), others),
-        ownFree,
-      )?.clear === true;
-    if (facingClear) best = { clear: true, length: 0, bends: 0 };
-    const startSides = facingClear ? [] : source.circle === true ? circleSides : allSides;
+    const corner = cornerSides(source, target);
+    const cardsNear = near.map((entry) => entry.box);
+    let chosen = corner && clearBy(corner, cardsNear) ? corner : facing;
+    // Its final line is judged by the cards alone too.
+    if (chosen === corner) blockers.set(link.id, cardsNear);
+    const settled =
+      chosen !== facing ||
+      (source.circle !== true &&
+        target.circle !== true &&
+        apart(source, target) &&
+        clearBy(facing));
+    let best: { clear: boolean; length: number; bends: number } | undefined = settled
+      ? { clear: true, length: 0, bends: 0 }
+      : undefined;
+    const startSides = settled ? [] : source.circle === true ? circleSides : allSides;
     for (const startSide of startSides) {
       for (const endSide of target.circle === true ? circleSides : allSides) {
         const found = bestLine(
@@ -877,26 +935,29 @@ export function floatingEnds(
         way.chosen = detour;
       }
     }
-    const along = (box: Box, side: Side) =>
-      leavesSideways(side) ? box.y + box.height / 2 : box.x + box.width / 2;
     add({
       link: link.id,
       end: 'start',
       card: link.source,
       side: chosen.start,
-      towards: along(target, chosen.start),
+      ...endOrder(source, chosen.start, target, chosen.end),
     });
     add({
       link: link.id,
       end: 'end',
       card: link.target,
       side: chosen.end,
-      towards: along(source, chosen.end),
+      ...endOrder(target, chosen.end, source, chosen.start),
     });
   }
   const points = new Map<string, LineEnd>();
   for (const group of groups.values()) {
-    group.sort((a, b) => a.towards - b.towards || (a.link < b.link ? -1 : a.link > b.link ? 1 : 0));
+    group.sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        a.towards - b.towards ||
+        (a.link < b.link ? -1 : a.link > b.link ? 1 : 0),
+    );
     const [first] = group;
     if (!first) continue;
     const box = boxes.get(first.card) as EndBox;

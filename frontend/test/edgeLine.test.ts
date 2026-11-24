@@ -514,20 +514,21 @@ describe('a line without a route follows its cards', () => {
       new Map(Object.entries(boxes)),
     );
 
-  it('goes straight across to a card moved up and to the right, not around it', () => {
+  it('takes one corner to a card moved up and to the right, not around it', () => {
     // The target was moved above and to the right of the source.
     const source = at(0, 300);
     const target = at(400, 150);
     expect(facingSides(source, target)).toEqual({ start: 'right', end: 'left' });
     const end = ends({ a: source, b: target }, [['a', 'b']]).get('l0');
-    expect(end?.start).toEqual({ x: 160, y: 322, side: 'right' });
+    // Up out of the lower card's top, into the upper card's side facing it.
+    expect(end?.start).toEqual({ x: 80, y: 300, side: 'top' });
     expect(end?.end).toEqual({ x: 400, y: 172, side: 'left' });
-    const line = directLine(end?.start as never, end?.end as never);
-    // Two bends, and no longer than the distance along the axes.
-    expect(line).toHaveLength(4);
-    expect(length(line)).toBe(240 + 150);
+    const line = end?.points ?? [];
+    // One bend, and no longer than the distance along the axes.
+    expect(line).toHaveLength(3);
+    expect(length(line)).toBe(320 + 128);
     // It never goes back into either card.
-    expect(Math.min(...line.map((p) => p.x))).toBe(160);
+    expect(Math.min(...line.map((p) => p.x))).toBe(80);
     expect(Math.max(...line.map((p) => p.x))).toBe(400);
   });
 
@@ -545,8 +546,9 @@ describe('a line without a route follows its cards', () => {
   });
 
   it('spreads several lines on one side, in the order of their other cards', () => {
+    // A tall card, level with all three: its lines all leave its right side.
     const all = ends(
-      { a: at(0, 100, { height: 100 }), b: at(400, 0), c: at(400, 300), d: at(400, 150) },
+      { a: at(0, 0, { height: 400 }), b: at(400, 0), c: at(400, 300), d: at(400, 150) },
       [
         ['a', 'b'],
         ['a', 'c'],
@@ -557,9 +559,9 @@ describe('a line without a route follows its cards', () => {
     expect(all.get('l0')?.start.side).toBe('right');
     expect(ys).toEqual([...ys].sort((p, q) => p - q));
     expect(new Set(ys).size).toBe(3);
-    // Spread evenly, then the middle one moves down, within its room, to run straight to d.
-    expect(ys).toEqual([125, 161, 175]);
-    expect(all.get('l2')?.points).toHaveLength(2);
+    // Spread evenly, then each moves, within its room, to run straight to its card.
+    expect(ys).toEqual([22, 172, 322]);
+    for (const id of ['l0', 'l1', 'l2']) expect(all.get(id)?.points).toHaveLength(2);
   });
 
   it('keeps clear of a routed line on the same side', () => {
@@ -607,39 +609,246 @@ describe('a line without a route uses the sides where its cards face each other'
   const lineOf = (boxes: Record<string, EndBox>, source: string, target: string) =>
     floatingEnds([{ id: 'l0', source, target }], new Map(Object.entries(boxes))).get('l0');
 
-  it('goes from the bottom of the upper card to the top of the lower one, not into its side', () => {
+  it('goes from the side of the upper card into the top of a lower one off to the side', () => {
     const line = lineOf({ a: card(0, 0), b: card(300, 200) }, 'a', 'b');
-    expect(line?.start.side).toBe('bottom');
-    expect(line?.end.side).toBe('top');
-    // Two bends, with the stretch across in the gap between the cards.
-    const points = line?.points ?? [];
-    expect(points).toHaveLength(4);
-    const across = points[1] as Point;
-    expect(across.y).toBe((points[2] as Point).y);
-    expect(across.y).toBeGreaterThan(80);
-    expect(across.y).toBeLessThan(200);
+    expect(line?.start).toEqual({ x: 200, y: 40, side: 'right' });
+    expect(line?.end).toEqual({ x: 400, y: 200, side: 'top' });
+    // One bend: across, then straight down into the top.
+    expect(line?.points).toEqual([
+      { x: 200, y: 40 },
+      { x: 400, y: 40 },
+      { x: 400, y: 200 },
+    ]);
   });
 
   it('does the same from the lower card, and for a card below and to the left', () => {
     const up = lineOf({ a: card(0, 0), b: card(300, 200) }, 'b', 'a');
-    expect([up?.start.side, up?.end.side]).toEqual(['top', 'bottom']);
-    expect(up?.points).toHaveLength(4);
+    expect([up?.start.side, up?.end.side]).toEqual(['top', 'right']);
+    expect(up?.points).toEqual([
+      { x: 400, y: 200 },
+      { x: 400, y: 40 },
+      { x: 200, y: 40 },
+    ]);
     const left = lineOf({ a: card(300, 0), b: card(0, 200) }, 'a', 'b');
-    expect([left?.start.side, left?.end.side]).toEqual(['bottom', 'top']);
-    expect(left?.points).toHaveLength(4);
+    expect([left?.start.side, left?.end.side]).toEqual(['left', 'top']);
+    expect(left?.points).toHaveLength(3);
   });
 
-  it('runs sideways when the cards are as far or further apart sideways', () => {
-    const wide = lineOf({ a: card(0, 0), b: card(300, 100) }, 'a', 'b');
-    expect([wide?.start.side, wide?.end.side]).toEqual(['right', 'left']);
-    // Equal gaps of 100 each way.
-    const even = lineOf({ a: card(0, 0), b: card(300, 180) }, 'a', 'b');
-    expect([even?.start.side, even?.end.side]).toEqual(['right', 'left']);
-    // Tall cards further apart sideways: right to left, not from the bottom into the left side.
+  it('takes one corner whether the cards are further apart sideways or up and down', () => {
+    // Further apart sideways, equal gaps, and tall cards: each from the side into the top.
     const tall = (x: number, y: number): EndBox => ({ x, y, width: 80, height: 200 });
-    const narrow = lineOf({ a: tall(0, 0), b: tall(200, 300) }, 'a', 'b');
-    expect([narrow?.start.side, narrow?.end.side]).toEqual(['right', 'left']);
-    expect(narrow?.points).toHaveLength(4);
+    for (const [a, b] of [
+      [card(0, 0), card(300, 100)],
+      [card(0, 0), card(300, 180)],
+      [tall(0, 0), tall(200, 300)],
+    ] as const) {
+      const line = lineOf({ a, b }, 'a', 'b');
+      expect([line?.start.side, line?.end.side]).toEqual(['right', 'top']);
+      expect(line?.points).toHaveLength(3);
+    }
+  });
+
+  it('keeps the facing sides for cards above each other or level, and runs straight', () => {
+    const below = lineOf({ a: card(0, 0), b: card(40, 300) }, 'a', 'b');
+    expect([below?.start.side, below?.end.side]).toEqual(['bottom', 'top']);
+    expect(below?.points).toHaveLength(2);
+    const level = lineOf({ a: card(0, 0), b: card(400, 40) }, 'a', 'b');
+    expect([level?.start.side, level?.end.side]).toEqual(['right', 'left']);
+    expect(level?.points).toHaveLength(2);
+  });
+
+  it('from a wide card upper right into the top of a card in a container lower left', () => {
+    // Each card in its own container, the lower container's name centred far from its card.
+    const boxes: Record<string, EndBox> = {
+      upper: { x: 557, y: 94, width: 732, height: 109, headerWidth: 120 },
+      wide: { x: 573, y: 150, width: 700, height: 37, parent: 'upper' },
+      lower: { x: 91, y: 273, width: 1000, height: 123, headerWidth: 120 },
+      near: { x: 107, y: 329, width: 148, height: 51, parent: 'lower' },
+    };
+    const line = lineOf(boxes, 'wide', 'near');
+    expect(line?.start).toEqual({ x: 573, y: 168.5, side: 'left' });
+    expect(line?.end).toEqual({ x: 181, y: 329, side: 'top' });
+    expect(line?.points).toHaveLength(3);
+  });
+
+  it('takes one corner across a container’s name', () => {
+    // The corner's way down runs through the name of the container the lower card is in.
+    const boxes: Record<string, EndBox> = {
+      depot: { x: 0, y: 200, width: 600, height: 172, headerWidth: 100 },
+      crate: { x: 200, y: 256, width: 200, height: 80, parent: 'depot' },
+      office: card(700, 0),
+    };
+    const line = lineOf(boxes, 'office', 'crate');
+    expect([line?.start.side, line?.end.side]).toEqual(['left', 'top']);
+    expect(line?.points).toEqual([
+      { x: 700, y: 40 },
+      { x: 300, y: 40 },
+      { x: 300, y: 256 },
+    ]);
+    expect(crossesAny(line?.points ?? [], [{ x: 242, y: 200, width: 116, height: 40 }])).toBe(true);
+  });
+
+  it('keeps the facing sides when another card is in the way of the corner', () => {
+    // A card standing where the corner's way down would run.
+    const boxes = {
+      a: card(0, 0),
+      b: card(300, 300),
+      post: { x: 380, y: 120, width: 40, height: 80 },
+    };
+    const line = lineOf(boxes, 'a', 'b');
+    expect([line?.start.side, line?.end.side]).toEqual(['bottom', 'top']);
+    expect(line?.points).toHaveLength(4);
+    expect(crossesAny(line?.points ?? [], [boxes.post])).toBe(false);
+  });
+
+  // Whether any stretch of one right-angled line crosses or runs along a stretch of the other.
+  const linesCross = (one: readonly Point[], two: readonly Point[]) => {
+    const between = (value: number, a: number, b: number) =>
+      value > Math.min(a, b) && value < Math.max(a, b);
+    for (let i = 1; i < one.length; i++) {
+      for (let j = 1; j < two.length; j++) {
+        const [p, q] = [one[i - 1] as Point, one[i] as Point];
+        const [r, t] = [two[j - 1] as Point, two[j] as Point];
+        const box = (a: Point, b: Point) => ({
+          x: Math.min(a.x, b.x),
+          y: Math.min(a.y, b.y),
+          width: Math.abs(a.x - b.x),
+          height: Math.abs(a.y - b.y),
+        });
+        const [m, n] = [box(p, q), box(r, t)];
+        const overlap =
+          Math.min(m.x + m.width, n.x + n.width) >= Math.max(m.x, n.x) &&
+          Math.min(m.y + m.height, n.y + n.height) >= Math.max(m.y, n.y);
+        if (!overlap) continue;
+        // Crossing at right angles, or running along each other.
+        const across =
+          (p.y === q.y && r.x === t.x && between(r.x, p.x, q.x) && between(p.y, r.y, t.y)) ||
+          (p.x === q.x && r.y === t.y && between(p.x, r.x, t.x) && between(r.y, p.y, q.y));
+        const along = (p.y === q.y && r.y === t.y) || (p.x === q.x && r.x === t.x);
+        if (across || along) return true;
+      }
+    }
+    return false;
+  };
+  const linesOf = (
+    boxes: Record<string, EndBox>,
+    links: readonly (readonly [string, string])[],
+  ) => {
+    const all = floatingEnds(
+      links.map(([source, target], index) => ({ id: `l${index}`, source, target })),
+      new Map(Object.entries(boxes)),
+    );
+    return links.map((_, index) => all.get(`l${index}`)?.points ?? []);
+  };
+  const noneCross = (lines: readonly Point[][]) => {
+    for (let i = 0; i < lines.length; i++) {
+      for (let j = i + 1; j < lines.length; j++) {
+        expect(linesCross(lines[i] as Point[], lines[j] as Point[]), `${i} and ${j}`).toBe(false);
+      }
+    }
+  };
+
+  it('nests the corners from one side to cards side by side below, in either order of links', () => {
+    for (const [b, c] of [
+      [card(300, 200), card(600, 200)],
+      [card(300, 150), card(600, 300)],
+    ] as const) {
+      for (const links of [
+        [
+          ['a', 'b'],
+          ['a', 'c'],
+        ],
+        [
+          ['a', 'c'],
+          ['a', 'b'],
+        ],
+      ] as const) {
+        const lines = linesOf({ a: card(0, 0), b, c }, links);
+        for (const line of lines) expect(line).toHaveLength(3);
+        noneCross(lines);
+      }
+    }
+    // The line to the further card leaves nearer the top, where it turns down past the other.
+    const [toB, toC] = linesOf({ a: card(0, 0), b: card(300, 200), c: card(600, 200) }, [
+      ['a', 'b'],
+      ['a', 'c'],
+    ]);
+    expect(toC?.[0]?.y).toBeLessThan(toB?.[0]?.y ?? 0);
+  });
+
+  it('nests the corners from a wide card to cards side by side below and to the left', () => {
+    const boxes = {
+      wide: { x: 600, y: 0, width: 700, height: 40 },
+      b: card(0, 200),
+      c: card(300, 200),
+    };
+    for (const links of [
+      [
+        ['wide', 'b'],
+        ['wide', 'c'],
+      ],
+      [
+        ['wide', 'c'],
+        ['wide', 'b'],
+      ],
+    ] as const) {
+      const lines = linesOf(boxes, links);
+      for (const line of lines) expect(line).toHaveLength(3);
+      noneCross(lines);
+    }
+  });
+
+  it('nests the corners coming into one card’s top from cards above on either side', () => {
+    const boxes = {
+      t: card(300, 300),
+      high: card(0, 0),
+      low: card(0, 150),
+      right: card(600, 100),
+    };
+    for (const links of [
+      [
+        ['high', 't'],
+        ['low', 't'],
+        ['right', 't'],
+      ],
+      [
+        ['right', 't'],
+        ['low', 't'],
+        ['high', 't'],
+      ],
+    ] as const) {
+      const lines = linesOf(boxes, links);
+      for (const line of lines) {
+        expect(line).toHaveLength(3);
+        expect(line[line.length - 1]?.y).toBe(300);
+      }
+      noneCross(lines);
+    }
+  });
+
+  it('orders corners and a straight line on one side without crossings', () => {
+    const boxes = { a: card(0, 0), up: card(300, -200), level: card(400, 0), down: card(300, 200) };
+    for (const links of [
+      [
+        ['a', 'down'],
+        ['a', 'level'],
+        ['a', 'up'],
+      ],
+      [
+        ['a', 'up'],
+        ['a', 'level'],
+        ['a', 'down'],
+      ],
+    ] as const) {
+      const lines = linesOf(boxes, links);
+      noneCross(lines);
+      // The corner down and the straight line share a's right side; the one above comes into its top.
+      const start = (target: string) =>
+        lines[links.findIndex(([, to]) => to === target)]?.[0] as Point;
+      expect(start('down').x).toBe(200);
+      expect(start('level').x).toBe(200);
+      expect(start('down').y).toBeGreaterThan(start('level').y);
+    }
   });
 
   it('takes another clear pair of sides when a card blocks every facing line', () => {
@@ -693,7 +902,8 @@ describe('a line without a route goes round the cards in its way', () => {
   });
 
   it('moves the bend beside a card in the way, keeping the shortest length', () => {
-    const boxes = { a: at(0, 0), c: at(600, 300), between: at(300, 100) };
+    // `post` stands in the way of the line with one corner, from a's side into c's top.
+    const boxes = { a: at(0, 0), c: at(600, 300), between: at(300, 100), post: at(600, 100) };
     const line = lineOf(boxes, 'a', 'c');
     expect(line?.start.side).toBe('right');
     expect(crossesAny(line?.points ?? [], [boxes.between])).toBe(false);
