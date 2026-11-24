@@ -26,8 +26,17 @@ vi.mock('../src/admin/branding/image-size', () => ({
   imageSize: vi.fn(() => Promise.resolve({ width: 512, height: 128 })),
 }));
 
-const neutral: Branding = { primary: null, secondary: null, logoUrl: null, version: 0 };
+const neutral: Branding = {
+  title: null,
+  primary: null,
+  secondary: null,
+  logoUrl: null,
+  darkLogoUrl: null,
+  iconUrl: null,
+  version: 0,
+};
 const sample: Branding = {
+  ...neutral,
   primary: '#1d6b5f',
   secondary: '#e0892b',
   logoUrl: '/api/branding/logo?v=3',
@@ -66,10 +75,19 @@ function brandingServer(initial: Branding): Server {
           secondary: sent.secondary,
           version,
         };
-      } else if (url.startsWith('/api/admin/branding/logo?') && method === 'PUT') {
-        server.state = { ...server.state, logoUrl: `/api/branding/logo?v=${version}`, version };
-      } else if (url.startsWith('/api/admin/branding/logo?') && method === 'DELETE') {
-        server.state = { ...server.state, logoUrl: null, version };
+      } else if (url === '/api/admin/branding/title' && method === 'PUT') {
+        const sent = JSON.parse(String(body)) as { title: string | null };
+        server.state = { ...server.state, title: sent.title, version };
+      } else if (/^\/api\/admin\/branding\/(logo|dark-logo|icon)\?/.test(url)) {
+        const image = /branding\/([a-z-]+)\?/.exec(url)?.[1] ?? '';
+        const field = ({ logo: 'logoUrl', 'dark-logo': 'darkLogoUrl', icon: 'iconUrl' } as const)[
+          image as 'logo'
+        ];
+        server.state = {
+          ...server.state,
+          [field]: method === 'PUT' ? `/api/branding/${image}?v=${version}` : null,
+          version,
+        };
       } else if (url.startsWith('/api/admin/branding?') && method === 'DELETE') {
         server.state = { ...neutral, version };
       }
@@ -208,9 +226,9 @@ describe('branding in the app', () => {
     stubApi(admin, ({ url }) =>
       url === '/api/branding'
         ? Response.json({
+            ...neutral,
             primary: 'red; background: url(https://example.test/x)',
             secondary: '#e0892b',
-            logoUrl: null,
             version: 1,
           })
         : undefined,
@@ -231,7 +249,7 @@ describe('branding in the app', () => {
   ])('never shows or caches a server logo URL from %s', async (_name, logoUrl) => {
     stubApi(admin, ({ url }) =>
       url === '/api/branding'
-        ? Response.json({ primary: '#1d6b5f', secondary: null, logoUrl, version: 2 })
+        ? Response.json({ ...neutral, primary: '#1d6b5f', logoUrl, version: 2 })
         : undefined,
     );
     renderBranded('/viewing');
@@ -315,7 +333,14 @@ describe('the branding cache', () => {
     expect(html().getPropertyValue('--accent')).toBe('light-dark(#1d6b5f, #529b8e)');
     expect(html().getPropertyValue('--brand-line')).toBe('light-dark(#d6801d, #e0892b)');
     expect(html().length).toBe(4);
-    expect(readBrandingCache()).toEqual(good);
+    // A cache from before the title, the Dark theme logo and the icon reads as none of them.
+    expect(readBrandingCache()).toEqual({
+      ...good,
+      title: null,
+      darkLogoUrl: null,
+      darkLogoRatio: null,
+      iconUrl: null,
+    });
   });
 
   it.each(bad)('ignores the whole cache with %s', (_, cache) => {
@@ -343,7 +368,7 @@ describe('Admin → Branding', () => {
   const primaryField = () => screen.getByRole('textbox', { name: 'Primary colour' });
   const secondaryField = () => screen.getByRole('textbox', { name: 'Secondary colour' });
   const saveButton = () => screen.getByRole('button', { name: 'Save' });
-  const dropArea = () => screen.getByRole('button', { name: /choose a file/ });
+  const dropArea = () => screen.getByRole('button', { name: /^Logo Drop .*choose a file/ });
   const fileInput = () => screen.getByLabelText<HTMLInputElement>('Logo file');
   const table = () => screen.getByRole('table', { name: 'Contrast' });
   const pick = (file: File) => {

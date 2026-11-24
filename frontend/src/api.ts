@@ -1,5 +1,6 @@
 import {
   isHexColour,
+  validProductTitle,
   type AboutResponse,
   type ApiError,
   type Branding,
@@ -816,6 +817,10 @@ export async function deleteView(modelId: string, viewId: string, version: numbe
   await request(`${viewUrl(modelId, viewId)}?version=${version}`, { method: 'DELETE' });
 }
 
+/** A string or null; missing (a server from before the field) reads as null. */
+const isOptionalText = (value: unknown): boolean =>
+  value === undefined || value === null || typeof value === 'string';
+
 function isBranding(value: unknown): value is Branding {
   if (!isObject(value)) return false;
   const colour = (c: unknown) => c === null || isHexColour(c);
@@ -823,6 +828,9 @@ function isBranding(value: unknown): value is Branding {
     colour(value.primary) &&
     colour(value.secondary) &&
     (value.logoUrl === null || typeof value.logoUrl === 'string') &&
+    isOptionalText(value.title) &&
+    isOptionalText(value.darkLogoUrl) &&
+    isOptionalText(value.iconUrl) &&
     typeof value.version === 'number' &&
     Number.isInteger(value.version) &&
     value.version >= 0
@@ -835,14 +843,20 @@ async function brandingResult(response: Response): Promise<Branding> {
     throw new ApiRequestError(response.status, 'The server sent unexpected branding.');
   }
   return {
+    // A title that breaks the rules is never shown: the default instead.
+    title: validProductTitle(body.title),
     primary: body.primary,
     secondary: body.secondary,
     logoUrl: body.logoUrl,
+    darkLogoUrl: body.darkLogoUrl ?? null,
+    iconUrl: body.iconUrl ?? null,
     version: body.version,
   };
 }
 
-/** GET /api/branding (public): the colours, the logo's URL and the version; neutral = all null. */
+/**
+ * GET /api/branding (public): the title, colours, image URLs and the version; neutral = all null.
+ */
 export async function getBranding(signal?: AbortSignal): Promise<Branding> {
   return brandingResult(
     await request('/api/branding', { ...(signal ? { signal } : {}), ownSessionHandling: true }),
@@ -863,14 +877,28 @@ export async function saveBrandingColours(
   );
 }
 
-/** PUT /api/admin/branding/logo?version=N (Admin): the image file as the raw body. */
-export async function uploadBrandingLogo(
+/** PUT /api/admin/branding/title (Admin): the product title, or null for the default. */
+export async function saveBrandingTitle(title: string | null, version: number): Promise<Branding> {
+  return brandingResult(
+    await request('/api/admin/branding/title', {
+      method: 'PUT',
+      ...jsonBody({ title, version }),
+    }),
+  );
+}
+
+/** The branding images, by their path under /api/admin/branding/. */
+export type BrandingImage = 'logo' | 'dark-logo' | 'icon';
+
+/** PUT /api/admin/branding/<image>?version=N (Admin): the image file as the raw body. */
+export async function uploadBrandingImage(
+  image: BrandingImage,
   file: Blob,
   type: LogoMediaType,
   version: number,
 ): Promise<Branding> {
   return brandingResult(
-    await request(`/api/admin/branding/logo?version=${version}`, {
+    await request(`/api/admin/branding/${image}?version=${version}`, {
       method: 'PUT',
       headers: { 'Content-Type': type },
       body: file,
@@ -878,14 +906,33 @@ export async function uploadBrandingLogo(
   );
 }
 
-/** DELETE /api/admin/branding/logo?version=N (Admin). */
-export async function removeBrandingLogo(version: number): Promise<Branding> {
+/** DELETE /api/admin/branding/<image>?version=N (Admin). */
+export async function removeBrandingImage(
+  image: BrandingImage,
+  version: number,
+): Promise<Branding> {
   return brandingResult(
-    await request(`/api/admin/branding/logo?version=${version}`, { method: 'DELETE' }),
+    await request(`/api/admin/branding/${image}?version=${version}`, { method: 'DELETE' }),
   );
 }
 
-/** DELETE /api/admin/branding?version=N (Admin): no colours and no logo, for everyone. */
+/** PUT /api/admin/branding/logo?version=N (Admin): the image file as the raw body. */
+export async function uploadBrandingLogo(
+  file: Blob,
+  type: LogoMediaType,
+  version: number,
+): Promise<Branding> {
+  return uploadBrandingImage('logo', file, type, version);
+}
+
+/** DELETE /api/admin/branding/logo?version=N (Admin). */
+export async function removeBrandingLogo(version: number): Promise<Branding> {
+  return removeBrandingImage('logo', version);
+}
+
+/**
+ * DELETE /api/admin/branding?version=N (Admin): no title, colours, logos or icon, for everyone.
+ */
 export async function resetBranding(version: number): Promise<Branding> {
   return brandingResult(
     await request(`/api/admin/branding?version=${version}`, { method: 'DELETE' }),

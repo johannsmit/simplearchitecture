@@ -23,6 +23,15 @@ import {
 import { jpeg, png, svg, textChunk, webpLossy } from './images.js';
 import { createTestDb, resetTestDb, testConnection, type TestDb } from './pglite.js';
 
+const neutral: Branding = {
+  title: null,
+  primary: null,
+  secondary: null,
+  logoUrl: null,
+  darkLogoUrl: null,
+  iconUrl: null,
+  version: 1,
+};
 const user = { oid: '9f0c4f8e-0000-4000-8000-00000000b1b1', name: 'Made-up Brand Admin' };
 const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
@@ -153,6 +162,7 @@ describe('branding routes: access', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('no-cache');
     expect(res.json()).toEqual({
+      ...neutral,
       primary: '#1a6fb0',
       secondary: '#ffcc00',
       logoUrl: '/api/branding/logo?v=3',
@@ -178,12 +188,7 @@ describe('branding routes: changes', () => {
       json: { primary: '#ABCDEF', secondary: null, version: 1 },
     });
     expect(colours.statusCode).toBe(200);
-    expect(colours.json()).toEqual({
-      primary: '#abcdef',
-      secondary: null,
-      logoUrl: null,
-      version: 2,
-    });
+    expect(colours.json()).toEqual({ ...neutral, primary: '#abcdef', version: 2 });
 
     const logo = await call(target, 'PUT', '/api/admin/branding/logo?version=2', {
       cookie,
@@ -198,7 +203,7 @@ describe('branding routes: changes', () => {
 
     const reset = await call(target, 'DELETE', '/api/admin/branding?version=4', { cookie });
     expect(reset.statusCode).toBe(200);
-    expect(reset.json()).toEqual({ primary: null, secondary: null, logoUrl: null, version: 5 });
+    expect(reset.json()).toEqual({ ...neutral, version: 5 });
 
     // Unchanged: no new version, no audit row, no log line.
     const same = await call(target, 'DELETE', '/api/admin/branding?version=5', { cookie });

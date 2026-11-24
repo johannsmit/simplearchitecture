@@ -11,8 +11,13 @@ import { BrandMark, Icon } from '../../icons';
 
 const themeLabel: Record<BrandTheme, string> = { light: 'Light', dark: 'Dark' };
 
-/** One theme's picture of the app with the draft tokens. */
-function PreviewFigure(props: { theme: BrandTheme; tokens: BrandTokens; logoSrc: string | null }) {
+/** One theme's picture of the app with the draft tokens, title and that theme's logo. */
+function PreviewFigure(props: {
+  theme: BrandTheme;
+  tokens: BrandTokens;
+  title: string;
+  logoSrc: string | null;
+}) {
   return (
     <figure className={`pv ${props.theme}`} style={previewStyle(props.tokens, props.theme)}>
       <figcaption>{themeLabel[props.theme]}</figcaption>
@@ -25,7 +30,7 @@ function PreviewFigure(props: { theme: BrandTheme; tokens: BrandTokens; logoSrc:
             ) : (
               <img className="brand-logo" src={props.logoSrc} alt="" draggable={false} />
             )}
-            <span className="brand-title">SimpleArchitecture</span>
+            <span className="brand-title">{props.title}</span>
           </span>
         </div>
         <div className="pv-body">
@@ -194,16 +199,39 @@ function ContrastTable({ tokens }: { tokens: BrandTokens }) {
   );
 }
 
-export function BrandingPreview(props: { tokens: BrandTokens; logoSrc: string | null }) {
+export function BrandingPreview(props: {
+  tokens: BrandTokens;
+  /** The draft title, or the default. */
+  title: string;
+  logoSrc: string | null;
+  /** The Dark theme's logo (its own, or the logo). */
+  darkLogoSrc: string | null;
+  /** The draft icon, or the built-in one. */
+  iconSrc: string;
+}) {
   return (
     <section className="table-card brand-card brand-preview-card" aria-labelledby="preview-title">
       <h2 id="preview-title">Preview</h2>
       <p className="brand-hint">
         How your changes look. Nothing changes for others until you save.
       </p>
+      <figure className="pv-tab-figure">
+        <figcaption>Browser tab</figcaption>
+        {/* A picture: nothing in it can be focused or clicked. */}
+        <div className="pv-tab" inert>
+          <img src={props.iconSrc} alt="" width={16} height={16} draggable={false} />
+          <span>{props.title}</span>
+        </div>
+      </figure>
       <div className="pv-grid">
         {brandThemes.map((theme) => (
-          <PreviewFigure key={theme} theme={theme} tokens={props.tokens} logoSrc={props.logoSrc} />
+          <PreviewFigure
+            key={theme}
+            theme={theme}
+            tokens={props.tokens}
+            title={props.title}
+            logoSrc={theme === 'dark' ? props.darkLogoSrc : props.logoSrc}
+          />
         ))}
       </div>
       <ContrastTable tokens={props.tokens} />

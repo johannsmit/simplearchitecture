@@ -1,7 +1,6 @@
 import {
+  defaultProductTitle,
   logoMediaTypes,
-  logoTooLargeMessage,
-  logoTypeMessage,
   maxLogoBytes,
   type ApiError,
   type Branding,
@@ -13,8 +12,10 @@ import type {
   onRequestAsyncHookHandler,
 } from 'fastify';
 import {
+  imageRules,
   LogoTooLargeError,
   LogoTypeError,
+  type BrandImage,
   type BrandingAuditAction,
   type BrandingService,
 } from '../branding/branding-service.js';
@@ -34,14 +35,58 @@ const longCache = 'public, max-age=31536000, immutable';
 const logoPolicy = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox";
 
 const jsonOnly = requireMediaType(['application/json'], 'Send the colours as application/json');
-const imageOnly = requireMediaType(logoMediaTypes, logoTypeMessage);
+const titleJsonOnly = requireMediaType(
+  ['application/json'],
+  'Send the product title as application/json',
+);
 
 /** 413 before the body is read when its declared length is over the cap. */
-async function logoSizeCheck(request: FastifyRequest, reply: FastifyReply) {
-  const length = Number(request.headers['content-length']);
-  if (Number.isFinite(length) && length > maxLogoBytes) {
-    return reply.code(413).send(errorBody(413, logoTooLargeMessage));
-  }
+function sizeCheck(message: string) {
+  return async function imageSizeCheck(request: FastifyRequest, reply: FastifyReply) {
+    const length = Number(request.headers['content-length']);
+    if (Number.isFinite(length) && length > maxLogoBytes) {
+      return reply.code(413).send(errorBody(413, message));
+    }
+  };
+}
+
+/** The built-in icons, as the web app's build used to list them (in frontend/public). */
+const builtInIcons = [
+  { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+  { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+  { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+];
+const builtInMaskable = {
+  src: '/pwa-512x512.png',
+  sizes: '512x512',
+  type: 'image/png',
+  purpose: 'maskable',
+};
+
+/**
+ * The web app manifest, with the product title and the app icon when they are set. The title is
+ * plain text in JSON (Fastify escapes it); the icon is only ever the versioned icon route.
+ */
+export function webAppManifest(branding: Branding): Record<string, unknown> {
+  return {
+    name: branding.title ?? defaultProductTitle,
+    short_name: branding.title ?? 'SimpleArch',
+    description: 'Model and explore your IT architecture.',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+    theme_color: '#1f4e79',
+    background_color: '#ffffff',
+    lang: 'en',
+    // No id, as the build's manifest had none: the browser takes start_url, so an app already
+    // installed stays the same app.
+    // With an app icon, only that one: a built-in maskable icon next to it would be the one an
+    // Android home screen picks.
+    icons:
+      branding.iconUrl === null
+        ? [...builtInIcons, builtInMaskable]
+        : [{ src: branding.iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' }],
+  };
 }
 
 function brandingRefused(reply: FastifyReply, error: unknown): FastifyReply {
@@ -54,7 +99,7 @@ function brandingRefused(reply: FastifyReply, error: unknown): FastifyReply {
 
 /**
  * Logs a stored change (a new version; an unchanged result keeps the version sent). Who and what
- * only: never colours or bytes.
+ * only: never a title, colours or bytes.
  */
 function auditLog(
   request: FastifyRequest,
@@ -72,9 +117,10 @@ const sentVersion = (input: unknown): unknown =>
     : undefined;
 
 /**
- * Branding: the colours and logo are public (the signed-out page shows them); changing them is
- * Admin only. The rules are in BrandingService; these routes only translate. The version goes in
- * the PUT body for the colours and in the query (`?version=N`) for the logo and the reset.
+ * Branding: the title, colours, logos and icon are public (the signed-out page shows them, and the
+ * browser asks for the manifest and icon without a session); changing them is Admin only. The
+ * rules are in BrandingService; these routes only translate. The version goes in the PUT body for
+ * the colours and the title, and in the query (`?version=N`) for the images and the reset.
  */
 export function brandingRoutes(
   service: BrandingService,
@@ -95,22 +141,35 @@ export function brandingRoutes(
       return service.get();
     });
 
-    app.get<{ Querystring: { v?: unknown } }>(
-      '/api/branding/logo',
-      { config: everyone },
-      async (request, reply) => {
-        const logo = await service.getLogo();
-        if (logo === undefined) return reply.code(404).send(errorBody(404, 'No logo'));
-        const current = request.query.v === String(logo.version);
-        return reply
-          .header('content-type', logo.type)
-          .header('x-content-type-options', 'nosniff')
-          .header('content-disposition', 'inline')
-          .header('content-security-policy', logoPolicy)
-          .header('cache-control', current ? longCache : 'no-cache')
-          .send(Buffer.from(logo.bytes.buffer, logo.bytes.byteOffset, logo.bytes.byteLength));
-      },
-    );
+    for (const image of ['logo', 'darkLogo', 'icon'] as const) {
+      app.get<{ Querystring: { v?: unknown } }>(
+        `/api/branding/${imageRules[image].path}`,
+        { config: everyone },
+        async (request, reply) => {
+          const stored = await service.getImage(image);
+          if (stored === undefined) return reply.code(404).send(errorBody(404, 'No image'));
+          const current = request.query.v === String(stored.version);
+          return reply
+            .header('content-type', stored.type)
+            .header('x-content-type-options', 'nosniff')
+            .header('content-disposition', 'inline')
+            .header('content-security-policy', logoPolicy)
+            .header('cache-control', current ? longCache : 'no-cache')
+            .send(
+              Buffer.from(stored.bytes.buffer, stored.bytes.byteOffset, stored.bytes.byteLength),
+            );
+        },
+      );
+    }
+
+    // The browser asks for it without a session (and an installed app keeps asking): public.
+    app.get('/manifest.webmanifest', { config: everyone }, async (_request, reply) => {
+      const branding = await service.get();
+      return reply
+        .header('content-type', 'application/manifest+json; charset=utf-8')
+        .header('cache-control', 'no-cache')
+        .send(JSON.stringify(webAppManifest(branding)));
+    });
 
     app.put<{ Reply: Branding | ApiError }>(
       '/api/admin/branding',
@@ -140,24 +199,14 @@ export function brandingRoutes(
       },
     );
 
-    app.put<{ Querystring: Record<string, unknown>; Reply: Branding | ApiError }>(
-      '/api/admin/branding/logo',
-      {
-        config: admin,
-        bodyLimit: maxLogoBytes,
-        onRequest: [uploadLimit, imageOnly, logoSizeCheck],
-      },
+    app.put<{ Reply: Branding | ApiError }>(
+      '/api/admin/branding/title',
+      { config: admin, bodyLimit: 16 * 1024, onRequest: titleJsonOnly },
       async (request, reply) => {
         try {
-          const body = request.body;
-          if (!Buffer.isBuffer(body)) throw new LogoTypeError();
-          const result = await service.setLogo(
-            body,
-            request.headers['content-type'],
-            request.query,
-            actor(request),
-          );
-          auditLog(request, 'branding-logo-set', result, request.query.version);
+          const result = await service.setTitle(request.body, actor(request));
+          const audit = result.title === null ? 'branding-title-removed' : 'branding-title-set';
+          auditLog(request, audit, result, sentVersion(request.body));
           return result;
         } catch (error) {
           return brandingRefused(reply, error);
@@ -165,18 +214,52 @@ export function brandingRoutes(
       },
     );
 
-    app.delete<{ Querystring: Record<string, unknown>; Reply: Branding | ApiError }>(
-      '/api/admin/branding/logo',
-      { config: admin },
-      async (request, reply) => {
-        try {
-          const result = await service.removeLogo(request.query, actor(request));
-          auditLog(request, 'branding-logo-removed', result, request.query.version);
-          return result;
-        } catch (error) {
-          return brandingRefused(reply, error);
-        }
-      },
-    );
+    for (const image of ['logo', 'darkLogo', 'icon'] satisfies BrandImage[]) {
+      const rules = imageRules[image];
+      const url = `/api/admin/branding/${rules.path}`;
+      app.put<{ Querystring: Record<string, unknown>; Reply: Branding | ApiError }>(
+        url,
+        {
+          config: admin,
+          bodyLimit: maxLogoBytes,
+          onRequest: [
+            uploadLimit,
+            requireMediaType(rules.types, rules.typeMessage),
+            sizeCheck(rules.tooLargeMessage),
+          ],
+        },
+        async (request, reply) => {
+          try {
+            const body = request.body;
+            if (!Buffer.isBuffer(body)) throw new LogoTypeError(rules.typeMessage);
+            const result = await service.setImage(
+              image,
+              body,
+              request.headers['content-type'],
+              request.query,
+              actor(request),
+            );
+            auditLog(request, `branding-${rules.path}-set`, result, request.query.version);
+            return result;
+          } catch (error) {
+            return brandingRefused(reply, error);
+          }
+        },
+      );
+
+      app.delete<{ Querystring: Record<string, unknown>; Reply: Branding | ApiError }>(
+        url,
+        { config: admin },
+        async (request, reply) => {
+          try {
+            const result = await service.removeImage(image, request.query, actor(request));
+            auditLog(request, `branding-${rules.path}-removed`, result, request.query.version);
+            return result;
+          } catch (error) {
+            return brandingRefused(reply, error);
+          }
+        },
+      );
+    }
   };
 }

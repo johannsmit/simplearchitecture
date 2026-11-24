@@ -32,8 +32,8 @@ function localAddress(
 
 export default defineConfig(({ command, mode }) => {
   const local = command === 'serve' ? localAddress(mode) : undefined;
-  // Requests to /api, /auth and the AI agents' /oauth, /mcp and OAuth metadata go to the API, in
-  // dev and in preview.
+  // Requests to /api, /auth, the AI agents' /oauth, /mcp and OAuth metadata, and the web app
+  // manifest go to the API, in dev and in preview.
   const apiTarget = `http://localhost:${String(local?.backend ?? 0)}`;
   const server = {
     // The browser uses APP_DOMAIN (localhost is always allowed; another name must point here).
@@ -45,6 +45,7 @@ export default defineConfig(({ command, mode }) => {
       '^/oauth(/|$)': { target: apiTarget },
       '^/mcp(/|$)': { target: apiTarget },
       '^/\\.well-known/oauth-': { target: apiTarget },
+      '^/manifest\\.webmanifest$': { target: apiTarget },
     },
   };
   return {
@@ -57,27 +58,14 @@ export default defineConfig(({ command, mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
-        // globPatterns below already covers everything in public/, including the icons.
-        includeManifestIcons: false,
-        manifest: {
-          name: 'SimpleArchitecture',
-          short_name: 'SimpleArch',
-          description: 'Model and explore your IT architecture.',
-          start_url: '/',
-          scope: '/',
-          display: 'standalone',
-          theme_color: '#1f4e79',
-          background_color: '#ffffff',
-          icons: [
-            { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-            { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-            { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-            { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' },
-          ],
-        },
+        // The API serves /manifest.webmanifest, with the product title and the app icon from
+        // Admin → Branding (see backend/src/routes/branding.ts): the build makes none, and
+        // index.html links it. So the service worker never precaches a manifest either.
+        manifest: false,
         workbox: {
-          // Precache the app shell (build output) only. No runtimeCaching: API and auth responses are
-          // never cached by the service worker.
+          // Precache the app shell (build output) only. No runtimeCaching: API and auth responses
+          // (the branding, its images and the manifest included) are never cached by the service
+          // worker.
           globPatterns: ['**/*.{js,css,html,svg,png,txt}'],
           navigateFallback: '/index.html',
           // Navigations to the API or auth endpoints (e.g. the OIDC callback, or an AI agent's
@@ -88,6 +76,7 @@ export default defineConfig(({ command, mode }) => {
             /^\/oauth(\/|$)/,
             /^\/mcp(\/|$)/,
             /^\/\.well-known\//,
+            /^\/manifest\.webmanifest$/,
           ],
           cleanupOutdatedCaches: true,
         },

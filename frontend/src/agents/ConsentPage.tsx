@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { ApiRequestError, decideAgentRequest, getAgentRequest } from '../api';
 import { useMe } from '../auth';
+import { usePageTitle } from '../branding';
 import { Icon } from '../icons';
 import { BrandLogo } from '../shell/BrandLogo';
 import { browser } from './browser';
@@ -122,9 +123,7 @@ export function ConsentPage() {
         : state.kind === 'ready' && !canAllow
           ? titles.noRole
           : titles.ready;
-  useEffect(() => {
-    document.title = `${title} – SimpleArchitecture`;
-  }, [title]);
+  usePageTitle(title);
 
   const decide = useCallback(
     (allow: boolean) => {

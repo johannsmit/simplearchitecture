@@ -8,6 +8,7 @@ import {
 } from '../api';
 import { AppFacts, AppName } from '../agents/ConnectedAppsPage';
 import { ConfirmDialog } from '../agents/ConfirmDialog';
+import { usePageTitle } from '../branding';
 import { Icon } from '../icons';
 import { counted } from '../words';
 import { AdminNav } from './AdminNav';
@@ -43,6 +44,7 @@ function byUser(apps: readonly AdminConnectedApp[]): UserGroup[] {
 }
 
 export function ConnectedAppsAdminPage() {
+  usePageTitle('Connected apps – Admin');
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [busy, setBusy] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
@@ -63,7 +65,6 @@ export function ConnectedAppsAdminPage() {
   }, []);
 
   useEffect(() => {
-    document.title = 'Connected apps – Admin – SimpleArchitecture';
     const controller = new AbortController();
     reload(controller.signal);
     return () => {

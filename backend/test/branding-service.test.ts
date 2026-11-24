@@ -10,6 +10,15 @@ import { jpeg, png, svg, webpLossless } from './images.js';
 import { createTestDb, resetTestDb, type TestDb } from './pglite.js';
 
 const admin = { id: 'oid-made-up-admin', name: 'Made-up Admin' };
+const neutral = {
+  title: null,
+  primary: null,
+  secondary: null,
+  logoUrl: null,
+  darkLogoUrl: null,
+  iconUrl: null,
+  version: 1,
+};
 
 let db: TestDb;
 let service: BrandingService;
@@ -50,12 +59,7 @@ describe('BrandingService: storage', () => {
       expect(await fresh.query('select id, version from branding')).toEqual([
         { id: 1, version: 1 },
       ]);
-      expect(await new BrandingService(fresh).get()).toEqual({
-        primary: null,
-        secondary: null,
-        logoUrl: null,
-        version: 1,
-      });
+      expect(await new BrandingService(fresh).get()).toEqual(neutral);
     } finally {
       await fresh.close();
     }
@@ -66,7 +70,7 @@ describe('BrandingService: storage', () => {
       { primary: '#1A6FB0', secondary: '#ffcc00', version: 1 },
       admin,
     );
-    expect(result).toEqual({ primary: '#1a6fb0', secondary: '#ffcc00', logoUrl: null, version: 2 });
+    expect(result).toEqual({ ...neutral, primary: '#1a6fb0', secondary: '#ffcc00', version: 2 });
     expect(await service.get()).toEqual(result);
     expect(await auditRows()).toEqual([
       {
@@ -149,12 +153,7 @@ describe('BrandingService: the logo', () => {
         { version: '1' },
         admin,
       );
-      expect(result).toEqual({
-        primary: null,
-        secondary: null,
-        logoUrl: '/api/branding/logo?v=2',
-        version: 2,
-      });
+      expect(result).toEqual({ ...neutral, logoUrl: '/api/branding/logo?v=2', version: 2 });
       const logo = await service.getLogo();
       expect(logo?.type).toBe(type);
       expect(logo?.version).toBe(2);
@@ -213,7 +212,7 @@ describe('BrandingService: the logo', () => {
   it('removes the logo, and does nothing when there is none', async () => {
     await service.setLogo(png(), 'image/png', { version: 1 }, admin);
     const removed = await service.removeLogo({ version: 2 }, admin);
-    expect(removed).toEqual({ primary: null, secondary: null, logoUrl: null, version: 3 });
+    expect(removed).toEqual({ ...neutral, version: 3 });
     expect(await service.getLogo()).toBeUndefined();
     expect(await storedRow()).toMatchObject({ logo: null, logo_type: null });
     const again = await service.removeLogo({ version: 3 }, admin);
@@ -241,7 +240,7 @@ describe('BrandingService: reset', () => {
     await service.setColours({ primary: '#111111', secondary: '#222222', version: 1 }, admin);
     await service.setLogo(png(), 'image/png', { version: 2 }, admin);
     const result = await service.reset({ version: 3 }, admin);
-    expect(result).toEqual({ primary: null, secondary: null, logoUrl: null, version: 4 });
+    expect(result).toEqual({ ...neutral, version: 4 });
     expect(await service.getLogo()).toBeUndefined();
     const rows = await auditRows();
     expect(rows.at(-1)).toMatchObject({

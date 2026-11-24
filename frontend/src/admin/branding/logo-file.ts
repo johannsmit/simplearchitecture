@@ -1,4 +1,11 @@
 import {
+  darkLogoTooLargeMessage,
+  darkLogoTypeMessage,
+  iconMediaType,
+  iconPixels,
+  iconSizeMessage,
+  iconTooLargeMessage,
+  iconTypeMessage,
   logoMediaTypes,
   maxLogoBytes,
   maxLogoPixels,
@@ -34,8 +41,53 @@ export function kilobytes(bytes: number, up = false): number {
   return Math.max(1, up ? Math.ceil(bytes / 1024) : Math.round(bytes / 1024));
 }
 
-const isLogoType = (type: string): type is LogoMediaType =>
-  (logoMediaTypes as readonly string[]).includes(type);
+/** What a picked image is checked against, and the words for each refusal. */
+export interface ImageRules {
+  types: readonly LogoMediaType[];
+  messages: {
+    type: string;
+    tooLarge: (bytes: number) => string;
+    tooLargeUnknown: string;
+    /** Why these dimensions are refused, or null. */
+    pixels: (width: number, height: number) => string | null;
+    unreadable: string;
+  };
+}
+
+export const logoRules: ImageRules = {
+  types: logoMediaTypes,
+  messages: {
+    ...logoMessages,
+    pixels: (width, height) =>
+      width > maxLogoPixels || height > maxLogoPixels ? logoMessages.pixels(width, height) : null,
+  },
+};
+
+export const darkLogoRules: ImageRules = {
+  types: logoMediaTypes,
+  messages: {
+    type: darkLogoTypeMessage,
+    tooLarge: () => darkLogoTooLargeMessage,
+    tooLargeUnknown: darkLogoTooLargeMessage,
+    pixels: (width, height) =>
+      width > maxLogoPixels || height > maxLogoPixels
+        ? `The Dark theme logo must be at most ${maxLogoPixels} × ${maxLogoPixels} pixels. This one is ${width} × ${height}.`
+        : null,
+    unreadable: logoMessages.unreadable,
+  },
+};
+
+export const iconRules: ImageRules = {
+  types: [iconMediaType],
+  messages: {
+    type: iconTypeMessage,
+    tooLarge: () => iconTooLargeMessage,
+    tooLargeUnknown: iconTooLargeMessage,
+    pixels: (width, height) =>
+      width === iconPixels && height === iconPixels ? null : iconSizeMessage(width, height),
+    unreadable: logoMessages.unreadable,
+  },
+};
 
 function dataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -57,9 +109,12 @@ function dataUrl(file: Blob): Promise<string> {
  */
 export async function checkLogoFile(
   file: File,
+  rules: ImageRules = logoRules,
 ): Promise<{ ok: true; logo: PickedLogo } | { ok: false; message: string }> {
-  if (!isLogoType(file.type)) return { ok: false, message: logoMessages.type };
-  if (file.size > maxLogoBytes) return { ok: false, message: logoMessages.tooLarge(file.size) };
+  const { messages } = rules;
+  const type = rules.types.find((each) => each === file.type);
+  if (type === undefined) return { ok: false, message: messages.type };
+  if (file.size > maxLogoBytes) return { ok: false, message: messages.tooLarge(file.size) };
   let src: string;
   let size: { width: number; height: number };
   try {
@@ -68,16 +123,15 @@ export async function checkLogoFile(
     if (!src.startsWith(`data:${file.type};base64,`)) throw new Error('unexpected');
     size = await imageSize(src);
   } catch {
-    return { ok: false, message: logoMessages.unreadable };
+    return { ok: false, message: messages.unreadable };
   }
-  if (size.width > maxLogoPixels || size.height > maxLogoPixels) {
-    return { ok: false, message: logoMessages.pixels(size.width, size.height) };
-  }
+  const pixels = messages.pixels(size.width, size.height);
+  if (pixels !== null) return { ok: false, message: pixels };
   return {
     ok: true,
     logo: {
       file,
-      type: file.type,
+      type,
       name: file.name,
       size: file.size,
       width: size.width,

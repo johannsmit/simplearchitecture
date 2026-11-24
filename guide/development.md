@@ -24,7 +24,7 @@ npm run dev
 
 `.env` holds twelve settings, all required: the image's ten (see [Hosting the image](hosting.md#settings)) plus `FRONTEND_PORT` and `BACKEND_PORT`. Use `APP_DOMAIN=localhost`, as providers allow plain http for localhost only. A local PostgreSQL without TLS needs `?sslmode=disable` at the end of `DATABASE_URL`.
 
-The web app passes `/api` and `/auth` on to the API, so the browser talks only to the web app's port, except for the sign-in callback. Register exactly `http://localhost:<BACKEND_PORT>/auth/callback` with your provider.
+The web app passes `/api`, `/auth` and `/manifest.webmanifest` on to the API, so the browser talks only to the web app's port, except for the sign-in callback. Register exactly `http://localhost:<BACKEND_PORT>/auth/callback` with your provider.
 
 For AI agents, the dev server also passes on `/oauth`, `/mcp` and `/.well-known/oauth-*`, so the MCP address is `http://localhost:<FRONTEND_PORT>/mcp`. Claude Code accepts plain http on localhost.
 

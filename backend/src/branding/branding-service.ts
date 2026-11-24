@@ -1,10 +1,18 @@
 import {
   brandingConflictMessage,
+  darkLogoTooLargeMessage,
+  darkLogoTypeMessage,
+  iconMediaType,
+  iconPixels,
+  iconSizeMessage,
+  iconTooLargeMessage,
+  iconTypeMessage,
   logoMediaTypes,
   logoTooLargeMessage,
   logoTypeMessage,
   maxLogoBytes,
   maxLogoPixels,
+  productTitleIssue,
   type Branding,
   type LogoMediaType,
   type ModelAuthor,
@@ -21,37 +29,102 @@ import {
 import { inspectImage } from './image.js';
 
 /**
- * The organisation's colours and logo (Admin → Branding): the rules live here, so the REST routes
+ * The organisation's product title, colours, logos and app icon (Admin → Branding): the rules live here, so the REST routes
  * and a future MCP server behave the same. Input is `unknown` (or raw bytes) and checked here.
  *
  * - Every change carries the version read; another one is a conflict (ConflictError).
  * - A refused change stores nothing. Every stored change bumps the version and writes one audit
- *   row in the same transaction, with the changed field names only (never colours or bytes). A
+ *   row in the same transaction, with the changed field names only (never a title, colours or bytes). A
  *   change that changes nothing stores and audits nothing.
  */
 
-/** The logo isn't a PNG, JPEG or WebP file (by its bytes), or was sent as another type. */
+/** An image isn't of an accepted type (by its bytes), or was sent as another type. */
 export class LogoTypeError extends Error {
   override name = 'LogoTypeError';
-  constructor() {
-    super(logoTypeMessage);
+  constructor(message: string = logoTypeMessage) {
+    super(message);
   }
 }
 
-/** The logo is larger than maxLogoBytes. */
+/** An image is larger than maxLogoBytes. */
 export class LogoTooLargeError extends Error {
   override name = 'LogoTooLargeError';
-  constructor() {
-    super(logoTooLargeMessage);
+  constructor(message: string = logoTooLargeMessage) {
+    super(message);
   }
 }
 
-export type BrandingAuditAction =
-  'branding-colours-changed' | 'branding-logo-set' | 'branding-logo-removed' | 'branding-reset';
+/** The three stored images: the logo, the logo for the Dark theme and the app icon. */
+export type BrandImage = 'logo' | 'darkLogo' | 'icon';
 
-/** The versioned logo URL; any other `v` is served without long caching. */
+export type BrandingAuditAction =
+  | 'branding-colours-changed'
+  | 'branding-title-set'
+  | 'branding-title-removed'
+  | `branding-${'logo' | 'dark-logo' | 'icon'}-${'set' | 'removed'}`
+  | 'branding-reset';
+
+interface ImageRules {
+  /** The column holding the bytes; `<column>_type` holds the media type. */
+  column: 'logo' | 'dark_logo' | 'icon';
+  /** The public path, the audit's field name and the action's middle part. */
+  path: 'logo' | 'dark-logo' | 'icon';
+  field: BrandImage;
+  noun: string;
+  types: readonly LogoMediaType[];
+  typeMessage: string;
+  tooLargeMessage: string;
+  /** Why these dimensions are refused, or null. */
+  sizeIssue: (width: number, height: number) => string | null;
+}
+
+const withinLogoPixels = (noun: string) => (width: number, height: number) =>
+  width > maxLogoPixels || height > maxLogoPixels
+    ? `${noun} must be at most ${maxLogoPixels} × ${maxLogoPixels} pixels. This one is ${width} × ${height}.`
+    : null;
+
+export const imageRules: Record<BrandImage, ImageRules> = {
+  logo: {
+    column: 'logo',
+    path: 'logo',
+    field: 'logo',
+    noun: 'the logo',
+    types: logoMediaTypes,
+    typeMessage: logoTypeMessage,
+    tooLargeMessage: logoTooLargeMessage,
+    sizeIssue: withinLogoPixels('The logo'),
+  },
+  darkLogo: {
+    column: 'dark_logo',
+    path: 'dark-logo',
+    field: 'darkLogo',
+    noun: 'the Dark theme logo',
+    types: logoMediaTypes,
+    typeMessage: darkLogoTypeMessage,
+    tooLargeMessage: darkLogoTooLargeMessage,
+    sizeIssue: withinLogoPixels('The Dark theme logo'),
+  },
+  icon: {
+    column: 'icon',
+    path: 'icon',
+    field: 'icon',
+    noun: 'the app icon',
+    types: [iconMediaType],
+    typeMessage: iconTypeMessage,
+    tooLargeMessage: iconTooLargeMessage,
+    sizeIssue: (width, height) =>
+      width === iconPixels && height === iconPixels ? null : iconSizeMessage(width, height),
+  },
+};
+
+/** An image's versioned URL; any other `v` is served without long caching. */
+export function imageUrl(image: BrandImage, version: number): string {
+  return `/api/branding/${imageRules[image].path}?v=${version}`;
+}
+
+/** The versioned logo URL. */
 export function logoUrl(version: number): string {
-  return `/api/branding/logo?v=${version}`;
+  return imageUrl('logo', version);
 }
 
 const colourMessage = 'Enter a colour as # and six hexadecimal digits, for example #1a6fb0.';
@@ -67,14 +140,35 @@ const coloursSchema = z.strictObject({
   version: versionSchema,
 });
 
+const titleTypeMessage = 'Enter the product title as text.';
+/** Trimmed; empty is no title (the default). Plain text, never markup: it is shown as text. */
+const titleSchema = z.strictObject({
+  title: z
+    .string({ error: titleTypeMessage })
+    .max(4096, { error: 'The product title must be at most 40 characters.' })
+    .trim()
+    .superRefine((title, context) => {
+      const issue = productTitleIssue(title);
+      if (issue !== null) context.addIssue({ code: 'custom', message: issue });
+    })
+    .transform((title) => (title === '' ? null : title))
+    .nullable(),
+  version: versionSchema,
+});
+
 interface Row {
+  title: string | null;
   primary_colour: string | null;
   secondary_colour: string | null;
   has_logo: boolean;
+  has_dark_logo: boolean;
+  has_icon: boolean;
   version: number;
 }
 
-const rowColumns = 'primary_colour, secondary_colour, logo is not null as has_logo, version';
+const rowColumns = `title, primary_colour, secondary_colour, logo is not null as has_logo,
+  dark_logo is not null as has_dark_logo, icon is not null as has_icon, version`;
+const hasImage = { logo: 'has_logo', darkLogo: 'has_dark_logo', icon: 'has_icon' } as const;
 // The row is made by migration 004; this keeps a write working if it was ever removed.
 const ensureRow = 'insert into branding (id) values (1) on conflict (id) do nothing';
 const lockRow = `select ${rowColumns} from branding where id = 1 for update`;
@@ -83,32 +177,45 @@ const insertAudit = `insert into audit (action, user_id, user_name, details)
 
 function toBranding(row: Row | undefined): Branding {
   // The neutral look until a change makes the row.
-  if (row === undefined) return { primary: null, secondary: null, logoUrl: null, version: 1 };
+  if (row === undefined) {
+    return {
+      title: null,
+      primary: null,
+      secondary: null,
+      logoUrl: null,
+      darkLogoUrl: null,
+      iconUrl: null,
+      version: 1,
+    };
+  }
   return {
+    title: row.title,
     primary: row.primary_colour,
     secondary: row.secondary_colour,
-    logoUrl: row.has_logo ? logoUrl(row.version) : null,
+    logoUrl: row.has_logo ? imageUrl('logo', row.version) : null,
+    darkLogoUrl: row.has_dark_logo ? imageUrl('darkLogo', row.version) : null,
+    iconUrl: row.has_icon ? imageUrl('icon', row.version) : null,
     version: row.version,
   };
 }
 
-/** What a change writes: the columns to set (by name) and the audit's field names. */
-interface Write {
-  set: Partial<{
-    primary_colour: string | null;
-    secondary_colour: string | null;
-    logo: Uint8Array | null;
-    logo_type: LogoMediaType | null;
-  }>;
-  fields: string[];
-}
-
 const columnCasts = {
+  title: 'text',
   primary_colour: 'text',
   secondary_colour: 'text',
   logo: 'bytea',
   logo_type: 'text',
+  dark_logo: 'bytea',
+  dark_logo_type: 'text',
+  icon: 'bytea',
+  icon_type: 'text',
 } as const;
+
+/** What a change writes: the columns to set (by name) and the audit's field names. */
+interface Write {
+  set: Partial<Record<keyof typeof columnCasts, string | Uint8Array | null>>;
+  fields: string[];
+}
 
 export interface StoredLogo {
   bytes: Uint8Array;
@@ -116,8 +223,8 @@ export interface StoredLogo {
   version: number;
 }
 
-function isLogoType(value: unknown): value is LogoMediaType {
-  return (logoMediaTypes as readonly unknown[]).includes(value);
+function isLogoType(value: unknown, types: readonly LogoMediaType[]): value is LogoMediaType {
+  return (types as readonly unknown[]).includes(value);
 }
 
 /** The media type of a Content-Type header value, without parameters, in lower case. */
@@ -138,15 +245,24 @@ export class BrandingService {
     return toBranding(row);
   }
 
+  /** A stored image, or undefined when there is none. */
+  async getImage(image: BrandImage): Promise<StoredLogo | undefined> {
+    const rules = imageRules[image];
+    // The column names come from the fixed rules above.
+    const [row] = await this.#db.query<{
+      bytes: Uint8Array | null;
+      type: string | null;
+      version: number;
+    }>(
+      `select ${rules.column} as bytes, ${rules.column}_type as type, version from branding where id = 1`,
+    );
+    if (!row || row.bytes === null || !isLogoType(row.type, rules.types)) return undefined;
+    return { bytes: row.bytes, type: row.type, version: row.version };
+  }
+
   /** The stored logo, or undefined when there is none. */
   async getLogo(): Promise<StoredLogo | undefined> {
-    const [row] = await this.#db.query<{
-      logo: Uint8Array | null;
-      logo_type: string | null;
-      version: number;
-    }>('select logo, logo_type, version from branding where id = 1');
-    if (!row || row.logo === null || !isLogoType(row.logo_type)) return undefined;
-    return { bytes: row.logo, type: row.logo_type, version: row.version };
+    return this.getImage('logo');
   }
 
   /** Sets both colours (`#rrggbb`, any case, stored in lower case; null removes one). */
@@ -168,6 +284,21 @@ export class BrandingService {
   }
 
   /**
+   * Sets the product title (`{ title, version }`): trimmed, 1–40 characters on one line; null or
+   * empty removes it, so the default product name shows.
+   */
+  async setTitle(input: unknown, actor: ModelAuthor): Promise<Branding> {
+    const db = this.#db;
+    const request = parse(titleSchema, input, 'the product title');
+    const action = request.title === null ? 'branding-title-removed' : 'branding-title-set';
+    return this.#change(db, request.version, action, actor, (current) =>
+      request.title === current.title
+        ? { set: {}, fields: [] }
+        : { set: { title: request.title }, fields: ['title'] },
+    );
+  }
+
+  /**
    * Stores a new logo. `contentType` is the declared type: it must be one of the logo types, and
    * the file's own bytes decide which type is stored. `query` carries the version (`{ version }`).
    */
@@ -177,50 +308,81 @@ export class BrandingService {
     query: unknown,
     actor: ModelAuthor,
   ): Promise<Branding> {
+    return this.setImage('logo', bytes, contentType, query, actor);
+  }
+
+  /**
+   * Stores a new image (`logo`, `darkLogo` or `icon`) under its own rules: the declared type must
+   * be one it accepts, and the file's own bytes decide which type is stored.
+   */
+  async setImage(
+    image: BrandImage,
+    bytes: Uint8Array,
+    contentType: string | undefined,
+    query: unknown,
+    actor: ModelAuthor,
+  ): Promise<Branding> {
     const db = this.#db;
-    const { version } = parse(deleteSchema, query, 'the logo');
-    if (!isLogoType(mediaType(contentType))) throw new LogoTypeError();
-    if (bytes.length > maxLogoBytes) throw new LogoTooLargeError();
-    const image = inspectImage(bytes);
-    if (image.kind === 'unknown') throw new LogoTypeError();
-    if (image.kind === 'damaged') {
-      throw new RejectedError([
-        { field: 'logo', message: 'The image file is damaged or incomplete. Try another file.' },
-      ]);
+    const rules = imageRules[image];
+    const { version } = parse(deleteSchema, query, rules.noun);
+    if (!isLogoType(mediaType(contentType), rules.types)) {
+      throw new LogoTypeError(rules.typeMessage);
     }
-    if (image.width > maxLogoPixels || image.height > maxLogoPixels) {
+    if (bytes.length > maxLogoBytes) throw new LogoTooLargeError(rules.tooLargeMessage);
+    const inspected = inspectImage(bytes);
+    if (inspected.kind === 'unknown' || !rules.types.includes(inspected.type)) {
+      throw new LogoTypeError(rules.typeMessage);
+    }
+    if (inspected.kind === 'damaged') {
       throw new RejectedError([
         {
-          field: 'logo',
-          message: `The logo must be at most ${maxLogoPixels} × ${maxLogoPixels} pixels. This one is ${image.width} × ${image.height}.`,
+          field: rules.field,
+          message: 'The image file is damaged or incomplete. Try another file.',
         },
       ]);
     }
+    const sizeIssue = rules.sizeIssue(inspected.width, inspected.height);
+    if (sizeIssue !== null) throw new RejectedError([{ field: rules.field, message: sizeIssue }]);
     // A copy (the caller's buffer may be reused), as a Buffer: both drivers store it as bytea.
-    const logo = Buffer.from(bytes);
-    return this.#change(db, version, 'branding-logo-set', actor, () => ({
-      set: { logo, logo_type: image.type },
-      fields: ['logo'],
+    const stored = Buffer.from(bytes);
+    return this.#change(db, version, `branding-${rules.path}-set`, actor, () => ({
+      set: { [rules.column]: stored, [`${rules.column}_type`]: inspected.type },
+      fields: [rules.field],
     }));
   }
 
   /** Removes the logo. `query` carries the version (`{ version }`). */
   async removeLogo(query: unknown, actor: ModelAuthor): Promise<Branding> {
+    return this.removeImage('logo', query, actor);
+  }
+
+  /** Removes an image. `query` carries the version (`{ version }`). */
+  async removeImage(image: BrandImage, query: unknown, actor: ModelAuthor): Promise<Branding> {
     const db = this.#db;
-    const { version } = parse(deleteSchema, query, 'the logo');
-    return this.#change(db, version, 'branding-logo-removed', actor, (current) =>
-      current.has_logo
-        ? { set: { logo: null, logo_type: null }, fields: ['logo'] }
+    const rules = imageRules[image];
+    const { version } = parse(deleteSchema, query, rules.noun);
+    return this.#change(db, version, `branding-${rules.path}-removed`, actor, (current) =>
+      current[hasImage[image]]
+        ? {
+            set: { [rules.column]: null, [`${rules.column}_type`]: null },
+            fields: [rules.field],
+          }
         : { set: {}, fields: [] },
     );
   }
 
-  /** Back to the neutral look: no colours and no logo. `query` carries the version. */
+  /**
+   * Back to the neutral look: no title, colours, logos or icon. `query` carries the version.
+   */
   async reset(query: unknown, actor: ModelAuthor): Promise<Branding> {
     const db = this.#db;
     const { version } = parse(deleteSchema, query, 'the branding');
     return this.#change(db, version, 'branding-reset', actor, (current) => {
       const write: Write = { set: {}, fields: [] };
+      if (current.title !== null) {
+        write.set.title = null;
+        write.fields.push('title');
+      }
       if (current.primary_colour !== null) {
         write.set.primary_colour = null;
         write.fields.push('primary');
@@ -229,9 +391,11 @@ export class BrandingService {
         write.set.secondary_colour = null;
         write.fields.push('secondary');
       }
-      if (current.has_logo) {
-        Object.assign(write.set, { logo: null, logo_type: null });
-        write.fields.push('logo');
+      for (const image of ['logo', 'darkLogo', 'icon'] as const) {
+        if (!current[hasImage[image]]) continue;
+        const { column } = imageRules[image];
+        Object.assign(write.set, { [column]: null, [`${column}_type`]: null });
+        write.fields.push(image);
       }
       return write;
     });

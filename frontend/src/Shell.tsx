@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { spaceLabels, useMe } from './auth';
+import { useBranding } from './branding';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Icon } from './icons';
 import { ModelsProvider } from './models';
@@ -25,6 +26,7 @@ function skipTarget(pathname: string): { id: string; label: string } {
 /** App shell: header (brand, spaces, model picker, theme, user) and the current page. */
 export function Shell() {
   const me = useMe();
+  const { title } = useBranding();
   const { pathname } = useLocation();
   const inViewing = pathname === '/viewing' || pathname.startsWith('/viewing/');
   const inModelling = pathname === '/modelling' || pathname.startsWith('/modelling/');
@@ -45,9 +47,9 @@ export function Shell() {
         </a>
         <PopoverGroup>
           <header className="app-header">
-            <Link className="brand" to="/" aria-label="SimpleArchitecture home">
+            <Link className="brand" to="/" aria-label={`${title} home`}>
               <BrandLogo className="brand-logo" />
-              <span className="brand-title">SimpleArchitecture</span>
+              <span className="brand-title">{title}</span>
             </Link>
             <span className="divider" aria-hidden="true" />
             {/* Only the spaces the user may use (deny by default: the rest are hidden). */}
