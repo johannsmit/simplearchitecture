@@ -22,14 +22,14 @@ Everything is in the PostgreSQL database set in `DATABASE_URL`.
 | Properties  | Tables `element_properties`, `relationship_properties`                                           | The element and relationship properties an Admin defined: names, keys, kinds and options                                                                                                                              |
 | Audit trail | Table `audit`                                                                                    | Who changed what, and when (see [Logs and the audit trail](#logs-and-the-audit-trail))                                                                                                                                |
 | Sessions    | Table `sessions`                                                                                 | A SHA-256 hash of each session id (never the id itself), the user's id at the provider, display name, email address and roles, and when the session started and was last used                                         |
-| Branding    | Table `branding`                                                                                 | Two colours, an optional logo, and who last changed them                                                                                                                                                              |
+| Branding    | Table `branding`                                                                                 | An optional product title, two colours, a logo, a logo for the Dark theme and an app icon, and who last changed them                                                                                                  |
 | AI agents   | Tables `mcp_clients`, `mcp_authorization_requests`, `mcp_codes`, `mcp_connections`, `mcp_tokens` | Each registered agent's self-given name and redirect addresses, and each connection a user allowed: the user's id, name and roles at that moment, and its times. Codes, tokens and request ids only as SHA-256 hashes |
 
 In the browser:
 
 - One session cookie, `__Host-sa_session`: a random id, `Secure`, `httpOnly` and `SameSite=Lax`, so scripts can't read it. During sign-in, a second cookie holds the encrypted sign-in state for up to 10 minutes.
 - The app's own files, cached by the service worker so the app loads quickly. API responses and model data are never cached.
-- Display preferences in local storage: the theme, panel sizes, depth, the canvas switches, the branding colours, and which view folders are closed (as short hashes of their names). Never tokens, user data or model content.
+- Display preferences in local storage: the theme, panel sizes, depth, the canvas switches, the branding (colours, product title and image addresses), and which view folders are closed (as short hashes of their names). Never tokens, user data or model content.
 
 Treat the database, its backups and any exported model files (JGF) as confidential: they hold your organisation's architecture.
 
