@@ -74,8 +74,6 @@ export function Modal({
 
 interface UnsavedDialogProps {
   name: string;
-  /** 'leave': Keep editing, Discard, Save. 'discard': Keep editing, Discard changes. */
-  kind: 'leave' | 'discard';
   /**
    * A relationship's form: its own words; `name` is its sentence.
    * Branding: Admin → Branding's words; `name` is unused.
@@ -89,7 +87,10 @@ interface UnsavedDialogProps {
   onSave: () => void;
 }
 
-/** Asks before unsaved changes are dropped. Focus starts on Keep editing; Esc keeps editing. */
+/**
+ * Asks before unsaved changes are dropped: Keep editing, Discard or Save. Focus starts on Keep
+ * editing; Esc keeps editing.
+ */
 export function UnsavedDialog(props: UnsavedDialogProps) {
   const keep = useRef<HTMLButtonElement>(null);
   const shown = props.name.trim() || 'this element';
@@ -110,33 +111,17 @@ export function UnsavedDialog(props: UnsavedDialogProps) {
           </p>
         </>
       ) : props.subject === 'relationship' ? (
-        props.kind === 'leave' ? (
-          <>
-            <h2 id="unsaved-title">Save changes to this relationship?</h2>
-            <p id="unsaved-text">
-              You&apos;ve changed {props.name}. Save the changes, or discard them.
-            </p>
-          </>
-        ) : (
-          <>
-            <h2 id="unsaved-title">Discard changes?</h2>
-            <p id="unsaved-text">
-              Your changes to {props.name} aren&apos;t saved. Discarding them can&apos;t be undone.
-            </p>
-          </>
-        )
-      ) : props.kind === 'leave' ? (
         <>
-          <h2 id="unsaved-title">Save changes to “{shown}”?</h2>
+          <h2 id="unsaved-title">Save changes to this relationship?</h2>
           <p id="unsaved-text">
-            You&apos;ve changed this element. Save the changes, or discard them.
+            You&apos;ve changed {props.name}. Save the changes, or discard them.
           </p>
         </>
       ) : (
         <>
-          <h2 id="unsaved-title">Discard changes?</h2>
+          <h2 id="unsaved-title">Save changes to “{shown}”?</h2>
           <p id="unsaved-text">
-            Your changes to “{shown}” aren&apos;t saved. Discarding them can&apos;t be undone.
+            You&apos;ve changed this element. Save the changes, or discard them.
           </p>
         </>
       )}
@@ -150,25 +135,56 @@ export function UnsavedDialog(props: UnsavedDialogProps) {
         >
           Keep editing
         </button>
-        {props.kind === 'leave' ? (
-          <>
-            <button className="btn" type="button" disabled={props.saving} onClick={props.onDiscard}>
-              Discard
-            </button>
-            <button
-              className="btn primary"
-              type="button"
-              disabled={props.saving || !props.canSave}
-              onClick={props.onSave}
-            >
-              {props.saving ? 'Saving…' : 'Save'}
-            </button>
-          </>
-        ) : (
-          <button className="btn danger" type="button" onClick={props.onDiscard}>
-            Discard changes
-          </button>
-        )}
+        <button className="btn" type="button" disabled={props.saving} onClick={props.onDiscard}>
+          Discard
+        </button>
+        <button
+          className="btn primary"
+          type="button"
+          disabled={props.saving || !props.canSave}
+          onClick={props.onSave}
+        >
+          {props.saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Asks before leaving a form that saves as you go, when its last change couldn't be saved. Focus
+ * starts on Keep editing; Esc keeps editing.
+ */
+export function LeaveDialog(props: {
+  /** The element's name, or the relationship's sentence. */
+  name: string;
+  /** Why it couldn't be saved, as the status says it ("check your connection"). */
+  reason: string;
+  onKeep: () => void;
+  onLeave: () => void;
+}) {
+  const keep = useRef<HTMLButtonElement>(null);
+  const shown = props.name.trim() || 'this element';
+  return (
+    <Modal
+      id="leave"
+      className="unsaved-dialog"
+      onCancel={props.onKeep}
+      busy={false}
+      initialFocus={keep}
+      describedBy="leave-text"
+    >
+      <h2 id="leave-title">Leave without saving?</h2>
+      <p id="leave-text">
+        Your last change to “{shown}” couldn&apos;t be saved: {props.reason}.
+      </p>
+      <div className="row">
+        <button ref={keep} className="btn" type="button" onClick={props.onKeep}>
+          Keep editing
+        </button>
+        <button className="btn danger" type="button" onClick={props.onLeave}>
+          Leave without saving
+        </button>
       </div>
     </Modal>
   );

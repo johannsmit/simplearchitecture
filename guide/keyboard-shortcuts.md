@@ -131,12 +131,11 @@ A click elsewhere saves the open cell. `/` always moves to the search; to start 
 
 The details panel's form for an element or a relationship.
 
-| Key              | What it does                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| `Ctrl` + `Enter` | Saves the element or relationship, from anywhere in the form, a text box and From and To included |
-| `Esc`            | Asks "Discard changes?" when there are unsaved changes                                            |
+| Key              | What it does                                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Ctrl` + `Enter` | Save now: saves a change waiting for the typing pause, from anywhere in the form, a text box and From and To included |
 
-`Enter` in a one-line field never saves. In Viewing, `Esc` in a relationship's details goes back to its element.
+The form saves as you go (see [Saving](modelling.md#saving)). `Enter` in a one-line field never saves, and `Esc` in the form opens no dialog. In Viewing, `Esc` in a relationship's details goes back to its element.
 
 ## New element, New relationship and Add relationship
 

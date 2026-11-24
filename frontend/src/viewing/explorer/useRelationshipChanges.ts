@@ -105,9 +105,9 @@ export function useRelationshipChanges({
     const brought = before ? followNewEnds(before, edge, result.viewsChanged ?? []) : [];
     const names = brought.map((other) => `“${graph?.elements.get(other)?.name || '(unnamed)'}”`);
     const where = inView ? 'view' : 'canvas';
-    announce(
-      `Saved.${names.length > 0 ? ` Added ${names.join(' and ')} to the ${where}.` : ''}${nestingNote(result.nestingChanges)}`,
-    );
+    // "Saved" itself is said by the form's status.
+    const said = `${names.length > 0 ? `Added ${names.join(' and ')} to the ${where}.` : ''}${nestingNote(result.nestingChanges)}`;
+    if (said !== '') announce(said.trim());
     reloadModels();
   };
   /**

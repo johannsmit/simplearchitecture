@@ -474,8 +474,10 @@ describe('on the element form', () => {
     fireEvent.change(team(), { target: { value: '' } });
     expect(offeredOnClick()).not.toContain('New team');
     fireEvent.change(team(), { target: { value: 'New team' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    await within(form).findByText('Saved');
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(document.querySelector('.save-status')?.textContent).toBe('Saved');
+    });
     fireEvent.change(team(), { target: { value: '' } });
     expect(offeredOnClick()).toContain('New team');
   });

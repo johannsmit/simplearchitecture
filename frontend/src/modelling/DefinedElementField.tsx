@@ -48,7 +48,8 @@ interface DefinedElementFieldProps {
   readOnly: boolean;
   error: ReactNode;
   errorId: string | undefined;
-  onText: (text: string) => void;
+  /** `now` for a pick (a choice, a suggestion), saved at once; not for typing. */
+  onText: (text: string, now?: boolean) => void;
   onReferences: (ids: string[]) => void;
   /** Removes a value of another kind, kept as is. */
   onRemove: () => void;
@@ -149,7 +150,7 @@ export function DefinedElementField(props: DefinedElementFieldProps) {
             aria-invalid={invalid}
             aria-describedby={props.errorId}
             onChange={(event) => {
-              props.onText(event.target.value);
+              props.onText(event.target.value, true);
             }}
           >
             {unlisted && <option value={text}>{`“${text}” (not in the list)`}</option>}
@@ -191,7 +192,12 @@ export function DefinedElementField(props: DefinedElementFieldProps) {
             readOnly={readOnly}
             aria-invalid={invalid}
             aria-describedby={props.errorId}
-            onValue={props.onText}
+            onValue={(text) => {
+              props.onText(text);
+            }}
+            onPick={(text) => {
+              props.onText(text, true);
+            }}
           />
         </div>
       )}

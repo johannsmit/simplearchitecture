@@ -6,6 +6,7 @@ import { cellChange, clientErrors, draftOf, elementOfNode } from '../src/modelli
 import { forgetCatalogState } from '../src/viewing/explorer/catalog/Catalog';
 import { forgetElementFilters } from '../src/viewing/explorer/ElementTree';
 import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { settle } from './settle';
 
 // A Stakeholder's Kind (Human or AI Agent) on the canvas, the legend, the panel, the form and the
 // catalog. Made-up data: a small bakery with a baker, an ordering bot and an odd stored value.
@@ -194,7 +195,7 @@ describe('Modelling: the Kind field', () => {
     fireEvent.change(kind, { target: { value: 'AI Agent' } });
     // The type mark follows the field before saving.
     expect(iconOf(form.querySelector('.select-wrap.has-mark'))).toBe('bot');
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches).toHaveLength(1);
     });
@@ -202,18 +203,18 @@ describe('Modelling: the Kind field', () => {
   });
 
   it('sends nothing when Human is picked again for a Stakeholder without Kind', async () => {
-    const { form, kind } = await openForm('baker');
-    fireEvent.change(kind, { target: { value: 'AI Agent' } });
-    expect(within(form).getByRole('status').textContent).toBe('Unsaved changes');
+    const { kind } = await openForm('baker');
     fireEvent.change(kind, { target: { value: kind.options[0]?.value ?? '' } });
-    expect(form.querySelector('.d-form-foot')).toBeNull();
+    await settle();
+    expect(patches).toEqual([]);
+    expect(document.querySelector('.save-status')?.textContent).toBe('');
   });
 
   it('saves Human for an AI Agent', async () => {
     const { form, kind } = await openForm('bot');
     expect(kind.selectedOptions[0]?.textContent).toBe('AI Agent');
     fireEvent.change(kind, { target: { value: 'Human' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches).toHaveLength(1);
     });
@@ -226,7 +227,7 @@ describe('Modelling: the Kind field', () => {
     fireEvent.change(within(form).getByRole('textbox', { name: /^Name/ }), {
       target: { value: 'Odd two' },
     });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(patches).toHaveLength(1);
     });

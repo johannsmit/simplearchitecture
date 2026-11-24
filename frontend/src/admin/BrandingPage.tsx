@@ -916,7 +916,6 @@ export function BrandingPage() {
       )}
       {leave && (
         <UnsavedDialog
-          kind="leave"
           name=""
           subject="branding"
           saving={saving}

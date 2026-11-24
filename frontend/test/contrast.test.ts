@@ -143,6 +143,24 @@ describe('colour contrast of the design tokens (WCAG 2.x)', () => {
       expect(contrast(t('accent'), t('surface-raised'))).toBeGreaterThanOrEqual(3);
     });
 
+    // The details panel's save status: on the element head (the type fill) and on the
+    // relationship head (surface-2). Its words 4.5:1, the check and alert icons 3:1.
+    it.each(colours)('%s element head: the save status', (colour) => {
+      const fill = t(`${colour}-fill`);
+      expect(contrast(t('text-muted'), fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t('text'), fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t('critical'), fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t('positive'), fill)).toBeGreaterThanOrEqual(3);
+    });
+
+    it('the save status on the relationship head', () => {
+      const head = t('surface-2');
+      expect(contrast(t('text-muted'), head)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t('text'), head)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t('critical'), head)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t('positive'), head)).toBeGreaterThanOrEqual(3);
+    });
+
     it('status colours on the surface and on their soft backgrounds (chips, badges)', () => {
       for (const status of ['positive', 'info', 'warning', 'critical']) {
         expect(contrast(t(status), t('surface')), status).toBeGreaterThanOrEqual(4.5);

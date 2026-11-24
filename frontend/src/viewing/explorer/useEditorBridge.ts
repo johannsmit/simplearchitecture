@@ -43,6 +43,9 @@ export function useEditorBridge(
       get canSave() {
         return state()?.canSave ?? false;
       },
+      get failed() {
+        return active()?.failed;
+      },
     };
   }, []);
   return { panelEditor, cellEditor, setPanelState, setCellState };

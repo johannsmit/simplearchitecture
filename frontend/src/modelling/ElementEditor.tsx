@@ -15,6 +15,7 @@ import {
 import {
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -35,7 +36,6 @@ import {
   elementOfNode,
   fieldKeys,
   propertySlot,
-  referenceSlot,
   rowKey,
   rowOfKey,
   sameNameCount,
@@ -44,21 +44,25 @@ import {
   typeChangeNote,
   withDefinedReferences,
   withDefinedText,
+  storedDraft,
+  withKeyOf,
+  withOriginalsOf,
+  withoutInvalid,
   withoutKey,
   withType,
   type Draft,
   type ErrorSlot,
   type FieldKey,
 } from './draft';
-import { deleteSummary, DeleteElementDialog, UnsavedDialog } from './dialogs';
+import { deleteSummary, DeleteElementDialog } from './dialogs';
 import { versionToSave } from './save';
+import { fixReason, SaveStatus } from './SaveStatus';
+import { useAutoSave, type SaveOutcome, type SaveRun } from './useAutoSave';
 import { ValueField } from './ValueField';
-
-/** How long "Saved" shows where the footer was. */
-export const savedNoteMillis = 3000;
 
 /** What the explorer shows about the open form in the unsaved changes dialog. */
 export interface EditorState {
+  /** Changes not saved yet: waiting, being sent, or refused. */
   dirty: boolean;
   name: string;
   canSave: boolean;
@@ -66,6 +70,11 @@ export interface EditorState {
   subject?: 'element' | 'relationship';
   /** An open catalog cell: switching to the canvas drops it, so that asks too. */
   cell?: boolean;
+  /**
+   * The details panel's form, which saves as you go: leaving saves what is waiting without
+   * asking, and asks only when a change couldn't be saved.
+   */
+  autoSave?: boolean;
 }
 
 /** What the explorer needs from the open form, for the unsaved changes dialog. */
@@ -76,6 +85,8 @@ export interface EditorHandle {
   discard: () => void;
   name: string;
   canSave: boolean;
+  /** Why the last change couldn't be saved (a form that saves as you go). */
+  failed?: string | undefined;
 }
 
 interface ElementEditorProps {
@@ -119,6 +130,8 @@ type Conflict = 'changed' | 'deleted' | null;
 interface TopAlert {
   title: string;
   messages: string[];
+  /** The connection failed: Try again sends the change again. */
+  retry?: boolean;
 }
 
 interface DeleteState {
@@ -156,8 +169,6 @@ const regionNames = (() => {
   }
 })();
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-
 /** The rejected fields of a 422 body, if it has them. */
 function rejectedFields(body: unknown): ElementFieldIssue[] | undefined {
   const fields = (body as { fields?: unknown } | null)?.fields;
@@ -170,23 +181,24 @@ function rejectedFields(body: unknown): ElementFieldIssue[] | undefined {
 }
 
 /**
- * The details panel of Modelling with editing on: always the in-place form. The footer shows only
- * while there are unsaved changes.
+ * The details panel of Modelling with editing on: always the in-place form, which saves as you
+ * go (see `useAutoSave`).
  */
 export function ElementEditor(props: ElementEditorProps) {
   const { element, graph } = props;
+  // The server's copy, as last read or saved.
   const [base, setBase] = useState(element);
+  // The draft as stored: what the last save sent, or what was read. Changes are measured from it.
   const [initial, setInitial] = useState(() => draftOf(element));
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState<ReadonlyMap<ErrorSlot, string>>(new Map());
   const [alert, setAlert] = useState<TopAlert | null>(null);
   const [conflict, setConflict] = useState<Conflict>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [askDiscard, setAskDiscard] = useState(false);
   const [deleting, setDeleting] = useState<DeleteState | null>(null);
-  // Where keyboard focus goes after the next render (an error, a new row, the heading).
+  // The version the last save or reload gave: the next save sends it.
+  const lastVersion = useRef<number | undefined>(undefined);
+  // Where keyboard focus goes after the next render (a removed field, the heading).
   const focusTarget = useRef<string | null>(null);
   const setFocusTarget = (id: string | null) => {
     focusTarget.current = id;
@@ -204,14 +216,17 @@ export function ElementEditor(props: ElementEditorProps) {
   /** An element property's control id, by its place in the list (keys may hold any character). */
   const propertyId = (key: string): string =>
     `ef-prop-${String(definitions.findIndex((definition) => definition.key === key))}`;
-  const controlId = (slot: ErrorSlot): string =>
-    slot.startsWith('prop:') ? propertyId(slot.slice('prop:'.length)) : slotId(slot);
 
   const change = changesOf(initial, draft);
-  const dirty = change !== undefined;
   const canSave = conflict === null && !forbidden;
 
-  /** A fresh start from the server's copy (after a save, a reload, or a change elsewhere). */
+  /** The newest version known: the last save's, or the one the explorer read. */
+  const knownVersion = (): number | undefined => {
+    const known = [lastVersion.current, props.version].filter((v) => v !== undefined);
+    return known.length > 0 ? Math.max(...known) : undefined;
+  };
+
+  /** A fresh start from the server's copy (after a reload, or a change elsewhere). */
   const reset = (next: ModelElement) => {
     const fresh = draftOf(next);
     setBase(next);
@@ -221,16 +236,144 @@ export function ElementEditor(props: ElementEditorProps) {
     setAlert(null);
   };
 
+  const failed = (reason: string): SaveOutcome => ({ kind: 'failed', reason });
+
+  /** Saves what the draft holds now, apart from fields that fail the checks. */
+  const run: SaveRun = async (sending) => {
+    if (conflict === 'changed') return failed('someone else changed this element');
+    if (conflict === 'deleted') return failed('someone else deleted this element');
+    if (forbidden) return failed('you can no longer edit this model');
+    if (changesOf(initial, draft) === undefined) {
+      setErrors(new Map());
+      setAlert(null);
+      return { kind: 'none' };
+    }
+    const found = clientErrors(
+      draft,
+      base.metadata,
+      { ownId: element.id, isElement: (id) => graph.elements.has(id) },
+      definitions,
+    );
+    setErrors(found);
+    const fix = found.size > 0 ? failed(fixReason(found.size)) : undefined;
+    const send = withoutInvalid(initial, draft, found);
+    if (send === undefined) return fix ?? { kind: 'none' };
+    let sent = changesOf(initial, send);
+    // Until the element properties are read, metadata isn't sent: only the other fields.
+    if (propertiesFailed && sent?.metadata !== undefined) {
+      const rest = { ...sent };
+      delete rest.metadata;
+      if (Object.keys(rest).length === 0) {
+        setAlert({
+          title: "Couldn't load the defined properties. Reload to try again.",
+          messages: [],
+        });
+        return failed("couldn't load the defined properties");
+      }
+      sent = rest;
+    }
+    if (sent === undefined) {
+      setAlert(null);
+      return fix ?? { kind: 'none' };
+    }
+    sending();
+    setAlert(null);
+    try {
+      const version = await versionToSave(props.modelId, base, knownVersion());
+      const result = await updateElement(props.modelId, element.id, { version, ...sent });
+      lastVersion.current = result.element.version;
+      const node = elementOfNode(result.element.id, result.element.node);
+      setBase(node);
+      // What was sent is now stored. The draft stays as typed (no trimming under the cursor), and
+      // only what changed since is sent next time.
+      if (propertiesFailed) {
+        setInitial({ ...draftOf(node), name: send.name, description: send.description });
+      } else {
+        const now = storedDraft(send);
+        setInitial(now);
+        setDraft((current) => withOriginalsOf(now, current));
+      }
+      props.onStored(result);
+      return fix ?? { kind: 'saved' };
+    } catch (error) {
+      const status = error instanceof ApiRequestError ? error.status : 0;
+      const body = error instanceof ApiRequestError ? error.body : undefined;
+      const fields = status === 422 ? rejectedFields(body) : undefined;
+      // An Admin deleted a property filled in here: its value can't be saved. The definitions
+      // are read again, so its field goes, and the other changes are sent again at once.
+      const gone = fields?.find((issue) => {
+        const key = issue.field.startsWith('metadata.')
+          ? issue.field.slice('metadata.'.length)
+          : undefined;
+        return (
+          key !== undefined && definedKeys.has(key) && issue.message.includes("isn't a property")
+        );
+      });
+      if (gone !== undefined) {
+        const key = gone.field.slice('metadata.'.length);
+        setDeletedProperty(definitions.find((definition) => definition.key === key)?.name ?? key);
+        // A value the element didn't hold goes with the field; one it held stays to remove.
+        setDraft((current) => withKeyOf(initial, current, key));
+        props.onPropertiesStale?.();
+        return { kind: 'again' };
+      }
+      if (fields) {
+        const mapped = serverErrors(send, fields, definitions);
+        const general = mapped.get('');
+        mapped.delete('');
+        const messages = general?.split('\n') ?? [];
+        const all = new Map([...found, ...mapped]);
+        setErrors(all);
+        setAlert(messages.length > 0 ? { title: "The change wasn't saved.", messages } : null);
+        return failed(
+          all.size > 0 ? fixReason(all.size) : (messages[0] ?? "the change wasn't accepted"),
+        );
+      }
+      if (status === 409) {
+        setConflict('changed');
+        return failed('someone else changed this element');
+      }
+      if (status === 404 && (body as { missing?: unknown } | undefined)?.missing !== 'model') {
+        setConflict('deleted');
+        return failed('someone else deleted this element');
+      }
+      if (status === 403) {
+        setForbidden(true);
+        setAlert({ title: 'You can no longer edit this model.', messages: [] });
+        return failed('you can no longer edit this model');
+      }
+      if (status === 0 || status >= 500) {
+        setAlert({
+          title: "The change wasn't saved. Check your connection and try again.",
+          messages: [],
+          retry: true,
+        });
+        return failed('check your connection');
+      }
+      const message = error instanceof Error ? error.message : '';
+      setAlert({ title: "The change wasn't saved.", messages: message ? [message] : [] });
+      return failed(message || "the change wasn't accepted");
+    }
+  };
+  const saver = useAutoSave(run);
+  const dirty = change !== undefined || saver.busy;
+  const failedReason = saver.phase === 'failed' ? saver.reason : undefined;
+
   // The explorer's copy changed (e.g. read again from the server): follow it unless the user has
   // changes, which are never thrown away without asking.
-  if (element !== base && !dirty && !saving && JSON.stringify(element) !== JSON.stringify(base)) {
+  if (
+    element !== base &&
+    change === undefined &&
+    !saver.busy &&
+    JSON.stringify(element) !== JSON.stringify(base)
+  ) {
     reset(element);
   }
 
   const { onState } = props;
   const savedName = base.name;
   useEffect(() => {
-    onState({ dirty, name: savedName, canSave });
+    onState({ dirty, name: savedName, canSave, autoSave: true });
   }, [dirty, savedName, canSave, onState]);
   useEffect(
     () => () => {
@@ -238,16 +381,6 @@ export function ElementEditor(props: ElementEditorProps) {
     },
     [onState],
   );
-
-  useEffect(() => {
-    if (!saved) return;
-    const timer = setTimeout(() => {
-      setSaved(false);
-    }, savedNoteMillis);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [saved]);
 
   useEffect(() => {
     if (focusTarget.current === null) return;
@@ -266,34 +399,17 @@ export function ElementEditor(props: ElementEditorProps) {
     onNameFocused();
   }, [focusName, onNameFocused]);
 
-  const edit = (slot: ErrorSlot, next: Draft) => {
+  /** A change to the draft: a text field's waits for the typing pause, a pick's goes now. */
+  const edit = (slot: ErrorSlot, next: Draft, when: 'later' | 'now' = 'later') => {
     setDraft(next);
-    setSaved(false);
+    setDeletedProperty(null);
     if (errors.has(slot)) {
       const rest = new Map(errors);
       rest.delete(slot);
       setErrors(rest);
     }
-  };
-
-  const slotOrder = (d: Draft): ErrorSlot[] => {
-    const fields = fieldKeys(d.type);
-    return [
-      'name',
-      'type',
-      'description',
-      ...fields.filter((key) => key !== 'functions').map((key) => `field:${key}`),
-      ...definitions.map((definition) => propertySlot(definition.key)),
-      ...fields.filter((key) => key === 'functions').map((key) => `field:${key}`),
-      ...d.custom.flatMap((row) => [`row:${row.id}`, referenceSlot(row)]),
-    ];
-  };
-
-  const refuse = (found: ReadonlyMap<ErrorSlot, string>, top: TopAlert | null) => {
-    setErrors(found);
-    setAlert(top);
-    const first = slotOrder(draft).find((slot) => found.has(slot));
-    setFocusTarget(first !== undefined ? controlId(first) : top ? 'ef-alert' : null);
+    if (when === 'now') saver.now();
+    else saver.later();
   };
 
   const headingFocus = () => {
@@ -301,106 +417,16 @@ export function ElementEditor(props: ElementEditorProps) {
   };
 
   const stored = (result: ElementChangeResult) => {
+    lastVersion.current = result.element.version;
     reset(elementOfNode(result.element.id, result.element.node));
     props.onStored(result);
   };
 
-  // Not read yet: read it now, and treat a change made meanwhile as a conflict.
-  const currentVersion = () => versionToSave(props.modelId, base, props.version);
-
-  const save = async (): Promise<boolean> => {
-    if (!change) return true;
-    if (!canSave || saving) return false;
-    const found = clientErrors(
-      draft,
-      base.metadata,
-      { ownId: element.id, isElement: (id) => graph.elements.has(id) },
-      definitions,
-    );
-    if (found.size > 0) {
-      refuse(found, null);
-      return false;
-    }
-    setSaving(true);
-    setAlert(null);
-    setDeletedProperty(null);
-    try {
-      const version = await currentVersion();
-      // Until the element properties are read, metadata isn't sent: only the other fields.
-      const { metadata, ...rest } = change;
-      const sent = propertiesFailed ? rest : change;
-      if (propertiesFailed && Object.keys(rest).length === 0 && metadata !== undefined) {
-        refuse(new Map(), {
-          title: "Couldn't load the defined properties. Reload to try again.",
-          messages: [],
-        });
-        return false;
-      }
-      const result = await updateElement(props.modelId, element.id, { version, ...sent });
-      stored(result);
-      setSaved(true);
-      headingFocus();
-      props.onAnnounce('Saved');
-      return true;
-    } catch (error) {
-      const status = error instanceof ApiRequestError ? error.status : 0;
-      const body = error instanceof ApiRequestError ? error.body : undefined;
-      const fields = status === 422 ? rejectedFields(body) : undefined;
-      // An Admin deleted a property filled in here: its value can't be saved. The definitions
-      // are read again, so its field goes, and saving again keeps the other changes.
-      const gone = fields?.find((issue) => {
-        const key = issue.field.startsWith('metadata.')
-          ? issue.field.slice('metadata.'.length)
-          : undefined;
-        return (
-          key !== undefined && definedKeys.has(key) && issue.message.includes("isn't a property")
-        );
-      });
-      if (gone !== undefined) {
-        const key = gone.field.slice('metadata.'.length);
-        setDeletedProperty(definitions.find((definition) => definition.key === key)?.name ?? key);
-        // A value the element didn't hold goes with the field; one it held stays to remove.
-        if (!Object.hasOwn(base.metadata, key)) setDraft(withoutKey(draft, key));
-        setFocusTarget('ef-deleted-property');
-        props.onPropertiesStale?.();
-      } else if (fields) {
-        const mapped = serverErrors(draft, fields, definitions);
-        const general = mapped.get('');
-        mapped.delete('');
-        const messages = general?.split('\n') ?? [];
-        refuse(
-          mapped,
-          messages.length > 0 ? { title: "The change wasn't saved.", messages } : null,
-        );
-      } else if (status === 409) {
-        setConflict('changed');
-        setFocusTarget('ef-conflict');
-      } else if (
-        status === 404 &&
-        (body as { missing?: unknown } | undefined)?.missing !== 'model'
-      ) {
-        setConflict('deleted');
-        setFocusTarget('ef-conflict');
-      } else if (status === 403) {
-        setForbidden(true);
-        refuse(new Map(), { title: 'You can no longer edit this model.', messages: [] });
-      } else if (status === 0 || status >= 500) {
-        refuse(new Map(), {
-          title: "The change wasn't saved. Check your connection and try again.",
-          messages: [],
-        });
-      } else {
-        const message = error instanceof Error ? error.message : '';
-        refuse(new Map(), {
-          title: "The change wasn't saved.",
-          messages: message ? [message] : [],
-        });
-      }
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Read when the explorer leaves the form: true once everything is stored.
+  const clean = useRef(true);
+  useLayoutEffect(() => {
+    clean.current = change === undefined;
+  });
 
   const discard = () => {
     setDraft(initial);
@@ -408,13 +434,23 @@ export function ElementEditor(props: ElementEditorProps) {
     setAlert(null);
   };
 
-  useImperativeHandle(props.handle, () => ({ save, discard, name: base.name, canSave }));
+  useImperativeHandle(props.handle, () => ({
+    save: async () => {
+      await saver.flush();
+      return clean.current;
+    },
+    discard,
+    name: base.name,
+    canSave,
+    failed: failedReason,
+  }));
 
   const reload = async (focus: 'heading' | 'trash') => {
     try {
       const latest = await getElement(props.modelId, element.id);
       setConflict(null);
       stored(latest);
+      saver.clear();
       setDeleting(null);
       if (focus === 'heading') headingFocus();
       else setFocusTarget('ef-delete');
@@ -423,7 +459,6 @@ export function ElementEditor(props: ElementEditorProps) {
       if (error instanceof ApiRequestError && error.status === 404) {
         setDeleting(null);
         setConflict('deleted');
-        setFocusTarget('ef-conflict');
       } else {
         setAlert({ title: "The element couldn't be reloaded. Try again.", messages: [] });
       }
@@ -435,7 +470,9 @@ export function ElementEditor(props: ElementEditorProps) {
     setDeleting({ ...deleting, deleting: true, error: null });
     const name = base.name.trim() || 'the element';
     try {
-      const version = await currentVersion();
+      // A change still being saved goes first, so the delete sends the version it gave.
+      await saver.flush();
+      const version = await versionToSave(props.modelId, base, knownVersion());
       const result = await deleteElement(props.modelId, element.id, version);
       props.onAnnounce(
         result.deletedRelationshipCount > 0
@@ -469,23 +506,15 @@ export function ElementEditor(props: ElementEditorProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
     const target = event.target as HTMLElement;
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      // Save now: what waits for the typing pause goes at once.
       event.preventDefault();
-      void save();
+      saver.now();
     } else if (event.key === 'Enter' && target instanceof HTMLInputElement) {
       // Enter in a one-line field doesn't save: Ctrl/⌘+Enter does.
       event.preventDefault();
-    } else if (event.key === 'Escape' && dirty && !saving) {
-      event.preventDefault();
-      setAskDiscard(true);
     }
   };
 
-  const fieldCount = [...errors.keys()].filter((slot) => slot !== '').length;
-  const status = saving
-    ? 'Saving…'
-    : fieldCount > 0
-      ? `Not saved. ${fieldCount} field${fieldCount === 1 ? ' needs' : 's need'} a fix.`
-      : 'Unsaved changes';
   const nameNote = sameNameNote(
     sameNameCount(graph, draft.type, draft.name, element.id),
     draft.type,
@@ -493,7 +522,6 @@ export function ElementEditor(props: ElementEditorProps) {
   );
   const typeNote = typeChangeNote(initial, base, draft.type);
   const keys = fieldKeys(draft.type);
-  const shortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
 
   const valuesOf = (key: string) => elementPropertyValues(graph).get(key) ?? [];
   // Custom metadata: what the element holds under no element property (Was a property values).
@@ -502,8 +530,8 @@ export function ElementEditor(props: ElementEditorProps) {
   const shownCustomRows = customRows.filter(
     (row) => storedKeys.has(rowKey(row)) || row.wasProperty === true,
   );
-  const setField = (key: FieldKey, value: string) => {
-    edit(`field:${key}`, { ...draft, fields: { ...draft.fields, [key]: value } });
+  const setField = (key: FieldKey, value: string, when: 'later' | 'now' = 'later') => {
+    edit(`field:${key}`, { ...draft, fields: { ...draft.fields, [key]: value } }, when);
   };
 
   const fieldControl = (key: FieldKey): ReactNode => {
@@ -527,9 +555,8 @@ export function ElementEditor(props: ElementEditorProps) {
             {...common}
             aria-describedby={describedBy(invalid && errorId(slot))}
             value={value}
-            disabled={saving}
             onChange={(event) => {
-              setField(key, event.target.value);
+              setField(key, event.target.value, 'now');
             }}
           >
             {choiceValues(key, unknown ? value : opened).map((choice) => (
@@ -549,7 +576,6 @@ export function ElementEditor(props: ElementEditorProps) {
           className="fn-field"
           aria-describedby={describedBy(invalid && errorId(slot), `${id}-hint`)}
           value={value}
-          readOnly={saving}
           onChange={(event) => {
             setField(key, event.target.value);
           }}
@@ -572,9 +598,11 @@ export function ElementEditor(props: ElementEditorProps) {
             values={valuesOf(key)}
             label={definition.label}
             normalise={(text) => text.toUpperCase()}
-            readOnly={saving}
             onValue={(text) => {
               setField(key, text);
+            }}
+            onPick={(text) => {
+              setField(key, text, 'now');
             }}
           />
           {code !== '' &&
@@ -599,9 +627,11 @@ export function ElementEditor(props: ElementEditorProps) {
           value={value}
           values={valuesOf(key)}
           label={definition.label}
-          readOnly={saving}
           onValue={(text) => {
             setField(key, text);
+          }}
+          onPick={(text) => {
+            setField(key, text, 'now');
           }}
         />
       </div>
@@ -625,12 +655,12 @@ export function ElementEditor(props: ElementEditorProps) {
     <form
       className="d-form"
       aria-label={`Edit ${base.name.trim() || 'element'}`}
-      aria-busy={saving || undefined}
       noValidate
       onKeyDown={onKeyDown}
+      onBlur={saver.blur}
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        saver.now();
       }}
     >
       {conflict !== null && (
@@ -676,6 +706,11 @@ export function ElementEditor(props: ElementEditorProps) {
                 {alert.messages.length > 5 && <li>and {alert.messages.length - 5} more</li>}
               </ul>
             )}
+            {alert.retry === true && (
+              <button type="button" className="btn" onClick={saver.now}>
+                Try again
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -685,8 +720,8 @@ export function ElementEditor(props: ElementEditorProps) {
           <Icon name="alert" />
           <div>
             <p id="ef-deleted-property" tabIndex={-1}>
-              An Admin deleted {deletedProperty}, so its value wasn&apos;t saved. Save again to keep
-              your other changes.
+              An Admin deleted {deletedProperty}, so its value wasn&apos;t saved. Your other changes
+              are saved.
             </p>
           </div>
         </div>
@@ -715,7 +750,6 @@ export function ElementEditor(props: ElementEditorProps) {
               nameNote && 'ef-name-note',
             )}
             value={draft.name}
-            readOnly={saving}
             onChange={(event) => {
               edit('name', { ...draft, name: event.target.value });
             }}
@@ -740,10 +774,9 @@ export function ElementEditor(props: ElementEditorProps) {
                 typeNote && 'ef-type-note',
               )}
               value={draft.type}
-              disabled={saving}
               onChange={(event) => {
                 const type = nodeTypes.find((t) => t === event.target.value);
-                if (type) edit('type', withType(draft, type));
+                if (type) edit('type', withType(draft, type), 'now');
               }}
             >
               {nodeTypes.map((type) => (
@@ -772,7 +805,6 @@ export function ElementEditor(props: ElementEditorProps) {
             aria-invalid={errors.has('description') || undefined}
             aria-describedby={describedBy(errors.has('description') && errorId('description'))}
             value={draft.description}
-            readOnly={saving}
             onChange={(event) => {
               edit('description', { ...draft, description: event.target.value });
             }}
@@ -803,7 +835,7 @@ export function ElementEditor(props: ElementEditorProps) {
                 graph={graph}
                 ownId={element.id}
                 suggestions={valuesOf(definition.key)}
-                readOnly={saving}
+                readOnly={false}
                 error={
                   invalid ? (
                     <p className="field-error" id={`${id}-error`}>
@@ -813,14 +845,14 @@ export function ElementEditor(props: ElementEditorProps) {
                   ) : null
                 }
                 errorId={invalid ? `${id}-error` : undefined}
-                onText={(text) => {
-                  edit(slot, withDefinedText(draft, definition.key, text));
+                onText={(text, now) => {
+                  edit(slot, withDefinedText(draft, definition.key, text), now ? 'now' : 'later');
                 }}
                 onReferences={(ids) => {
-                  edit(slot, withDefinedReferences(draft, definition.key, ids));
+                  edit(slot, withDefinedReferences(draft, definition.key, ids), 'now');
                 }}
                 onRemove={() => {
-                  edit(slot, withoutKey(draft, definition.key));
+                  edit(slot, withoutKey(draft, definition.key), 'now');
                   setFocusTarget(id);
                 }}
               />
@@ -835,7 +867,7 @@ export function ElementEditor(props: ElementEditorProps) {
           <CustomMetadataFields
             rows={shownCustomRows}
             canAdd={false}
-            saving={saving || propertiesFailed}
+            saving={propertiesFailed}
             addId="ef-new-properties"
             slotId={slotId}
             errorId={errorId}
@@ -845,13 +877,14 @@ export function ElementEditor(props: ElementEditorProps) {
             names={[]}
             keyLabel={(key) => (isElementStandardKey(key) ? standardProperties[key].label : key)}
             isWasProperty={isElementStandardKey}
-            onEdit={(slot, rows) => {
+            onEdit={(slot, rows, now) => {
               // The rows shown are the custom ones: the others (element properties) stay.
               const shown = new Set(shownCustomRows);
-              edit(slot, {
-                ...draft,
-                custom: [...draft.custom.filter((row) => !shown.has(row)), ...rows],
-              });
+              edit(
+                slot,
+                { ...draft, custom: [...draft.custom.filter((row) => !shown.has(row)), ...rows] },
+                now === true ? 'now' : 'later',
+              );
             }}
             onAdd={() => undefined}
             onRemoved={setFocusTarget}
@@ -863,60 +896,26 @@ export function ElementEditor(props: ElementEditorProps) {
         <Icon name="info" size="sm" />
         New properties are added by an Admin, in Admin → Properties.
       </p>
-
-      {dirty || saving ? (
-        <div className="d-form-foot">
-          <p className={`foot-status${fieldCount > 0 ? ' is-error' : ''}`} role="status">
-            {fieldCount > 0 && !saving && <Icon name="alert" size="sm" />}
-            {status}
-          </p>
-          <button
-            type="button"
-            className="btn"
-            disabled={saving}
-            onClick={() => {
-              setAskDiscard(true);
-            }}
-          >
-            Discard changes
-          </button>
-          <button
-            type="submit"
-            className="btn primary save-btn"
-            title={`Save (${shortcut})`}
-            aria-keyshortcuts="Control+Enter Meta+Enter"
-            aria-disabled={saving || undefined}
-            disabled={!canSave}
-          >
-            {saving && <span className="spinner sm" aria-hidden="true" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      ) : saved ? (
-        <div className="d-form-foot is-saved">
-          <p className="foot-status">
-            <Icon name="check" size="sm" />
-            Saved
-          </p>
-        </div>
-      ) : null}
     </form>
   );
 
   const headActions = (
-    <button
-      ref={trash}
-      id="ef-delete"
-      type="button"
-      className="icon-btn delete-element-btn"
-      aria-label="Delete element"
-      title="Delete element"
-      onClick={() => {
-        setDeleting({ deleting: false, error: null, stale: false });
-      }}
-    >
-      <Icon name="trash" />
-    </button>
+    <>
+      <SaveStatus saver={saver} />
+      <button
+        ref={trash}
+        id="ef-delete"
+        type="button"
+        className="icon-btn delete-element-btn"
+        aria-label="Delete element"
+        title="Delete element"
+        onClick={() => {
+          setDeleting({ deleting: false, error: null, stale: false });
+        }}
+      >
+        <Icon name="trash" />
+      </button>
+    </>
   );
 
   return (
@@ -934,25 +933,6 @@ export function ElementEditor(props: ElementEditorProps) {
         usedIn={props.usedIn}
         {...(props.relationships ? { relationships: props.relationships } : {})}
       />
-      {askDiscard && (
-        <UnsavedDialog
-          kind="discard"
-          name={base.name}
-          saving={false}
-          canSave={canSave}
-          onKeep={() => {
-            setAskDiscard(false);
-          }}
-          onDiscard={() => {
-            setAskDiscard(false);
-            discard();
-            setFocusTarget(slotId('name'));
-          }}
-          onSave={() => {
-            setAskDiscard(false);
-          }}
-        />
-      )}
       {deleting && (
         <DeleteElementDialog
           name={base.name}

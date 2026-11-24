@@ -33,6 +33,7 @@ import {
 import {
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -45,13 +46,14 @@ import { EdgeSample, relationshipTypeLine } from '../metamodel-ui';
 import { MetadataValue } from '../viewing/explorer/DetailsPanel';
 import { EndLinks } from '../viewing/explorer/RelationshipDetails';
 import { CustomMetadataFields } from './CustomMetadataFields';
-import { Modal, UnsavedDialog } from './dialogs';
+import { Modal } from './dialogs';
 import { EndField } from './EndField';
 import { customRow, metadataChanges, type CustomRow } from './draft';
 import type { EditorHandle, EditorState } from './ElementEditor';
-import { savedNoteMillis } from './ElementEditor';
 import { LabelField } from './LabelField';
 import { relationshipVersionToSave } from './save';
+import { fixReason, SaveStatus } from './SaveStatus';
+import { useAutoSave, type SaveOutcome, type SaveRun } from './useAutoSave';
 import { ValueField } from './ValueField';
 import { DataListLabel } from './DataListLabel';
 import { ValueListField } from './ValueListField';
@@ -155,6 +157,23 @@ const swappedData = (data: Draft['data']): Draft['data'] => ({
 const withReversed = (draft: Draft, reversed: boolean): Draft =>
   reversed === draft.reversed ? draft : { ...draft, reversed, data: swappedData(draft.data) };
 
+/** The draft with Reverse folded into its ends, as it stands once saved. */
+const settled = (draft: Draft): Draft =>
+  draft.reversed
+    ? { ...draft, ends: { source: draft.ends.target, target: draft.ends.source }, reversed: false }
+    : draft;
+
+/**
+ * The draft after a Reverse was saved: the ends picked swap and Reverse flips, so the ends it
+ * stands for (and the lists named after them) stay as they are. A Reverse still pressed is then
+ * saved; one undone meanwhile becomes a Reverse to send.
+ */
+const rebasedOnReverse = (draft: Draft): Draft => ({
+  ...draft,
+  ends: { source: draft.ends.target, target: draft.ends.source },
+  reversed: !draft.reversed,
+});
+
 /** The values a Data field saves: those added, and what is typed if it is a new one. */
 const dataOf = (draft: Draft, key: RelationDataProperty): readonly string[] =>
   withDataValue(draft.data[key].values, draft.data[key].text);
@@ -180,8 +199,6 @@ function textOf(value: unknown): string {
 const fits = (type: EdgeType, key: RelationProperty): boolean => hasStandardEdgeProperty(key, type);
 
 type Conflict = 'changed' | 'deleted' | { end: string } | null;
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 function draftOf(relationship: ModelRelationship): Draft {
   const description = relationship.metadata.description;
@@ -235,12 +252,12 @@ function metadataValues(
     const key = row.key;
     if (!defined.has(key) && !stored.has(key)) continue;
     const changed = row.editable && row.text !== asText(row.original);
+    // Not set: an empty defined property has no value, whatever the row started from.
+    if (defined.has(key) && row.editable && row.text.trim() === '') continue;
     if (!changed) {
       values.set(key, row.original);
-    } else if (!defined.has(key)) {
-      values.set(key, row.text);
-    } else if (row.text.trim() !== '') {
-      values.set(key, row.text.trim());
+    } else {
+      values.set(key, defined.has(key) ? row.text.trim() : row.text);
     }
   }
   return values;
@@ -263,13 +280,16 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const [startedFrom, setStartedFrom] = useState(relationship);
   const [base, setBase] = useState(() => draftOf(relationship));
   const [draft, setDraft] = useState<Draft>(base);
+  // The draft as the form opened (or reloaded): the type notes say what changed since.
+  const [opened, setOpened] = useState(base);
   const [version, setVersion] = useState<number | undefined>(undefined);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  // The version the last save or reload gave: the next save sends it.
+  const lastVersion = useRef<number | undefined>(undefined);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [duplicateOf, setDuplicateOf] = useState<string | undefined>(undefined);
   const [conflict, setConflict] = useState<Conflict>(null);
-  const [askDiscard, setAskDiscard] = useState(false);
+  // The person may no longer edit the model (403): nothing more is sent.
+  const [forbidden, setForbidden] = useState(false);
   const [deleting, setDeleting] = useState<{
     busy: boolean;
     error: string | null;
@@ -285,9 +305,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   // A Relation's defined properties, by name: each has a field of its own, always.
   const defined = definedPropertiesOf(draft.type, definitions);
   const definedKeys = new Set(defined.map((definition) => definition.key));
-  const baseDefinedKeys = new Set(
-    definedPropertiesOf(base.type, definitions).map((definition) => definition.key),
-  );
   // The keys the relationship has: their values can change or go, but no other key can be added.
   // Exactly as stored: a key an import left blank or padded with spaces is a key like any other.
   const storedKeys = new Set(base.custom.map((row) => row.key));
@@ -315,8 +332,12 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     source: source !== reversedOnly.source,
     target: target !== reversedOnly.target,
   };
-  const changedEnd = (): End => (changedEnds.target ? 'target' : 'source');
   const savedSentence = relationshipSentence(graph, relationship);
+  /** The newest version known: the last save's, or the one read when the form opened. */
+  const knownVersion = (): number | undefined => {
+    const known = [lastVersion.current, version].filter((v) => v !== undefined);
+    return known.length > 0 ? Math.max(...known) : undefined;
+  };
   // The relationship as the form holds it: what the Label's `{Name}` is filled in from.
   const labelSubject: LabelSubject = {
     type: draft.type,
@@ -331,26 +352,63 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       ),
     },
   };
-  const customChange = metadataChanges(
-    metadataValues(base.custom, baseDefinedKeys, storedKeys),
-    metadataValues(draft.custom, definedKeys, storedKeys),
-  );
-  const dirty =
-    draft.type !== base.type ||
-    draft.state !== base.state ||
-    draft.description.trim() !== base.description.trim() ||
-    draft.label.trim() !== base.label.trim() ||
-    draft.twoWay !== base.twoWay ||
-    textProperties.some((key) => draft.texts[key].trim() !== base.texts[key].trim()) ||
-    dataProperties.some((key) => !sameValues(dataOf(draft, key), dataOf(base, key))) ||
-    Object.keys(customChange).length > 0 ||
-    draft.reversed ||
-    endsChanged;
+  const definedKeysOf = (type: EdgeType): Set<string> =>
+    new Set(definedPropertiesOf(type, definitions).map((definition) => definition.key));
+  const storedKeysOf = (from: Draft): Set<string> => new Set(from.custom.map((row) => row.key));
 
-  /** A fresh start from the server's copy (after a save, a reload, or a change elsewhere). */
+  /** What a PATCH sends to make `from` (a settled draft, as stored) into `to`; undefined if nothing. */
+  const changeOf = (
+    from: Draft,
+    to: Draft,
+  ): Omit<UpdateRelationshipRequest, 'version'> | undefined => {
+    const change: Omit<UpdateRelationshipRequest, 'version'> = {};
+    const toSource = to.reversed ? to.ends.target : to.ends.source;
+    const toTarget = to.reversed ? to.ends.source : to.ends.target;
+    if (to.type !== from.type) change.type = to.type;
+    if (to.state !== from.state) change.architectureState = to.state;
+    if (to.description.trim() !== from.description.trim()) {
+      change.description = to.description.trim() === '' ? null : to.description.trim();
+    }
+    if (to.label.trim() !== from.label.trim()) {
+      change.label = to.label.trim() === '' ? null : to.label.trim();
+    }
+    // New ends go as the ends to save, already reversed; Reverse alone goes as `reverse`.
+    if (to.ends.source !== from.ends.source || to.ends.target !== from.ends.target) {
+      if (toSource !== from.ends.source) change.source = toSource;
+      if (toTarget !== from.ends.target) change.target = toTarget;
+    } else if (to.reversed) {
+      change.reverse = true;
+    }
+    if (to.twoWay !== from.twoWay) change.twoWay = to.twoWay;
+    for (const key of textProperties) {
+      const text = to.texts[key].trim();
+      if (text !== from.texts[key].trim()) change[key] = text === '' ? null : text;
+    }
+    // With `reverse`, the server swaps the lists with the ends: a list goes only if it differs
+    // from the swapped one. New ends go already reversed, so the lists go swapped as they are.
+    const expected: Draft = change.reverse === true ? withReversed(from, true) : from;
+    for (const key of dataProperties) {
+      const values = dataOf(to, key);
+      if (!sameValues(values, dataOf(expected, key))) {
+        change[key] = values.length === 0 ? null : [...values];
+      }
+    }
+    // Without the definitions, metadata isn't sent: the form can't tell what it may hold.
+    const stored = storedKeysOf(from);
+    const custom = metadataChanges(
+      metadataValues(from.custom, definedKeysOf(from.type), stored),
+      metadataValues(to.custom, definedKeysOf(to.type), stored),
+    );
+    if (Object.keys(custom).length > 0 && !propertiesFailed) change.metadata = custom;
+    return Object.keys(change).length > 0 ? change : undefined;
+  };
+  const change = changeOf(base, draft);
+
+  /** A fresh start from the server's copy (after a reload, or a change elsewhere). */
   const reset = (next: ModelRelationship) => {
     const fresh = draftOf(next);
     setStartedFrom(next);
+    setOpened(fresh);
     setBase(fresh);
     setDraft(fresh);
     setErrors(new Map());
@@ -358,18 +416,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     setPicking(null);
     setDeletedProperty(null);
   };
-
-  // The explorer's copy changed (e.g. read again from the server): follow it unless the user has
-  // changes, which are never thrown away without asking. Those are sent as changes to the copy they
-  // started from, so a change made elsewhere to anything else stays.
-  if (
-    relationship !== startedFrom &&
-    !dirty &&
-    !saving &&
-    JSON.stringify(relationship) !== JSON.stringify(startedFrom)
-  ) {
-    reset(relationship);
-  }
 
   const copyOf = (edge: JgfEdge): ModelRelationship => relationshipOfEdge(edge) ?? relationship;
   const movesEnds = draft.reversed || endsChanged;
@@ -393,7 +439,166 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       ? problems.get(draft.type)
       : undefined;
   const clientProblem = endsProblem ?? (touchesEnds ? problems.get(draft.type) : undefined);
-  const canSave = editable && conflict === null && clientProblem === undefined;
+  const canSave = editable && conflict === null && !forbidden;
+
+  const failed = (reason: string): SaveOutcome => ({ kind: 'failed', reason });
+  const conflictReason = (): string =>
+    conflict === 'changed'
+      ? 'someone else changed this relationship'
+      : conflict === 'deleted'
+        ? 'someone else deleted this relationship'
+        : `someone else deleted ${conflict?.end ?? 'an end'}`;
+
+  /** Saves what the draft holds now; ends the checks refuse stay unsaved, the rest is saved. */
+  const run: SaveRun = async (sending) => {
+    if (!editable) return { kind: 'none' };
+    if (conflict !== null) return failed(conflictReason());
+    if (forbidden) return failed('you can no longer edit this model');
+    if (changeOf(base, draft) === undefined) {
+      setErrors(new Map());
+      setDuplicateOf(undefined);
+      return { kind: 'none' };
+    }
+    let send = draft;
+    if (clientProblem !== undefined) {
+      // A type change that the ends refuse: nothing goes until it is fixed.
+      if (draft.type !== base.type) return failed(fixReason(1));
+      send = { ...withReversed(draft, false), ends: base.ends };
+    }
+    const fix = clientProblem !== undefined ? failed(fixReason(1)) : undefined;
+    const sent = changeOf(base, send);
+    if (sent === undefined) return fix ?? { kind: 'none' };
+    sending();
+    setErrors(new Map());
+    setDuplicateOf(undefined);
+    try {
+      const current = await relationshipVersionToSave(modelId, startedFrom, knownVersion());
+      const result = await updateRelationship(modelId, relationship.id, {
+        version: current,
+        ...sent,
+      });
+      lastVersion.current = result.relationship.version;
+      setStartedFrom(copyOf(result.relationship.edge));
+      // What was sent is now stored. The draft stays as typed; a Reverse that was saved is folded
+      // into the ends it shows.
+      // Each row's original becomes the value it was saved with (see `metadataValues`).
+      const values = metadataValues(send.custom, definedKeysOf(send.type), storedKeysOf(base));
+      const now: Draft = {
+        ...settled(send),
+        custom: send.custom.map((row) =>
+          row.editable && values.has(row.key) ? { ...row, original: values.get(row.key) } : row,
+        ),
+      };
+      setBase(now);
+      const originals = new Map(now.custom.map((row) => [row.id, row.original]));
+      setDraft((current) => {
+        const next = send.reversed ? rebasedOnReverse(current) : current;
+        return {
+          ...next,
+          custom: next.custom.map((row) =>
+            row.editable && originals.has(row.id)
+              ? { ...row, original: originals.get(row.id) }
+              : row,
+          ),
+        };
+      });
+      props.onStored(result, true);
+      return fix ?? { kind: 'saved' };
+    } catch (failure) {
+      const status = failure instanceof ApiRequestError ? failure.status : 0;
+      if (status === 409) {
+        setConflict('changed');
+        return failed('someone else changed this relationship');
+      }
+      if (status === 404) {
+        const missing = (failure as ApiRequestError).body as { missing?: unknown } | undefined;
+        const end =
+          missing?.missing === 'source' || missing?.missing === 'target'
+            ? nameOf(graph, missing.missing === 'source' ? source : target)
+            : undefined;
+        setConflict(end === undefined ? 'deleted' : { end });
+        return failed(
+          end === undefined
+            ? 'someone else deleted this relationship'
+            : `someone else deleted ${end}`,
+        );
+      }
+      if (status === 403) {
+        setForbidden(true);
+        setErrors(new Map([['', 'You can no longer edit this model.']]));
+        return failed('you can no longer edit this model');
+      }
+      const refusal = refusalOf(failure);
+      // A message about a defined property goes under its field; about a custom key under its
+      // row, or at the top if the row is gone.
+      const customSlot = (field: string): string => {
+        const key = field.startsWith('metadata.') ? field.slice('metadata.'.length) : undefined;
+        if (key !== undefined && definedKeys.has(key)) return `prop:${key}`;
+        const row = send.custom.find((candidate) => candidate.key === key);
+        return row ? `row:${row.id}` : '';
+      };
+      // An Admin deleted a property filled in here: its value can't be saved. The definitions
+      // are read again, so its field goes, and the other changes are sent again at once.
+      const gone = refusal.fields.find((issue) => {
+        const key = issue.field.startsWith('metadata.')
+          ? issue.field.slice('metadata.'.length)
+          : undefined;
+        return (
+          key !== undefined && definedKeys.has(key) && issue.message.includes("isn't a property")
+        );
+      });
+      if (gone !== undefined) {
+        const key = gone.field.slice('metadata.'.length);
+        setDeletedProperty(defined.find((definition) => definition.key === key)?.name ?? key);
+        setDraft((now) => ({
+          ...now,
+          custom: [
+            ...now.custom.filter((row) => row.key !== key),
+            ...base.custom.filter((row) => row.key === key),
+          ],
+        }));
+        props.onPropertiesStale?.();
+        return { kind: 'again' };
+      }
+      const next = new Map<string, string>();
+      for (const issue of refusal.fields) {
+        const slot = ['source', 'target', 'reverse'].includes(issue.field)
+          ? 'ends'
+          : [
+                'type',
+                'architectureState',
+                'description',
+                'label',
+                'twoWay',
+                ...relationProperties,
+              ].includes(issue.field)
+            ? issue.field
+            : customSlot(issue.field);
+        next.set(slot, [next.get(slot), issue.message].filter(Boolean).join(' '));
+      }
+      if (refusal.fields.length === 0) next.set('', refusal.message);
+      setErrors(next);
+      if (refusal.duplicateOf !== undefined) setDuplicateOf(refusal.duplicateOf);
+      const count = [...next.keys()].filter((slot) => slot !== '').length;
+      if (count > 0) return failed(fixReason(count));
+      if (status === 0 || status >= 500) return failed('check your connection');
+      return failed(refusal.message || "the change wasn't accepted");
+    }
+  };
+  const saver = useAutoSave(run);
+  const dirty = change !== undefined || saver.busy;
+
+  // The explorer's copy changed (e.g. read again from the server): follow it unless the user has
+  // changes, which are never thrown away without asking. Those are sent as changes to the copy they
+  // started from, so a change made elsewhere to anything else stays.
+  if (
+    relationship !== startedFrom &&
+    change === undefined &&
+    !saver.busy &&
+    JSON.stringify(relationship) !== JSON.stringify(startedFrom)
+  ) {
+    reset(relationship);
+  }
 
   useEffect(() => {
     if (!props.focusHeading) return;
@@ -429,19 +634,9 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelId, relationship.id, editable]);
 
-  useEffect(() => {
-    if (!saved) return;
-    const timer = setTimeout(() => {
-      setSaved(false);
-    }, savedNoteMillis);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [saved]);
-
   const onState = props.onState;
   useEffect(() => {
-    onState({ dirty, name: savedSentence, canSave, subject: 'relationship' });
+    onState({ dirty, name: savedSentence, canSave, subject: 'relationship', autoSave: true });
   }, [dirty, savedSentence, canSave, onState]);
   useEffect(
     () => () => {
@@ -450,149 +645,52 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     [onState],
   );
 
+  /** A change to the draft: a text field's waits for the typing pause, a pick's goes now. */
+  const edit = (next: Draft, when: 'later' | 'now' = 'later') => {
+    setDraft(next);
+    setDeletedProperty(null);
+    if (when === 'now') saver.now();
+    else saver.later();
+  };
+
   const discard = () => {
     setDraft(base);
     setErrors(new Map());
     setDuplicateOf(undefined);
   };
 
-  const save = async (): Promise<boolean> => {
-    if (!dirty) return true;
-    if (!canSave || saving) {
-      if (clientProblem) {
-        const at = !endsProblem ? 'rf-type' : endsChanged ? fieldIdOf(changedEnd()) : 'rf-reverse';
-        document.getElementById(at)?.focus();
-      }
-      return false;
-    }
-    // Custom rows are keys the relationship holds, which can't be renamed: none blocks the form
-    // (a blank one an import left included), and the server has the last word on a change.
-    setSaving(true);
-    setPicking(null);
-    setErrors(new Map());
-    setDuplicateOf(undefined);
-    setDeletedProperty(null);
-    try {
-      const current = await relationshipVersionToSave(modelId, startedFrom, version);
-      const change: UpdateRelationshipRequest = { version: current };
-      if (draft.type !== base.type) change.type = draft.type;
-      if (draft.state !== base.state) change.architectureState = draft.state;
-      if (draft.description.trim() !== base.description.trim()) {
-        change.description = draft.description.trim() === '' ? null : draft.description.trim();
-      }
-      if (draft.label.trim() !== base.label.trim()) {
-        change.label = draft.label.trim() === '' ? null : draft.label.trim();
-      }
-      // New ends go as the ends to save, already reversed; Reverse alone goes as `reverse`.
-      if (endsChanged) {
-        if (source !== base.ends.source) change.source = source;
-        if (target !== base.ends.target) change.target = target;
-      } else if (draft.reversed) {
-        change.reverse = true;
-      }
-      if (draft.twoWay !== base.twoWay) change.twoWay = draft.twoWay;
-      for (const key of textProperties) {
-        const text = draft.texts[key].trim();
-        if (text !== base.texts[key].trim()) change[key] = text === '' ? null : text;
-      }
-      // With `reverse`, the server swaps the lists with the ends: a list goes only if it differs
-      // from the swapped one. New ends go already reversed, so the lists go swapped as they are.
-      const expected: Draft = change.reverse === true ? withReversed(base, true) : base;
-      for (const key of dataProperties) {
-        const values = dataOf(draft, key);
-        if (!sameValues(values, dataOf(expected, key))) {
-          change[key] = values.length === 0 ? null : [...values];
-        }
-      }
-      // Without the definitions, metadata isn't sent: the form can't tell what it may hold.
-      if (Object.keys(customChange).length > 0 && !propertiesFailed) {
-        change.metadata = customChange;
-      }
-      const result = await updateRelationship(modelId, relationship.id, change);
-      setSaving(false);
-      setVersion(result.relationship.version);
-      reset(copyOf(result.relationship.edge));
-      setSaved(true);
-      props.onStored(result, true);
-      heading.current?.focus();
-      return true;
-    } catch (failure) {
-      setSaving(false);
-      const status = failure instanceof ApiRequestError ? failure.status : 0;
-      if (status === 409) {
-        setConflict('changed');
-      } else if (status === 404) {
-        const missing = (failure as ApiRequestError).body as { missing?: unknown } | undefined;
-        const end =
-          missing?.missing === 'source' || missing?.missing === 'target'
-            ? nameOf(graph, missing.missing === 'source' ? source : target)
-            : undefined;
-        setConflict(end === undefined ? 'deleted' : { end });
-      } else {
-        const refusal = refusalOf(failure);
-        const next = new Map<string, string>();
-        // A message about a defined property goes under its field; about a custom key under its
-        // row, or at the top if the row is gone.
-        const customSlot = (field: string): string => {
-          const key = field.startsWith('metadata.') ? field.slice('metadata.'.length) : undefined;
-          if (key !== undefined && definedKeys.has(key)) return `prop:${key}`;
-          const row = draft.custom.find((candidate) => candidate.key === key);
-          return row ? `row:${row.id}` : '';
-        };
-        // An Admin deleted a property filled in here: its value can't be saved. The definitions
-        // are read again, so its field goes, and saving again keeps the other changes.
-        const gone = refusal.fields.find((issue) => {
-          const key = issue.field.startsWith('metadata.')
-            ? issue.field.slice('metadata.'.length)
-            : undefined;
-          return (
-            key !== undefined && definedKeys.has(key) && issue.message.includes("isn't a property")
-          );
-        });
-        if (gone !== undefined) {
-          const key = gone.field.slice('metadata.'.length);
-          setDeletedProperty(defined.find((definition) => definition.key === key)?.name ?? key);
-          props.onPropertiesStale?.();
-          return false;
-        }
-        for (const issue of refusal.fields) {
-          const slot = ['source', 'target', 'reverse'].includes(issue.field)
-            ? 'ends'
-            : [
-                  'type',
-                  'architectureState',
-                  'description',
-                  'label',
-                  'twoWay',
-                  ...relationProperties,
-                ].includes(issue.field)
-              ? issue.field
-              : customSlot(issue.field);
-          next.set(slot, [next.get(slot), issue.message].filter(Boolean).join(' '));
-        }
-        if (refusal.fields.length === 0) next.set('', refusal.message);
-        setErrors(next);
-        if (refusal.duplicateOf !== undefined) setDuplicateOf(refusal.duplicateOf);
-      }
-      return false;
-    }
-  };
-
-  /** Ctrl+Enter (⌘+Enter on a Mac) saves, anywhere on the form and in Ends; true when it did. */
+  /** Ctrl+Enter (⌘+Enter on a Mac) saves now, anywhere on the form and in Ends; true when it did. */
   const saveKey = (event: KeyboardEvent): boolean => {
     if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return false;
     event.preventDefault();
-    void save();
+    saver.now();
     return true;
   };
 
-  useImperativeHandle(props.handle, () => ({ save, discard, name: savedSentence, canSave }));
+  // Read when the explorer leaves the form: true once everything is stored.
+  const clean = useRef(true);
+  useLayoutEffect(() => {
+    clean.current = change === undefined;
+  });
+
+  useImperativeHandle(props.handle, () => ({
+    save: async () => {
+      await saver.flush();
+      return clean.current;
+    },
+    discard,
+    name: savedSentence,
+    canSave,
+    failed: saver.phase === 'failed' ? saver.reason : undefined,
+  }));
 
   const reload = async () => {
     try {
       const result = await getRelationship(modelId, relationship.id);
+      lastVersion.current = result.relationship.version;
       setVersion(result.relationship.version);
       setConflict(null);
+      saver.clear();
       props.onStored(result, false);
       reset(copyOf(result.relationship.edge));
       heading.current?.focus();
@@ -608,7 +706,9 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     if (!deleting) return;
     setDeleting({ ...deleting, busy: true, error: null });
     try {
-      const current = await relationshipVersionToSave(modelId, startedFrom, version);
+      // A change still being saved goes first, so the delete sends the version it gave.
+      await saver.flush();
+      const current = await relationshipVersionToSave(modelId, startedFrom, knownVersion());
       const result = await deleteRelationship(modelId, relationship.id, current);
       setDeleting(null);
       props.onRemoved(relationship.id, result, `Deleted: ${savedSentence}.`);
@@ -637,8 +737,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
 
   // A Relation's defined values stay as custom metadata on a Contains.
   const keptDefined =
-    draft.type === containsType && base.type !== containsType
-      ? definedPropertiesOf(base.type, definitions)
+    draft.type === containsType && opened.type !== containsType
+      ? definedPropertiesOf(opened.type, definitions)
           .filter((definition) => {
             const row = rowOf(definition.key);
             return row !== undefined && (!row.editable || row.text.trim() !== '');
@@ -663,7 +763,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   /** A picked element becomes this shown end: the end it is before Reverse swaps them. */
   const pickEnd = (end: End, picked: string) => {
     const slot: End = draft.reversed ? (end === 'source' ? 'target' : 'source') : end;
-    setDraft({ ...draft, ends: { ...draft.ends, [slot]: picked } });
+    edit({ ...draft, ends: { ...draft.ends, [slot]: picked } }, 'now');
     if (errors.has('ends')) {
       const rest = new Map(errors);
       rest.delete('ends');
@@ -675,7 +775,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
     setPicking(null);
     if (refocus) requestAnimationFrame(() => document.getElementById(fieldIdOf(end))?.focus());
   };
-  const shortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
   const fieldError = (slot: string) =>
     errors.has(slot) ? (
       <p className="field-error" id={`rf-${slot || 'alert'}-error`}>
@@ -704,18 +803,21 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
             {nameOf(graph, props.focusId)}
           </button>
           {editable && (
-            <button
-              ref={trash}
-              type="button"
-              className="icon-btn delete-element-btn"
-              aria-label="Delete relationship"
-              title="Delete relationship"
-              onClick={() => {
-                setDeleting({ busy: false, error: null, stale: false });
-              }}
-            >
-              <Icon name="trash" />
-            </button>
+            <div className="rel-top-actions">
+              <SaveStatus saver={saver} />
+              <button
+                ref={trash}
+                type="button"
+                className="icon-btn delete-element-btn"
+                aria-label="Delete relationship"
+                title="Delete relationship"
+                onClick={() => {
+                  setDeleting({ busy: false, error: null, stale: false });
+                }}
+              >
+                <Icon name="trash" />
+              </button>
+            </div>
           )}
         </div>
         <div className="d-type">
@@ -751,7 +853,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 changed={changedEnds[end]}
                 invalid={endsError && changedEnds[end]}
                 describedBy={endsError ? 'rf-ends-error' : undefined}
-                disabled={saving}
+                disabled={false}
                 onOpen={(initial) => {
                   setPicking(initial === null ? null : { end, initial });
                 }}
@@ -761,7 +863,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                   props.onAnnounce(
                     picked.id === id
                       ? `${caption} stays ${nameOf(graph, id)}.`
-                      : `${caption}: ${picked.name || '(unnamed)'}. Save to keep it.`,
+                      : `${caption}: ${picked.name || '(unnamed)'}.`,
                   );
                 }}
                 onClose={(refocus) => {
@@ -791,10 +893,10 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                   type="button"
                   className="btn"
                   aria-pressed={draft.reversed}
-                  disabled={self || saving}
+                  disabled={self}
                   aria-describedby={endsError ? 'rf-ends-error' : undefined}
                   onClick={() => {
-                    setDraft(withReversed(draft, !draft.reversed));
+                    edit(withReversed(draft, !draft.reversed), 'now');
                     if (dataProperties.some((key) => fits(draft.type, key))) {
                       props.onAnnounce(
                         draft.reversed
@@ -841,8 +943,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
         <form
           className="d-form"
           aria-label={`Relationship ${savedSentence}`}
-          aria-busy={saving || undefined}
           noValidate
+          onBlur={saver.blur}
           onKeyDown={(event) => {
             if (saveKey(event)) return;
             if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
@@ -852,7 +954,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           }}
           onSubmit={(event) => {
             event.preventDefault();
-            void save();
+            saver.now();
           }}
         >
           {conflict !== null && (
@@ -892,6 +994,11 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               <div>
                 <p className="form-alert-title">The changes weren&apos;t saved.</p>
                 <p>{errors.get('')}</p>
+                {saver.phase === 'failed' && saver.reason === 'check your connection' && (
+                  <button type="button" className="btn" onClick={saver.now}>
+                    Try again
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -900,8 +1007,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               <Icon name="alert" />
               <div>
                 <p>
-                  An Admin deleted {deletedProperty}, so its value wasn&apos;t saved. Save again to
-                  keep your other changes.
+                  An Admin deleted {deletedProperty}, so its value wasn&apos;t saved. Your other
+                  changes are saved.
                 </p>
               </div>
             </div>
@@ -923,11 +1030,11 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 subject={labelSubject}
                 names={relationshipMetadataNames(graph)}
                 definitions={definitions}
-                readOnly={saving}
+                readOnly={false}
                 invalid={errors.has('label')}
                 errorId={errors.has('label') ? 'rf-label-error' : undefined}
                 onValue={(text) => {
-                  setDraft({ ...draft, label: text });
+                  edit({ ...draft, label: text });
                 }}
               />
               {fieldError('label')}
@@ -943,11 +1050,13 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                       value={draft.texts[key]}
                       values={relationshipPropertyValues(graph).get(key) ?? noValues}
                       label={standardProperties[key].label}
-                      readOnly={saving}
                       aria-invalid={errors.has(key) || undefined}
                       aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
                       onValue={(text) => {
-                        setDraft({ ...draft, texts: { ...draft.texts, [key]: text } });
+                        edit({ ...draft, texts: { ...draft.texts, [key]: text } });
+                      }}
+                      onPick={(text) => {
+                        edit({ ...draft, texts: { ...draft.texts, [key]: text } }, 'now');
                       }}
                     />
                   </div>
@@ -972,11 +1081,14 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                         values={draft.data[key].values}
                         text={draft.data[key].text}
                         suggestions={relationshipPropertyValues(graph).get(key) ?? noValues}
-                        readOnly={saving}
                         aria-invalid={errors.has(key) || undefined}
                         aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
                         onChange={(values, text) => {
-                          setDraft({ ...draft, data: { ...draft.data, [key]: { values, text } } });
+                          // Adding or removing a value goes now; what is typed after the pause.
+                          edit(
+                            { ...draft, data: { ...draft.data, [key]: { values, text } } },
+                            sameValues(values, draft.data[key].values) ? 'later' : 'now',
+                          );
                         }}
                       />
                       {fieldError(key)}
@@ -992,21 +1104,21 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 row={rowOf(definition.key)}
                 stored={base.custom.find((row) => row.key === definition.key)}
                 suggestions={relationshipPropertyValues(graph).get(definition.key) ?? noValues}
-                readOnly={saving}
+                readOnly={false}
                 error={fieldError(`prop:${definition.key}`)}
                 invalid={errors.has(`prop:${definition.key}`)}
-                onText={(text) => {
+                onText={(text, now) => {
                   const row = rowOf(definition.key);
                   const custom = row
                     ? draft.custom.map((other) => (other === row ? { ...row, text } : other))
                     : [...draft.custom, { ...customRow(definition.key, ''), text }];
-                  setDraft({ ...draft, custom });
+                  edit({ ...draft, custom }, now === true ? 'now' : 'later');
                 }}
                 onRemove={() => {
-                  setDraft({
-                    ...draft,
-                    custom: draft.custom.filter((row) => row.key !== definition.key),
-                  });
+                  edit(
+                    { ...draft, custom: draft.custom.filter((row) => row.key !== definition.key) },
+                    'now',
+                  );
                 }}
               />
             ))}
@@ -1016,34 +1128,36 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 value={draft.type}
                 problems={problems}
                 onShow={props.onShow}
-                disabled={saving}
                 onChange={(type) => {
                   // Contains is always one way, and has none of a Relation's text properties.
-                  setDraft({
-                    ...draft,
-                    type,
-                    twoWay: canBeTwoWay(type) && draft.twoWay,
-                    texts: Object.fromEntries(
-                      textProperties.map((key) => [key, fits(type, key) ? draft.texts[key] : '']),
-                    ) as Draft['texts'],
-                    data: perDataField((key) => (fits(type, key) ? draft.data[key] : noData)),
-                  });
+                  edit(
+                    {
+                      ...draft,
+                      type,
+                      twoWay: canBeTwoWay(type) && draft.twoWay,
+                      texts: Object.fromEntries(
+                        textProperties.map((key) => [key, fits(type, key) ? draft.texts[key] : '']),
+                      ) as Draft['texts'],
+                      data: perDataField((key) => (fits(type, key) ? draft.data[key] : noData)),
+                    },
+                    'now',
+                  );
                 }}
               >
                 <div aria-live="polite">
                   <TypeNote note={typeNote} />
-                  {draft.type !== base.type &&
+                  {draft.type !== opened.type &&
                     relationProperties.some(
-                      (key) => hasValue(base, key) && !fits(draft.type, key),
+                      (key) => hasValue(opened, key) && !fits(draft.type, key),
                     ) && (
                       <TypeNote
                         note={{
                           kind: 'info',
-                          text: 'Identity, Identity Context and the data in both directions are removed when you save.',
+                          text: 'Identity, Identity Context and the data in both directions were removed.',
                         }}
                       />
                     )}
-                  {draft.type !== base.type && keptDefined.length > 0 && (
+                  {draft.type !== opened.type && keptDefined.length > 0 && (
                     <TypeNote
                       note={{
                         kind: 'info',
@@ -1060,10 +1174,12 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 <DirectionSegments
                   name="rf-direction"
                   twoWay={draft.twoWay}
-                  disabled={saving}
                   onChange={(twoWay) => {
                     // Reverse means nothing both ways: it is dropped.
-                    setDraft({ ...withReversed(draft, twoWay ? false : draft.reversed), twoWay });
+                    edit(
+                      { ...withReversed(draft, twoWay ? false : draft.reversed), twoWay },
+                      'now',
+                    );
                   }}
                 />
                 {fieldError('twoWay')}
@@ -1073,9 +1189,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               <StateSegments
                 name="rf-state"
                 value={draft.state}
-                disabled={saving}
                 onChange={(state) => {
-                  setDraft({ ...draft, state });
+                  edit({ ...draft, state }, 'now');
                 }}
               />
               {fieldError('architectureState')}
@@ -1086,10 +1201,9 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 id="rf-description"
                 className="desc-field"
                 value={draft.description}
-                readOnly={saving}
                 aria-invalid={errors.has('description') || undefined}
                 onChange={(event) => {
-                  setDraft({ ...draft, description: event.target.value });
+                  edit({ ...draft, description: event.target.value });
                 }}
               />
               {fieldError('description')}
@@ -1100,7 +1214,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               <CustomMetadataFields
                 rows={customRows}
                 canAdd={false}
-                saving={saving || propertiesFailed}
+                saving={propertiesFailed}
                 addId="rf-new-properties"
                 slotId={rowInputId}
                 errorId={(slot) => `rf-${slot || 'alert'}-error`}
@@ -1108,13 +1222,16 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
                 invalid={(slot) => errors.has(slot)}
                 valuesOf={(key) => relationshipPropertyValues(graph).get(key) ?? []}
                 names={noValues}
-                onEdit={(slot, rows) => {
+                onEdit={(slot, rows, now) => {
                   // The rows shown are the custom ones: the others (defined, or not stored) stay.
                   const shown = new Set(customRows);
-                  setDraft({
-                    ...draft,
-                    custom: [...draft.custom.filter((row) => !shown.has(row)), ...rows],
-                  });
+                  edit(
+                    {
+                      ...draft,
+                      custom: [...draft.custom.filter((row) => !shown.has(row)), ...rows],
+                    },
+                    now === true ? 'now' : 'later',
+                  );
                   if (errors.has(slot)) {
                     const rest = new Map(errors);
                     rest.delete(slot);
@@ -1135,40 +1252,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
             <Icon name="info" size="sm" />
             New properties are added by an Admin, in Admin → Properties.
           </p>
-          {dirty || saving ? (
-            <div className="d-form-foot">
-              <p className="foot-status" role="status">
-                Unsaved changes
-              </p>
-              <button
-                type="button"
-                className="btn"
-                disabled={saving}
-                onClick={() => {
-                  setAskDiscard(true);
-                }}
-              >
-                Discard changes
-              </button>
-              <button
-                type="submit"
-                className="btn primary save-btn"
-                title={`Save (${shortcut})`}
-                aria-keyshortcuts="Control+Enter Meta+Enter"
-                disabled={!canSave}
-              >
-                {saving && <span className="spinner sm" aria-hidden="true" />}
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          ) : saved ? (
-            <div className="d-form-foot is-saved">
-              <p className="foot-status">
-                <Icon name="check" size="sm" />
-                Saved
-              </p>
-            </div>
-          ) : null}
         </form>
       )}
 
@@ -1193,25 +1276,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
         </button>
       </div>
 
-      {askDiscard && (
-        <UnsavedDialog
-          kind="discard"
-          subject="relationship"
-          name={savedSentence}
-          saving={false}
-          canSave={canSave}
-          onKeep={() => {
-            setAskDiscard(false);
-          }}
-          onDiscard={() => {
-            setAskDiscard(false);
-            discard();
-          }}
-          onSave={() => {
-            setAskDiscard(false);
-          }}
-        />
-      )}
       {deleting && (
         <DeleteRelationshipDialog
           sentence={savedSentence}
@@ -1337,7 +1401,8 @@ function DefinedField(props: {
   readOnly: boolean;
   error: ReactNode;
   invalid: boolean;
-  onText: (text: string) => void;
+  /** `now` for a pick (a choice, a suggestion), saved at once; not for typing. */
+  onText: (text: string, now?: boolean) => void;
   onRemove: () => void;
 }) {
   const { id, definition, row } = props;
@@ -1394,7 +1459,7 @@ function DefinedField(props: {
             aria-invalid={props.invalid || undefined}
             aria-describedby={errorId}
             onChange={(event) => {
-              props.onText(event.target.value);
+              props.onText(event.target.value, true);
             }}
           >
             {unlisted && <option value={text}>{`“${text}” (not in the list)`}</option>}
@@ -1435,7 +1500,12 @@ function DefinedField(props: {
             readOnly={props.readOnly}
             aria-invalid={props.invalid || undefined}
             aria-describedby={errorId}
-            onValue={props.onText}
+            onValue={(text) => {
+              props.onText(text);
+            }}
+            onPick={(text) => {
+              props.onText(text, true);
+            }}
           />
         </div>
       )}

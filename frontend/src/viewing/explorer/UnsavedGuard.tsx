@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { UnsavedDialog } from '../../modelling/dialogs';
+import { LeaveDialog, UnsavedDialog } from '../../modelling/dialogs';
 import type { EditorHandle, EditorState } from '../../modelling/ElementEditor';
 import { readExplorerView, type ExplorerView } from '../paths';
 
@@ -13,6 +13,13 @@ interface Shown {
   viewId: string | undefined;
   url: string;
   view: ExplorerView;
+}
+
+/** A move held while there are changes; `failed` says why they couldn't be saved. */
+interface Held {
+  proceed: () => void;
+  keep?: () => void;
+  failed?: string;
 }
 
 /** What the guard lets the explorer show, and its hold on the explorer's unsaved changes. */
@@ -29,8 +36,12 @@ export interface Guarded {
 /**
  * Holds unsaved changes in the editing form. The explorer shows the
  * element the guard lets through: when the address moves on (a card, a crumb, browser Back)
- * while the form has changes, the explorer stays where it is and asks first; Keep editing puts
- * the address back. Links out of the explorer and closing the tab ask too.
+ * while the form has changes, the explorer stays where it is until they are dealt with; Keep
+ * editing puts the address back. Links out of the explorer and closing the tab are held too.
+ *
+ * The details panel saves as you go: a change waiting or being sent is saved first, and the
+ * explorer moves on without asking. Only a change that couldn't be saved asks "Leave without
+ * saving?". An open catalog cell asks to save or discard.
  */
 export function UnsavedGuard(props: {
   modelId: string;
@@ -55,29 +66,61 @@ export function UnsavedGuard(props: {
   // Read by `ask` at once, so a click replayed right after a catalog cell saved isn't asked
   // about changes that are already saved.
   const dirtyNow = useRef(false);
+  const autoSaveNow = useRef(false);
   const reportState = useCallback((state: EditorState | null) => {
     dirtyNow.current = state?.dirty === true;
+    autoSaveNow.current = state?.autoSave === true;
     setEditorState(state);
   }, []);
-  const setClean = () => {
+  const setClean = useCallback(() => {
     dirtyNow.current = false;
     setEditorState((current) => current && { ...current, dirty: false });
-  };
-  const [dialog, setDialog] = useState<{ proceed: () => void; keep?: () => void } | null>(null);
+  }, []);
+  const [dialog, setDialog] = useState<Held | null>(null);
+  // Leaving a form that saves as you go: what waits is being saved first.
+  const [leaving, setLeaving] = useState<Held | null>(null);
   const [saving, setSaving] = useState(false);
   const editor = useRef<EditorHandle | null>(null);
 
-  const ask = useCallback<Ask>((proceed, keep) => {
-    if (dirtyNow.current) setDialog({ proceed, ...(keep ? { keep } : {}) });
-    else proceed();
+  /** Holds a move while there are changes: saved first (auto-save), or asked about. */
+  const hold = useCallback((held: Held) => {
+    if (autoSaveNow.current) setLeaving(held);
+    else setDialog(held);
   }, []);
+
+  const ask = useCallback<Ask>(
+    (proceed, keep) => {
+      if (dirtyNow.current) hold({ proceed, ...(keep ? { keep } : {}) });
+      else proceed();
+    },
+    [hold],
+  );
+
+  // Saves what waits, then moves on; asks only when it couldn't be saved.
+  useEffect(() => {
+    if (leaving === null) return;
+    let current = true;
+    void (editor.current?.save() ?? Promise.resolve(true)).then((ok) => {
+      if (!current) return;
+      setLeaving(null);
+      if (ok) {
+        setClean();
+        leaving.proceed();
+      } else {
+        setDialog({ ...leaving, failed: editor.current?.failed ?? "it wasn't accepted" });
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [leaving, setClean]);
 
   // The address the user chose to stay away from (Keep editing), until the address is put back.
   const [held, setHeld] = useState<string | null>(null);
   if (held !== null && url !== held) setHeld(null);
 
   // The address moved: follow it, or (with changes) hold it and ask. Adjusted while rendering.
-  if (shown.url !== url && dialog === null && url !== held) {
+  if (shown.url !== url && dialog === null && leaving === null && url !== held) {
     // An open catalog cell is dropped by a view change too; the details form stays with it.
     const moved =
       shown.modelId !== props.modelId ||
@@ -93,7 +136,7 @@ export function UnsavedGuard(props: {
     };
     if (!moved || !dirty) setShown(next);
     else {
-      setDialog({
+      (editorState.autoSave === true ? setLeaving : setDialog)({
         proceed: () => {
           setShown(next);
         },
@@ -119,7 +162,7 @@ export function UnsavedGuard(props: {
       if (path === `${window.location.pathname}${window.location.search}`) return;
       event.preventDefault();
       event.stopPropagation();
-      setDialog({
+      hold({
         proceed: () => {
           void navigate(path);
         },
@@ -134,7 +177,7 @@ export function UnsavedGuard(props: {
       document.removeEventListener('click', onClick, true);
       window.removeEventListener('beforeunload', onUnload);
     };
-  }, [dirty, navigate]);
+  }, [dirty, navigate, hold]);
 
   const close = () => {
     setDialog(null);
@@ -151,9 +194,24 @@ export function UnsavedGuard(props: {
         editor,
         onEditorState: reportState,
       })}
-      {dialog && (
+      {dialog?.failed !== undefined && (
+        <LeaveDialog
+          name={editorState?.name ?? ''}
+          reason={dialog.failed}
+          onKeep={() => {
+            close();
+            dialog.keep?.();
+          }}
+          onLeave={() => {
+            editor.current?.discard();
+            setClean();
+            close();
+            dialog.proceed();
+          }}
+        />
+      )}
+      {dialog && dialog.failed === undefined && (
         <UnsavedDialog
-          kind="leave"
           name={editorState?.name ?? ''}
           subject={editorState?.subject ?? 'element'}
           saving={saving}

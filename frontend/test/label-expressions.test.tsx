@@ -164,9 +164,12 @@ describe('on the canvas', () => {
       fireEvent.change(data, { target: { value } });
       fireEvent.keyDown(data, { key: 'Enter' });
     }
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    // Each value added is saved at once.
     await waitFor(() => {
-      expect(sent).toEqual([{ version: 1, sourceToTargetData: ['Stock', 'Prices'] }]);
+      expect(sent).toEqual([
+        { version: 1, sourceToTargetData: ['Stock'] },
+        { version: 1, sourceToTargetData: ['Stock', 'Prices'] },
+      ]);
     });
     await waitFor(() => {
       expect(labels()).toContain('svc-shop on Stock, Prices');
@@ -298,7 +301,7 @@ describe('on the relationship form', () => {
   it('saves the label as typed', async () => {
     const { form, label, sent } = await openForm();
     fireEvent.change(label, { target: { value: '{Source to Target Data} by {Identity}' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(sent).toEqual([{ version: 1, label: '{Source to Target Data} by {Identity}' }]);
     });
