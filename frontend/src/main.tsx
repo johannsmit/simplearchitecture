@@ -12,6 +12,7 @@ import './styles/models.css';
 import './styles/explorer.css';
 import './styles/branding.css';
 import './styles/agents.css';
+import './styles/help.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Root element #root not found');

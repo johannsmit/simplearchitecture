@@ -9,6 +9,10 @@ import { PropertiesPage } from './admin/PropertiesPage';
 import { ConnectedAppsPage } from './agents/ConnectedAppsPage';
 import { ConsentPage } from './agents/ConsentPage';
 import { MeContext, useAuth, useMe } from './auth';
+import { AdminHelp } from './help/AdminHelp';
+import { HelpIndexPage } from './help/HelpIndexPage';
+import { ModellingHelp } from './help/ModellingHelp';
+import { ViewingHelp } from './help/ViewingHelp';
 import { Shell } from './Shell';
 import { NoAccessPage } from './routes/NoAccessPage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -48,6 +52,16 @@ function SignedInRoutes() {
         <Route index element={<Home />} />
         {/* For everyone signed in, with or without a role: they can always disconnect. */}
         <Route path="agents" element={<ConnectedAppsPage />} />
+        {/*
+          For everyone signed in, outside the space gates: the help pages hold no model data and
+          ask the API for nothing, and a user can read what a space they can't use offers.
+        */}
+        <Route path="help">
+          <Route index element={<HelpIndexPage />} />
+          <Route path="viewing" element={<ViewingHelp />} />
+          <Route path="modelling" element={<ModellingHelp />} />
+          <Route path="admin" element={<AdminHelp />} />
+        </Route>
         <Route
           path="admin"
           element={

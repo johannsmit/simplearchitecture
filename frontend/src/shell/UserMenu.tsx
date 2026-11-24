@@ -7,7 +7,8 @@ import { Icon } from '../icons';
 import { Popover } from './Popover';
 import { spaceIcons } from './spaceIcons';
 
-const accessWords: Record<Space, string> = {
+/** What each space lets the user do, as the account menu and the help pages say it. */
+export const accessWords: Record<Space, string> = {
   viewing: 'Read',
   modelling: 'Edit elements',
   admin: 'Manage models',
@@ -118,6 +119,10 @@ export function UserMenu() {
             })}
           </ul>
           <div className="pop-sep" />
+          <Link className="menu-item" to="/help" onClick={close}>
+            <Icon name="info" />
+            Help
+          </Link>
           <Link className="menu-item" to="/agents" onClick={close}>
             <Icon name="link" />
             Connected apps

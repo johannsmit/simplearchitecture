@@ -1,0 +1,178 @@
+/* Help pages (/help): prose, key and pointer tables, and the space cards. */
+.help-page p,
+.help-page section > ul {
+  max-width: 72ch;
+}
+
+.help-page .lead {
+  color: var(--text-muted);
+}
+
+.help-page h2 {
+  margin: 32px 0 8px;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.help-page h3 {
+  margin: 20px 0 6px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.help-page section p {
+  margin: 0 0 10px;
+}
+
+.help-page section > ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.help-page section > ul > li + li {
+  margin-top: 4px;
+}
+
+.help-page kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 500 12px/18px var(--font);
+  white-space: nowrap;
+}
+
+/* The links to the sections of a space's page */
+.help-toc ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.help-toc a {
+  display: inline-block;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+/* No access to the space the page is about */
+.help-page .help-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--info-soft);
+  color: var(--text);
+}
+
+.help-notice .ico {
+  margin-top: 2px;
+  color: var(--info);
+}
+
+/* Key and pointer tables: a wide table scrolls in its own box, never the page */
+.help-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 10px;
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.help-table th {
+  padding: 8px 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.help-table td {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.help-table .help-key {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.help-table .help-action {
+  width: 40%;
+}
+
+.help-page .help-open {
+  margin-top: 32px;
+}
+
+/* /help: one card per space, each a single link */
+.help-page .help-cards {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 1024px) {
+  .help-page .help-cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.help-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.help-card:hover {
+  border-color: var(--border-strong);
+}
+
+.help-card > .ico {
+  color: var(--accent);
+}
+
+.help-page .help-card h2 {
+  margin: 0;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.help-page .help-card p {
+  margin: 0;
+}
+
+.help-page .help-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  color: var(--positive);
+  font-size: 12px;
+}
+
+.help-page .help-access.no {
+  color: var(--text-muted);
+}

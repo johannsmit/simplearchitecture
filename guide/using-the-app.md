@@ -69,7 +69,7 @@ The catalog shows every element of one type in a table, with a tab per type and 
 ## The header
 
 - **The theme button** (sun or moon) switches between Light, the default, and Dark. Your browser remembers the choice.
-- **The account menu** shows your roles and access, **Connected apps** (your AI agents, see [Connect an AI agent](connect-an-ai-agent.md)), the third-party licences, **Sign out** and the version you are using.
+- **The account menu** shows your roles and access, **Help** (what you can do in each space, with the mouse and the keyboard), **Connected apps** (your AI agents, see [Connect an AI agent](connect-an-ai-agent.md)), the third-party licences, **Sign out** and the version you are using.
 
 ## Browsers
 

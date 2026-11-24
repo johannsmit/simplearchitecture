@@ -58,12 +58,11 @@ Use SimpleArchitecture in a desktop browser, with a mouse and keyboard. Phones a
 
 All pages are listed in [the guide](guide/README.md).
 
-- **Using the app:** [Using the app](guide/using-the-app.md), [The canvas](guide/canvas.md), [Modelling](guide/modelling.md), [Views](guide/views.md), [Keyboard shortcuts](guide/keyboard-shortcuts.md), [Connect an AI agent](guide/connect-an-ai-agent.md)
-- **For Admins:** [The Admin space](guide/admin.md), [Import and export](guide/import-and-export.md), [Properties](guide/properties.md)
+- **Using the app:** in the app, choose **Help** in the account menu (your name, top right). The same subjects, in more detail, are in [the guide](guide/README.md). To let an AI agent read your models, see [Connect an AI agent](guide/connect-an-ai-agent.md).
 - **Hosting:** [Run with Docker Compose](guide/docker-compose.md), [Hosting the image](guide/hosting.md), [Sign-in and roles](guide/sign-in.md), [Azure examples](guide/azure.md), [Database](guide/database.md)
 - **For IT and security teams:** [Security overview](guide/security-overview.md), including how to verify a release
 - **Building from source:** [Development](guide/development.md)
-- **Release notes:** [0.71.0](guide/releases/v0.71.0.md), [0.70.0](guide/releases/v0.70.0.md), [0.69.0](guide/releases/v0.69.0.md), [0.68.0](guide/releases/v0.68.0.md), [0.67.1](guide/releases/v0.67.1.md), [0.67.0](guide/releases/v0.67.0.md), [0.66.0](guide/releases/v0.66.0.md), [0.65.2](guide/releases/v0.65.2.md), [0.65.0](guide/releases/v0.65.0.md), [0.64.0](guide/releases/v0.64.0.md), [0.63.0](guide/releases/v0.63.0.md), [0.60.0 (beta)](guide/releases/v0.60.0.md)
+- **Release notes:** [0.72.0](guide/releases/v0.72.0.md), [0.71.0](guide/releases/v0.71.0.md), [0.70.0](guide/releases/v0.70.0.md), [0.69.0](guide/releases/v0.69.0.md), [0.68.0](guide/releases/v0.68.0.md), [0.67.1](guide/releases/v0.67.1.md), [0.67.0](guide/releases/v0.67.0.md), [0.66.0](guide/releases/v0.66.0.md), [0.65.2](guide/releases/v0.65.2.md), [0.65.0](guide/releases/v0.65.0.md), [0.64.0](guide/releases/v0.64.0.md), [0.63.0](guide/releases/v0.63.0.md), [0.60.0 (beta)](guide/releases/v0.60.0.md)
 
 ## Licence
 
