@@ -48,6 +48,7 @@ import {
 import type { EditableModel, ModelStore } from '../storage/model-store.js';
 import {
   apply,
+  changeOptions,
   ConflictError,
   deleteSchema,
   isEntries,
@@ -62,6 +63,7 @@ import {
   sameValue,
   Unchanged,
   versionSchema,
+  type EditOptions,
   type Entries,
 } from './common.js';
 
@@ -376,6 +378,7 @@ export class RelationshipService {
     modelId: string,
     input: unknown,
     actor: ModelAuthor,
+    edit: EditOptions = {},
   ): Promise<RelationshipChangeResult> {
     const elements = this.#store.elements;
     const request = parse(newRelationshipSchema, input);
@@ -398,20 +401,24 @@ export class RelationshipService {
     };
     let warnings: ValidationIssue[] = [];
     let nesting: NestingChange[] = [];
-    const applied = await elements.change(modelId, (model) => {
-      const nodes = model.document.graph.nodes ?? {};
-      for (const end of ['source', 'target'] as const) {
-        if (!Object.hasOwn(nodes, edge[end])) throw new NotFoundError(end);
-      }
-      const document = withEdge(model.document, edge);
-      const validation = validateJgf(document);
-      refuseErrors(validation, { kind: 'edge', id }, requestField);
-      refuseModellingProblems(model.document, edge, 'target');
-      warnings = warningsFor(validation, edge);
-      nesting = nestingChanges(model.document, document);
-      const write = { kind: 'put-relationship', relationshipId: id, edge } as const;
-      return plan(write, document, 'relationship-added', actor, fields);
-    });
+    const applied = await elements.change(
+      modelId,
+      (model) => {
+        const nodes = model.document.graph.nodes ?? {};
+        for (const end of ['source', 'target'] as const) {
+          if (!Object.hasOwn(nodes, edge[end])) throw new NotFoundError(end);
+        }
+        const document = withEdge(model.document, edge);
+        const validation = validateJgf(document);
+        refuseErrors(validation, { kind: 'edge', id }, requestField);
+        refuseModellingProblems(model.document, edge, 'target');
+        warnings = warningsFor(validation, edge);
+        nesting = nestingChanges(model.document, document);
+        const write = { kind: 'put-relationship', relationshipId: id, edge } as const;
+        return plan(write, document, 'relationship-added', actor, fields);
+      },
+      changeOptions(edit),
+    );
     if (applied === undefined) throw new NotFoundError('model');
     return {
       relationship: { id, version: applied.version ?? 1, edge },
@@ -425,6 +432,7 @@ export class RelationshipService {
     relationshipId: string,
     input: unknown,
     actor: ModelAuthor,
+    edit: EditOptions = {},
   ): Promise<RelationshipChangeResult> {
     const elements = this.#store.elements;
     const request = parse(updateRelationshipSchema, input);
@@ -594,7 +602,7 @@ export class RelationshipService {
           // A list swapped by Reverse and then sent is one change of that field.
           return plan(write, document, action, actor, [...new Set(changed)]);
         },
-        { propertyKeys: Object.keys(request.metadata ?? {}) },
+        { propertyKeys: Object.keys(request.metadata ?? {}), ...changeOptions(edit) },
       );
       if (applied === undefined) throw new NotFoundError('model');
       if (stored === undefined || applied.version === undefined) {

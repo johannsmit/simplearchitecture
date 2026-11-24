@@ -167,8 +167,10 @@ export function ConnectedAppsPage() {
               Connected apps
             </h1>
             <p>
-              These AI agents can read the models you can see in Viewing. Signing out of this
-              browser doesn&apos;t disconnect them.
+              {me.spaces.includes('modelling')
+                ? 'These AI agents can read the models you can see in Viewing, and add and change elements and relationships as you. '
+                : 'These AI agents can read the models you can see in Viewing. '}
+              Signing out of this browser doesn&apos;t disconnect them.
             </p>
           </div>
         </div>

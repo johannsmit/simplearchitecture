@@ -158,6 +158,21 @@ export interface ChangeOptions {
   propertyKeys?: readonly string[];
   /** The same for element properties. */
   elementPropertyKeys?: readonly string[];
+  /**
+   * A preview: the change runs exactly as a real one (the plan, the size and storable checks and
+   * every write, in the transaction), then the transaction is rolled back. What a save would
+   * return is returned; nothing is stored and no audit row is kept.
+   */
+  dryRun?: boolean;
+  /** Who made the change on the user's behalf, recorded in its audit rows' `details`. */
+  via?: AuditVia;
+}
+
+/** A change an AI agent made through MCP for the user (the actor). Ids only, never content. */
+export interface AuditVia {
+  kind: 'mcp';
+  clientId: string;
+  connectionId: string;
 }
 
 /**

@@ -38,6 +38,7 @@ import {
 import type { EditableModel, ModelStore } from '../storage/model-store.js';
 import {
   apply,
+  changeOptions,
   ConflictError,
   deleteSchema,
   isEntries,
@@ -53,6 +54,7 @@ import {
   sameValue,
   Unchanged,
   versionSchema,
+  type EditOptions,
   type Entries,
 } from './common.js';
 
@@ -320,6 +322,7 @@ export class ElementService {
     modelId: string,
     input: unknown,
     actor: ModelAuthor,
+    edit: EditOptions = {},
   ): Promise<ElementChangeResult> {
     const elements = this.#store.elements;
     const request = parse(newElementSchema, input);
@@ -358,7 +361,7 @@ export class ElementService {
         warnings = warningsFor(validation, id);
         return plan({ kind: 'put', elementId: id, node }, document, 'element-added', actor, fields);
       },
-      { elementPropertyKeys: metadataKeys },
+      { elementPropertyKeys: metadataKeys, ...changeOptions(edit) },
     );
     if (applied === undefined) throw new ElementNotFoundError('model');
     return { element: { id, version: applied.version ?? 1, node }, warnings };
@@ -369,6 +372,7 @@ export class ElementService {
     elementId: string,
     input: unknown,
     actor: ModelAuthor,
+    edit: EditOptions = {},
   ): Promise<ElementChangeResult> {
     const elements = this.#store.elements;
     const request = parse(updateElementSchema, input);
@@ -451,7 +455,7 @@ export class ElementService {
             changed,
           );
         },
-        { elementPropertyKeys: Object.keys(request.metadata ?? {}) },
+        { elementPropertyKeys: Object.keys(request.metadata ?? {}), ...changeOptions(edit) },
       );
       if (applied === undefined) throw new ElementNotFoundError('model');
       if (node === undefined || applied.version === undefined)

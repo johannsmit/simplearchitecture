@@ -639,6 +639,7 @@ export class OAuthService {
       kind: 'valid',
       auth: {
         userId: connection.userId,
+        userName: connection.userName,
         roles: connection.roles,
         clientId: connection.clientId,
         connectionId: connection.id,

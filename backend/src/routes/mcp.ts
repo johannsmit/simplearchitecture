@@ -2,6 +2,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { buildMcpServer } from '../mcp/mcp-server.js';
 import type { McpReadService } from '../mcp/read-service.js';
+import type { McpWriteService } from '../mcp/write-service.js';
 import { rateLimit, RateLimiter } from '../rate-limit.js';
 
 /** MCP requests per user per minute, and the largest request body (tool arguments are small). */
@@ -10,6 +11,7 @@ export const mcpBodyLimit = 256 * 1024;
 
 export interface McpRouteOptions {
   service: McpReadService;
+  writes: McpWriteService;
   /** The endpoint's own address (`<app>/mcp`), for the request the SDK sees. */
   resource: string;
   now: () => number;
@@ -30,7 +32,7 @@ function sdkHeaders(request: FastifyRequest): Headers {
  * answers, no server-side session. The access guard (mcp-auth/guard.ts) has checked the token.
  * There is no event stream to open, so GET and DELETE get 405.
  */
-export function mcpRoutes({ service, resource, now }: McpRouteOptions): FastifyPluginAsync {
+export function mcpRoutes({ service, writes, resource, now }: McpRouteOptions): FastifyPluginAsync {
   const perUser = rateLimit(
     new RateLimiter(mcpCallsPerMinute, 60_000, now),
     (request) => request.mcpAuth?.userId,
@@ -44,7 +46,7 @@ export function mcpRoutes({ service, resource, now }: McpRouteOptions): FastifyP
       async (request, reply) => {
         const auth = request.mcpAuth;
         if (auth === null) throw new Error('MCP route reached without a token');
-        const server = buildMcpServer(service, auth, request.log);
+        const server = buildMcpServer(service, writes, auth, request.log);
         const transport = new WebStandardStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,

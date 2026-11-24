@@ -56,6 +56,8 @@ export function ConsentPage() {
   const [guarded, setGuarded] = useState(true);
   const [stuck, setStuck] = useState(false);
   const canAllow = me.spaces.includes('viewing');
+  // The agent gets the roles of this sign-in: a Modeller's agent can change the models too.
+  const canChange = me.spaces.includes('modelling');
 
   useEffect(() => {
     if (id === null || invalidFromStart) return;
@@ -242,10 +244,23 @@ export function ConsentPage() {
                 <Icon name="check" size="sm" />
                 Read the models you can see in Viewing
               </li>
-              <li>
-                <Icon name="x" size="sm" />
-                It can&apos;t change, add or delete anything
-              </li>
+              {canChange ? (
+                <>
+                  <li>
+                    <Icon name="check" size="sm" />
+                    Add and change elements and relationships, as you, one at a time
+                  </li>
+                  <li>
+                    <Icon name="x" size="sm" />
+                    It can&apos;t delete anything
+                  </li>
+                </>
+              ) : (
+                <li>
+                  <Icon name="x" size="sm" />
+                  It can&apos;t change, add or delete anything
+                </li>
+              )}
             </ul>
             <p>
               It stays connected for 7 days, until{' '}

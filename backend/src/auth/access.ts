@@ -24,6 +24,8 @@ export type Access = 'public' | 'authenticated' | { space: Space } | 'oauth' | '
 /** Who an MCP request is for, from its access token: the user and roles of their sign-in. */
 export interface McpAuth {
   userId: string;
+  /** The user's display name at sign-in: the actor of the changes their agent makes. */
+  userName: string;
   roles: Role[];
   clientId: string;
   connectionId: string;

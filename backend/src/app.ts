@@ -43,6 +43,7 @@ import { newModelLimit, uploadLimit } from './rate-limit.js';
 import { mcpTokenGuard } from './mcp-auth/guard.js';
 import { OAuthService } from './mcp-auth/oauth-service.js';
 import { McpReadService } from './mcp/read-service.js';
+import { McpWriteService } from './mcp/write-service.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { agentRoutes } from './routes/agents.js';
 import { oauthRoutes } from './routes/oauth.js';
@@ -326,8 +327,10 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   );
   const properties = new PropertyService(db);
   await app.register(propertyRoutes(properties));
-  await app.register(elementRoutes(new ElementService(modelStore)));
-  await app.register(relationshipRoutes(new RelationshipService(modelStore)));
+  const elementService = new ElementService(modelStore);
+  const relationshipService = new RelationshipService(modelStore);
+  await app.register(elementRoutes(elementService));
+  await app.register(relationshipRoutes(relationshipService));
   const views = new ViewService(modelStore, properties);
   await app.register(viewRoutes(views));
   await app.register(databaseRoutes(database, now));
@@ -343,6 +346,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   await app.register(
     mcpRoutes({
       service: new McpReadService(modelStore, properties, views),
+      writes: new McpWriteService(elementService, relationshipService, now),
       resource: oauth.addresses.resource,
       now,
     }),

@@ -12,6 +12,7 @@ import {
   admin,
   apiError,
   expectNoSeriousAxeViolations,
+  modeller,
   noRole,
   renderAt,
   requests,
@@ -169,6 +170,36 @@ describe('the consent page', () => {
     expect(await screen.findByText('None given')).toBeTruthy();
   });
 
+  it('tells a Viewer the agent can only read', async () => {
+    stubApi(viewer, consentApi(hosted));
+    renderAt(consentUrl);
+    const can = await screen.findByRole('list');
+    expect(
+      within(can)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Read the models you can see in Viewing',
+      "It can't change, add or delete anything",
+    ]);
+  });
+
+  it('tells a Modeller the agent can add and change elements and relationships, never delete', async () => {
+    stubApi(modeller, consentApi(hosted));
+    renderAt(consentUrl);
+    const can = await screen.findByRole('list');
+    expect(
+      within(can)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Read the models you can see in Viewing',
+      'Add and change elements and relationships, as you, one at a time',
+      "It can't delete anything",
+    ]);
+    await expectNoSeriousAxeViolations();
+  });
+
   it('tells a user without a role, with only a way back that says no', async () => {
     const fetchMock = stubApi(noRole, consentApi(hosted));
     renderAt(consentUrl);
@@ -248,7 +279,7 @@ describe('Connected apps', () => {
     renderAt('/agents');
     await screen.findByRole('heading', { name: 'Connected apps', level: 1 });
     expect(screen.getByRole('main').textContent).toContain(
-      "Signing out of this browser doesn't disconnect them.",
+      "These AI agents can read the models you can see in Viewing. Signing out of this browser doesn't disconnect them.",
     );
     const address = screen.getByRole('textbox', { name: 'Address for your AI agent' });
     expect((address as HTMLInputElement).value).toBe(`${window.location.origin}/mcp`);
@@ -263,6 +294,15 @@ describe('Connected apps', () => {
     expect(rows[1]?.textContent).toContain('Not used yet');
     expect(rows[1]?.textContent).toContain('Ends');
     await expectNoSeriousAxeViolations();
+  });
+
+  it('tells a Modeller their agents can also add and change elements and relationships', async () => {
+    stubApi(modeller, appsApi(apps));
+    renderAt('/agents');
+    await screen.findByRole('heading', { name: 'Connected apps', level: 1 });
+    expect(screen.getByRole('main').textContent).toContain(
+      'read the models you can see in Viewing, and add and change elements and relationships as you.',
+    );
   });
 
   it('disconnects with no confirmation, announces it and moves focus on', async () => {

@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { maxEchoLength } from '../jgf/validate.js';
 import { maxMetadataKeyLength } from '../limits.js';
 import type {
+  AuditVia,
   ElementAuditAction,
   ElementWrite,
   PlannedElementChange,
@@ -71,6 +72,23 @@ export class RejectedError extends Error {
   ) {
     super(rejectedMessage);
   }
+}
+
+/**
+ * How a change is made: `dryRun` checks it exactly as a save and returns what would be saved,
+ * storing nothing and writing no audit row; `via` records that an AI agent made it for the actor.
+ */
+export interface EditOptions {
+  dryRun?: boolean;
+  via?: AuditVia;
+}
+
+/** The store's change options for an edit: only what was asked for. */
+export function changeOptions(edit: EditOptions): { dryRun?: boolean; via?: AuditVia } {
+  return {
+    ...(edit.dryRun === true ? { dryRun: true } : {}),
+    ...(edit.via === undefined ? {} : { via: edit.via }),
+  };
 }
 
 /** Nothing would change: the result is returned as it is, and nothing is stored or audited. */
