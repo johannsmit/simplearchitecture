@@ -183,11 +183,14 @@ const viewing: KeyTable[] = [
       { keys: '`Page Up` `Page Down`', does: 'Up or down by a screenful of rows' },
       {
         keys: '`Enter`',
-        does: 'On a column header, sorts by it (again reverses the order). Otherwise focuses the element on the canvas',
+        does: 'On a column header, sorts by it (again reverses the order). In Viewing, focuses the element on the canvas. In Modelling, edits the cell',
       },
       { keys: '`Space`', does: 'On a column header, sorts by it' },
       { keys: '`Shift` + `Enter`', does: "Focuses the row's element on the canvas" },
-      { keys: 'A letter', does: 'Jumps to the next row whose name starts with it' },
+      {
+        keys: 'A letter',
+        does: 'Viewing: jumps to the next row whose name starts with it. Modelling: edits the cell, starting with that character (a choice opens its list)',
+      },
     ],
   },
   {
@@ -235,7 +238,7 @@ const modelling: KeyTable[] = [
     id: 'keys-views-list',
     title: 'Views list',
     guide: 'Views list',
-    rows: [{ keys: '`F2`', does: 'On a folder, renames it' }],
+    rows: [{ keys: '`F2`', does: 'On a folder, renames it (Modelling)' }],
   },
   {
     id: 'keys-catalog',
@@ -244,11 +247,11 @@ const modelling: KeyTable[] = [
     rows: [
       {
         keys: '`Enter`',
-        does: 'On a column header, sorts by it (again reverses the order). Otherwise edits the cell',
+        does: 'On a column header, sorts by it (again reverses the order). In Viewing, focuses the element on the canvas. In Modelling, edits the cell',
       },
       {
         keys: 'A letter',
-        does: 'Edits the cell, starting with that character (a choice opens its list)',
+        does: 'Viewing: jumps to the next row whose name starts with it. Modelling: edits the cell, starting with that character (a choice opens its list)',
       },
       { keys: '`F2`', does: 'Edits the cell' },
       { keys: '`Delete` or `Backspace`', does: 'Edits the cell, starting empty' },

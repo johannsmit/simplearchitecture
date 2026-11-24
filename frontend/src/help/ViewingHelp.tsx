@@ -106,8 +106,9 @@ export function ViewingHelp() {
           <p>
             <b>Show Viewpoints</b> chooses what the lines show in place of their label, such as the
             architecture state, the identity or the data that flows each way. <b>Group by</b> draws
-            the cards in boxes, one for each value of one element property. Both are part of the
-            page&apos;s address. Neither moves a card by itself or changes a value.
+            the cards in boxes, one for each value of one element property. Show Viewpoints never
+            moves a card, and is part of the page&apos;s address. Group by is part of the address
+            outside a view; a view keeps its own Group by. Neither changes the model.
           </p>
 
           <h3>Add and remove cards</h3>

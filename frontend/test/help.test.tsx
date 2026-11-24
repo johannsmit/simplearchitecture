@@ -250,8 +250,8 @@ function guideRows(): GuideRow[] {
   return rows;
 }
 
-/** A rendered key cell written back the guide's way: each <kbd> as `key`, its symbol if it has one. */
-function asGuideKeys(cell: Element): string {
+/** A rendered cell written back the guide's way: each <kbd> as `key`, its symbol if it has one. */
+function asGuideText(cell: Element): string {
   return [...cell.childNodes]
     .map((node) => {
       if (!(node instanceof HTMLElement) || node.tagName !== 'KBD') return node.textContent;
@@ -261,18 +261,31 @@ function asGuideKeys(cell: Element): string {
     .join('');
 }
 
+/**
+ * The guide's meaning as a help page says it: links and bold as plain text, and without the
+ * "Viewing:" or "Modelling:" a row has when the page is already that space's.
+ */
+function helpMeaning(does: string, both: boolean): string {
+  const plain = does.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replaceAll('**', '');
+  if (both) return plain;
+  const bare = plain.replace(/^(Viewing|Modelling)[:,] /, '');
+  return bare.charAt(0).toUpperCase() + bare.slice(1);
+}
+
 describe('keyboard tables', () => {
-  it('has every row of the keyboard shortcuts guide, each on the page of its space', async () => {
-    const shown = new Map<string, Space[]>();
+  it('has every row of the keyboard shortcuts guide, with its meaning, on the page of its space', async () => {
+    const shown = new Map<string, { space: Space; does: string }[]>();
     for (const space of ['viewing', 'modelling', 'admin'] as const) {
       const label = spaceLabels[space];
       stubApi(admin);
       const view = renderAt(`/help/${space}`);
       await screen.findByRole('heading', { level: 1, name: `${label} help` });
       for (const table of document.querySelectorAll<HTMLElement>('.help-keys')) {
-        for (const cell of table.querySelectorAll('tbody td:first-child')) {
-          const key = `${table.dataset.guide ?? ''} | ${asGuideKeys(cell)}`;
-          shown.set(key, [...(shown.get(key) ?? []), space]);
+        for (const row of table.querySelectorAll('tbody tr')) {
+          const [keys, does] = row.querySelectorAll('td');
+          if (!keys || !does) throw new Error('a key row needs two cells');
+          const key = `${table.dataset.guide ?? ''} | ${asGuideText(keys)}`;
+          shown.set(key, [...(shown.get(key) ?? []), { space, does: asGuideText(does) }]);
         }
       }
       view.unmount();
@@ -283,15 +296,24 @@ describe('keyboard tables', () => {
     const inGuide = new Set(guide.map((row) => `${row.section} | ${row.keys}`));
     // Nothing on the help pages that the guide doesn't have.
     expect([...shown.keys()].filter((key) => !inGuide.has(key))).toEqual([]);
-    for (const row of guide) {
-      const where = shown.get(`${row.section} | ${row.keys}`);
-      // A row whose meaning differs between Viewing and Modelling is on both pages; any other on one.
-      const both = row.does.includes('Viewing') && row.does.includes('Modelling');
-      expect({ ...row, where }).toEqual({
-        ...row,
-        where: both ? ['viewing', 'modelling'] : [expect.any(String)],
-      });
-    }
+    // A row whose meaning differs between Viewing and Modelling is on both pages; any other on one.
+    const both = (row: GuideRow) => row.does.includes('Viewing') && row.does.includes('Modelling');
+    expect(
+      guide.map((row) => ({ ...row, where: shown.get(`${row.section} | ${row.keys}`) })),
+    ).toEqual(
+      guide.map((row) => {
+        const does = helpMeaning(row.does, both(row));
+        return {
+          ...row,
+          where: both(row)
+            ? [
+                { space: 'viewing', does },
+                { space: 'modelling', does },
+              ]
+            : [{ space: expect.any(String) as Space, does }],
+        };
+      }),
+    );
   });
 
   it('reads symbol keys as words', async () => {

@@ -12,7 +12,7 @@ Views aren't part of the export. Treat an exported file as confidential: it hold
 
 ## Import a JGF file
 
-Choose **Import file** and pick a `.json` file of at most 5 MB.
+Choose **Import file** and pick a `.json` file of at most 5 MB, or drop the file anywhere on **Admin → Models**.
 
 - The file becomes a **new model**. A file saved by Export comes back with the same elements and relationships, under a new id.
 - The file is checked in full first. If it has errors, nothing is saved and the result lists them. Warnings don't stop an import; the result lists them too.
@@ -22,7 +22,7 @@ Choose **Import file** and pick a `.json` file of at most 5 MB.
 
 ## Import an ArchiMate file
 
-Choose **Import file** and pick an ArchiMate exchange file (OEF, `.xml`) of at most 10 MB. ArchiMate's element and relationship types become the metamodel's:
+Choose **Import file** and pick an ArchiMate exchange file (OEF, `.xml`) of at most 10 MB, or drop the file anywhere on **Admin → Models**. ArchiMate's element and relationship types become the metamodel's:
 
 - The mapping is in `config/oef-mapping.json`. It maps ArchiMate's relationship types to Relation or Contains, and a rule can reverse a relationship's direction (its two data lists swap with it).
 - A Flow becomes a Relation, with its name as the data that goes from its source to its target.

@@ -6,7 +6,10 @@ const pointer: [string, string][] = [
     'Drop a JSON Graph Format or ArchiMate file anywhere on **Admin → Models**',
     'Imports it as a new model',
   ],
-  ['Click a column header on **Admin → Models**', 'Sorts the models by it'],
+  [
+    'Click a column header on **Admin → Models**',
+    'Sorts the models by it; again reverses the order',
+  ],
   ["**Export** on a model's row", 'Downloads the model as a JSON Graph Format file'],
   ["**Delete** on a model's row", 'Deletes the model, with its views'],
   ["The pencil on a property's row", 'Edits the property'],

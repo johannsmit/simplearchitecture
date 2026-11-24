@@ -6,10 +6,10 @@ People and their roles aren't managed here. They come from your organisation's s
 
 ## Models
 
-**Admin → Models** lists every model.
+**Admin → Models** lists every model. Click a column header to sort the list by it, and again to reverse the order.
 
 - **New model** creates an empty model from a name. Names don't have to be unique.
-- **Import file** brings in a JSON Graph Format or ArchiMate file as a new model. See [Import and export](import-and-export.md).
+- **Import file** brings in a JSON Graph Format or ArchiMate file as a new model. You can also drop the file anywhere on the page. See [Import and export](import-and-export.md).
 - **Export**, on each row, downloads the model as a JSON Graph Format file.
 - **Delete** removes a model, with its views. It can't be undone, so export it first if you may need it.
 
