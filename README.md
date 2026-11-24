@@ -58,8 +58,7 @@ Use SimpleArchitecture in a desktop browser, with a mouse and keyboard. Phones a
 
 All pages are listed in [the guide](guide/README.md).
 
-- **Using the app:** [Using the app](guide/using-the-app.md), [The canvas](guide/canvas.md), [Modelling](guide/modelling.md), [Views](guide/views.md), [Keyboard shortcuts](guide/keyboard-shortcuts.md), [Connect an AI agent](guide/connect-an-ai-agent.md)
-- **For Admins:** [The Admin space](guide/admin.md), [Import and export](guide/import-and-export.md), [Properties](guide/properties.md)
+- **Using the app:** in the app, choose **Help** in the account menu (your name, top right). The same subjects, in more detail, are in [the guide](guide/README.md). To let an AI agent read your models, see [Connect an AI agent](guide/connect-an-ai-agent.md).
 - **Hosting:** [Run with Docker Compose](guide/docker-compose.md), [Hosting the image](guide/hosting.md), [Sign-in and roles](guide/sign-in.md), [Azure examples](guide/azure.md), [Database](guide/database.md)
 - **For IT and security teams:** [Security overview](guide/security-overview.md), including how to verify a release
 - **Building from source:** [Development](guide/development.md)
