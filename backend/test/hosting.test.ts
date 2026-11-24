@@ -68,6 +68,14 @@ describe('the built web app, served from the API origin', () => {
     }
   });
 
+  it('answers the manifest from the API (with the branding), never a file left in the build', async () => {
+    const web = await start();
+    const res = await web.inject({ method: 'GET', url: '/manifest.webmanifest' });
+    expect(res.headers['content-type']).toBe('application/manifest+json; charset=utf-8');
+    expect(res.json()).toMatchObject({ name: 'SimpleArchitecture' });
+    expect(res.body).not.toBe('{"name":"Test"}');
+  });
+
   it('answers 304 to a matching ETag and gzips for clients that accept it', async () => {
     const web = await start();
     const url = '/assets/index-abc123.js';

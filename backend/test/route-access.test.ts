@@ -25,6 +25,9 @@ const expectedAccess: Record<string, Level> = {
   'GET /api/health': 'public',
   'GET /api/branding': 'public',
   'GET /api/branding/logo': 'public',
+  'GET /api/branding/dark-logo': 'public',
+  'GET /api/branding/icon': 'public',
+  'GET /manifest.webmanifest': 'public',
   'GET /api/me': 'authenticated',
   'GET /api/about': 'viewing',
   'GET /api/viewing/ping': 'viewing',
@@ -69,6 +72,11 @@ const expectedAccess: Record<string, Level> = {
   'DELETE /api/admin/branding': 'admin',
   'PUT /api/admin/branding/logo': 'admin',
   'DELETE /api/admin/branding/logo': 'admin',
+  'PUT /api/admin/branding/title': 'admin',
+  'PUT /api/admin/branding/dark-logo': 'admin',
+  'DELETE /api/admin/branding/dark-logo': 'admin',
+  'PUT /api/admin/branding/icon': 'admin',
+  'DELETE /api/admin/branding/icon': 'admin',
 };
 
 /** The AI agents' OAuth server and MCP endpoint: only with PostgreSQL, as in the image. */
