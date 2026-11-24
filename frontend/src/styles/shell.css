@@ -28,7 +28,8 @@
 
 .brand {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 10px;
   color: var(--text);
@@ -47,9 +48,15 @@
 }
 
 .brand-title {
+  /* A long product title stays on one line. */
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .divider {

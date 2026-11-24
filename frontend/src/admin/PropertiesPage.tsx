@@ -10,6 +10,7 @@ import {
 } from '@simplearchitecture/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listProperties, propertyUsage } from '../api';
+import { usePageTitle } from '../branding';
 import { Icon } from '../icons';
 import { counted, formatNumber } from '../words';
 import { AdminNav } from './AdminNav';
@@ -109,6 +110,7 @@ const listTexts: Record<
 const lists: readonly PropertyList[] = ['element', 'relationship'];
 
 export function PropertiesPage() {
+  usePageTitle('Properties – Admin');
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [open, setOpen] = useState<Open | null>(null);
   const [status, setStatus] = useState('');
@@ -148,7 +150,6 @@ export function PropertiesPage() {
   }, []);
 
   useEffect(() => {
-    document.title = 'Properties – Admin – SimpleArchitecture';
     const controller = new AbortController();
     reload(controller.signal);
     return () => {

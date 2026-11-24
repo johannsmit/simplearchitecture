@@ -2,6 +2,7 @@ import type { ConnectedApp } from '@simplearchitecture/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { disconnectApp, listConnectedApps } from '../api';
 import { useMe } from '../auth';
+import { usePageTitle } from '../branding';
 import { Icon } from '../icons';
 
 /**
@@ -96,6 +97,7 @@ export function AgentAddress() {
 }
 
 export function ConnectedAppsPage() {
+  usePageTitle('Connected apps');
   const me = useMe();
   const hasRole = me.spaces.includes('viewing');
   const [load, setLoad] = useState<Load>({ status: 'loading' });
@@ -116,7 +118,6 @@ export function ConnectedAppsPage() {
   }, []);
 
   useEffect(() => {
-    document.title = 'Connected apps – SimpleArchitecture';
     const controller = new AbortController();
     reload(controller.signal);
     return () => {

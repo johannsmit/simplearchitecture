@@ -18,6 +18,7 @@ import {
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useMe } from '../auth';
+import { usePageTitle } from '../branding';
 import { type EditorHandle, type EditorState } from '../modelling/ElementEditor';
 import { NewElement } from '../modelling/NewElement';
 import { ErrorBoundary } from '../ErrorBoundary';
@@ -418,13 +419,7 @@ function Explorer({
   const newElementRequest = useNewElementKey(canPlaceElement);
 
   const openViewName = inView ? openView.view?.name : undefined;
-  useEffect(() => {
-    const name = openViewName || element?.name || graph?.name || summaryName;
-    document.title = name ? `${name} · SimpleArchitecture` : 'SimpleArchitecture';
-    return () => {
-      document.title = 'SimpleArchitecture';
-    };
-  }, [element, graph, summaryName, openViewName]);
+  usePageTitle(openViewName || element?.name || graph?.name || summaryName, ' · ');
 
   // Views in the left panel, and the view bar.
   const views = useViewPanel(url, tree, navigate);

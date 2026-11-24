@@ -1,6 +1,10 @@
 import {
   brandingConflictMessage,
   brandTokens,
+  defaultProductTitle,
+  maxProductTitleLength,
+  productTitleIssue,
+  productTitleLength,
   type ApiError,
   type Branding,
 } from '@simplearchitecture/shared';
@@ -9,42 +13,57 @@ import { useNavigate } from 'react-router';
 import {
   ApiRequestError,
   getBranding,
-  removeBrandingLogo,
+  removeBrandingImage,
   resetBranding,
   saveBrandingColours,
-  uploadBrandingLogo,
+  saveBrandingTitle,
+  uploadBrandingImage,
+  type BrandingImage,
 } from '../api';
-import { isLogoUrl, useBranding } from '../branding';
+import { isDarkLogoUrl, isIconUrl, isLogoUrl, useBranding } from '../branding';
 import { Icon } from '../icons';
 import { Modal, UnsavedDialog } from '../modelling/dialogs';
 import { AdminNav } from './AdminNav';
 import { BrandingPreview } from './branding/BrandingPreview';
 import { adjustedText, ColourField, hexMessage, parseHex } from './branding/ColourField';
-import { checkLogoFile, kilobytes, logoMessages, type PickedLogo } from './branding/logo-file';
+import { ImageField, type ImageFieldWords } from './branding/ImageField';
+import {
+  checkLogoFile,
+  darkLogoRules,
+  iconRules,
+  logoRules,
+  type ImageRules,
+  type PickedLogo,
+} from './branding/logo-file';
 
-/** Admin → Branding: the logo and the two colours. */
+/** Admin → Branding: the product title, the logos, the app icon and the two colours. */
 
 type Load =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'ready'; saved: Branding };
 
-/** The draft logo: unchanged (what's saved), removed, or a new file. */
-type DraftLogo = { kind: 'saved' } | { kind: 'none' } | { kind: 'new'; logo: PickedLogo };
+/** A draft image: unchanged (what's saved), removed, or a new file. */
+type DraftImage = { kind: 'saved' } | { kind: 'none' } | { kind: 'new'; logo: PickedLogo };
+
+type Slot = 'logo' | 'darkLogo' | 'icon';
+const slotNames: readonly Slot[] = ['logo', 'darkLogo', 'icon'];
 
 interface Draft {
+  title: string;
   primary: string;
   secondary: string;
-  logo: DraftLogo;
+  logo: DraftImage;
+  darkLogo: DraftImage;
+  icon: DraftImage;
 }
 
-interface Errors {
-  primary?: string | undefined;
-  secondary?: string | undefined;
-  logo?: string | undefined;
-}
+type Field = 'title' | 'primary' | 'secondary' | Slot;
+type Errors = Partial<Record<Field, string | undefined>>;
+type Focus = 'h1' | Field;
 
-type Focus = 'h1' | 'primary' | 'secondary' | 'logo';
+/** One step of a save, in order. */
+type Stage = 'colours' | 'title' | Slot;
 
 interface ResetState {
   busy: boolean;
@@ -53,21 +72,114 @@ interface ResetState {
   stale: boolean;
 }
 
+interface SlotSetup {
+  path: BrandingImage;
+  /** Ids in the page (the logo's are as they always were). */
+  id: string;
+  rules: ImageRules;
+  accept: string;
+  /** In the save messages: "the logo wasn't". */
+  noun: string;
+  words: ImageFieldWords;
+  ready: string;
+  removed: string;
+  savedUrl: (branding: Branding) => string | null;
+}
+
+const slots: Record<Slot, SlotSetup> = {
+  logo: {
+    path: 'logo',
+    id: 'logo',
+    rules: logoRules,
+    accept: 'image/png,image/jpeg,image/webp',
+    noun: 'logo',
+    words: {
+      file: 'Logo file',
+      remove: 'Remove logo',
+      current: 'Current logo',
+      picked: 'New logo, not saved yet',
+    },
+    ready: 'Logo ready. Save to apply it.',
+    removed: 'Logo removed. Save to apply it.',
+    savedUrl: (branding) => (isLogoUrl(branding.logoUrl) ? branding.logoUrl : null),
+  },
+  darkLogo: {
+    path: 'dark-logo',
+    id: 'dark-logo',
+    rules: darkLogoRules,
+    accept: 'image/png,image/jpeg,image/webp',
+    noun: 'Dark theme logo',
+    words: {
+      file: 'Dark theme logo file',
+      remove: 'Remove Dark theme logo',
+      current: 'Current Dark theme logo',
+      picked: 'New Dark theme logo, not saved yet',
+    },
+    ready: 'Dark theme logo ready. Save to apply it.',
+    removed: 'Dark theme logo removed. Save to apply it.',
+    savedUrl: (branding) => (isDarkLogoUrl(branding.darkLogoUrl) ? branding.darkLogoUrl : null),
+  },
+  icon: {
+    path: 'icon',
+    id: 'icon',
+    rules: iconRules,
+    accept: 'image/png',
+    noun: 'app icon',
+    words: {
+      file: 'App icon file',
+      remove: 'Remove app icon',
+      current: 'Current app icon',
+      picked: 'New app icon, not saved yet',
+    },
+    ready: 'App icon ready. Save to apply it.',
+    removed: 'App icon removed. Save to apply it.',
+    savedUrl: (branding) => (isIconUrl(branding.iconUrl) ? branding.iconUrl : null),
+  },
+};
+
+const builtInIcon = '/icon.svg';
+
 const draftOf = (saved: Branding): Draft => ({
+  title: saved.title ?? '',
   primary: saved.primary ?? '',
   secondary: saved.secondary ?? '',
   logo: { kind: 'saved' },
+  darkLogo: { kind: 'saved' },
+  icon: { kind: 'saved' },
 });
 
 const announcements = {
-  logoReady: 'Logo ready. Save to apply it.',
-  logoRemoved: 'Logo removed. Save to apply it.',
   saved: 'Branding saved. Everyone sees it on their next page load.',
   discarded: 'Changes discarded.',
   reset: 'Branding reset to the neutral look.',
 };
 
 const offline = 'Check your connection and try again.';
+
+const stageNouns: Record<Stage, string> = {
+  colours: 'colours',
+  title: 'product title',
+  logo: slots.logo.noun,
+  darkLogo: slots.darkLogo.noun,
+  icon: slots.icon.noun,
+};
+
+/** "The colours were saved; the logo wasn't." and the like, or the plain failure. */
+function failureTitle(stage: Stage, saved: readonly Stage[]): string {
+  const failed = stageNouns[stage];
+  if (saved.length === 0) return "The branding wasn't saved.";
+  if (saved.length > 1) return `Some changes were saved; the ${failed} wasn't.`;
+  // The colours are always saved first, so they never come after another stage.
+  const [only = 'colours'] = saved;
+  const what = only === 'colours' ? 'The colours were' : `The ${stageNouns[only]} was`;
+  return `${what} saved; the ${failed} wasn't.`;
+}
+
+/** The title as it would be stored: trimmed, null when empty. */
+const storedTitle = (text: string): string | null => {
+  const trimmed = text.trim();
+  return trimmed === '' ? null : trimmed;
+};
 
 function serverMessage(error: ApiRequestError): string | undefined {
   const body = error.body as Partial<ApiError> | undefined;
@@ -90,9 +202,12 @@ export function BrandingPage() {
   const navigate = useNavigate();
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [draft, setDraft] = useState<Draft>({
+    title: '',
     primary: '',
     secondary: '',
     logo: { kind: 'saved' },
+    darkLogo: { kind: 'saved' },
+    icon: { kind: 'saved' },
   });
   // The preview keeps the last valid colour while a field holds an unfinished one.
   const [shown, setShown] = useState<{ primary: string | null; secondary: string | null }>({
@@ -112,13 +227,14 @@ export function BrandingPage() {
   const setFocus = (target: Focus) => {
     setFocusState({ target });
   };
-  const [dragOver, setDragOver] = useState(false);
 
   const heading = useRef<HTMLHeadingElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
   const primaryInput = useRef<HTMLInputElement>(null);
   const secondaryInput = useRef<HTMLInputElement>(null);
-  const dropzone = useRef<HTMLButtonElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const logoDrop = useRef<HTMLButtonElement>(null);
+  const darkLogoDrop = useRef<HTMLButtonElement>(null);
+  const iconDrop = useRef<HTMLButtonElement>(null);
 
   const saved = load.status === 'ready' ? load.saved : null;
 
@@ -162,9 +278,12 @@ export function BrandingPage() {
     if (focus === null) return;
     const target = {
       h1: heading,
+      title: titleInput,
       primary: primaryInput,
       secondary: secondaryInput,
-      logo: dropzone,
+      logo: logoDrop,
+      darkLogo: darkLogoDrop,
+      icon: iconDrop,
     }[focus.target].current;
     target?.focus();
   }, [focus]);
@@ -181,21 +300,35 @@ export function BrandingPage() {
 
   const primary = parseHex(draft.primary);
   const secondary = parseHex(draft.secondary);
+  const title = storedTitle(draft.title);
+  const titleIssue = title === null ? null : productTitleIssue(title);
   const coloursChanged =
     saved !== null && (primary !== saved.primary || secondary !== saved.secondary);
-  const logoChanged =
-    saved !== null &&
-    (draft.logo.kind === 'new' || (draft.logo.kind === 'none' && saved.logoUrl !== null));
-  const dirty = coloursChanged || logoChanged;
+  const titleChanged = saved !== null && title !== saved.title;
+  const imageChanged = (slot: Slot): boolean => {
+    const image = draft[slot];
+    return (
+      saved !== null &&
+      (image.kind === 'new' || (image.kind === 'none' && slots[slot].savedUrl(saved) !== null))
+    );
+  };
+  const dirty = coloursChanged || titleChanged || slotNames.some(imageChanged);
 
   const tokens = useMemo(() => brandTokens(shown), [shown]);
-  const savedLogoSrc = saved !== null && isLogoUrl(saved.logoUrl) ? saved.logoUrl : null;
-  const logoSrc =
-    draft.logo.kind === 'new'
-      ? draft.logo.logo.src
-      : draft.logo.kind === 'none'
-        ? null
-        : savedLogoSrc;
+  /** What the draft shows for an image: the new file, nothing, or what's saved. */
+  const imageSrc = (slot: Slot): string | null => {
+    const image = draft[slot];
+    if (image.kind === 'new') return image.logo.src;
+    if (image.kind === 'none' || saved === null) return null;
+    return slots[slot].savedUrl(saved);
+  };
+  const picked = (slot: Slot): PickedLogo | undefined => {
+    const image = draft[slot];
+    return image.kind === 'new' ? image.logo : undefined;
+  };
+  const logoSrc = imageSrc('logo');
+  const darkLogoSrc = imageSrc('darkLogo');
+  const iconSrc = imageSrc('icon');
 
   // Links out of the page and reloads while there are changes (as the explorer).
   useEffect(() => {
@@ -246,23 +379,39 @@ export function BrandingPage() {
     }
   };
 
-  const pickFiles = (files: FileList | null) => {
+  const setTitle = (text: string) => {
+    setDraft((current) => ({ ...current, title: text }));
+    const next = storedTitle(text);
+    setErrors((current) => ({
+      ...current,
+      title: next === null ? undefined : (productTitleIssue(next) ?? undefined),
+    }));
+  };
+
+  const pickFiles = (slot: Slot, files: FileList | null) => {
     const file = files?.[0];
     if (!file || saving) return;
-    void checkLogoFile(file).then((result) => {
+    void checkLogoFile(file, slots[slot].rules).then((result) => {
       if (result.ok) {
-        setDraft((current) => ({ ...current, logo: { kind: 'new', logo: result.logo } }));
-        setErrors((current) => ({ ...current, logo: undefined }));
-        setAnnouncement(announcements.logoReady);
+        setDraft((current) => ({ ...current, [slot]: { kind: 'new', logo: result.logo } }));
+        setErrors((current) => ({ ...current, [slot]: undefined }));
+        setAnnouncement(slots[slot].ready);
       } else {
-        setErrors((current) => ({ ...current, logo: result.message }));
-        setFocus('logo');
+        setErrors((current) => ({ ...current, [slot]: result.message }));
+        setFocus(slot);
       }
     });
   };
 
-  /** Shows why a save failed. `coloursSaved`: the colours went through, the logo didn't. */
-  const failed = (error: unknown, stage: 'colours' | 'logo', coloursSaved: boolean) => {
+  const removeImage = (slot: Slot) => {
+    setDraft((current) => ({ ...current, [slot]: { kind: 'none' } }));
+    setErrors((current) => ({ ...current, [slot]: undefined }));
+    setAnnouncement(slots[slot].removed);
+    setFocus(slot);
+  };
+
+  /** Shows why a save failed at `stage`, after the stages in `done` went through. */
+  const failed = (error: unknown, stage: Stage, done: readonly Stage[]) => {
     if (!(error instanceof ApiRequestError)) {
       setAlert({ title: "The branding wasn't saved.", text: offline });
       return;
@@ -273,94 +422,135 @@ export function BrandingPage() {
       return;
     }
     const message = serverMessage(error);
-    const title = coloursSaved
-      ? "The colours were saved; the logo wasn't."
-      : "The branding wasn't saved.";
-    if (stage === 'logo' && [413, 415, 422].includes(error.status)) {
-      const logo = draft.logo.kind === 'new' ? draft.logo.logo : undefined;
+    const title = failureTitle(stage, done);
+    if (stage !== 'colours' && stage !== 'title' && [413, 415, 422].includes(error.status)) {
+      const { messages } = slots[stage].rules;
+      const file = picked(stage);
       const fallback =
         error.status === 415
-          ? logoMessages.type
+          ? messages.type
           : error.status === 413
-            ? logo
-              ? logoMessages.tooLarge(logo.size)
-              : logoMessages.tooLargeUnknown
-            : logoMessages.unreadable;
+            ? file
+              ? messages.tooLarge(file.size)
+              : messages.tooLargeUnknown
+            : messages.unreadable;
       const text = message ?? fallback;
-      setErrors({ logo: text });
-      if (coloursSaved) setAlert({ title, text });
-      setFocus('logo');
+      setErrors({ [stage]: text });
+      if (done.length > 0) setAlert({ title, text });
+      setFocus(stage);
       return;
     }
-    if (stage === 'colours' && error.status === 422) {
+    if (error.status === 422) {
       const next: Errors = {};
       for (const issue of fieldIssues(error)) {
-        if (issue.field === 'primary' || issue.field === 'secondary') {
+        if (stage === 'colours' && (issue.field === 'primary' || issue.field === 'secondary')) {
           next[issue.field] = issue.message || hexMessage;
         }
+        if (stage === 'title' && issue.field === 'title') next.title = issue.message;
       }
-      if (next.primary !== undefined || next.secondary !== undefined) {
+      const first = (['title', 'primary', 'secondary'] as const).find(
+        (field) => next[field] !== undefined,
+      );
+      if (first !== undefined) {
         setErrors(next);
-        setFocus(next.primary !== undefined ? 'primary' : 'secondary');
+        if (done.length > 0) setAlert({ title, text: next[first] ?? '' });
+        setFocus(first);
         return;
       }
     }
     setAlert({ title, text: error.status === 0 ? offline : (message ?? offline) });
   };
 
-  /** Saves what changed, colours first (they carry the version). True when all went through. */
+  /**
+   * Saves what changed, one step at a time (each carries the version the last one gave): the
+   * colours, the title, then the images. True when all went through.
+   */
   const save = async (): Promise<boolean> => {
     if (saved === null || saving || conflict) return false;
     const invalid: Errors = {};
+    if (titleIssue !== null) invalid.title = titleIssue;
     if (primary === 'invalid') invalid.primary = hexMessage;
     if (secondary === 'invalid') invalid.secondary = hexMessage;
-    if (primary === 'invalid' || secondary === 'invalid') {
+    const firstInvalid = (['title', 'primary', 'secondary'] as const).find(
+      (field) => invalid[field] !== undefined,
+    );
+    if (firstInvalid !== undefined) {
       setErrors((current) => ({ ...current, ...invalid }));
-      setFocus(primary === 'invalid' ? 'primary' : 'secondary');
+      setFocus(firstInvalid);
       return false;
     }
+    if (primary === 'invalid' || secondary === 'invalid') return false;
     setSaving(true);
     setAlert(null);
     setErrors({});
     let current = saved;
-    let coloursSaved = false;
-    try {
-      if (primary !== saved.primary || secondary !== saved.secondary) {
-        current = await saveBrandingColours(primary, secondary, current.version);
-        coloursSaved = true;
+    const done: Stage[] = [];
+    const ratios: { logo?: number; darkLogo?: number } = {};
+    const steps: [Stage, () => Promise<Branding> | null][] = [
+      [
+        'colours',
+        () =>
+          primary !== saved.primary || secondary !== saved.secondary
+            ? saveBrandingColours(primary, secondary, current.version)
+            : null,
+      ],
+      ['title', () => (title !== saved.title ? saveBrandingTitle(title, current.version) : null)],
+      ...slotNames.map((slot): [Stage, () => Promise<Branding> | null] => [
+        slot,
+        () => {
+          const image = draft[slot];
+          if (image.kind === 'new') {
+            if (slot !== 'icon') ratios[slot] = image.logo.width / image.logo.height;
+            return uploadBrandingImage(
+              slots[slot].path,
+              image.logo.file,
+              image.logo.type,
+              current.version,
+            );
+          }
+          if (image.kind === 'none' && slots[slot].savedUrl(current) !== null) {
+            return removeBrandingImage(slots[slot].path, current.version);
+          }
+          return null;
+        },
+      ]),
+    ];
+    for (const [stage, step] of steps) {
+      try {
+        const request = step();
+        if (request === null) continue;
+        current = await request;
+        done.push(stage);
+      } catch (error) {
+        setSaving(false);
+        if (done.length > 0) {
+          // What went through stays saved; the rest stays in the draft, so Save retries it.
+          const now = current;
+          setLoad({ status: 'ready', saved: now });
+          setDraft((before) => {
+            const after = { ...before };
+            for (const each of done) {
+              if (each === 'colours') {
+                after.primary = now.primary ?? '';
+                after.secondary = now.secondary ?? '';
+              } else if (each === 'title') {
+                after.title = now.title ?? '';
+              } else {
+                after[each] = { kind: 'saved' };
+              }
+            }
+            return after;
+          });
+          updateApp(now, ratios);
+        }
+        failed(error, stage, done);
+        return false;
       }
-    } catch (error) {
-      setSaving(false);
-      failed(error, 'colours', false);
-      return false;
-    }
-    let newLogo: PickedLogo | undefined;
-    try {
-      if (draft.logo.kind === 'new') {
-        newLogo = draft.logo.logo;
-        current = await uploadBrandingLogo(newLogo.file, newLogo.type, current.version);
-      } else if (draft.logo.kind === 'none' && current.logoUrl !== null) {
-        current = await removeBrandingLogo(current.version);
-      }
-    } catch (error) {
-      setSaving(false);
-      if (coloursSaved) {
-        // The colours stay saved; the logo stays in the draft, so Save retries it.
-        setLoad({ status: 'ready', saved: current });
-        setDraft((now) => ({
-          ...now,
-          primary: current.primary ?? '',
-          secondary: current.secondary ?? '',
-        }));
-        updateApp(current);
-      }
-      failed(error, 'logo', coloursSaved);
-      return false;
     }
     setSaving(false);
     setLoad({ status: 'ready', saved: current });
     startFrom(current);
-    updateApp(current, newLogo ? newLogo.width / newLogo.height : undefined);
+    updateApp(current, ratios);
     setSavedNote(true);
     setAnnouncement(announcements.saved);
     setFocus('h1');
@@ -409,24 +599,58 @@ export function BrandingPage() {
   };
 
   const savedIsNeutral =
-    saved !== null && saved.primary === null && saved.secondary === null && saved.logoUrl === null;
+    saved !== null &&
+    saved.title === null &&
+    saved.primary === null &&
+    saved.secondary === null &&
+    saved.logoUrl === null &&
+    saved.darkLogoUrl === null &&
+    saved.iconUrl === null;
 
   const onDrag = (event: DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
   };
 
-  const logo = draft.logo.kind === 'new' ? draft.logo.logo : undefined;
-  const dropDescribedBy = ['logo-hint', errors.logo === undefined ? '' : 'logo-error']
+  const titleLength = title === null ? 0 : productTitleLength(title);
+  const titleDescribedBy = [
+    'brand-title-hint',
+    'brand-title-count',
+    errors.title === undefined ? '' : 'brand-title-error',
+  ]
     .filter(Boolean)
     .join(' ');
+
+  const imageField = (slot: Slot, labelledBy: string) => (
+    <ImageField
+      id={slots[slot].id}
+      labelledBy={labelledBy}
+      words={slots[slot].words}
+      accept={slots[slot].accept}
+      src={imageSrc(slot)}
+      picked={picked(slot)}
+      changed={imageChanged(slot)}
+      error={errors[slot]}
+      busy={saving}
+      dropRef={{ logo: logoDrop, darkLogo: darkLogoDrop, icon: iconDrop }[slot]}
+      onFiles={(files) => {
+        pickFiles(slot, files);
+      }}
+      onRemove={() => {
+        removeImage(slot);
+      }}
+      {...(slot === 'icon'
+        ? { none: { src: builtInIcon, caption: 'Built-in icon' }, tile: 'icon' as const }
+        : {})}
+    />
+  );
 
   return (
     <main
       id="content"
       tabIndex={-1}
       className="page-scroll"
-      // Files dropped outside the drop area are ignored, never opened by the browser.
+      // Files dropped outside the drop areas are ignored, never opened by the browser.
       onDragOver={onDrag}
       onDrop={onDrag}
     >
@@ -438,8 +662,8 @@ export function BrandingPage() {
               Branding
             </h1>
             <p>
-              Your organisation&apos;s logo and colours. Everyone sees them, also on the sign-in
-              page.
+              Your organisation&apos;s product title, logo, app icon and colours. Everyone sees
+              them, also on the sign-in page.
             </p>
           </div>
         </div>
@@ -481,7 +705,7 @@ export function BrandingPage() {
               }}
             >
               <h2 id="brand-form-title" className="vh">
-                Logo and colours
+                Product title, logo, app icon and colours
               </h2>
               {conflict && (
                 <div className="conflict" role="alert">
@@ -508,95 +732,73 @@ export function BrandingPage() {
                 </div>
               )}
 
-              <h2 className="brand-section">Logo</h2>
+              <h2 className="brand-section">
+                <label htmlFor="brand-title">Product title</label>
+              </h2>
+              <p className="brand-hint" id="brand-title-hint">
+                Shown in the header, on the sign-in page and in the browser tab. Leave empty to use{' '}
+                {defaultProductTitle}.
+              </p>
+              <div className="brand-title-row">
+                <input
+                  ref={titleInput}
+                  id="brand-title"
+                  type="text"
+                  className="brand-title-input"
+                  placeholder={defaultProductTitle}
+                  autoComplete="off"
+                  spellCheck={false}
+                  readOnly={saving}
+                  value={draft.title}
+                  aria-invalid={errors.title === undefined ? undefined : true}
+                  aria-describedby={titleDescribedBy}
+                  onChange={(event) => {
+                    setTitle(event.target.value);
+                  }}
+                />
+                <span
+                  className={`brand-title-count${
+                    titleLength > maxProductTitleLength ? ' is-over' : ''
+                  }`}
+                  id="brand-title-count"
+                >
+                  {titleLength} / {maxProductTitleLength}
+                </span>
+              </div>
+              {errors.title !== undefined && (
+                <p className="field-error brand-logo-error" id="brand-title-error">
+                  <Icon name="alert" size="sm" />
+                  <span>{errors.title}</span>
+                </p>
+              )}
+
+              <div className="brand-sep" />
+              <h2 className="brand-section" id="logo-heading">
+                Logo
+              </h2>
               <p className="brand-hint" id="logo-hint">
                 PNG, JPEG or WebP, up to 300 KB and 1024 × 1024 px. Shown up to 28px high in the
                 header.
               </p>
-              {logoSrc !== null && (
-                <div className="logo-row">
-                  <div className="logo-tile">
-                    <img
-                      src={logoSrc}
-                      alt={logo ? 'New logo, not saved yet' : 'Current logo'}
-                      draggable={false}
-                    />
-                  </div>
-                  <div className="logo-text">
-                    <b>{logo ? logo.name : 'Current logo'}</b>
-                    {logo && (
-                      <small>
-                        {kilobytes(logo.size)} KB · {logo.width} × {logo.height} px
-                      </small>
-                    )}
-                    {logoChanged && <span className="tag">Not saved yet</span>}
-                  </div>
-                  <button
-                    className="btn"
-                    type="button"
-                    aria-label="Remove logo"
-                    disabled={saving}
-                    onClick={() => {
-                      setDraft((current) => ({ ...current, logo: { kind: 'none' } }));
-                      setErrors((current) => ({ ...current, logo: undefined }));
-                      setAnnouncement(announcements.logoRemoved);
-                      setFocus('logo');
-                    }}
-                  >
-                    <Icon name="trash" size="sm" />
-                    Remove
-                  </button>
-                </div>
-              )}
-              <button
-                ref={dropzone}
-                type="button"
-                className={`dropzone brand-drop${dragOver ? ' is-over' : ''}${
-                  errors.logo === undefined ? '' : ' is-invalid'
-                }`}
-                aria-describedby={dropDescribedBy}
-                disabled={saving}
-                onClick={() => fileInput.current?.click()}
-                onDragEnter={(event) => {
-                  onDrag(event);
-                  setDragOver(true);
-                }}
-                onDragOver={(event) => {
-                  onDrag(event);
-                  setDragOver(true);
-                }}
-                onDragLeave={() => {
-                  setDragOver(false);
-                }}
-                onDrop={(event) => {
-                  onDrag(event);
-                  setDragOver(false);
-                  pickFiles(event.dataTransfer.files);
-                }}
-              >
-                <Icon name="upload" />
-                <span>
-                  {logoSrc === null ? 'Drop an image here, or ' : 'Drop a new image here, or '}
-                  <u>choose a file</u>
-                </span>
-              </button>
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                aria-label="Logo file"
-                hidden
-                onChange={(event) => {
-                  pickFiles(event.target.files);
-                  event.target.value = '';
-                }}
-              />
-              {errors.logo !== undefined && (
-                <p className="field-error brand-logo-error" id="logo-error">
-                  <Icon name="alert" size="sm" />
-                  <span>{errors.logo}</span>
-                </p>
-              )}
+              {imageField('logo', 'logo-heading')}
+
+              <h3 className="brand-subsection" id="dark-logo-heading">
+                Logo for Dark theme (optional)
+              </h3>
+              <p className="brand-hint" id="dark-logo-hint">
+                Same rules as the logo. Used in the Dark theme; without it, the logo above is used.
+              </p>
+              {imageField('darkLogo', 'dark-logo-heading')}
+
+              <div className="brand-sep" />
+              <h2 className="brand-section" id="icon-heading">
+                App icon
+              </h2>
+              <p className="brand-hint" id="icon-hint">
+                A square PNG, 512 × 512 pixels, up to 300 KB. Used for the browser tab and the
+                installed app.
+              </p>
+              {imageField('icon', 'icon-heading')}
 
               <div className="brand-sep" />
               <h2 className="brand-section">Colours</h2>
@@ -690,7 +892,13 @@ export function BrandingPage() {
                 </div>
               </div>
             </form>
-            <BrandingPreview tokens={tokens} logoSrc={logoSrc} />
+            <BrandingPreview
+              tokens={tokens}
+              title={title ?? defaultProductTitle}
+              logoSrc={logoSrc}
+              darkLogoSrc={darkLogoSrc ?? logoSrc}
+              iconSrc={iconSrc ?? builtInIcon}
+            />
           </div>
         )}
       </div>
@@ -753,8 +961,9 @@ function ResetDialog(props: {
     >
       <h2 id="reset-title">Reset to the neutral look?</h2>
       <p id="reset-text">
-        This removes the logo and both colours for everyone, also on the sign-in page. It can&apos;t
-        be undone.{props.unsaved ? ' Your unsaved changes are discarded too.' : ''}
+        This removes the product title, both logos, the app icon and both colours for everyone, also
+        on the sign-in page. It can&apos;t be undone.
+        {props.unsaved ? ' Your unsaved changes are discarded too.' : ''}
       </p>
       {error !== null && (
         <p className="alert" role="alert">
