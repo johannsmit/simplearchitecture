@@ -36,7 +36,12 @@ import {
   type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
 import { NotFoundError } from '../editing/common.js';
-import { isModelId, ModelUnreadableError, type ModelStore } from '../storage/model-store.js';
+import {
+  isModelId,
+  ModelUnreadableError,
+  type EditableModel,
+  type ModelStore,
+} from '../storage/model-store.js';
 import { ViewService } from '../views/view-service.js';
 
 /**
@@ -307,9 +312,13 @@ export class McpReadService {
     };
   }
 
-  /** One element in full: its properties, its container, what it contains, its relationships. */
+  /**
+   * One element in full: its properties, its container, what it contains, its relationships. The
+   * element and each relationship carry their `version`, which the write tools take.
+   */
   async element(modelId: string, elementId: string) {
-    const graph = await this.#graph(modelId);
+    const model = await this.#editable(modelId);
+    const graph = await this.#graph(modelId, model.document);
     const element = this.#element(graph, elementId);
     const containerId = containerOf(graph, elementId);
     const container = containerId === undefined ? undefined : graph.elements.get(containerId);
@@ -318,8 +327,10 @@ export class McpReadService {
       const outgoing = relationship.source === elementId;
       const otherId = outgoing ? relationship.target : relationship.source;
       const other = graph.elements.get(otherId);
+      const version = model.relationshipVersionOf(relationship.id);
       return {
         ...relationshipFields(graph, relationship),
+        ...(version === undefined ? {} : { version }),
         direction: relationship.twoWay === true ? 'two-way' : outgoing ? 'outgoing' : 'incoming',
         other: other === undefined ? { id: otherId } : brief(other),
         properties: Object.fromEntries(
@@ -328,8 +339,10 @@ export class McpReadService {
       };
     });
     const referring = referencedBy(graph, elementId);
+    const version = model.versionOf(elementId);
     return {
       ...brief(element),
+      ...(version === undefined ? {} : { version }),
       properties: propertiesOf(element, false),
       ...definedElementValues(graph, element),
       ...referencesOf(graph, element),
@@ -469,8 +482,8 @@ export class McpReadService {
     }
   }
 
-  async #graph(modelId: string): Promise<ModelGraph> {
-    const document = await this.#document(modelId);
+  async #graph(modelId: string, read?: JgfDocument): Promise<ModelGraph> {
+    const document = read ?? (await this.#document(modelId));
     const [relationshipProperties, elementProperties] = await Promise.all([
       this.properties.list(),
       this.properties.listElements(),
@@ -494,6 +507,22 @@ export class McpReadService {
       throw new ToolError('Model not found. Use list_models for the ids.');
     }
     return document;
+  }
+
+  /** The model with its versions, as the editing services read it, or a tool error. */
+  async #editable(modelId: string): Promise<EditableModel> {
+    if (!isModelId(modelId)) throw new ToolError('Model not found. Use list_models for the ids.');
+    let model;
+    try {
+      model = await this.store.elements.read(modelId);
+    } catch (error) {
+      if (error instanceof ModelUnreadableError) {
+        throw new ToolError('The model is damaged and cannot be read. An Admin can see it.');
+      }
+      throw error;
+    }
+    if (model === undefined) throw new ToolError('Model not found. Use list_models for the ids.');
+    return model;
   }
 
   #element(graph: ModelGraph, elementId: string): ModelElement {

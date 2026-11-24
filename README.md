@@ -14,7 +14,7 @@ SimpleArchitecture is a web app for modelling your IT landscape. You record your
 - **Show what matters** on the lines with Show Viewpoints: the identity used, the data that flows each way, the architecture state, or properties your Admin defines.
 - **List and find** elements in the catalog, with search, filters and a CSV download.
 - **Import** ArchiMate exchange files (OEF) and JSON Graph Format files, and **export** JSON Graph Format.
-- **Ask an AI agent:** agents such as Claude can read the models you can see, through the app's MCP endpoint.
+- **Ask an AI agent:** agents such as Claude can read the models you can see, through the app's MCP endpoint, and for a Modeller add and change elements and relationships.
 - **Sign in** with your own OpenID Connect provider, such as Microsoft Entra ID, with three roles: Viewer, Modeller and Admin.
 
 ## Screenshots
@@ -62,7 +62,7 @@ All pages are listed in [the guide](guide/README.md).
 - **Hosting:** [Run with Docker Compose](guide/docker-compose.md), [Hosting the image](guide/hosting.md), [Sign-in and roles](guide/sign-in.md), [Azure examples](guide/azure.md), [Database](guide/database.md)
 - **For IT and security teams:** [Security overview](guide/security-overview.md), including how to verify a release
 - **Building from source:** [Development](guide/development.md)
-- **Release notes:** [0.72.0](guide/releases/v0.72.0.md), [0.71.0](guide/releases/v0.71.0.md), [0.70.0](guide/releases/v0.70.0.md), [0.69.0](guide/releases/v0.69.0.md), [0.68.0](guide/releases/v0.68.0.md), [0.67.1](guide/releases/v0.67.1.md), [0.67.0](guide/releases/v0.67.0.md), [0.66.0](guide/releases/v0.66.0.md), [0.65.2](guide/releases/v0.65.2.md), [0.65.0](guide/releases/v0.65.0.md), [0.64.0](guide/releases/v0.64.0.md), [0.63.0](guide/releases/v0.63.0.md), [0.60.0 (beta)](guide/releases/v0.60.0.md)
+- **Release notes:** [0.73.0](guide/releases/v0.73.0.md), [0.72.0](guide/releases/v0.72.0.md), [0.71.0](guide/releases/v0.71.0.md), [0.70.0](guide/releases/v0.70.0.md), [0.69.0](guide/releases/v0.69.0.md), [0.68.0](guide/releases/v0.68.0.md), [0.67.1](guide/releases/v0.67.1.md), [0.67.0](guide/releases/v0.67.0.md), [0.66.0](guide/releases/v0.66.0.md), [0.65.2](guide/releases/v0.65.2.md), [0.65.0](guide/releases/v0.65.0.md), [0.64.0](guide/releases/v0.64.0.md), [0.63.0](guide/releases/v0.63.0.md), [0.60.0 (beta)](guide/releases/v0.60.0.md)
 
 ## Licence
 

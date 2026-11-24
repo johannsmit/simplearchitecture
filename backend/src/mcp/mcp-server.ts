@@ -1,5 +1,6 @@
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import {
+  architectureStates,
   defaultStakeholderKind,
   edgeTypes,
   maxDepth,
@@ -9,11 +10,14 @@ import {
 import { z } from 'zod';
 import type { McpAuth } from '../auth/access.js';
 import { searchPageSize, ToolError, type McpReadService } from './read-service.js';
+import { canWrite, mcpWritesPerMinute, type McpWriteService } from './write-service.js';
 
 /**
  * The MCP server for one request (Streamable HTTP, stateless): the read tools, each a thin
- * wrapper over McpReadService. Results are compact JSON as text. Every call is logged with the
- * user, the tool, the model and counts, never names, search text or other model content.
+ * wrapper over McpReadService, and for users whose roles open Modelling the write tools, thin
+ * wrappers over McpWriteService (which checks the role again). Results are compact JSON as text.
+ * Every call is logged with the user, the tool, the model and counts (and the ids a write
+ * touched), never names, search text or other model content.
  */
 
 export interface ToolLog {
@@ -40,17 +44,56 @@ const modelId = z.string().max(100).describe('The model id, from list_models.');
 const elementId = z.string().max(1000).describe('The element id, from search_elements.');
 const viewId = z.string().max(100).describe('The view id, from list_views.');
 
-/** What the log line says about a result: counts only. */
-type Counts = Record<string, number>;
+const relationshipId = z
+  .string()
+  .max(1000)
+  .describe('The relationship id, from get_element (its relationships) or get_neighbours.');
+const version = z
+  .number()
+  .describe(
+    'The version you read (get_element gives the element’s and each relationship’s). A change since then is reported as a conflict, never overwritten.',
+  );
+const dryRun = z
+  .boolean()
+  .default(false)
+  .describe(
+    'true: check the change exactly as a save and show what would be saved, storing nothing. Preview first, show the user, and save only when they confirm.',
+  );
+const properties = z
+  .record(z.string(), z.unknown())
+  .describe(
+    'Properties by key, as get_element shows them in `properties`: the type’s standard properties (text, or a list of text for Functions) and the properties an Admin defined (a Reference as {"simplearchitecture:reference": [element ids]}). An update sets only the keys sent; null removes one. No other key can be added.',
+  );
 
-export function buildMcpServer(service: McpReadService, auth: McpAuth, log: ToolLog): McpServer {
+/** Said in every write tool. */
+const writeRules =
+  'One change per call, checked with the same rules as the app (input limits, the metamodel and the whole model’s validation): a change that would give the model an error is refused with a message per field, and nothing is saved. ' +
+  'Call with dry_run true first, show the user what would be saved, and save only when they confirm. ' +
+  `The change is saved as the user and recorded as made by this agent. At most ${mcpWritesPerMinute} write calls a minute, previews included.`;
+
+/** What the log line says about a result: counts, and the ids a write touched. */
+type Counts = Record<string, number | string | boolean>;
+
+export function buildMcpServer(
+  service: McpReadService,
+  writes: McpWriteService,
+  auth: McpAuth,
+  log: ToolLog,
+): McpServer {
+  const writer = canWrite(auth);
   // The tools' version, not the app's: like /api/health, the endpoint names no app version.
   const server = new McpServer(
     { name: 'simplearchitecture', version: '1.0.0' },
     {
       instructions:
-        'Read-only access to the IT architecture models this user can see in SimpleArchitecture. Start with list_models, then get_model_summary, then search_elements. ' +
+        (writer
+          ? 'Access to the IT architecture models this user can see and change in SimpleArchitecture. '
+          : 'Read-only access to the IT architecture models this user can see in SimpleArchitecture. ') +
+        'Start with list_models, then get_model_summary, then search_elements. ' +
         "A model's views (the diagrams architects saved) are listed by list_views and read with get_view. " +
+        (writer
+          ? 'This user can change models (Modeller or higher): create_element, update_element, create_relationship and update_relationship change the model, one element or relationship per call, with the app’s rules. Always call them with dry_run true first, show the user what would change, and save only after the user confirms. Nothing can be deleted through this connection. '
+          : 'This user can only read: nothing can be changed through this connection. ') +
         untrusted,
     },
   );
@@ -231,5 +274,168 @@ export function buildMcpServer(service: McpReadService, auth: McpAuth, log: Tool
       ),
   );
 
+  if (writer) registerWriteTools(server, writes, auth, run);
   return server;
+}
+
+type Run = <T extends object>(
+  tool: string,
+  model: string | undefined,
+  call: () => Promise<T>,
+  counts: (result: T) => Counts,
+) => Promise<CallToolResult>;
+
+/** What a write's log line says: whether it was a preview, and what was saved (ids only). */
+function written(
+  result: { saved: boolean; element?: { id?: string }; relationship?: { id?: string } },
+  kind: 'elementId' | 'relationshipId',
+): Counts {
+  const id = (kind === 'elementId' ? result.element : result.relationship)?.id;
+  return {
+    dryRun: !result.saved,
+    written: result.saved ? 1 : 0,
+    ...(id === undefined ? {} : { [kind]: id }),
+  };
+}
+
+/** The write tools, for users whose roles open Modelling. Each call checks the role again. */
+function registerWriteTools(
+  server: McpServer,
+  writes: McpWriteService,
+  auth: McpAuth,
+  run: Run,
+): void {
+  const create = {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  };
+  const update = { ...create, destructiveHint: true };
+  const elementTypes = `Types: ${nodeTypes.join(', ')}.`;
+  const relationshipTypes = `Types: ${edgeTypes.join(', ')}; the metamodel says which types may join which elements.`;
+
+  server.registerTool(
+    'create_element',
+    {
+      title: 'Create element',
+      description: `Adds one element to a model. ${elementTypes} ${writeRules} Returns the element as saved (id, version, name, type, properties) and the model's warnings about it. ${untrusted}`,
+      inputSchema: z.object({
+        model_id: modelId,
+        type: z.enum(nodeTypes).describe('The element type.'),
+        name: z.string().describe('The name.'),
+        description: z.string().optional().describe('The description.'),
+        properties: properties.optional(),
+        dry_run: dryRun,
+      }),
+      annotations: create,
+    },
+    async ({ model_id, dry_run, ...input }) =>
+      run(
+        'create_element',
+        model_id,
+        () => writes.createElement(auth, model_id, input, dry_run),
+        (r) => written(r, 'elementId'),
+      ),
+  );
+
+  server.registerTool(
+    'update_element',
+    {
+      title: 'Update element',
+      description: `Changes one element: only the fields sent. ${elementTypes} A type change keeps properties the new type doesn't have. ${writeRules} Returns the element as saved with its new version. ${untrusted}`,
+      inputSchema: z.object({
+        model_id: modelId,
+        element_id: elementId,
+        version,
+        name: z.string().optional().describe('The new name.'),
+        type: z.enum(nodeTypes).optional().describe('The new type.'),
+        description: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('The new description; null removes it.'),
+        properties: properties.optional(),
+        dry_run: dryRun,
+      }),
+      annotations: update,
+    },
+    async ({ model_id, element_id, dry_run, ...input }) =>
+      run(
+        'update_element',
+        model_id,
+        () => writes.updateElement(auth, model_id, element_id, input, dry_run),
+        (r) => written(r, 'elementId'),
+      ),
+  );
+
+  server.registerTool(
+    'create_relationship',
+    {
+      title: 'Create relationship',
+      description: `Adds one relationship from a source element to a target element of the model. ${relationshipTypes} A Contains nests the target inside the source. Set a label, Identity, the data lists or defined properties with update_relationship. ${writeRules} Returns the relationship as saved (id, version, source, target, type, properties). ${untrusted}`,
+      inputSchema: z.object({
+        model_id: modelId,
+        source: elementId.describe('The source element id.'),
+        target: elementId.describe('The target element id.'),
+        type: z.enum(edgeTypes).describe('The relationship type.'),
+        architectureState: z
+          .enum(architectureStates)
+          .optional()
+          .describe('The Architecture state. Default: the app’s default.'),
+        description: z.string().optional().describe('The description.'),
+        dry_run: dryRun,
+      }),
+      annotations: create,
+    },
+    async ({ model_id, dry_run, ...input }) =>
+      run(
+        'create_relationship',
+        model_id,
+        () => writes.createRelationship(auth, model_id, input, dry_run),
+        (r) => written(r, 'relationshipId'),
+      ),
+  );
+
+  const text = (what: string) =>
+    z.string().nullable().optional().describe(`${what}; null removes it.`);
+  const dataList = (what: string) =>
+    z.array(z.string()).nullable().optional().describe(`${what}: the whole list; null removes it.`);
+  server.registerTool(
+    'update_relationship',
+    {
+      title: 'Update relationship',
+      description: `Changes one relationship: only the fields sent. ${relationshipTypes} Identity, Identity Context and the two data lists are a Relation's. ${writeRules} Returns the relationship as saved with its new version. ${untrusted}`,
+      inputSchema: z.object({
+        model_id: modelId,
+        relationship_id: relationshipId,
+        version,
+        source: elementId.optional().describe('A new source element id.'),
+        target: elementId.optional().describe('A new target element id.'),
+        type: z.enum(edgeTypes).optional().describe('The new type.'),
+        architectureState: z
+          .enum(architectureStates)
+          .optional()
+          .describe('The Architecture state.'),
+        description: text('The description'),
+        label: text('The label shown on the line (may name properties in braces)'),
+        reverse: z.boolean().optional().describe('true: swap source and target.'),
+        twoWay: z.boolean().optional().describe('true: the line has no direction.'),
+        identity: text('Identity'),
+        identityContext: text('Identity Context'),
+        sourceToTargetData: dataList('The data that goes from source to target'),
+        targetToSourceData: dataList('The data that goes from target to source'),
+        properties: properties.optional(),
+        dry_run: dryRun,
+      }),
+      annotations: update,
+    },
+    async ({ model_id, relationship_id, dry_run, ...input }) =>
+      run(
+        'update_relationship',
+        model_id,
+        () => writes.updateRelationship(auth, model_id, relationship_id, input, dry_run),
+        (r) => written(r, 'relationshipId'),
+      ),
+  );
 }

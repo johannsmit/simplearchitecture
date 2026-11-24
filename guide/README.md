@@ -9,7 +9,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 - [Modelling](modelling.md): creating and changing elements and relationships.
 - [Views](views.md): saving, opening, arranging and organising views.
 - [Keyboard shortcuts](keyboard-shortcuts.md): every key, in tables.
-- [Connect an AI agent](connect-an-ai-agent.md): let Claude or another MCP client read your models.
+- [Connect an AI agent](connect-an-ai-agent.md): let Claude or another MCP client read your models, and for Modellers add and change elements and relationships.
 
 ## For Admins
 
@@ -38,6 +38,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.73.0](releases/v0.73.0.md): AI agents can add and change elements and relationships for Modellers, with a preview and a mark in the audit trail.
   - [0.72.0](releases/v0.72.0.md): Help in the app, with a page per space for what you can do, pointer actions and keyboard shortcuts.
   - [0.71.0](releases/v0.71.0.md): Modelling saves changes in the details panel as you go, with no Save button.
   - [0.70.0](releases/v0.70.0.md): a product title, a logo for the Dark theme and an app icon in Admin → Branding.

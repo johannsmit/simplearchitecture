@@ -1,8 +1,8 @@
 # Connect an AI agent
 
-For everyone with a role, and one section for hosts: how to let an AI agent such as Claude read the architecture models you can see, so you can ask it questions about them.
+For everyone with a role, and one section for hosts: how to let an AI agent such as Claude read the architecture models you can see, so you can ask it questions about them, and, for Modellers, add and change elements and relationships.
 
-The agent can read what you can see in Viewing. It can't change, add or delete anything. You sign in as yourself, so the agent has your access and no more.
+The agent can read what you can see in Viewing. If you are a Modeller or an Admin, it can also add and change elements and relationships, one at a time, with the same rules as Modelling (see [What the agent can change](#what-the-agent-can-change)). It can never delete anything. You sign in as yourself, so the agent has your access and no more.
 
 The app works like other MCP services: you give the agent one address, sign in when it asks, and allow it. There is no client id to set up, and nothing to change at your sign-in provider.
 
@@ -47,18 +47,18 @@ Before an agent connects, the app shows who is asking and what the agent may do:
 
 - **Name it gives**: what the agent says it is called. Any app can say anything here, so don't rely on it.
 - **Sends you back**: the address your browser returns to. The app checks this. For claude.ai and Claude Desktop it is `claude.ai`; for Claude Code it is "an app on this computer".
-- What the agent can do: read the models you can see in Viewing, and nothing else.
+- What the agent can do: read the models you can see in Viewing. For a Modeller or an Admin, also add and change elements and relationships as you. It can't delete anything.
 
 Click **Allow** only if you started connecting this agent yourself, just now. If not, click **Deny**.
 
 ## What the agent can ask
 
-The agent gets seven read-only tools:
+Every agent gets seven read-only tools:
 
 - **List models**: the models you can see, with their size.
 - **Model summary**: how many elements of each type, and how many relationships.
 - **Search elements**: by name, type and properties, 50 at a time.
-- **Get element**: one element in full, with what it is inside, what it contains, and its relationships. A Relation comes with its Identity, Identity Context and its two data lists (`sourceToTargetData`, `targetToSourceData`), when set.
+- **Get element**: one element in full, with what it is inside, what it contains, and its relationships, each with its `version` (what a change sends back). A Relation comes with its Identity, Identity Context and its two data lists (`sourceToTargetData`, `targetToSourceData`), when set.
 - **Get neighbours**: the elements up to three relationship steps away, as on the canvas, with the same details for each relationship.
 - **List views**: a model's [views](views.md), by name, with their folder and how many elements and relationships each holds.
 - **Get view**: one view's name, folder and Group by, with its elements and its relationships (each with its source and target, and the same details as above), as the model is now. An element or relationship deleted from the model is left out. Where the cards are on the canvas is not included.
@@ -70,6 +70,27 @@ An element's properties an Admin defined come by name, under `definedProperties`
 A relationship's label comes as stored (`label`, which may name properties in braces) and as the canvas shows it (`displayLabel`, with the values filled in). A Relation's properties an Admin defined come by name, under `definedProperties`.
 
 Model content (names, descriptions, properties) is passed to the agent as data, marked as untrusted, never as instructions. The app logs each call with your user id, the tool and the model, never the content.
+
+## What the agent can change
+
+For a Modeller or an Admin, the agent also gets four tools that change a model. A Viewer's agent doesn't get them, and the app refuses them for a Viewer even if an agent asks.
+
+- **Create element**: adds one element, with its type, name, description and properties.
+- **Update element**: changes one element's name, type, description or properties. Only what it sends changes.
+- **Create relationship**: adds one relationship of a type between two elements of the model, with its Architecture state and description.
+- **Update relationship**: changes one relationship: its ends, type, Architecture state, description, label, direction (reverse or two-way), Identity, Identity Context, its two data lists or the properties an Admin defined.
+
+Nothing can be deleted through an agent: delete in [Modelling](modelling.md).
+
+Each change goes through the same checks as Modelling: the same input limits, the metamodel's rules and the whole model's validation. A change that would give the model an error is refused with a message for each field, and nothing is saved. A property an Admin hasn't defined can't be added.
+
+**Preview first.** Every change tool takes `dry_run`. With `dry_run` true, the app checks the change exactly as a save and shows what would be saved, but stores nothing. The tools tell the agent to preview, show you the change, and save only after you confirm. The app can't see your conversation, so read what the agent proposes before you say yes.
+
+**No overwriting.** An update sends the `version` of the element or relationship the agent read. If someone changed it since, the app refuses the change, saves nothing, and tells the agent the current version, so it reads again first.
+
+**Recorded as yours, made by the agent.** A saved change is recorded in the audit trail as yours, like a change you make in Modelling, and also names the agent connection that made it. The name is the one you had when you allowed the agent. A preview isn't recorded.
+
+**Limits.** One element or relationship per call, and at most 60 change calls a minute per user, previews included, on top of the 120 calls a minute for all tools. Over the limit, the agent is told to wait a minute.
 
 ## How long it lasts
 
@@ -97,6 +118,7 @@ Only the user's browser opens `/oauth/authorize` and the sign-in pages. If you d
 ## If something goes wrong
 
 - **"This request isn't valid"**: the request expired (after 10 minutes), was already used, came from an agent the app doesn't know, or wasn't one the app accepts. Connect again from the agent. If Claude Code keeps showing this page, choose **Clear authentication** for the server in `/mcp` (or run `claude mcp logout simplearchitecture`) and connect again.
+- **The agent says it can't change the model**: your role, when you allowed it, was Viewer. Ask for the Modeller role, then disconnect and connect again.
 - **"You can't connect an AI agent yet"**: you have no role in SimpleArchitecture. Ask an administrator for the Viewer role or higher.
 - **The agent says it isn't authorised or needs to sign in again**: the 7 days are over, or the connection was disconnected. Connect again.
 - **claude.ai says it couldn't reach the server, or the sign-in never starts**: Anthropic's servers can't reach the app. Check that the paths above are open to `160.79.104.0/21`.

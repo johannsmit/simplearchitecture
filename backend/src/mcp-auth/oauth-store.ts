@@ -40,6 +40,8 @@ export interface StoredConnection {
   id: string;
   clientId: string;
   userId: string;
+  /** The display name at sign-in: the actor of the changes an agent makes for the user. */
+  userName: string;
   roles: Role[];
   resource: string;
   expiresAt: number;
@@ -105,6 +107,7 @@ interface ConnectionRow {
   id: string;
   client_id: string;
   user_id: string;
+  user_name: string;
   user_roles: unknown;
   resource: string;
   expires_at: Date;
@@ -115,6 +118,7 @@ function connectionOf(row: ConnectionRow): StoredConnection {
     id: row.id,
     clientId: row.client_id,
     userId: row.user_id,
+    userName: row.user_name,
     roles: rolesOf(row.user_roles),
     resource: row.resource,
     expiresAt: row.expires_at.getTime(),
@@ -354,6 +358,7 @@ export class OAuthStore {
           id: connection.id,
           clientId: code.clientId,
           userId: code.userId,
+          userName: code.userName,
           roles: code.roles,
           resource: code.resource,
           expiresAt: connection.expiresAt,
@@ -374,7 +379,7 @@ export class OAuthStore {
   ): Promise<RefreshOutcome> {
     return this.db.transaction(async (tx) => {
       const [row] = await tx.query<ConnectionRow & { used_at: Date | null }>(
-        `select t.used_at, c.id, c.client_id, c.user_id, c.user_roles, c.resource, c.expires_at
+        `select t.used_at, c.id, c.client_id, c.user_id, c.user_name, c.user_roles, c.resource, c.expires_at
          from mcp_tokens t join mcp_connections c on c.id = t.connection_id
          where t.hash = $1 and t.kind = 'refresh'
          for update of t`,
@@ -413,7 +418,7 @@ export class OAuthStore {
     const [row] = await this.db.query<
       ConnectionRow & { last_used_at: Date | null; token_expires_at: Date }
     >(
-      `select c.id, c.client_id, c.user_id, c.user_roles, c.resource, c.expires_at, c.last_used_at,
+      `select c.id, c.client_id, c.user_id, c.user_name, c.user_roles, c.resource, c.expires_at, c.last_used_at,
          t.expires_at as token_expires_at
        from mcp_tokens t join mcp_connections c on c.id = t.connection_id
        where t.hash = $1 and t.kind = 'access'`,

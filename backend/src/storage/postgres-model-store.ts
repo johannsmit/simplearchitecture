@@ -248,6 +248,13 @@ const insertAudit = `insert into audit (action, user_id, user_name, model_id, el
   relationship_id, details)
   values ($1, $2, $3, $4::uuid, $5, $6, $7::text::jsonb)`;
 
+/** Thrown at the end of a previewed change, so its transaction rolls back. */
+class DryRun extends Error {
+  constructor(readonly applied: AppliedElementChange) {
+    super('dry run');
+  }
+}
+
 const jsonOrNull = (value: Json | undefined): string | null =>
   value === undefined ? null : JSON.stringify(value);
 
@@ -523,7 +530,8 @@ export class PostgresModelStore implements ModelStore {
     options: ChangeOptions = {},
   ): Promise<AppliedElementChange | undefined> {
     if (!isModelId(modelId)) return undefined;
-    const outcome = await this.#db.transaction(async (tx) => {
+    const via = options.via === undefined ? {} : { via: options.via };
+    const change = this.#db.transaction(async (tx) => {
       const model = await this.#loadEditable(
         tx,
         modelId,
@@ -650,8 +658,8 @@ export class PostgresModelStore implements ModelStore {
       ]);
       const details =
         write.kind === 'delete'
-          ? { fields: audit.fields, deletedRelationships: deleted.length }
-          : { fields: audit.fields };
+          ? { fields: audit.fields, deletedRelationships: deleted.length, ...via }
+          : { fields: audit.fields, ...via };
       await tx.query(insertAudit, [
         audit.action,
         audit.actor.id,
@@ -670,14 +678,24 @@ export class PostgresModelStore implements ModelStore {
             modelId,
             reference.elementId,
             null,
-            JSON.stringify({ fields: reference.fields }),
+            JSON.stringify({ fields: reference.fields, ...via }),
           ]);
         }
       }
       const applied: AppliedElementChange = { version, deletedRelationships: deleted };
       if (viewsChanged !== undefined) applied.viewsChanged = viewsChanged;
+      // A preview: everything ran, and throwing rolls it all back.
+      if (options.dryRun === true) throw new DryRun(applied);
       return { applied, updated };
     });
+    let outcome: Awaited<typeof change>;
+    try {
+      outcome = await change;
+    } catch (error) {
+      // Rolled back: the cache keeps the stored version.
+      if (error instanceof DryRun) return error.applied;
+      throw error;
+    }
     if (outcome === undefined) return undefined;
     // The plan validated the model as it now is, so the list needn't check it again.
     if (outcome.updated) {
