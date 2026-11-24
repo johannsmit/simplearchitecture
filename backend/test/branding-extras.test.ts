@@ -396,7 +396,7 @@ describe('the web app manifest', () => {
     ]);
   });
 
-  it('uses the product title and the app icon, keeping the built-in maskable icon', async () => {
+  it('uses the product title and only the app icon, with no built-in icon beside it', async () => {
     const { target, cookie } = await signedInAs(['Admin']);
     const title = 'Example "Atlas" <b>';
     await call(target, 'PUT', '/api/admin/branding/title', { cookie, json: { title, version: 1 } });
@@ -407,7 +407,6 @@ describe('the web app manifest', () => {
     expect(manifest.short_name).toBe(title);
     expect(manifest.icons).toEqual([
       { src: '/api/branding/icon?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ]);
     // Plain JSON text: the markup in the title is never raw HTML.
     expect(res.body).toContain(JSON.stringify(title));

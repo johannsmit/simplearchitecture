@@ -80,13 +80,12 @@ export function webAppManifest(branding: Branding): Record<string, unknown> {
     lang: 'en',
     // No id, as the build's manifest had none: the browser takes start_url, so an app already
     // installed stays the same app.
+    // With an app icon, only that one: a built-in maskable icon next to it would be the one an
+    // Android home screen picks.
     icons:
       branding.iconUrl === null
         ? [...builtInIcons, builtInMaskable]
-        : [
-            { src: branding.iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
-            builtInMaskable,
-          ],
+        : [{ src: branding.iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' }],
   };
 }
 

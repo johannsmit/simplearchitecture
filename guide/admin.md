@@ -32,7 +32,7 @@ The connection is set by the host, in `DATABASE_URL`, and can't be changed here.
 - **A product title:** shown in the header, on the sign-in page, in the browser tab and as the name of the installed app. Up to 40 characters, on one line, as plain text. Leave it empty to use SimpleArchitecture.
 - **A logo:** a PNG, JPEG or WebP image, at most 300 KB and 1024 × 1024 pixels. SVG isn't accepted, because it can carry scripts.
 - **A logo for the Dark theme (optional):** the same rules as the logo. The Dark theme shows it; without it, the Dark theme shows the logo. It can be set without a logo, and switching the theme swaps the logo at once.
-- **An app icon:** a square PNG of exactly 512 × 512 pixels, at most 300 KB. It is the browser tab's icon, the icon added to a phone's home screen, and the installed app's icon. Without it, the built-in icon is used everywhere. An app installed before the icon changed may keep its old icon until the device refreshes it.
+- **An app icon:** a square PNG of exactly 512 × 512 pixels, at most 300 KB. It is the browser tab's icon, the icon added to a phone's home screen, and the installed app's icon. Some phones crop it to a circle or rounded square, so keep what matters near the middle. Without it, the built-in icon is used everywhere. An app installed before the icon changed may keep its old icon until the device refreshes it.
 - **A primary and a secondary colour.** The app adjusts them for each theme, so text stays readable in Light and Dark.
 - **Reset to the neutral look** removes the product title, both logos, the app icon and both colours, after you confirm.
 
