@@ -92,7 +92,7 @@ export function buildMcpServer(
         'Start with list_models, then get_model_summary, then search_elements. ' +
         "A model's views (the diagrams architects saved) are listed by list_views and read with get_view. " +
         (writer
-          ? 'This user is a Modeller: create_element, update_element, create_relationship and update_relationship change the model, one element or relationship per call, with the app’s rules. Always call them with dry_run true first, show the user what would change, and save only after the user confirms. Nothing can be deleted through this connection. '
+          ? 'This user can change models (Modeller or higher): create_element, update_element, create_relationship and update_relationship change the model, one element or relationship per call, with the app’s rules. Always call them with dry_run true first, show the user what would change, and save only after the user confirms. Nothing can be deleted through this connection. '
           : 'This user can only read: nothing can be changed through this connection. ') +
         untrusted,
     },
