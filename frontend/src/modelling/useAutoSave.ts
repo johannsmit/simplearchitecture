@@ -53,12 +53,20 @@ export function useAutoSave(run: SaveRun): AutoSave {
   const wanted = useRef(false);
   const inFlight = useRef(false);
   const waiters = useRef<(() => void)[]>([]);
+  // The form has closed: what is left is still sent, once the save on its way is done.
+  const closed = useRef(false);
   const [, setTick] = useState(0);
   const [phase, setPhase] = useState<SavePhase>('idle');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   // Counted, so the same words said twice still change the live region.
   const [said, setSaid] = useState({ text: '', count: 0 });
+
+  /** Sends what is left after the form closed, once; nothing shows it any more. */
+  const sendClosed = () => {
+    wanted.current = false;
+    void latestRun.current(() => undefined).catch(() => undefined);
+  };
 
   const poke = useCallback(() => {
     setTick((tick) => tick + 1);
@@ -113,6 +121,10 @@ export function useAutoSave(run: SaveRun): AutoSave {
       let sent = false;
       const done = (outcome: SaveOutcome) => {
         inFlight.current = false;
+        if (closed.current) {
+          if (wanted.current || outcome.kind === 'again') sendClosed();
+          return;
+        }
         if (outcome.kind === 'saved') {
           setPhase('saved');
           setSaid((current) => ({ text: 'Saved', count: current.count + 1 }));
@@ -150,15 +162,19 @@ export function useAutoSave(run: SaveRun): AutoSave {
     }
   });
 
-  // Closing the form with a change still waiting for the pause: it is sent, not lost.
-  useEffect(
-    () => () => {
-      if (timer.current === null) return;
-      clearTimer();
-      if (!inFlight.current) void latestRun.current(() => undefined).catch(() => undefined);
-    },
-    [],
-  );
+  // Closing the form with a change waiting (for the pause, or for the save on its way): it is
+  // sent, not lost. The last render's run sends it with the version the last response gave.
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
+      if (timer.current !== null) {
+        clearTimer();
+        wanted.current = true;
+      }
+      if (wanted.current && !inFlight.current) sendClosed();
+    };
+  }, []);
 
   const clear = useCallback(() => {
     setPhase('idle');

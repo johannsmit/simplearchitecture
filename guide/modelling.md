@@ -110,7 +110,7 @@ Changes in the details panel are saved as you go. There is no **Save** button.
 - **When a save fails**, for example when the connection drops, the head says **Couldn't save** and why, the form keeps what you typed, and **Try again** sends it again.
 - If someone else changed the same element or relationship after you opened it, your change isn't saved and the form says **Someone else changed this element** (or relationship). Nothing more is saved until you choose **Reload**, which shows the latest version and discards your changes, so copy anything you want to keep first. If they deleted it, the form says so, and you can only close it.
 - `Esc` in the form does nothing: there is nothing to discard.
-- **Leaving the form**, by picking another element, going back or following a link, first saves a change that is waiting. You are asked **Leave without saving?** only when your last change couldn't be saved. Closing the browser tab warns while a change is waiting, being saved, or couldn't be saved.
+- **Leaving the form**, by picking another element, going back or following a link, first saves a change that is waiting. Closing the details panel saves it too. You are asked **Leave without saving?** only when your last change couldn't be saved. Closing the browser tab warns while a change is waiting, being saved, or couldn't be saved.
 
 **New element** and **Add relationship** still create only when you choose **Create** or **Add**, or press `Enter`. Once created, the element or relationship saves as you go.
 

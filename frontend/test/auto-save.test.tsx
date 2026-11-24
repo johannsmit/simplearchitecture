@@ -633,6 +633,62 @@ describe('auto-save on the element form', () => {
   });
 });
 
+describe('closing the details panel', () => {
+  const close = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Close the details' }));
+  };
+
+  it('still saves a change typed while a save was on its way', async () => {
+    const { form, server } = await openForm(at('till'), { hold: true });
+    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    await waitFor(() => {
+      expect(server.patches).toHaveLength(1);
+    });
+    fireEvent.change(nameField(form), { target: { value: 'Till typed during save' } });
+    close();
+    await settle();
+    expect(screen.queryByRole('form', { name: /^Edit / })).toBeNull();
+    await server.release();
+    await server.release();
+    expect(server.patches).toHaveLength(2);
+    expect(server.patches[1]?.body).toMatchObject({ version: 2, name: 'Till typed during save' });
+    expect(server.conflicts).toEqual([]);
+    expect(server.nodes.get('till')).toEqual({
+      label: 'Till typed during save',
+      metadata: { type: 'Application', architectureState: 'Current' },
+    });
+  });
+
+  it('still saves a pick made while a save was on its way', async () => {
+    const { form, server } = await openForm(at('till'), { hold: true });
+    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    await waitFor(() => {
+      expect(server.patches).toHaveLength(1);
+    });
+    fireEvent.change(stateField(form), { target: { value: 'Target' } });
+    close();
+    await settle();
+    await server.release();
+    await server.release();
+    expect(server.patches.map((patch) => patch.body.version)).toEqual([1, 2]);
+    expect(server.conflicts).toEqual([]);
+    expect(server.nodes.get('till')?.metadata?.architectureState).toBe('Target');
+  });
+
+  it('saves a change waiting for the typing pause', async () => {
+    const { form, server } = await openForm(at('till'));
+    fireEvent.change(nameField(form), { target: { value: 'Till closed' } });
+    close();
+    await waitFor(() => {
+      expect(server.patches.map((patch) => patch.body)).toEqual([
+        { version: 1, name: 'Till closed' },
+      ]);
+    });
+    await settle();
+    expect(server.patches).toHaveLength(1);
+  });
+});
+
 describe('auto-save on the relationship form', () => {
   async function openRelationship(options: Parameters<typeof api>[0] = {}) {
     const result = await openForm(at('shop'), options);
@@ -695,6 +751,30 @@ describe('auto-save on the relationship form', () => {
       within(details()).getByRole('heading', { name: 'Back Office Server relates to Web Shop' }),
     ).toBeDefined();
     expect(reverse().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('sends nothing more once the server says the model can no longer be edited', async () => {
+    const { form, fetchMock } = await openRelationship({
+      answer: (method) =>
+        method === 'PATCH' ? apiError(403, 'You can no longer edit this model.') : undefined,
+    });
+    const patchCount = () =>
+      fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH').length;
+    fireEvent.click(within(form).getByRole('radio', { name: /Target/ }));
+    await waitFor(() => {
+      expect(shownStatus()).toBe("Couldn't save: you can no longer edit this model");
+    });
+    expect(within(form).getByRole('alert').textContent).toContain(
+      'You can no longer edit this model.',
+    );
+    expect(patchCount()).toBe(1);
+    fireEvent.click(within(form).getByRole('radio', { name: /Deprecate/ }));
+    const label = within(form).getByRole('combobox', { name: 'Label' });
+    fireEvent.change(label, { target: { value: 'Stock levels' } });
+    fireEvent.keyDown(label, { key: 'Enter', ctrlKey: true });
+    await settle();
+    expect(patchCount()).toBe(1);
+    expect(shownStatus()).toBe("Couldn't save: you can no longer edit this model");
   });
 
   it('opens no Discard dialog on Esc, and leaving with a change waiting saves it without asking', async () => {

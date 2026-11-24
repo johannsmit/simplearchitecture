@@ -288,6 +288,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [duplicateOf, setDuplicateOf] = useState<string | undefined>(undefined);
   const [conflict, setConflict] = useState<Conflict>(null);
+  // The person may no longer edit the model (403): nothing more is sent.
+  const [forbidden, setForbidden] = useState(false);
   const [deleting, setDeleting] = useState<{
     busy: boolean;
     error: string | null;
@@ -437,7 +439,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       ? problems.get(draft.type)
       : undefined;
   const clientProblem = endsProblem ?? (touchesEnds ? problems.get(draft.type) : undefined);
-  const canSave = editable && conflict === null;
+  const canSave = editable && conflict === null && !forbidden;
 
   const failed = (reason: string): SaveOutcome => ({ kind: 'failed', reason });
   const conflictReason = (): string =>
@@ -451,6 +453,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const run: SaveRun = async (sending) => {
     if (!editable) return { kind: 'none' };
     if (conflict !== null) return failed(conflictReason());
+    if (forbidden) return failed('you can no longer edit this model');
     if (changeOf(base, draft) === undefined) {
       setErrors(new Map());
       setDuplicateOf(undefined);
@@ -520,6 +523,11 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
             : `someone else deleted ${end}`,
         );
       }
+      if (status === 403) {
+        setForbidden(true);
+        setErrors(new Map([['', 'You can no longer edit this model.']]));
+        return failed('you can no longer edit this model');
+      }
       const refusal = refusalOf(failure);
       // A message about a defined property goes under its field; about a custom key under its
       // row, or at the top if the row is gone.
@@ -574,7 +582,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       const count = [...next.keys()].filter((slot) => slot !== '').length;
       if (count > 0) return failed(fixReason(count));
       if (status === 0 || status >= 500) return failed('check your connection');
-      if (status === 403) return failed('you can no longer edit this model');
       return failed(refusal.message || "the change wasn't accepted");
     }
   };
