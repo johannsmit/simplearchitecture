@@ -423,6 +423,8 @@ describe('auto-save on the element form', () => {
     expect(within(form).getByRole('alert').textContent).toContain(
       "The change wasn't saved. Check your connection and try again.",
     );
+    // The alert says it: the status region doesn't say it again.
+    expect(saidStatus()).toBe('');
     expect(nameField(form).value).toBe('Till 2');
 
     failing = false;
@@ -433,6 +435,7 @@ describe('auto-save on the element form', () => {
     await waitFor(() => {
       expect(shownStatus()).toBe('Saved');
     });
+    expect(saidStatus()).toBe('Saved');
     expect(within(form).queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
@@ -448,6 +451,20 @@ describe('auto-save on the element form', () => {
       expect(shownStatus()).toBe("Couldn't save: check your connection");
     });
     expect(within(form).getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(saidStatus()).toBe('');
+  });
+
+  it('announces a refused save once, in its alert, not in the status region too', async () => {
+    const { form } = await openForm(at('till'), {
+      answer: (method) =>
+        method === 'PATCH' ? apiError(400, 'The model is being moved.') : undefined,
+    });
+    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    await waitFor(() => {
+      expect(shownStatus()).toBe("Couldn't save: The model is being moved.");
+    });
+    expect(within(form).getByRole('alert').textContent).toContain('The model is being moved.');
+    expect(saidStatus()).toBe('');
   });
 
   it('shows a conflict as before, sends nothing more until Reload, and leaves focus where it is', async () => {
@@ -472,6 +489,8 @@ describe('auto-save on the element form', () => {
     expect(within(form).getByRole('button', { name: 'Reload' })).toBeTruthy();
     expect(nameField(form).value).toBe('Till (mine)');
     expect(shownStatus()).toBe("Couldn't save: someone else changed this element");
+    // The conflict box is the alert: the status region doesn't say it again.
+    expect(saidStatus()).toBe('');
 
     fireEvent.change(stateField(form), { target: { value: 'Current' } });
     fireEvent.change(nameField(form), { target: { value: 'Till (mine) 2' } });
@@ -767,6 +786,7 @@ describe('auto-save on the relationship form', () => {
     expect(within(form).getByRole('alert').textContent).toContain(
       'You can no longer edit this model.',
     );
+    expect(saidStatus()).toBe('');
     expect(patchCount()).toBe(1);
     fireEvent.click(within(form).getByRole('radio', { name: /Deprecate/ }));
     const label = within(form).getByRole('combobox', { name: 'Label' });
@@ -775,6 +795,46 @@ describe('auto-save on the relationship form', () => {
     await settle();
     expect(patchCount()).toBe(1);
     expect(shownStatus()).toBe("Couldn't save: you can no longer edit this model");
+    expect(saidStatus()).toBe('');
+  });
+
+  it('announces a failed save once, in its alert, and Saved after Try again', async () => {
+    let failing = true;
+    const { form } = await openRelationship({
+      answer: (method) =>
+        method === 'PATCH' && failing ? apiError(503, 'The server is busy.') : undefined,
+    });
+    fireEvent.click(within(form).getByRole('radio', { name: /Target/ }));
+    await waitFor(() => {
+      expect(shownStatus()).toBe("Couldn't save: check your connection");
+    });
+    expect(within(form).getByRole('alert').textContent).toContain(
+      'Check your connection and try again.',
+    );
+    expect(saidStatus()).toBe('');
+    failing = false;
+    fireEvent.click(within(form).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => {
+      expect(shownStatus()).toBe('Saved');
+    });
+    expect(saidStatus()).toBe('Saved');
+  });
+
+  it('still announces a field to fix, which shows no alert', async () => {
+    const { form } = await openRelationship({
+      answer: (method) =>
+        method === 'PATCH'
+          ? apiError(422, 'Invalid', {
+              fields: [{ field: 'label', message: 'Enter a shorter label.' }],
+            })
+          : undefined,
+    });
+    fireEvent.click(within(form).getByRole('radio', { name: /Target/ }));
+    await waitFor(() => {
+      expect(shownStatus()).toBe("Couldn't save: 1 field needs a fix");
+    });
+    expect(within(form).queryByRole('alert')).toBeNull();
+    expect(saidStatus()).toBe("Couldn't save: 1 field needs a fix");
   });
 
   it('opens no Discard dialog on Esc, and leaving with a change waiting saves it without asking', async () => {

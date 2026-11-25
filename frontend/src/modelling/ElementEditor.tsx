@@ -236,13 +236,18 @@ export function ElementEditor(props: ElementEditorProps) {
     setAlert(null);
   };
 
-  const failed = (reason: string): SaveOutcome => ({ kind: 'failed', reason });
+  /** `announced`: an alert box in the form says so already (see `SaveOutcome`). */
+  const failed = (reason: string, announced = false): SaveOutcome => ({
+    kind: 'failed',
+    reason,
+    announced,
+  });
 
   /** Saves what the draft holds now, apart from fields that fail the checks. */
   const run: SaveRun = async (sending) => {
-    if (conflict === 'changed') return failed('someone else changed this element');
-    if (conflict === 'deleted') return failed('someone else deleted this element');
-    if (forbidden) return failed('you can no longer edit this model');
+    if (conflict === 'changed') return failed('someone else changed this element', true);
+    if (conflict === 'deleted') return failed('someone else deleted this element', true);
+    if (forbidden) return failed('you can no longer edit this model', alert !== null);
     if (changesOf(initial, draft) === undefined) {
       setErrors(new Map());
       setAlert(null);
@@ -268,7 +273,7 @@ export function ElementEditor(props: ElementEditorProps) {
           title: "Couldn't load the defined properties. Reload to try again.",
           messages: [],
         });
-        return failed("couldn't load the defined properties");
+        return failed("couldn't load the defined properties", true);
       }
       sent = rest;
     }
@@ -327,20 +332,21 @@ export function ElementEditor(props: ElementEditorProps) {
         setAlert(messages.length > 0 ? { title: "The change wasn't saved.", messages } : null);
         return failed(
           all.size > 0 ? fixReason(all.size) : (messages[0] ?? "the change wasn't accepted"),
+          messages.length > 0,
         );
       }
       if (status === 409) {
         setConflict('changed');
-        return failed('someone else changed this element');
+        return failed('someone else changed this element', true);
       }
       if (status === 404 && (body as { missing?: unknown } | undefined)?.missing !== 'model') {
         setConflict('deleted');
-        return failed('someone else deleted this element');
+        return failed('someone else deleted this element', true);
       }
       if (status === 403) {
         setForbidden(true);
         setAlert({ title: 'You can no longer edit this model.', messages: [] });
-        return failed('you can no longer edit this model');
+        return failed('you can no longer edit this model', true);
       }
       if (status === 0 || status >= 500) {
         setAlert({
@@ -348,11 +354,11 @@ export function ElementEditor(props: ElementEditorProps) {
           messages: [],
           retry: true,
         });
-        return failed('check your connection');
+        return failed('check your connection', true);
       }
       const message = error instanceof Error ? error.message : '';
       setAlert({ title: "The change wasn't saved.", messages: message ? [message] : [] });
-      return failed(message || "the change wasn't accepted");
+      return failed(message || "the change wasn't accepted", true);
     }
   };
   const saver = useAutoSave(run);

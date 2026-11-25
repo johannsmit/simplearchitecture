@@ -441,7 +441,12 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   const clientProblem = endsProblem ?? (touchesEnds ? problems.get(draft.type) : undefined);
   const canSave = editable && conflict === null && !forbidden;
 
-  const failed = (reason: string): SaveOutcome => ({ kind: 'failed', reason });
+  /** `announced`: an alert box in the form says so already (see `SaveOutcome`). */
+  const failed = (reason: string, announced = false): SaveOutcome => ({
+    kind: 'failed',
+    reason,
+    announced,
+  });
   const conflictReason = (): string =>
     conflict === 'changed'
       ? 'someone else changed this relationship'
@@ -452,8 +457,8 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   /** Saves what the draft holds now; ends the checks refuse stay unsaved, the rest is saved. */
   const run: SaveRun = async (sending) => {
     if (!editable) return { kind: 'none' };
-    if (conflict !== null) return failed(conflictReason());
-    if (forbidden) return failed('you can no longer edit this model');
+    if (conflict !== null) return failed(conflictReason(), true);
+    if (forbidden) return failed('you can no longer edit this model', errors.has(''));
     if (changeOf(base, draft) === undefined) {
       setErrors(new Map());
       setDuplicateOf(undefined);
@@ -508,7 +513,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       const status = failure instanceof ApiRequestError ? failure.status : 0;
       if (status === 409) {
         setConflict('changed');
-        return failed('someone else changed this relationship');
+        return failed('someone else changed this relationship', true);
       }
       if (status === 404) {
         const missing = (failure as ApiRequestError).body as { missing?: unknown } | undefined;
@@ -521,12 +526,13 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           end === undefined
             ? 'someone else deleted this relationship'
             : `someone else deleted ${end}`,
+          true,
         );
       }
       if (status === 403) {
         setForbidden(true);
         setErrors(new Map([['', 'You can no longer edit this model.']]));
-        return failed('you can no longer edit this model');
+        return failed('you can no longer edit this model', true);
       }
       const refusal = refusalOf(failure);
       // A message about a defined property goes under its field; about a custom key under its
@@ -580,9 +586,11 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
       setErrors(next);
       if (refusal.duplicateOf !== undefined) setDuplicateOf(refusal.duplicateOf);
       const count = [...next.keys()].filter((slot) => slot !== '').length;
-      if (count > 0) return failed(fixReason(count));
-      if (status === 0 || status >= 500) return failed('check your connection');
-      return failed(refusal.message || "the change wasn't accepted");
+      // A message for no field shows in the alert box at the top.
+      const shown = next.has('');
+      if (count > 0) return failed(fixReason(count), shown);
+      if (status === 0 || status >= 500) return failed('check your connection', shown);
+      return failed(refusal.message || "the change wasn't accepted", shown);
     }
   };
   const saver = useAutoSave(run);
