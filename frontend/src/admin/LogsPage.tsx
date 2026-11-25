@@ -10,6 +10,7 @@ import { getLogs, type LogsQuery } from '../api';
 import { usePageTitle } from '../branding';
 import { Icon } from '../icons';
 import { AdminNav } from './AdminNav';
+import { localDay, logRangeOffsets } from './log-days';
 
 /** The Level choices: all, or a lowest level. */
 const levelChoices: { value: '' | LogLevelName; label: string }[] = [
@@ -20,11 +21,6 @@ const levelChoices: { value: '' | LogLevelName; label: string }[] = [
 ];
 
 const pad = (value: number) => String(value).padStart(2, '0');
-
-/** A date in the browser's time zone as `YYYY-MM-DD`. */
-function localDay(date: Date): string {
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 /** An entry's time in the browser's time zone: `HH:mm:ss`, after its date when `withDate`. */
 function shownTime(iso: string, withDate: boolean): string {
@@ -175,7 +171,7 @@ export function LogsPage() {
   // The first load: today. The page starts as loading.
   useEffect(() => {
     const day = localDay(new Date());
-    const controller = fetchLogs({ from: day, to: day, tzOffset: new Date().getTimezoneOffset() });
+    const controller = fetchLogs({ from: day, to: day, ...logRangeOffsets(day, day) });
     return () => {
       controller.abort();
     };
@@ -190,7 +186,7 @@ export function LogsPage() {
       from,
       to,
       ...(level === '' ? {} : { level }),
-      tzOffset: new Date().getTimezoneOffset(),
+      ...logRangeOffsets(from, to),
     });
   };
 

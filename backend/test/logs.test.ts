@@ -97,6 +97,39 @@ describe('LogService', () => {
     expect(result.entries.map((entry) => entry.msg)).toEqual(['23:30 UTC the day before']);
   });
 
+  it('reads each end of the range at its own offset when a clock change falls between', async () => {
+    // Two hours ahead of UTC on 2026-03-28, one hour ahead on 2026-03-30 (made-up clock change):
+    // the range starts at 22:00 UTC on 2026-03-27 and ends at 23:00 UTC on 2026-03-30.
+    const start = Date.UTC(2026, 2, 27, 22);
+    const end = Date.UTC(2026, 2, 30, 23);
+    await insert(start - 60_000, 30, 'just before the start');
+    await insert(start, 30, 'the start');
+    await insert(end - 60_000, 30, 'just before the end');
+    await insert(end, 30, 'the end');
+    const result = await service().query(admin, {
+      from: '2026-03-28',
+      to: '2026-03-30',
+      tzOffset: '-120',
+      toTzOffset: '-60',
+    });
+    expect(result.entries.map((entry) => entry.msg)).toEqual(['just before the end', 'the start']);
+
+    // Without toTzOffset both ends use tzOffset: one offset for the whole range ends it an hour
+    // early, or starts it an hour late.
+    const same = await service().query(admin, {
+      from: '2026-03-28',
+      to: '2026-03-30',
+      tzOffset: '-120',
+    });
+    expect(same.entries.map((entry) => entry.msg)).toEqual(['the start']);
+    const shifted = await service().query(admin, {
+      from: '2026-03-28',
+      to: '2026-03-30',
+      tzOffset: '-60',
+    });
+    expect(shifted.entries.map((entry) => entry.msg)).toEqual(['just before the end']);
+  });
+
   it('keeps the entries at the level asked for or above', async () => {
     await insert(noon, 20, 'debug');
     await insert(noon + 1, 30, 'info');
@@ -162,6 +195,16 @@ describe('LogService', () => {
       'an offset that is not a number',
       { from: '2026-03-10', to: '2026-03-10', tzOffset: 'x' },
       'tzOffset',
+    ],
+    [
+      'an end offset too far',
+      { from: '2026-03-10', to: '2026-03-10', tzOffset: 0, toTzOffset: -900 },
+      'toTzOffset must be a whole number of minutes',
+    ],
+    [
+      'an end offset that is not whole',
+      { from: '2026-03-10', to: '2026-03-10', toTzOffset: '30.5' },
+      'toTzOffset must be a whole number of minutes',
     ],
   ])('refuses %s', async (_name, query, message) => {
     const error = await service()
@@ -429,6 +472,11 @@ describe('GET /api/admin/logs', () => {
     ['a bad date', '?from=2026-13-01&to=2026-03-10', 'YYYY-MM-DD'],
     ['a bad level', '?from=2026-03-10&to=2026-03-10&level=verbose', 'level'],
     ['an offset too far', '?from=2026-03-10&to=2026-03-10&tzOffset=-9999', 'tzOffset'],
+    [
+      'an end offset too far',
+      '?from=2026-03-10&to=2026-03-10&tzOffset=-60&toTzOffset=x',
+      'toTzOffset must be',
+    ],
     ['a date given twice', '?from=2026-03-10&from=2026-03-11&to=2026-03-12', 'from'],
   ])('refuses %s with 400', async (_name, query, message) => {
     const target = await started();

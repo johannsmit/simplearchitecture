@@ -6,7 +6,10 @@ import { LogAccessError, LogQueryError, type LogService } from '../logs/log-serv
 const admin = { access: { space: 'admin' } } as const;
 
 /**
- * Admin → Logs: `GET /api/admin/logs?from=YYYY-MM-DD&to=YYYY-MM-DD&level=warn&tzOffset=-60`.
+ * Admin → Logs:
+ * `GET /api/admin/logs?from=YYYY-MM-DD&to=YYYY-MM-DD&level=warn&tzOffset=-60&toTzOffset=-120`.
+ * `tzOffset` is the browser's offset at the start of `from`, `toTzOffset` the one at the end of
+ * `to` (they differ when the range crosses a clock change; `toTzOffset` defaults to `tzOffset`).
  * The service checks the query and the role again; see logs/log-service.ts.
  */
 export function logRoutes(service: LogService): FastifyPluginAsync {
