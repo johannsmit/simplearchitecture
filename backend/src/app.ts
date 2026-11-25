@@ -287,7 +287,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
     // before the database closes.
     app.addHook('onClose', () => appLogs.close());
   }
-  const logs = new LogService(db, now);
+  const logs = new LogService(db, app.log, now);
   const modelStore = options.modelStore ?? (await PostgresModelStore.open(db, { log: app.log }));
 
   if (options.onRoute) {

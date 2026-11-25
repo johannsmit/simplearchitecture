@@ -23,6 +23,7 @@ import { redactSecrets } from './redact.js';
  * agent), at most 31 days; the answer is the newest 1,000 entries, newest first. The offset can
  * differ at the two ends when the range crosses a clock change: `tzOffset` is the one at the start
  * of `from`, `toTzOffset` the one at the end of `to` (the same as `tzOffset` when left out).
+ * Each answered read is logged with the reader's user id (audit 'logs-read'), never the entries.
  */
 
 /** The request can't be answered as asked. The message is safe to show. */
@@ -55,6 +56,18 @@ export const logQuerySchema = z
   });
 
 export type LogQuery = z.input<typeof logQuerySchema>;
+
+/** Who reads the logs, and from where: Admin → Logs ('web') or an agent's get_logs ('mcp'). */
+export interface LogReader {
+  userId: string;
+  roles: readonly string[];
+  via: 'web' | 'mcp';
+}
+
+/** Where the service records each read (the app's logger). */
+export interface LogReadLog {
+  info(details: object, message: string): void;
+}
 
 interface LogRow {
   id: string | number | bigint;
@@ -103,6 +116,7 @@ function firstMessage(error: z.ZodError): string {
 export class LogService {
   constructor(
     private readonly db: Queryable,
+    private readonly log: LogReadLog,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -113,10 +127,11 @@ export class LogService {
 
   /**
    * The entries of the days `from` to `to` (both counted, `YYYY-MM-DD`), at `level` or above,
-   * newest first. Throws LogAccessError unless `roles` open Admin, LogQueryError for a bad query.
+   * newest first. Throws LogAccessError unless the reader's roles open Admin, LogQueryError for a
+   * bad query; neither is logged as a read.
    */
-  async query(roles: readonly string[], input: unknown): Promise<LogsResponse> {
-    if (!spacesForRoles(roles).includes('admin')) throw new LogAccessError();
+  async query(reader: LogReader, input: unknown): Promise<LogsResponse> {
+    if (!spacesForRoles(reader.roles).includes('admin')) throw new LogAccessError();
     const parsed = logQuerySchema.safeParse(input ?? {});
     if (!parsed.success) throw new LogQueryError(firstMessage(parsed.error));
     const { from, to, level, tzOffset, toTzOffset = tzOffset } = parsed.data;
@@ -135,9 +150,23 @@ export class LogService {
         maxLogEntries + 1,
       ],
     );
-    return {
-      entries: rows.slice(0, maxLogEntries).map(entryOf),
-      truncated: rows.length > maxLogEntries,
-    };
+    const entries = rows.slice(0, maxLogEntries).map(entryOf);
+    const truncated = rows.length > maxLogEntries;
+    // Who read which days: ids and counts only, never what the entries say. The level asked for
+    // is `minLevel`: `level` is the log line's own.
+    this.log.info(
+      {
+        audit: 'logs-read',
+        userId: reader.userId,
+        via: reader.via,
+        from,
+        to,
+        minLevel: level ?? null,
+        entries: entries.length,
+        truncated,
+      },
+      'logs read',
+    );
+    return { entries, truncated };
   }
 }

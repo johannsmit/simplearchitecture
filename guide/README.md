@@ -38,6 +38,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.74.2](releases/v0.74.2.md): Each read of the logs in Admin → Logs is recorded with who read them.
   - [0.74.1](releases/v0.74.1.md): Admin → Logs shows the right hours when the date range crosses a clock change.
   - [0.74.0](releases/v0.74.0.md): Admins can read the application logs in the Admin space and through the MCP endpoint, for a chosen date range.
   - [0.73.0](releases/v0.73.0.md): AI agents can add and change elements and relationships for Modellers, with a preview and a mark in the audit trail.
