@@ -21,7 +21,12 @@ export function logRoutes(service: LogService): FastifyPluginAsync {
         const session = request.session;
         if (!session) throw new Error('logs route reached without a session');
         try {
-          return await service.query(session.user.roles, request.query);
+          const reader = {
+            userId: session.user.id,
+            roles: session.user.roles,
+            via: 'web',
+          } as const;
+          return await service.query(reader, request.query);
         } catch (error) {
           if (error instanceof LogQueryError) {
             return reply.code(400).send(errorBody(400, error.message));

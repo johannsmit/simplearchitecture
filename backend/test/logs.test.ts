@@ -20,6 +20,7 @@ import { createTestDb, resetTestDb, testConnection, type TestDb } from './pglite
 
 const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
 const admin = ['Admin'];
+const reader = { userId: 'made-up-admin', roles: admin, via: 'web' } as const;
 const hour = 3_600_000;
 const day = 24 * hour;
 // A fixed day, noon UTC: 2026-03-10.
@@ -62,7 +63,7 @@ async function storedCount(): Promise<number> {
 }
 
 describe('LogService', () => {
-  const service = () => new LogService(db, () => noon);
+  const service = () => new LogService(db, silent, () => noon);
 
   it('returns the entries of the days asked for, newest first', async () => {
     await insert(noon - day, 30, 'the day before');
@@ -71,7 +72,7 @@ describe('LogService', () => {
     await insert(noon + 11 * hour, 40, 'late');
     await insert(noon + 12 * hour, 30, 'the next day'); // 00:00 UTC next day
 
-    const result = await service().query(admin, { from: '2026-03-10', to: '2026-03-10' });
+    const result = await service().query(reader, { from: '2026-03-10', to: '2026-03-10' });
     expect(result.truncated).toBe(false);
     expect(result.entries.map((entry) => entry.msg)).toEqual(['late', 'midday', 'first thing']);
     expect(result.entries[0]).toMatchObject({
@@ -81,7 +82,7 @@ describe('LogService', () => {
     });
     expect(result.entries[0]?.id).toMatch(/^\d+$/);
 
-    const both = await service().query(admin, { from: '2026-03-09', to: '2026-03-10' });
+    const both = await service().query(reader, { from: '2026-03-09', to: '2026-03-10' });
     expect(both.entries.map((entry) => entry.msg)).toContain('the day before');
   });
 
@@ -89,7 +90,7 @@ describe('LogService', () => {
     await insert(noon - 12 * hour - 30 * 60_000, 30, '23:30 UTC the day before');
     await insert(noon + 11 * hour + 30 * 60_000, 30, '23:30 UTC');
     // One hour ahead of UTC (Date.getTimezoneOffset: -60): the day starts at 23:00 UTC.
-    const result = await service().query(admin, {
+    const result = await service().query(reader, {
       from: '2026-03-10',
       to: '2026-03-10',
       tzOffset: '-60',
@@ -106,7 +107,7 @@ describe('LogService', () => {
     await insert(start, 30, 'the start');
     await insert(end - 60_000, 30, 'just before the end');
     await insert(end, 30, 'the end');
-    const result = await service().query(admin, {
+    const result = await service().query(reader, {
       from: '2026-03-28',
       to: '2026-03-30',
       tzOffset: '-120',
@@ -116,13 +117,13 @@ describe('LogService', () => {
 
     // Without toTzOffset both ends use tzOffset: one offset for the whole range ends it an hour
     // early, or starts it an hour late.
-    const same = await service().query(admin, {
+    const same = await service().query(reader, {
       from: '2026-03-28',
       to: '2026-03-30',
       tzOffset: '-120',
     });
     expect(same.entries.map((entry) => entry.msg)).toEqual(['the start']);
-    const shifted = await service().query(admin, {
+    const shifted = await service().query(reader, {
       from: '2026-03-28',
       to: '2026-03-30',
       tzOffset: '-60',
@@ -137,7 +138,7 @@ describe('LogService', () => {
     await insert(noon + 3, 50, 'error');
     await insert(noon + 4, 60, 'fatal');
     const at = async (level?: string) =>
-      (await service().query(admin, { from: '2026-03-10', to: '2026-03-10', level })).entries.map(
+      (await service().query(reader, { from: '2026-03-10', to: '2026-03-10', level })).entries.map(
         (entry) => entry.level,
       );
     expect(await at()).toEqual(['fatal', 'error', 'warn', 'info', 'debug']);
@@ -152,16 +153,16 @@ describe('LogService', () => {
        from generate_series(1, 1001) as n`,
       [new Date(noon - 6 * hour).toISOString()],
     );
-    const result = await service().query(admin, { from: '2026-03-10', to: '2026-03-10' });
+    const result = await service().query(reader, { from: '2026-03-10', to: '2026-03-10' });
     expect(result.entries).toHaveLength(1000);
     expect(result.truncated).toBe(true);
     expect(result.entries[0]?.msg).toBe('entry 1001');
     expect(result.entries.at(-1)?.msg).toBe('entry 2');
 
     await db.query(`delete from app_logs where msg = 'entry 1'`);
-    expect((await service().query(admin, { from: '2026-03-10', to: '2026-03-10' })).truncated).toBe(
-      false,
-    );
+    expect(
+      (await service().query(reader, { from: '2026-03-10', to: '2026-03-10' })).truncated,
+    ).toBe(false);
   });
 
   it('never returns a field named like a credential, at any depth', async () => {
@@ -171,7 +172,7 @@ describe('LogService', () => {
       nested: [{ clientSecret: 'made-up-secret', refresh_token: 'made-up-refresh' }],
       userId: 'made-up-user',
     });
-    const [entry] = (await service().query(admin, { from: '2026-03-10', to: '2026-03-10' }))
+    const [entry] = (await service().query(reader, { from: '2026-03-10', to: '2026-03-10' }))
       .entries;
     expect(entry?.extra).toEqual({
       headers: { authorization: '[Redacted]', accept: 'text/html' },
@@ -208,7 +209,7 @@ describe('LogService', () => {
     ],
   ])('refuses %s', async (_name, query, message) => {
     const error = await service()
-      .query(admin, query)
+      .query(reader, query)
       .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(LogQueryError);
     expect((error as Error).message).toContain(message);
@@ -217,7 +218,7 @@ describe('LogService', () => {
   it('accepts 31 days, both counted', async () => {
     await insert(Date.UTC(2026, 2, 1, 1), 30, 'first day');
     await insert(Date.UTC(2026, 2, 31, 23), 30, 'last day');
-    const result = await service().query(admin, { from: '2026-03-01', to: '2026-03-31' });
+    const result = await service().query(reader, { from: '2026-03-01', to: '2026-03-31' });
     expect(result.entries.map((entry) => entry.msg)).toEqual(['last day', 'first day']);
   });
 
@@ -225,13 +226,71 @@ describe('LogService', () => {
     await insert(noon, 30, 'secret-free but Admin only');
     for (const roles of [['Modeller'], ['Viewer'], [], ['admin']]) {
       await expect(
-        service().query(roles, { from: '2026-03-10', to: '2026-03-10' }),
+        service().query({ ...reader, roles }, { from: '2026-03-10', to: '2026-03-10' }),
       ).rejects.toBeInstanceOf(LogAccessError);
     }
   });
 
+  it('logs each answered read with the reader, the days and counts, never the entries', async () => {
+    await insert(noon, 30, 'made-up entry text', { ip: '192.0.2.1' });
+    const lines: { details: Record<string, unknown>; message: string }[] = [];
+    const log = {
+      info: (details: object, message: string) => lines.push({ details: { ...details }, message }),
+    };
+    const logged = new LogService(db, log, () => noon);
+
+    await logged.query(reader, { from: '2026-03-10', to: '2026-03-10' });
+    await logged.query(
+      { userId: 'made-up-agent-user', roles: admin, via: 'mcp' },
+      { from: '2026-03-09', to: '2026-03-10', level: 'warn' },
+    );
+    expect(lines).toEqual([
+      {
+        message: 'logs read',
+        details: {
+          audit: 'logs-read',
+          userId: 'made-up-admin',
+          via: 'web',
+          from: '2026-03-10',
+          to: '2026-03-10',
+          minLevel: null,
+          entries: 1,
+          truncated: false,
+        },
+      },
+      {
+        message: 'logs read',
+        details: {
+          audit: 'logs-read',
+          userId: 'made-up-agent-user',
+          via: 'mcp',
+          from: '2026-03-09',
+          to: '2026-03-10',
+          minLevel: 'warn',
+          entries: 0,
+          truncated: false,
+        },
+      },
+    ]);
+    expect(JSON.stringify(lines)).not.toMatch(/made-up entry text|192\.0\.2\.1/);
+  });
+
+  it('logs no read when it refuses the caller or the query', async () => {
+    const lines: object[] = [];
+    const logged = new LogService(db, { info: (details) => lines.push(details) }, () => noon);
+    await expect(
+      logged.query({ ...reader, roles: ['Modeller'] }, { from: '2026-03-10', to: '2026-03-10' }),
+    ).rejects.toBeInstanceOf(LogAccessError);
+    await expect(
+      logged.query(reader, { from: '2026-03-10', to: '2026-03-01' }),
+    ).rejects.toBeInstanceOf(LogQueryError);
+    expect(lines).toEqual([]);
+  });
+
   it('gives today in UTC', () => {
-    expect(new LogService(db, () => Date.UTC(2026, 2, 10, 23, 59)).today()).toBe('2026-03-10');
+    expect(new LogService(db, silent, () => Date.UTC(2026, 2, 10, 23, 59)).today()).toBe(
+      '2026-03-10',
+    );
   });
 });
 
@@ -411,9 +470,9 @@ describe('GET /api/admin/logs', () => {
     app = undefined;
   });
 
-  async function started(): Promise<FastifyInstance> {
+  async function started(logLevel: 'silent' | 'info' = 'silent'): Promise<FastifyInstance> {
     app = await buildTestApp(
-      {},
+      { LOG_LEVEL: logLevel },
       idpOptions(idp, {
         database: DatabaseService.using(db, testConnection, silent),
         appLogs: false,
@@ -464,6 +523,40 @@ describe('GET /api/admin/logs', () => {
     expect(errors.json<LogsResponse>().entries.map((entry) => entry.msg)).toEqual(['error entry']);
   });
 
+  it('logs who read the logs, once per read, and nothing for a refused or invalid read', async () => {
+    await insert(noon, 30, 'made-up entry text');
+    const target = await started('info');
+    const modeller = await cookieFor(target, ['Modeller']);
+    const cookie = await cookieFor(target, admin);
+    const lines = captureLogs(target);
+    const reads = () =>
+      lines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((line) => line.audit === 'logs-read');
+
+    expect((await get(target, '?from=2026-03-10&to=2026-03-10', modeller)).statusCode).toBe(403);
+    expect((await get(target, '?from=2026-03-10&to=2026-03-01', cookie)).statusCode).toBe(400);
+    expect(reads()).toEqual([]);
+
+    const res = await get(target, '?from=2026-03-09&to=2026-03-10&level=info', cookie);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(reads()).toEqual([
+      expect.objectContaining({
+        level: 30,
+        msg: 'logs read',
+        audit: 'logs-read',
+        userId: 'made-up-Admin',
+        via: 'web',
+        from: '2026-03-09',
+        to: '2026-03-10',
+        minLevel: 'info',
+        entries: 1,
+        truncated: false,
+      }),
+    ]);
+    expect(lines.join('')).not.toContain('made-up entry text');
+  });
+
   it.each([
     ['no dates', '', 'Choose a From date.'],
     ['no To', '?from=2026-03-10', 'Choose a To date.'],
@@ -495,9 +588,12 @@ describe('get_logs (MCP)', () => {
     app = undefined;
   });
 
-  async function agentFor(roles: string[]): Promise<{ target: FastifyInstance; token: string }> {
+  async function agentFor(
+    roles: string[],
+    logLevel: 'silent' | 'info' = 'silent',
+  ): Promise<{ target: FastifyInstance; token: string }> {
     app = await buildTestApp(
-      {},
+      { LOG_LEVEL: logLevel },
       idpOptions(idp, {
         database: DatabaseService.using(db, testConnection, silent),
         appLogs: false,
@@ -544,6 +640,44 @@ describe('get_logs (MCP)', () => {
     const result = await callTool(target, token, 'get_logs', args);
     expect(result.isError).toBe(true);
     expect(result.text).toContain(message);
+  });
+
+  it("logs the read with the agent user's id, beside the tool call, and no read when refused", async () => {
+    await insert(noon - hour, 30, 'made-up entry text');
+    const { target, token } = await agentFor(admin, 'info');
+    const lines = captureLogs(target);
+    const audited = (audit: string) =>
+      lines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((line) => line.audit === audit);
+
+    const refused = await callTool(target, token, 'get_logs', {
+      from: '2026-03-10',
+      to: '2026-03-09',
+    });
+    expect(refused.isError).toBe(true);
+    expect(audited('logs-read')).toEqual([]);
+
+    const result = await callTool(target, token, 'get_logs', { level: 'info' });
+    expect(result.isError, result.text).toBe(false);
+    expect(audited('logs-read')).toEqual([
+      expect.objectContaining({
+        level: 30,
+        msg: 'logs read',
+        userId: 'made-up-agent-user',
+        via: 'mcp',
+        from: '2026-03-10',
+        to: '2026-03-10',
+        minLevel: 'info',
+        entries: 1,
+        truncated: false,
+      }),
+    ]);
+    expect(audited('mcp-tool')).toEqual([
+      expect.objectContaining({ tool: 'get_logs', refused: true }),
+      expect.objectContaining({ tool: 'get_logs', userId: 'made-up-agent-user', entries: 1 }),
+    ]);
+    expect(lines.join('')).not.toContain('made-up entry text');
   });
 
   it('refuses a date in another format before the tool runs', async () => {

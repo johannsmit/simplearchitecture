@@ -325,7 +325,8 @@ function registerLogTool(server: McpServer, logs: LogService, auth: McpAuth, run
         async () => {
           const today = logs.today();
           try {
-            return await logs.query(auth.roles, { from: from ?? today, to: to ?? today, level });
+            const reader = { userId: auth.userId, roles: auth.roles, via: 'mcp' } as const;
+            return await logs.query(reader, { from: from ?? today, to: to ?? today, level });
           } catch (error) {
             if (error instanceof LogQueryError || error instanceof LogAccessError) {
               throw new ToolError(error.message);
