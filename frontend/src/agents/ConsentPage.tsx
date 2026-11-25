@@ -58,6 +58,8 @@ export function ConsentPage() {
   const canAllow = me.spaces.includes('viewing');
   // The agent gets the roles of this sign-in: a Modeller's agent can change the models too.
   const canChange = me.spaces.includes('modelling');
+  // And an Admin's agent can read the app's logs (the get_logs tool).
+  const canReadLogs = me.spaces.includes('admin');
 
   useEffect(() => {
     if (id === null || invalidFromStart) return;
@@ -244,6 +246,12 @@ export function ConsentPage() {
                 <Icon name="check" size="sm" />
                 Read the models you can see in Viewing
               </li>
+              {canReadLogs && (
+                <li>
+                  <Icon name="check" size="sm" />
+                  Read the app&apos;s logs of the last 30 days
+                </li>
+              )}
               {canChange ? (
                 <>
                   <li>

@@ -20,6 +20,9 @@ export function AdminNav() {
         <li>
           <NavLink to="/admin/apps">Connected apps</NavLink>
         </li>
+        <li>
+          <NavLink to="/admin/logs">Logs</NavLink>
+        </li>
       </ul>
     </nav>
   );

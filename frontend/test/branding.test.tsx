@@ -393,6 +393,7 @@ describe('Admin → Branding', () => {
       'Database',
       'Branding',
       'Connected apps',
+      'Logs',
     ]);
     expect(links[3]?.getAttribute('aria-current')).toBe('page');
 

@@ -200,6 +200,22 @@ describe('the consent page', () => {
     await expectNoSeriousAxeViolations();
   });
 
+  it("tells an Admin the agent can also read the app's logs", async () => {
+    stubApi(admin, consentApi(hosted));
+    renderAt(consentUrl);
+    const can = await screen.findByRole('list');
+    expect(
+      within(can)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Read the models you can see in Viewing',
+      "Read the app's logs of the last 30 days",
+      'Add and change elements and relationships, as you, one at a time',
+      "It can't delete anything",
+    ]);
+  });
+
   it('tells a user without a role, with only a way back that says no', async () => {
     const fetchMock = stubApi(noRole, consentApi(hosted));
     renderAt(consentUrl);

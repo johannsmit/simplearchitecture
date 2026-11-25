@@ -26,7 +26,7 @@ export function AdminHelp() {
   return (
     <SpaceHelpPage
       space="admin"
-      lead="Admin holds the pages that manage the installation: Models, Properties, Database, Branding and Connected apps."
+      lead="Admin holds the pages that manage the installation: Models, Properties, Database, Branding, Connected apps and Logs."
       pointer={pointer}
       keysIntro={
         <p>
@@ -106,6 +106,13 @@ export function AdminHelp() {
           <p>
             See the AI agents people have connected. You can disconnect any person&apos;s agents, or
             all of them; the agent stops at once.
+          </p>
+
+          <h3>Logs</h3>
+          <p>
+            Read the app&apos;s log lines for whole days in UTC, both ends included, at or above a
+            level. A range covers at most 31 days and shows the newest 1,000 lines. Lines are kept
+            for 30 days.
           </p>
         </>
       }

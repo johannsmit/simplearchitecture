@@ -152,6 +152,14 @@ const paths = {
     </>
   ),
   'list-filter': <path d="M3 6h18M7 12h10M10 18h4" />,
+  refresh: (
+    <>
+      <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" />
+      <path d="M8 16H3v5" />
+    </>
+  ),
   logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />,
   lock: (
     <>

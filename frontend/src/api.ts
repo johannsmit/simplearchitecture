@@ -1,10 +1,13 @@
 import {
   isHexColour,
+  logLevels,
   validProductTitle,
   type AboutResponse,
   type ApiError,
   type Branding,
+  type LogLine,
   type LogoMediaType,
+  type LogsResponse,
 } from '@simplearchitecture/shared';
 import type {
   AdminConnectedApp,
@@ -302,6 +305,53 @@ export async function getDatabaseStatus(signal?: AbortSignal): Promise<DatabaseS
     throw new ApiRequestError(200, 'The server sent an unexpected database status.');
   }
   return body;
+}
+
+function isLogLine(value: unknown): value is LogLine {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.time === 'string' &&
+    typeof value.level === 'number' &&
+    logLevels.some((level) => level.label === value.levelLabel) &&
+    (value.msg === null || typeof value.msg === 'string') &&
+    isObject(value.fields)
+  );
+}
+
+/**
+ * GET /api/admin/logs (Admin): the log lines of whole UTC days, `YYYY-MM-DD`, both included, at or
+ * above a level, newest first.
+ */
+export async function getLogs(
+  query: { from: string; to: string; minLevel: number },
+  signal?: AbortSignal,
+): Promise<LogsResponse> {
+  const params = new URLSearchParams({
+    from: query.from,
+    to: query.to,
+    level: String(query.minLevel),
+  });
+  const body = await json(
+    await request(`/api/admin/logs?${params.toString()}`, signal ? { signal } : {}),
+  );
+  if (
+    !isObject(body) ||
+    typeof body.from !== 'string' ||
+    typeof body.to !== 'string' ||
+    typeof body.minLevel !== 'number' ||
+    typeof body.truncated !== 'boolean' ||
+    !Array.isArray(body.lines) ||
+    !body.lines.every(isLogLine)
+  ) {
+    throw new ApiRequestError(200, 'The server sent unexpected log lines.');
+  }
+  return {
+    from: body.from,
+    to: body.to,
+    minLevel: body.minLevel,
+    truncated: body.truncated,
+    lines: body.lines,
+  };
 }
 
 /** POST /api/admin/database/test (Admin): opens a connection and runs a query. */
