@@ -1,5 +1,6 @@
 import {
   isHexColour,
+  isLogLevelName,
   validProductTitle,
   type AboutResponse,
   type ApiError,
@@ -26,6 +27,9 @@ import type {
   UpdateElementRequest,
   DatabaseStatus,
   DatabaseTestResult,
+  LogEntry,
+  LogLevelName,
+  LogsResponse,
   DeletedRelationshipPropertyResult,
   ElementPropertyDefinition,
   ElementPropertyUsage,
@@ -312,6 +316,45 @@ export async function testDatabaseConnection(): Promise<DatabaseTestResult> {
     throw new ApiRequestError(200, 'The server sent an unexpected test result.');
   }
   return { ok: result.ok, message: result.message };
+}
+
+function isLogEntry(value: unknown): value is LogEntry {
+  return (
+    isObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.time === 'string' &&
+    isLogLevelName(value.level) &&
+    typeof value.msg === 'string' &&
+    isObject(value.extra)
+  );
+}
+
+export interface LogsQuery {
+  from: string;
+  to: string;
+  /** Only entries at this level or above; all when left out. */
+  level?: LogLevelName;
+  /** The browser's offset from UTC, as Date.getTimezoneOffset gives it. */
+  tzOffset: number;
+}
+
+/** GET /api/admin/logs (Admin): what the server logged on the days asked for, newest first. */
+export async function getLogs(query: LogsQuery, signal?: AbortSignal): Promise<LogsResponse> {
+  const params = new URLSearchParams({ from: query.from, to: query.to });
+  if (query.level !== undefined) params.set('level', query.level);
+  params.set('tzOffset', String(query.tzOffset));
+  const body = await json(
+    await request(`/api/admin/logs?${params.toString()}`, signal ? { signal } : {}),
+  );
+  if (
+    !isObject(body) ||
+    typeof body.truncated !== 'boolean' ||
+    !Array.isArray(body.entries) ||
+    !body.entries.every(isLogEntry)
+  ) {
+    throw new ApiRequestError(200, 'The server sent unexpected log entries.');
+  }
+  return { entries: body.entries, truncated: body.truncated };
 }
 
 function elementUrl(modelId: string, elementId?: string): string {

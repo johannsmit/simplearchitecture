@@ -5,6 +5,7 @@ import { onSessionEnded } from './api';
 import { BrandingPage } from './admin/BrandingPage';
 import { ConnectedAppsAdminPage } from './admin/ConnectedAppsAdminPage';
 import { DatabasePage } from './admin/DatabasePage';
+import { LogsPage } from './admin/LogsPage';
 import { PropertiesPage } from './admin/PropertiesPage';
 import { ConnectedAppsPage } from './agents/ConnectedAppsPage';
 import { ConsentPage } from './agents/ConsentPage';
@@ -77,6 +78,7 @@ function SignedInRoutes() {
           <Route path="database" element={<DatabasePage />} />
           <Route path="branding" element={<BrandingPage />} />
           <Route path="apps" element={<ConnectedAppsAdminPage />} />
+          <Route path="logs" element={<LogsPage />} />
         </Route>
         <Route
           path="modelling"

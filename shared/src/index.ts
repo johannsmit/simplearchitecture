@@ -479,3 +479,21 @@ export type {
   ConnectedApp,
   ConnectedAppList,
 } from './agents.js';
+export {
+  isLogLevelName,
+  logDayOf,
+  logDayStart,
+  logLevelNames,
+  logLevels,
+  logRangeMessages,
+  logRangeProblems,
+  logRetentionDays,
+  maxLogDays,
+  maxLogEntries,
+  maxTzOffset,
+  minTzOffset,
+  type LogEntry,
+  type LogLevelName,
+  type LogRangeProblem,
+  type LogsResponse,
+} from './logs.js';

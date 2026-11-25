@@ -1,6 +1,6 @@
 # The Admin space
 
-For Admins: what each Admin page does. The pages are listed at the top of the Admin space: Models, Properties, Database, Branding and Connected apps.
+For Admins: what each Admin page does. The pages are listed at the top of the Admin space: Models, Properties, Database, Branding, Connected apps and Logs.
 
 People and their roles aren't managed here. They come from your organisation's sign-in provider: see [Sign-in and roles](sign-in.md).
 
@@ -43,3 +43,15 @@ Element types, states and status colours never change with branding.
 ## Connected apps
 
 **Admin → Connected apps** lists the AI agents people have connected (see [Connect an AI agent](connect-an-ai-agent.md)). You can disconnect any person's agents, or all of them. Disconnecting stops the agent at once, and is recorded in the audit trail.
+
+## Logs
+
+**Admin → Logs** shows what the server recorded, newest first: sign-ins, requests, errors, agent tool calls and the other entries the server writes to its log.
+
+- **From** and **To** choose the days, in your browser's time zone. Both are today when the page opens, and the range can be at most 31 days.
+- **Level** shows all entries, or only the more serious ones: **Info and above**, **Warnings and errors**, or **Errors only**.
+- **Show logs** loads the entries for what you chose. The page loads only when it opens and when you click it.
+
+Each entry shows its time, level and message. **Details** opens the entry's other fields, such as the request or the error. At most 1,000 entries are shown at a time, the newest; when more match, the page says so: narrow the dates or the level to see the rest.
+
+Entries are kept in the database for 30 days, then removed. The image logs at the info level, so there are no debug or trace entries. Credentials are never stored: passwords, cookies, tokens and secrets show as `[Redacted]`. Entries from before the upgrade to the version with this page aren't there. An Admin's AI agent can read the same entries with `get_logs` (see [Connect an AI agent](connect-an-ai-agent.md#what-an-admins-agent-can-read)).

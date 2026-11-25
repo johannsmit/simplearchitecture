@@ -47,6 +47,9 @@ import { McpWriteService } from './mcp/write-service.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { agentRoutes } from './routes/agents.js';
 import { oauthRoutes } from './routes/oauth.js';
+import { logRoutes } from './routes/logs.js';
+import { AppLogSink } from './logs/log-sink.js';
+import { LogService } from './logs/log-service.js';
 
 /** How long one request may take in all, body included. */
 export const requestTimeoutMs = 120_000;
@@ -76,6 +79,11 @@ export interface AppOptions {
   webApp?: Parameters<typeof webAppRoutes>[0];
   /** Tests only: the code version to serve. Without it, buildApp works it out (see about/). */
   about?: AboutResponse;
+  /**
+   * Where the log lines are kept for Admin → Logs (see logs/log-sink.ts). Without it, a new sink
+   * on the app's database; `false` keeps none (the logs still go to standard output).
+   */
+  appLogs?: AppLogSink | false;
 }
 
 /**
@@ -171,6 +179,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   const oefMapping = options.oefMapping ?? loadOefMapping(config.OEF_MAPPING_PATH);
   const helmetOptions = securityHeaders(config);
   const applySecurityHeaders = helmet(helmetOptions);
+  const appLogs = options.appLogs ?? new AppLogSink();
 
   const app = Fastify({
     // X-Forwarded-* only from the configured number of proxies, so request.ip and
@@ -213,6 +222,8 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
         ],
         censor: '[Redacted]',
       },
+      // Each line, as written (redacted), is also queued for the database (Admin → Logs).
+      ...(appLogs === false ? {} : { hooks: { streamWrite: appLogs.hook } }),
     },
     // Errors Fastify raises before routing (e.g. a malformed URL) skip every hook, so add the
     // security headers here and answer with the standard error body (no echo of the URL).
@@ -270,6 +281,13 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   const database = options.database ?? (await DatabaseService.connect(config, app.log));
   if (options.database === undefined) app.addHook('onClose', () => database.close());
   const { db } = database;
+  if (appLogs !== false) {
+    appLogs.attach(db);
+    // Added after the database's: onClose hooks run last-added first, so the queue is written
+    // before the database closes.
+    app.addHook('onClose', () => appLogs.close());
+  }
+  const logs = new LogService(db, now);
   const modelStore = options.modelStore ?? (await PostgresModelStore.open(db, { log: app.log }));
 
   if (options.onRoute) {
@@ -334,6 +352,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
   const views = new ViewService(modelStore, properties);
   await app.register(viewRoutes(views));
   await app.register(databaseRoutes(database, now));
+  await app.register(logRoutes(logs));
   await app.register(brandingRoutes(new BrandingService(db), uploads));
   await app.register(
     oauthRoutes({
@@ -347,6 +366,7 @@ export async function buildApp(config: Config, options: AppOptions = {}): Promis
     mcpRoutes({
       service: new McpReadService(modelStore, properties, views),
       writes: new McpWriteService(elementService, relationshipService, now),
+      logs,
       resource: oauth.addresses.resource,
       now,
     }),

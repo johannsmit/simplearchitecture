@@ -1,0 +1,139 @@
+import {
+  logDayOf,
+  logDayStart,
+  logLevelNames,
+  logLevels,
+  logRangeProblems,
+  maxLogEntries,
+  maxTzOffset,
+  minTzOffset,
+  spacesForRoles,
+  type LogEntry,
+  type LogLevelName,
+  type LogsResponse,
+} from '@simplearchitecture/shared';
+import { z } from 'zod';
+import type { Queryable } from '../db/db.js';
+import { redactSecrets } from './redact.js';
+
+/**
+ * Reads the app's stored log entries (see log-sink.ts) for Admin → Logs and the get_logs agent
+ * tool, which both call `query`. Deny by default: only roles that open Admin may read them.
+ * A range is whole calendar days, at the caller's offset from UTC (the browser's, or UTC for an
+ * agent), at most 31 days; the answer is the newest 1,000 entries, newest first.
+ */
+
+/** The request can't be answered as asked. The message is safe to show. */
+export class LogQueryError extends Error {
+  override name = 'LogQueryError';
+}
+
+/** The caller's roles don't open Admin. */
+export class LogAccessError extends Error {
+  override name = 'LogAccessError';
+  constructor() {
+    super('Reading the logs needs the Admin role.');
+  }
+}
+
+export const logQuerySchema = z
+  .object({
+    from: z.string().max(10).optional().default(''),
+    to: z.string().max(10).optional().default(''),
+    level: z.enum(logLevelNames as [LogLevelName, ...LogLevelName[]]).optional(),
+    // Minutes behind UTC, as Date.getTimezoneOffset gives them; a query string sends text.
+    tzOffset: z.coerce.number().int().min(minTzOffset).max(maxTzOffset).optional().default(0),
+  })
+  .superRefine((query, context) => {
+    for (const problem of logRangeProblems(query.from, query.to)) {
+      context.addIssue({ code: 'custom', path: [problem.field], message: problem.message });
+    }
+  });
+
+export type LogQuery = z.input<typeof logQuerySchema>;
+
+interface LogRow {
+  id: string | number | bigint;
+  time: Date | string;
+  level: number;
+  msg: string;
+  extra: unknown;
+}
+
+const dayMs = 86_400_000;
+
+/** A level number as its name: the highest named level at or below it. */
+function levelName(level: number): LogLevelName {
+  let name: LogLevelName = 'trace';
+  for (const each of logLevelNames) if (logLevels[each] <= level) name = each;
+  return name;
+}
+
+function entryOf(row: LogRow): LogEntry {
+  const extra = redactSecrets(row.extra);
+  return {
+    id: String(row.id),
+    time: new Date(row.time).toISOString(),
+    level: levelName(row.level),
+    msg: row.msg,
+    extra:
+      typeof extra === 'object' && extra !== null && !Array.isArray(extra)
+        ? (extra as Record<string, unknown>)
+        : {},
+  };
+}
+
+/** The first message of a failed parse, for the 400 or the tool's error. */
+function firstMessage(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (issue === undefined) return 'The request is not valid.';
+  if (issue.code === 'custom') return issue.message;
+  const field = issue.path.join('.');
+  if (field === 'level') return `level must be one of ${logLevelNames.join(', ')}.`;
+  if (field === 'tzOffset') {
+    return `tzOffset must be a whole number of minutes from ${minTzOffset} to ${maxTzOffset}.`;
+  }
+  return `${field || 'The request'} is not valid.`;
+}
+
+export class LogService {
+  constructor(
+    private readonly db: Queryable,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /** Today's date in UTC, `YYYY-MM-DD`: the agent tool's default range. */
+  today(): string {
+    return logDayOf(this.now());
+  }
+
+  /**
+   * The entries of the days `from` to `to` (both counted, `YYYY-MM-DD`), at `level` or above,
+   * newest first. Throws LogAccessError unless `roles` open Admin, LogQueryError for a bad query.
+   */
+  async query(roles: readonly string[], input: unknown): Promise<LogsResponse> {
+    if (!spacesForRoles(roles).includes('admin')) throw new LogAccessError();
+    const parsed = logQuerySchema.safeParse(input ?? {});
+    if (!parsed.success) throw new LogQueryError(firstMessage(parsed.error));
+    const { from, to, level, tzOffset } = parsed.data;
+    // Checked by the schema: both are days.
+    const start = (logDayStart(from) ?? 0) + tzOffset * 60_000;
+    const end = (logDayStart(to) ?? 0) + dayMs + tzOffset * 60_000;
+    const rows = await this.db.query<LogRow>(
+      `select id, time, level, msg, extra from app_logs
+       where time >= $1 and time < $2 and level >= $3
+       order by time desc, id desc
+       limit $4`,
+      [
+        new Date(start).toISOString(),
+        new Date(end).toISOString(),
+        level === undefined ? 0 : logLevels[level],
+        maxLogEntries + 1,
+      ],
+    );
+    return {
+      entries: rows.slice(0, maxLogEntries).map(entryOf),
+      truncated: rows.length > maxLogEntries,
+    };
+  }
+}

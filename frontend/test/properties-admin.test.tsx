@@ -116,7 +116,7 @@ describe('Admin → Properties', () => {
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Models', 'Properties', 'Database', 'Branding', 'Connected apps']);
+    ).toEqual(['Models', 'Properties', 'Database', 'Branding', 'Connected apps', 'Logs']);
     expect(document.title).toBe('Properties – Admin – SimpleArchitecture');
     for (const who of [modeller, viewer]) {
       document.body.innerHTML = '';
