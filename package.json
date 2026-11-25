@@ -1,7 +1,7 @@
 {
   "name": "simplearchitecture",
   "private": true,
-  "version": "0.74.4",
+  "version": "0.74.5",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "workspaces": [
@@ -34,5 +34,10 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.73.0",
     "vitest": "^5.1.1"
+  },
+  "overrides": {
+    "workbox-build": {
+      "glob": "^14.0.6"
+    }
   }
 }
