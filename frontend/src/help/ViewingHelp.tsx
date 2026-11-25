@@ -70,7 +70,8 @@ export function ViewingHelp() {
             For an element, the panel shows its description and properties, with &quot;Not set&quot;
             where there is no value, then its relationships, <b>Referenced by</b>,{' '}
             <b>Used in views</b> and, if it has any, its <b>Custom metadata</b>. A click on another
-            element in the panel focuses that element.
+            element in the panel focuses that element. In a relationship&apos;s details,{' '}
+            <Key name="Esc" /> goes back to its element.
           </p>
 
           <h3>Find an element</h3>

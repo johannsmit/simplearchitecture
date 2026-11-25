@@ -4,7 +4,7 @@
 
 Please report a suspected vulnerability privately to **`simplearchitecture@proton.me`**. Don't open a public issue, and don't include real model data or secrets in the report.
 
-Tell me, as far as you can:
+Include, as far as you can:
 
 - the version (the image tag, for example `1.2.3`) and how it is hosted;
 - what an attacker could do, and the steps to reproduce it;
@@ -14,9 +14,9 @@ Tell me, as far as you can:
 
 SimpleArchitecture is a free tool kept up by one person, so everything here is **best effort**, with no guaranteed response or fix times.
 
-- I read every report, reply as soon as I can, and tell you what I find.
+- Every report is read and answered as soon as possible, with what was found.
 - The most serious issues come first. Fixes ship in a new release.
-- I credit you in the release notes if you wish.
+- Reporters are credited in the release notes if they wish.
 
 Please allow reasonable time for a fix before you tell anyone else about it.
 
