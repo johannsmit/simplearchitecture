@@ -38,6 +38,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.74.4](releases/v0.74.4.md): A failed save in the details panel is announced once to screen-reader users, not twice.
   - [0.74.3](releases/v0.74.3.md): The guide index lists the logs in Admin, Viewing help gives the `Esc` key in a relationship's details, and the security policy is reworded.
   - [0.74.2](releases/v0.74.2.md): Each read of the logs in Admin → Logs is recorded with who read them.
   - [0.74.1](releases/v0.74.1.md): Admin → Logs shows the right hours when the date range crosses a clock change.
