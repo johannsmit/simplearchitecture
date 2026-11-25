@@ -71,6 +71,8 @@ A relationship's label comes as stored (`label`, which may name properties in br
 
 Model content (names, descriptions, properties) is passed to the agent as data, marked as untrusted, never as instructions. The app logs each call with your user id, the tool and the model, never the content.
 
+For an Admin, the agent also gets an eighth read-only tool, **Get logs** (`get_logs`): the app's log lines, as on [Admin → Logs](admin.md#logs). It takes whole days in UTC, `from` and `to` (`YYYY-MM-DD`, both included, today when left out, at most 31 days), and a lowest level, `min_level` (`trace`, `debug`, `info`, `warn`, `error` or `fatal`; `info` when left out). It returns the newest 1,000 lines, newest first, and says when more match. Log lines are passed as untrusted data too. A Modeller's or a Viewer's agent doesn't get it, and the app refuses it for them even if an agent asks.
+
 ## What the agent can change
 
 For a Modeller or an Admin, the agent also gets four tools that change a model. A Viewer's agent doesn't get them, and the app refuses them for a Viewer even if an agent asks.

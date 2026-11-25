@@ -1,6 +1,6 @@
 # The Admin space
 
-For Admins: what each Admin page does. The pages are listed at the top of the Admin space: Models, Properties, Database, Branding and Connected apps.
+For Admins: what each Admin page does. The pages are listed at the top of the Admin space: Models, Properties, Database, Branding, Connected apps and Logs.
 
 People and their roles aren't managed here. They come from your organisation's sign-in provider: see [Sign-in and roles](sign-in.md).
 
@@ -43,3 +43,16 @@ Element types, states and status colours never change with branding.
 ## Connected apps
 
 **Admin → Connected apps** lists the AI agents people have connected (see [Connect an AI agent](connect-an-ai-agent.md)). You can disconnect any person's agents, or all of them. Disconnecting stops the agent at once, and is recorded in the audit trail.
+
+## Logs
+
+**Admin → Logs** shows the app's own log lines: requests, sign-ins and sign-outs, audited actions such as imports, deletions and agent tool calls, warnings and errors. It is the same log the app writes to standard output, so it holds no passwords, secrets, cookies, tokens or model content. Use it to see what happened without access to the host.
+
+- **From (UTC)** and **To (UTC)** pick whole days in UTC, both included. Both start at today. A range covers at most 31 days.
+- **Minimum level** shows the lines at that level and above: from **Trace and above** to **Errors only**. It starts at **Info and above**. The app writes lines at Info and above only, so **Trace and above** and **Debug and above** show the same lines as **Info and above**.
+- **Show** reads the lines again, newest first. At most 1,000 lines are shown; when more match, the page says so: shorten the range or raise the level.
+- A line with more than a message (the request, a user id, counts) opens to show those fields.
+
+Lines are kept for 30 days, then removed. Each time the logs are read, the read is recorded in the log, with who read which days, never the lines.
+
+An Admin's AI agent can read the same lines with the MCP tool `get_logs`: see [Connect an AI agent](connect-an-ai-agent.md#what-the-agent-can-ask).
