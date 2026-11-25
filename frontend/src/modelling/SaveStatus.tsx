@@ -7,7 +7,8 @@ export const fixReason = (count: number): string =>
 
 /**
  * The details panel's save status, in its head: "Saving…", "Saved" or "Couldn't save: why".
- * Screen readers hear "Saved" once per save, and why a save failed, never "Saving…".
+ * Screen readers hear "Saved" once per save, never "Saving…", and why a save failed only when no
+ * alert box in the form says so: a failure is announced once.
  */
 export function SaveStatus({ saver }: { saver: AutoSave }) {
   const text =

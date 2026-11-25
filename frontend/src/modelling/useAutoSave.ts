@@ -5,10 +5,14 @@ export const autoSaveDelayMillis = 800;
 
 /**
  * How one save went: stored, not (or not all of it) stored with a short reason, nothing sent, or
- * nothing stored but worth sending again at once (the draft was put right).
+ * nothing stored but worth sending again at once (the draft was put right). A failure the form
+ * already announces in a `role="alert"` box is `announced`, so screen readers hear it once.
  */
 export type SaveOutcome =
-  { kind: 'saved' } | { kind: 'failed'; reason: string } | { kind: 'none' } | { kind: 'again' };
+  | { kind: 'saved' }
+  | { kind: 'failed'; reason: string; announced?: boolean }
+  | { kind: 'none' }
+  | { kind: 'again' };
 
 /**
  * Sends what the form holds now, once. Calls `sending` just before a request goes out, so the
@@ -22,7 +26,10 @@ export interface AutoSave {
   phase: SavePhase;
   /** Why the last save failed (phase 'failed'). */
   reason: string;
-  /** For the always-mounted `role="status"` region: "Saved" once per save, or why not. */
+  /**
+   * For the always-mounted `role="status"` region: "Saved" once per save, or why not (unless an
+   * alert box says so already).
+   */
   announcement: string;
   /** A change is waiting (typing pause) or being sent. */
   busy: boolean;
@@ -131,8 +138,9 @@ export function useAutoSave(run: SaveRun): AutoSave {
         } else if (outcome.kind === 'failed') {
           setPhase('failed');
           setReason(outcome.reason);
+          // An alert box already says why: the status region stays quiet, not saying it twice.
           setSaid((current) => ({
-            text: `Couldn't save: ${outcome.reason}`,
+            text: outcome.announced === true ? '' : `Couldn't save: ${outcome.reason}`,
             count: current.count + 1,
           }));
         } else if (outcome.kind === 'again') {
