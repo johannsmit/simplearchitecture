@@ -26,7 +26,7 @@ export function AdminHelp() {
   return (
     <SpaceHelpPage
       space="admin"
-      lead="Admin holds the pages that manage the installation: Models, Properties, Database, Branding and Connected apps."
+      lead="Admin holds the pages that manage the installation: Models, Properties, Database, Branding, Connected apps and Logs."
       pointer={pointer}
       keysIntro={
         <p>
@@ -106,6 +106,13 @@ export function AdminHelp() {
           <p>
             See the AI agents people have connected. You can disconnect any person&apos;s agents, or
             all of them; the agent stops at once.
+          </p>
+
+          <h3>Logs</h3>
+          <p>
+            Read what the server recorded, newest first, for a range of days (today by default, at
+            most 31 days), at all levels or only the more serious ones. <b>Details</b> opens an
+            entry&apos;s other fields. Entries are kept for 30 days, and never hold credentials.
           </p>
         </>
       }
