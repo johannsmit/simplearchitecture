@@ -68,6 +68,7 @@ const expectedAccess: Record<string, Level> = {
   'DELETE /api/models/:id': 'admin',
   'GET /api/admin/database': 'admin',
   'POST /api/admin/database/test': 'admin',
+  'GET /api/admin/logs': 'admin',
   'PUT /api/admin/branding': 'admin',
   'DELETE /api/admin/branding': 'admin',
   'PUT /api/admin/branding/logo': 'admin',
