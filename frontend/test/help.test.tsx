@@ -159,6 +159,19 @@ describe('help pages', () => {
     );
   });
 
+  it("tells Viewing that Esc in a relationship's details goes back to its element", async () => {
+    await showPage('/help/viewing', 'Viewing help');
+
+    const paragraph = screen.getByRole('heading', {
+      level: 3,
+      name: 'The details panel',
+    }).nextElementSibling;
+    expect(paragraph?.textContent).toContain(
+      "In a relationship's details, Esc goes back to its element.",
+    );
+    expect(paragraph?.querySelector('kbd')?.textContent).toBe('Esc');
+  });
+
   it.each(pages)('has no serious accessibility issues at %s', async (path, title) => {
     await showPage(path, title);
     await expectNoSeriousAxeViolations();
