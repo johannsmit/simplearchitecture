@@ -363,6 +363,11 @@ h4 {
   font-weight: 500;
 }
 
+.alert.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
 /* A page inside the shell that isn't the explorer: scrolls on its own. */
 .page-scroll {
   height: 100%;

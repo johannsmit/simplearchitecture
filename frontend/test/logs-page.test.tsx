@@ -250,12 +250,19 @@ describe('Admin → Logs', () => {
       expect(show().textContent).toBe('Showing…');
     });
     expect(show().disabled).toBe(true);
-    expect(screen.getByText('Loading…').getAttribute('role')).toBe('status');
+    // The one status region, there from the start, changes its text; the visible message is seen only.
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('Loading…');
+    expect(document.querySelector('.app-message')?.textContent).toBe('Loading…');
+    expect(document.querySelector('.app-message')?.getAttribute('aria-hidden')).toBe('true');
     release?.();
 
     await waitFor(() => {
       expect(show().textContent).toBe('Show');
     });
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status.textContent).toBe('1 line, newest first.');
+    expect(document.querySelector('.app-message')).toBeNull();
     expect(logRequests(fetchMock).at(-1)).toBe(
       'GET /api/admin/logs?from=2026-10-26&to=2026-11-25&level=40',
     );

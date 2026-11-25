@@ -266,12 +266,14 @@ export function LogsPage() {
           </button>
         </form>
 
+        {/* One status region, always there, so a screen reader announces each change of text. */}
         <p className="vh" role="status">
-          {status}
+          {loading ? 'Loading…' : status}
         </p>
 
+        {/* Seen only: the status region above announces it. */}
         {loading && (
-          <p className="app-message" role="status">
+          <p className="app-message" aria-hidden="true">
             Loading…
           </p>
         )}

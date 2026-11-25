@@ -903,11 +903,6 @@ th[aria-sort] .sort {
   margin-top: 22px;
 }
 
-.alert.warning {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
 .logs-truncated {
   margin: 0 0 12px;
 }
