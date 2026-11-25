@@ -138,6 +138,32 @@ describe('Admin → Logs', () => {
     expect(details?.hidden).toBe(true);
   });
 
+  it('shows the whole message in Details, for every entry, even one without other fields', async () => {
+    const long = `cross-origin request refused ${'from a made-up origin '.repeat(20)}end`;
+    await openPage(
+      ok({
+        entries: [
+          { id: '7', time: '2026-03-10T08:00:00.000Z', level: 'warn', msg: long, extra: {} },
+          ...entries,
+        ],
+        truncated: false,
+      }),
+    );
+    await screen.findByRole('table', { name: 'Log entries' });
+    const buttons = screen.getAllByRole('button', { name: /^Details of the entry at / });
+    expect(buttons).toHaveLength(entries.length + 1);
+
+    const button = buttons[0] as HTMLElement;
+    fireEvent.click(button);
+    const details = within(
+      document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement,
+    );
+    const terms = details.getAllByRole('term').map((term) => term.textContent);
+    expect(terms[0]).toBe('Message');
+    expect(details.getByText('Message').nextElementSibling?.textContent).toBe(long);
+    expect(details.getByText('No other fields.')).toBeTruthy();
+  });
+
   it('asks again for the dates and level chosen, with dates in times over several days', async () => {
     const fetchMock = await openPage((params) =>
       Response.json({

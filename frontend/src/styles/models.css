@@ -1020,3 +1020,15 @@ th[aria-sort] .sort {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The whole message, in the app's text font, wrapped. */
+.log-fields .log-message dd {
+  font-family: var(--font);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.log-no-fields {
+  margin: 8px 0 0;
+  font-size: 12px;
+}

@@ -50,24 +50,31 @@ function announcement(response: LogsResponse): string {
   return count === 1 ? '1 log entry.' : `${count.toLocaleString('en')} log entries.`;
 }
 
-function Details({ extra }: { extra: Record<string, unknown> }) {
-  const fields = Object.entries(extra);
-  if (fields.length === 0) return <p className="muted">No other fields.</p>;
+/** The whole message (the list cuts it to one line), then the entry's other fields. */
+function Details({ entry }: { entry: LogEntry }) {
+  const fields = Object.entries(entry.extra);
   return (
-    <dl className="log-fields">
-      {fields.map(([name, value]) => (
-        <div key={name}>
-          <dt>{name}</dt>
-          <dd>
-            {typeof value === 'object' && value !== null ? (
-              <pre>{JSON.stringify(value, null, 2)}</pre>
-            ) : (
-              String(value)
-            )}
-          </dd>
+    <>
+      <dl className="log-fields">
+        <div className="log-message">
+          <dt>Message</dt>
+          <dd>{entry.msg === '' ? '—' : entry.msg}</dd>
         </div>
-      ))}
-    </dl>
+        {fields.map(([name, value]) => (
+          <div key={name}>
+            <dt>{name}</dt>
+            <dd>
+              {typeof value === 'object' && value !== null ? (
+                <pre>{JSON.stringify(value, null, 2)}</pre>
+              ) : (
+                String(value)
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {fields.length === 0 && <p className="muted log-no-fields">No other fields.</p>}
+    </>
   );
 }
 
@@ -105,7 +112,7 @@ function EntryRows({ entry, withDate }: { entry: LogEntry; withDate: boolean }) 
       </tr>
       <tr id={detailsId} className="log-details" hidden={!open}>
         <td colSpan={4}>
-          <Details extra={entry.extra} />
+          <Details entry={entry} />
         </td>
       </tr>
     </>
