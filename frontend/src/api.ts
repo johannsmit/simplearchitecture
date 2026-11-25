@@ -334,8 +334,10 @@ export interface LogsQuery {
   to: string;
   /** Only entries at this level or above; all when left out. */
   level?: LogLevelName;
-  /** The browser's offset from UTC, as Date.getTimezoneOffset gives it. */
+  /** The browser's offset from UTC at the start of `from`, as Date.getTimezoneOffset gives it. */
   tzOffset: number;
+  /** The offset at the end of `to`; differs from `tzOffset` across a clock change. */
+  toTzOffset: number;
 }
 
 /** GET /api/admin/logs (Admin): what the server logged on the days asked for, newest first. */
@@ -343,6 +345,7 @@ export async function getLogs(query: LogsQuery, signal?: AbortSignal): Promise<L
   const params = new URLSearchParams({ from: query.from, to: query.to });
   if (query.level !== undefined) params.set('level', query.level);
   params.set('tzOffset', String(query.tzOffset));
+  params.set('toTzOffset', String(query.toTzOffset));
   const body = await json(
     await request(`/api/admin/logs?${params.toString()}`, signal ? { signal } : {}),
   );

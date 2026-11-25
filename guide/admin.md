@@ -48,7 +48,7 @@ Element types, states and status colours never change with branding.
 
 **Admin → Logs** shows what the server recorded, newest first: sign-ins, requests, errors, agent tool calls and the other entries the server writes to its log.
 
-- **From** and **To** choose the days, in your browser's time zone. Both are today when the page opens, and the range can be at most 31 days.
+- **From** and **To** choose the days, in your browser's time zone, from midnight at the start of **From** to midnight at the end of **To**, even when the clocks change in between. Both are today when the page opens, and the range can be at most 31 days.
 - **Level** shows all entries, or only the more serious ones: **Info and above**, **Warnings and errors**, or **Errors only**.
 - **Show logs** loads the entries for what you chose. The page loads only when it opens and when you click it.
 

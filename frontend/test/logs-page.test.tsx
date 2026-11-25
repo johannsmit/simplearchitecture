@@ -1,6 +1,7 @@
 import type { LogEntry, LogsResponse } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logRangeOffsets } from '../src/admin/log-days';
 import {
   admin,
   apiError,
@@ -19,7 +20,29 @@ const pad = (value: number) => String(value).padStart(2, '0');
 const localDay = (date: Date) =>
   `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const today = () => localDay(new Date());
-const offset = () => new Date().getTimezoneOffset();
+/** The browser's offset at local midnight starting `day`, `after` days on. */
+const offsetAt = (day: string, after = 0) => {
+  const [year = 0, month = 1, date = 1] = day.split('-').map(Number);
+  return new Date(year, month - 1, date + after).getTimezoneOffset();
+};
+const offsets = (from: string, to: string) =>
+  `tzOffset=${String(offsetAt(from))}&toTzOffset=${String(offsetAt(to, 1))}`;
+
+/**
+ * A made-up summer-time zone: two hours ahead of UTC from local midnight on 2026-03-30 to the end
+ * of 2026-10-25, one hour ahead otherwise. Date.getTimezoneOffset follows it, whatever TZ the
+ * tests run in.
+ */
+function useSummerTimeZone() {
+  vi.spyOn(Date.prototype, 'getTimezoneOffset').mockImplementation(function (this: Date) {
+    const day = localDay(this);
+    return day >= '2026-03-30' && day <= '2026-10-25' ? -120 : -60;
+  });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const entries: LogEntry[] = [
   {
@@ -92,7 +115,7 @@ describe('Admin → Logs', () => {
     expect(screen.getByLabelText<HTMLInputElement>('To').value).toBe(today());
     expect(screen.getByLabelText<HTMLSelectElement>('Level').value).toBe('');
     expect(logRequests(fetchMock)).toEqual([
-      `GET /api/admin/logs?from=${today()}&to=${today()}&tzOffset=${String(offset())}`,
+      `GET /api/admin/logs?from=${today()}&to=${today()}&${offsets(today(), today())}`,
     ]);
 
     const rows = within(table())
@@ -185,11 +208,28 @@ describe('Admin → Logs', () => {
       expect(screen.getByText('2 log entries.')).toBeTruthy();
     });
     expect(logRequests(fetchMock).at(-1)).toBe(
-      `GET /api/admin/logs?from=2026-03-01&to=2026-03-10&level=warn&tzOffset=${String(offset())}`,
+      `GET /api/admin/logs?from=2026-03-01&to=2026-03-10&level=warn&${offsets('2026-03-01', '2026-03-10')}`,
     );
     expect(table().querySelector('time')?.textContent).toMatch(/^2026-03-\d{2} \d{2}:\d{2}:05$/);
     // Focus stays where it was.
     expect(document.activeElement).toBe(button);
+  });
+
+  it('asks for each end of the range at its own offset when a clock change falls between', async () => {
+    useSummerTimeZone();
+    const fetchMock = await openPage(ok({ entries, truncated: false }));
+    await screen.findByRole('table', { name: 'Log entries' });
+
+    // Summer time ends during 2026-10-25: the range starts two hours ahead and ends one ahead.
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-27' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show logs' }));
+    await waitFor(() => {
+      expect(logRequests(fetchMock)).toHaveLength(2);
+    });
+    expect(logRequests(fetchMock).at(-1)).toBe(
+      'GET /api/admin/logs?from=2026-10-20&to=2026-10-27&tzOffset=-120&toTzOffset=-60',
+    );
   });
 
   it.each([
@@ -273,5 +313,29 @@ describe('Admin → Logs', () => {
     release(Response.json({ entries, truncated: false }));
     await screen.findByRole('table', { name: 'Log entries' });
     expect(screen.queryByText('Loading…')).toBeNull();
+  });
+});
+
+describe('logRangeOffsets', () => {
+  it('gives the offsets at local midnight starting From and after To', () => {
+    useSummerTimeZone();
+    // Into summer time (it starts during 2026-03-29) and out of it (it ends during 2026-10-25).
+    expect(logRangeOffsets('2026-03-20', '2026-03-29')).toEqual({
+      tzOffset: -60,
+      toTzOffset: -120,
+    });
+    expect(logRangeOffsets('2026-10-20', '2026-10-25')).toEqual({
+      tzOffset: -120,
+      toTzOffset: -60,
+    });
+    // A single day with no change in it, and one with the change.
+    expect(logRangeOffsets('2026-07-01', '2026-07-01')).toEqual({
+      tzOffset: -120,
+      toTzOffset: -120,
+    });
+    expect(logRangeOffsets('2026-10-25', '2026-10-25')).toEqual({
+      tzOffset: -120,
+      toTzOffset: -60,
+    });
   });
 });
