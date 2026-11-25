@@ -1,6 +1,6 @@
 import type { LogEntry, LogsResponse } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { logRangeOffsets } from '../src/admin/log-days';
 import {
   admin,
@@ -29,19 +29,17 @@ const offsets = (from: string, to: string) =>
   `tzOffset=${String(offsetAt(from))}&toTzOffset=${String(offsetAt(to, 1))}`;
 
 /**
- * A made-up summer-time zone: two hours ahead of UTC from local midnight on 2026-03-30 to the end
- * of 2026-10-25, one hour ahead otherwise. Date.getTimezoneOffset follows it, whatever TZ the
- * tests run in.
+ * Runs the test in the time zone `zone` (Node applies a change of TZ at once); put back after it.
+ * Central Europe: summer time starts at 02:00 on 2026-03-29 and ends at 03:00 on 2026-10-25.
  */
-function useSummerTimeZone() {
-  vi.spyOn(Date.prototype, 'getTimezoneOffset').mockImplementation(function (this: Date) {
-    const day = localDay(this);
-    return day >= '2026-03-30' && day <= '2026-10-25' ? -120 : -60;
-  });
+const startingTimeZone = process.env.TZ;
+function useTimeZone(zone: string) {
+  process.env.TZ = zone;
 }
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  if (startingTimeZone === undefined) delete process.env.TZ;
+  else process.env.TZ = startingTimeZone;
 });
 
 const entries: LogEntry[] = [
@@ -216,7 +214,7 @@ describe('Admin → Logs', () => {
   });
 
   it('asks for each end of the range at its own offset when a clock change falls between', async () => {
-    useSummerTimeZone();
+    useTimeZone('Europe/Berlin');
     const fetchMock = await openPage(ok({ entries, truncated: false }));
     await screen.findByRole('table', { name: 'Log entries' });
 
@@ -318,7 +316,7 @@ describe('Admin → Logs', () => {
 
 describe('logRangeOffsets', () => {
   it('gives the offsets at local midnight starting From and after To', () => {
-    useSummerTimeZone();
+    useTimeZone('Europe/Berlin');
     // Into summer time (it starts during 2026-03-29) and out of it (it ends during 2026-10-25).
     expect(logRangeOffsets('2026-03-20', '2026-03-29')).toEqual({
       tzOffset: -60,
@@ -336,6 +334,29 @@ describe('logRangeOffsets', () => {
     expect(logRangeOffsets('2026-10-25', '2026-10-25')).toEqual({
       tzOffset: -120,
       toTzOffset: -60,
+    });
+  });
+
+  it('gives the offset as each day starts where the clocks spring forward at midnight', () => {
+    // Santiago: 2026-09-06 starts at 01:00, three hours behind UTC; before it, four.
+    useTimeZone('America/Santiago');
+    expect(logRangeOffsets('2026-09-05', '2026-09-05')).toEqual({
+      tzOffset: 240,
+      toTzOffset: 240,
+    });
+    expect(logRangeOffsets('2026-09-06', '2026-09-06')).toEqual({
+      tzOffset: 240,
+      toTzOffset: 180,
+    });
+    // Havana: 2026-03-08 starts at 01:00, four hours behind UTC; before it, five.
+    useTimeZone('America/Havana');
+    expect(logRangeOffsets('2026-03-07', '2026-03-07')).toEqual({
+      tzOffset: 300,
+      toTzOffset: 300,
+    });
+    expect(logRangeOffsets('2026-03-08', '2026-03-08')).toEqual({
+      tzOffset: 300,
+      toTzOffset: 240,
     });
   });
 });
