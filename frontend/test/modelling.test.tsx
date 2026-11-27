@@ -232,13 +232,16 @@ describe('Modelling explorer', () => {
     const labels = [...form.querySelectorAll('label')].map((l) => l.textContent);
     expect(labels).toEqual([
       'Name Required',
-      'Type',
       'Description',
-      'Architecture state',
-      'Owning team',
-      'Supplier HQ country',
-      'Sourcing',
+      // Architecture state: three options, as on a relationship.
+      'Deprecate',
+      'Current',
+      'Target',
+      'Type',
       'Functions',
+      'Owning team',
+      'Sourcing',
+      'Supplier HQ country',
     ]);
     expect(form.querySelector('.d-form-foot')).toBeNull();
     expect(within(details()).getByRole('button', { name: 'Delete element' })).toBeTruthy();
@@ -453,6 +456,138 @@ describe('Modelling explorer', () => {
 });
 
 // The models list carries no editing flag: Modelling always edits.
+describe('the element panel in Modelling', () => {
+  it('has round Copy link and Delete at the top right, and no ID at the bottom', async () => {
+    await openForm(at('till'));
+    const panel = details();
+    const copy = within(panel).getByRole('button', { name: 'Copy link' });
+    const remove = within(panel).getByRole('button', { name: 'Delete element' });
+    for (const button of [copy, remove]) {
+      expect(button.classList.contains('is-round')).toBe(true);
+      expect(button.closest('.d-top')).not.toBeNull();
+      expect(button.textContent).toBe('');
+    }
+    // Copy link sits left of Delete, after the save status.
+    expect(copy.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      (panel.querySelector('.save-status') as HTMLElement).compareDocumentPosition(copy) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(panel.querySelector('.d-foot')).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /ID/ })).toBeNull();
+  });
+
+  it('saves the architecture state at once from its three options', async () => {
+    const { form, server } = await openForm(at('till'));
+    const group = within(form).getByRole('group', { name: 'Architecture state' });
+    const radios = within(group).getAllByRole<HTMLInputElement>('radio');
+    // Three options and no Not set; the stored one is checked.
+    expect(radios.map((radio) => radio.value)).toEqual(['Deprecate', 'Current', 'Target']);
+    expect(within(group).getByRole('radio', { name: 'Deprecate' })).toHaveProperty('checked', true);
+    expect(within(form).queryByRole('combobox', { name: 'Architecture state' })).toBeNull();
+
+    fireEvent.click(within(group).getByRole('radio', { name: 'Target' }));
+    await waitFor(() => {
+      expect(server.bodies).toEqual([
+        {
+          method: 'PATCH',
+          url: `/api/models/${bakeryId}/elements/till`,
+          body: { version: 1, metadata: { architectureState: 'Target' } },
+        },
+      ]);
+    });
+    expect(within(group).getByRole('radio', { name: 'Target' })).toHaveProperty('checked', true);
+  });
+
+  it('checks no option for a stored state outside the three, and says so', async () => {
+    const odd: JgfNode = {
+      label: 'Till',
+      metadata: { type: 'Application', architectureState: 'Retired' },
+    };
+    const document_ = {
+      ...bakeryModel,
+      graph: { ...bakeryModel.graph, nodes: { ...bakeryModel.graph.nodes, till: odd } },
+    };
+    const { form } = await openForm(at('till'), {
+      answer: ({ method, url }) =>
+        method !== 'GET'
+          ? undefined
+          : url === `/api/models/${bakeryId}`
+            ? Response.json(document_)
+            : url === `/api/models/${bakeryId}/elements/till`
+              ? Response.json({ element: { id: 'till', version: 1, node: odd }, warnings: [] })
+              : undefined,
+    });
+    const group = within(form).getByRole('group', { name: 'Architecture state' });
+    expect(
+      within(group)
+        .getAllByRole<HTMLInputElement>('radio')
+        .some((radio) => radio.checked),
+    ).toBe(false);
+    const hint = within(form).getByText(/^Stored value “Retired” isn't Deprecate/);
+    expect(hint.textContent).toBe(
+      "Stored value “Retired” isn't Deprecate, Current or Target. Pick one to replace it.",
+    );
+    expect(group.getAttribute('aria-describedby')).toContain(hint.id);
+    // The group takes focus when an error sends it there.
+    group.focus();
+    expect(document.activeElement).toBe(group);
+  });
+
+  it('checks no option and shows no hint when the state is not set', async () => {
+    const unset: JgfNode = { label: 'Till', metadata: { type: 'Application' } };
+    const document_ = {
+      ...bakeryModel,
+      graph: { ...bakeryModel.graph, nodes: { ...bakeryModel.graph.nodes, till: unset } },
+    };
+    const { form } = await openForm(at('till'), {
+      answer: ({ method, url }) =>
+        method !== 'GET'
+          ? undefined
+          : url === `/api/models/${bakeryId}`
+            ? Response.json(document_)
+            : url === `/api/models/${bakeryId}/elements/till`
+              ? Response.json({ element: { id: 'till', version: 1, node: unset }, warnings: [] })
+              : undefined,
+    });
+    const group = within(form).getByRole('group', { name: 'Architecture state' });
+    expect(
+      within(group)
+        .getAllByRole<HTMLInputElement>('radio')
+        .some((radio) => radio.checked),
+    ).toBe(false);
+    expect(within(form).queryByText(/^Stored value/)).toBeNull();
+    expect(group.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('closes Properties with its heading, and opens it again for a field that needs a fix', async () => {
+    const { form, server } = await openForm(at('till'));
+    const properties = within(form).getByRole('region', { name: 'Properties' });
+    const toggle = within(properties).getByRole('button', { name: 'Properties' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.change(nameField(form), { target: { value: ' ' } });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // Hidden, not gone: the draft stays.
+    expect(form.querySelector('#ef-name')?.closest('[hidden]')).not.toBeNull();
+    fireEvent.submit(form);
+    expect(await within(form).findByText('Enter a name.')).toBeTruthy();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(server.bodies).toEqual([]);
+  });
+
+  it('keeps Relationships closed until opened, with Add relationship outside the toggle', async () => {
+    await openForm(at('till'));
+    const panel = details();
+    const toggle = within(panel).getByRole('button', { name: /^Relationships \d+$/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(within(panel).getByRole('button', { name: 'Add relationship' })).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(within(panel).getAllByRole('heading', { level: 4 }).length).toBeGreaterThan(0);
+  });
+});
+
 describe('Modelling with a models list that has no editing flag', () => {
   it('lists the models without an editing-off notice', async () => {
     const { handler } = api();

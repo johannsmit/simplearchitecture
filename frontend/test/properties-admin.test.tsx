@@ -12,6 +12,7 @@ import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
   admin,
   apiError,
+  expandRelationships,
   modalDialogs,
   modeller,
   renderAt,
@@ -552,6 +553,7 @@ describe('a defined property in the read-only panel', () => {
     renderAt(`/viewing/models/${bakeryId}/elements/shop?depth=1`);
     await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
     const details = screen.getByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     fireEvent.click(
       within(details).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,
@@ -562,10 +564,20 @@ describe('a defined property in the read-only panel', () => {
       expect(found).toContain('Criticality');
       return found;
     });
-    // After the Data row's two lists, named after the ends.
-    expect(terms.slice(-3)).toEqual([
-      'Back Office Server to Web Shop',
+    // Label, Description, state and Type first, then the rest by name: the defined properties
+    // among Data (its two lists named after the ends), Direction and the Identity ones.
+    expect(terms).toEqual([
+      'Label',
+      'Description',
+      'Architecture state',
+      'Type',
       'Criticality',
+      'Data',
+      'Web Shop to Back Office Server',
+      'Back Office Server to Web Shop',
+      'Direction',
+      'Identity',
+      'Identity Context',
       'Service tier',
     ]);
     expect(within(details).getByTitle('Not in the list').textContent).toContain('Gold');

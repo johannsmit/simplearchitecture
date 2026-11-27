@@ -126,20 +126,26 @@ const labelsIn = (block: HTMLElement) =>
   [...block.querySelectorAll('label, .field-label')].map((label) => label.textContent);
 
 describe('the element form', () => {
-  it('shows the element properties after the standard ones and before Functions, with no Add field', async () => {
+  it('shows Name, Description, state and Type, then the other properties by name, with no Add field', async () => {
     const { form } = await openForm('workbench');
-    const properties = within(form).getByRole('heading', { name: 'Properties' })
-      .parentElement as HTMLElement;
+    const properties = within(form).getByRole('region', { name: 'Properties' });
     expect(labelsIn(properties)).toEqual([
-      'Architecture state',
-      'Owning team',
-      'Supplier HQ country',
-      'Sourcing',
+      'Name Required',
+      'Description',
+      // Architecture state: three options.
+      'Deprecate',
+      'Current',
+      'Target',
+      'Type',
+      // The standard properties and the element properties, merged and sorted by name.
       'Cost centre',
       'Depends on',
+      'Functions',
       'hostedOn',
       'Lifecycle stage',
-      'Functions',
+      'Owning team',
+      'Sourcing',
+      'Supplier HQ country',
     ]);
     expect(within(form).queryByRole('button', { name: 'Add field' })).toBeNull();
     expect(within(form).queryByLabelText('Key')).toBeNull();
@@ -250,18 +256,22 @@ describe('the details panel', () => {
       ) as HTMLElement
     ).querySelector('dd') as HTMLElement;
 
-  it('lists the element properties after the standard ones, Not set included, with marks', () => {
+  it('sorts the element properties among the standard ones by name, Not set included, with marks', () => {
     panel('workbench');
     const names = [...document.querySelectorAll('dl.props > div > dt')].map((dt) => dt.textContent);
     expect(names).toEqual([
+      'Name',
+      'Description',
       'Architecture state',
-      'Owning team',
-      'Supplier HQ country',
-      'Sourcing',
+      'Type',
       'Cost centre',
       'Depends on',
+      'Functions',
       'hostedOn',
       'Lifecycle stage',
+      'Owning team',
+      'Sourcing',
+      'Supplier HQ country',
     ]);
     expect(rowOf('Cost centre').textContent).toBe('CC-410');
     expect(rowOf('Depends on').textContent).toContain('Payment hub');

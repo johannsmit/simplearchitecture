@@ -43,12 +43,16 @@ The breadcrumbs above the canvas show the elements you focused before, and the b
 
 ## The details panel
 
-For an element, the panel shows its description and properties, then its relationships, **Referenced by**, **Used in views** and, if it has any, its **Custom metadata**. A click on another element in the panel, such as the other end of a relationship, focuses that element.
+For an element, the panel shows its **Properties**, then its **Relationships**, **Referenced by**, **Used in views** and, if it has any, its **Custom metadata**. A click on another element in the panel, such as the other end of a relationship, focuses that element.
 
-- **Properties** are the standard properties of the element's type, then every property an Admin defined, in name order, with "Not set" where there is no value. See [Properties](properties.md).
+- **The head** shows the type and the name. The round **Copy link** button at the top right copies a link to the element, to share it.
+- **Properties** is open when the panel opens; choose its heading to close or open it. It lists the same properties in the same order on every element: Name, Description, Architecture state (for types that have it), Type, then everything else in name order, with "Not set" where there is no value. Everything else is the other standard properties of the element's type, Functions included, and every property an Admin defined. See [Properties](properties.md).
+- **Relationships** is closed when the panel opens, with the number of relationships in its heading; choose the heading to open it. It lists the relationships in words, grouped by how they read, such as "Relates to".
 - **A Reference property** lists the elements it points to as links, each with its type under its name.
 - **Referenced by** lists the elements that point to this one in a Reference property, with the properties they do so in. It shows only when there are any.
 - **Custom metadata** is folded away. It holds only values the element's properties don't cover, such as a standard property its type no longer has, marked **Was a property**.
+
+For a relationship, the panel shows its type line and its sentence, such as "Order system relates to Warehouse", then **From** and **To** as links to the two elements, then **Properties**: Label, Description, Architecture state, Type, then the rest in name order, such as Data, Direction, Identity, Identity Context and the properties an Admin defined. `Esc` goes back to the element. A person who may model also gets **Open in Modelling** under the sentence.
 
 References are set in Modelling: see [Reference properties](modelling.md#reference-properties).
 

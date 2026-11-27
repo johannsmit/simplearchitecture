@@ -400,20 +400,14 @@ describe('selection and keys', () => {
     });
     expect(rowOf('Till').getAttribute('aria-selected')).toBe('true');
     expect(currentLocation()).toBe(`${viewing}?view=catalog&type=Application`);
-    expect(screen.getByRole('button', { name: 'Show on canvas' })).toBeTruthy();
+    // The panel has no Show on canvas: a double click or Shift+Enter opens the canvas.
+    expect(screen.queryByRole('button', { name: 'Show on canvas' })).toBeNull();
   });
 
-  it('double-click (Viewing), Shift+Enter and Show on canvas open the canvas on the element', async () => {
+  it('double-click (Viewing) and Shift+Enter open the canvas on the element', async () => {
     await openCatalog(`${viewing}?view=catalog&type=Application`);
     fireEvent.doubleClick(cell('Till', 'Name'));
     expect(currentLocation()).toBe(`${viewing}/elements/till?depth=1`);
-  });
-
-  it('Show on canvas focuses the selected element', async () => {
-    await openCatalog(`${viewing}?view=catalog&type=Application`);
-    fireEvent.click(cell('Web Shop', 'Name'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Show on canvas' }));
-    expect(currentLocation()).toBe(`${viewing}/elements/shop?depth=1`);
   });
 
   it('moves with the arrow keys; the panel follows once the cursor rests', async () => {

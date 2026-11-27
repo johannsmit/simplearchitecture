@@ -5,7 +5,7 @@ import { TypeMark } from '../src/metamodel-ui';
 import { cellChange, clientErrors, draftOf, elementOfNode } from '../src/modelling/draft';
 import { forgetCatalogState } from '../src/viewing/explorer/catalog/Catalog';
 import { forgetElementFilters } from '../src/viewing/explorer/ElementTree';
-import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 import { settle } from './settle';
 
 // A Stakeholder's Kind (Human or AI Agent) on the canvas, the legend, the panel, the form and the
@@ -146,6 +146,7 @@ describe('Viewing: Kind on the canvas, the legend and the panel', () => {
   it("marks each Stakeholder with its own icon in an element's relationships", async () => {
     stubApi(viewer, api);
     renderAt(at('viewing', '/elements/till?depth=1'));
+    await expandRelationships();
     const button = await within(
       await screen.findByRole('complementary', { name: 'Details' }),
     ).findByRole('button', { name: /Order bot, Stakeholder/ });

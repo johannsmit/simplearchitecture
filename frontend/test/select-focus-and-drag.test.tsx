@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
   currentLocation,
+  expandRelationships,
   modeller,
   renderAt,
   requests,
@@ -175,6 +176,7 @@ describe('select and focus', () => {
   it('links still focus with one click (a relationship in the details panel)', async () => {
     open(viewingAt('shop'));
     await shopCanvas();
+    await expandRelationships();
     fireEvent.click(within(details()).getByRole('button', { name: / Till, Application$/ }));
     expect(currentLocation()).toBe(viewingAt('till'));
   });
@@ -196,6 +198,7 @@ describe('relationship information in Viewing', () => {
   async function openE1(me: MeResponse) {
     const fetchMock = open(viewingAt('shop'), me);
     await shopCanvas();
+    await expandRelationships();
     fireEvent.click(
       within(details()).getByRole('button', { name: /^Open relationship: .*Customer/ }),
     );
@@ -222,14 +225,35 @@ describe('relationship information in Viewing', () => {
     expect(within(panel).queryByText('sourceToTargetData')).toBeNull();
     expect(within(panel).getByText('archimateType')).toBeTruthy();
     expect(within(panel).getByText('Flow')).toBeTruthy();
-    // Source to target data (set from the label where Information flow once was); the panel has
-    // no label line.
-    expect(within(panel).getAllByText(/Places orders/)).toHaveLength(1);
+    // The Label row, and Source to target data (set from the label where Information flow once
+    // was).
+    expect(within(panel).getAllByText(/Places orders/)).toHaveLength(2);
     expect(panel.textContent).not.toContain('from the import');
     // No inputs, no Delete, no Open in Modelling.
     expect(panel.querySelector('input, textarea, select')).toBeNull();
     expect(within(panel).queryByRole('button', { name: 'Delete relationship' })).toBeNull();
     expect(within(panel).queryByRole('link', { name: 'Open in Modelling' })).toBeNull();
+    // No way back to the element in the head, no Copy link, and no ID at the bottom.
+    expect(within(panel).queryByRole('button', { name: /^Back to/ })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: 'Copy link' })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /ID/ })).toBeNull();
+    expect(panel.querySelector('.d-foot')).toBeNull();
+    // Label, Description, state and Type first; the rest by name.
+    const properties = within(panel).getByRole('region', { name: 'Properties' });
+    expect(
+      [...properties.querySelectorAll(':scope .coll-body > .props > div > dt')].map(
+        (dt) => dt.textContent,
+      ),
+    ).toEqual([
+      'Label',
+      'Description',
+      'Architecture state',
+      'Type',
+      'Data',
+      'Direction',
+      'Identity',
+      'Identity Context',
+    ]);
     // The canvas and URL stay; the line is drawn selected.
     expect(currentLocation()).toBe(viewingAt('shop'));
     expect(changes(fetchMock)).toEqual([]);

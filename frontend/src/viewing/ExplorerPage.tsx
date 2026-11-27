@@ -829,7 +829,6 @@ function Explorer({
           space={space}
           graph={graph}
           editable={editable}
-          view={view}
           elementId={elementId}
           viewId={viewId}
           depth={depth}

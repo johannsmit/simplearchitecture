@@ -8,7 +8,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { ImportPanel } from '../src/viewing/models/ImportPanel';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { admin, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { admin, expandRelationships, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // Property keys no property should have: blank, over 100 characters, or `__proto__`. Made-up
 // data only.
@@ -73,6 +73,7 @@ async function openRelationship(metadata: Record<string, unknown>) {
   stubApi(modeller, handler);
   renderAt(`/modelling/models/${bakeryId}/elements/shop?depth=1`);
   await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
+  await expandRelationships();
   fireEvent.click(
     within(details()).getAllByRole('button', {
       name: /^Open relationship: Relates to Back Office Server/,

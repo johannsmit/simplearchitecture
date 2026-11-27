@@ -1,5 +1,5 @@
 import type { MeResponse } from '@simplearchitecture/shared';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { StrictMode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
@@ -166,4 +166,14 @@ export function modalDialogs(): () => void {
     delete (proto as Partial<typeof proto>).showModal;
     delete (proto as Partial<typeof proto>).close;
   };
+}
+
+/**
+ * Opens the element's Relationships section in the details panel: it is closed when an element
+ * opens. Nothing changes when it is open already.
+ */
+export async function expandRelationships(): Promise<void> {
+  const panel = await screen.findByRole('complementary', { name: 'Details' });
+  const toggle = await within(panel).findByRole('button', { name: /^Relationships\b/ });
+  if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
 }

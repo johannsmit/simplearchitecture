@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { JgfDocument } from '@simplearchitecture/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { nextTrail, parseExplorerPath, trailLength } from '../src/viewing/ExplorerPage';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
   apiError,
   currentLocation,
+  expandRelationships,
   expectNoSeriousAxeViolations,
   renderAt,
   stubApi,
@@ -118,7 +119,7 @@ describe('deep link', () => {
     // No function count on the card (it stays in the details panel).
     expect(focused?.getAttribute('aria-label')).toBe('Oven Planner, Application, Target');
     expect(focused?.closest('.card')?.textContent).not.toMatch(/function/);
-    expect(within(details()).getByRole('heading', { name: /^Functions/ })).toBeTruthy();
+    expect(within(details()).getByRole('list', { name: 'Functions: 1' })).toBeTruthy();
     // The focused card is the canvas's one Tab stop.
     expect(shown.filter((card) => card.tabIndex === 0)).toEqual([focused]);
     // Every related element is on the canvas at depth 2: no relationship buttons at all.
@@ -349,19 +350,33 @@ describe('details panel', () => {
     expect(links[0]?.getAttribute('target')).toBe('_blank');
   });
 
-  it('lists standard properties in metamodel order, functions, and custom metadata', async () => {
+  it('lists Name, Description, state and Type first, the rest by label, and custom metadata', async () => {
     open(elementUrl('shop'));
 
     const panel = await screen.findByRole('complementary', { name: 'Details' });
-    const terms = [...panel.querySelectorAll('section:not(:has(details)) .props dt')].map(
+    const properties = within(panel).getByRole('region', { name: 'Properties' });
+    expect(
+      within(properties).getByRole('button', { name: 'Properties' }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    const terms = [...properties.querySelectorAll(':scope .props > div > dt')].map(
       (dt) => dt.textContent,
     );
-    expect(terms).toEqual(['Architecture state', 'Owning team', 'Supplier HQ country', 'Sourcing']);
-    expect(panel.textContent).toContain('NL · Netherlands');
-    expect(within(panel).getByRole('heading', { level: 3, name: /^Functions/ }).textContent).toBe(
-      'Functions 2',
+    expect(terms).toEqual([
+      'Name',
+      'Description',
+      'Architecture state',
+      'Type',
+      'Functions',
+      'Owning team',
+      'Sourcing',
+      'Supplier HQ country',
+    ]);
+    expect(properties.textContent).toContain('NL · Netherlands');
+    // Functions is a property now, not a section of its own.
+    expect(within(panel).queryByRole('heading', { name: /^Functions/ })).toBeNull();
+    expect(within(properties).getByRole('list', { name: 'Functions: 2' }).textContent).toContain(
+      'Order capture',
     );
-    expect(within(panel).getByText('Order capture')).toBeTruthy();
 
     const custom = panel.querySelector('details.meta');
     expect(custom?.hasAttribute('open')).toBe(false);
@@ -370,7 +385,43 @@ describe('details panel', () => {
       'archimateType',
       'hostingModel',
     ]);
-    expect(panel.querySelector('.d-foot code')?.textContent).toBe('shop');
+    // No ID at the bottom, and no button to copy it.
+    expect(panel.querySelector('.d-foot')).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /ID/ })).toBeNull();
+  });
+
+  it('closes and opens Properties with its heading', async () => {
+    open(elementUrl('shop'));
+
+    const panel = await screen.findByRole('complementary', { name: 'Details' });
+    const toggle = within(panel).getByRole('button', { name: 'Properties' });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // Hidden, not gone.
+    expect(within(panel).getByText('Owning team').closest('[hidden]')).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(within(panel).getByText('Owning team').closest('[hidden]')).toBeNull();
+  });
+
+  it('has a round Copy link at the top right, which copies the absolute link', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    open(elementUrl('shop'));
+
+    const panel = await screen.findByRole('complementary', { name: 'Details' });
+    const copy = within(panel).getByRole('button', { name: 'Copy link' });
+    expect(copy.classList.contains('is-round')).toBe(true);
+    expect(copy.closest('.d-top')).not.toBeNull();
+    // An icon button: no text of its own.
+    expect(copy.textContent).toBe('');
+    // Viewing has no Delete.
+    expect(within(panel).queryByRole('button', { name: 'Delete element' })).toBeNull();
+    fireEvent.click(copy);
+    await waitFor(() => {
+      expect(within(panel).getByRole('status').textContent).toBe('Link copied');
+    });
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${elementUrl('shop')}`);
   });
 
   it('flags a country that is not an ISO code', async () => {
@@ -380,13 +431,15 @@ describe('details panel', () => {
     expect(within(panel).getByTitle('Not an ISO 3166-1 alpha-2 code').textContent).toContain(
       'Holland',
     );
-    expect(within(panel).getAllByText('Not set')).toHaveLength(2);
+    // Description, and Owning team.
+    expect(within(panel).getAllByText('Not set')).toHaveLength(3);
   });
 
   it('lists relationships in words, and following one focuses that element', async () => {
     open(elementUrl('shop'));
 
     const panel = await screen.findByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     const headings = within(panel)
       .getAllByRole('heading', { level: 4 })
       .map((h) => h.textContent);
@@ -401,14 +454,25 @@ describe('details panel', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Till' })).toBeTruthy();
   });
 
-  it('says when an element stands alone, and hides sections its type does not have', async () => {
+  it('says when an element stands alone, and lists only the properties its type has', async () => {
     open(elementUrl('lonely'));
 
     const panel = await screen.findByRole('complementary', { name: 'Details' });
-    expect(within(panel).getByText('No relationships. This element stands alone.')).toBeTruthy();
-    expect(within(panel).queryByRole('heading', { name: 'Properties' })).toBeNull();
+    const toggle = within(panel).getByRole('button', { name: 'Relationships 0' });
+    // Relationships starts closed.
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const alone = within(panel).getByText('No relationships. This element stands alone.');
+    expect(alone.closest('[hidden]')).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(alone.closest('[hidden]')).toBeNull();
+    const properties = within(panel).getByRole('region', { name: 'Properties' });
+    expect([...properties.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual([
+      'Name',
+      'Description',
+      'Type',
+    ]);
     expect(within(panel).queryByRole('heading', { name: /^Functions/ })).toBeNull();
-    expect(within(panel).getByText('No description.')).toBeTruthy();
+    expect(within(properties).getByText('Not set')).toBeTruthy();
   });
 });
 
@@ -420,6 +484,7 @@ describe('navigation', () => {
     const back = screen.getByRole('button', { name: 'Back' });
     expect(back).toHaveProperty('disabled', true);
 
+    await expandRelationships();
     fireEvent.click(screen.getByRole('button', { name: /^Relates to Web Shop/ }));
     await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
     const trail = screen.getByRole('navigation', { name: 'Visited elements' });
@@ -1024,6 +1089,7 @@ describe('Contains: nesting on the canvas', () => {
     // Legend: the switch is on.
     expect((nestSwitch() as HTMLInputElement).checked).toBe(true);
     // Details panel groups.
+    await expandRelationships();
     const headings = within(details())
       .getAllByRole('heading', { level: 4 })
       .map((h) => h.textContent);

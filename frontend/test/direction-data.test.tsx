@@ -2,7 +2,7 @@ import type { JgfDocument, JgfEdge } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // A Relation's two lists are named by direction (Source to target data, Target to source data), so
 // reversing it on the form swaps them along with its ends. Made-up data.
@@ -57,6 +57,7 @@ async function openForm(opened: Record<string, unknown>) {
   stubApi(modeller, handler);
   renderAt(`/modelling/models/${bakeryId}/elements/shop?depth=1`);
   await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
+  await expandRelationships();
   fireEvent.click(
     within(details()).getAllByRole('button', {
       name: /^Open relationship: Relates to Back Office Server/,

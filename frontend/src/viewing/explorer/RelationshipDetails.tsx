@@ -3,6 +3,7 @@ import {
   dataListNames,
   dataValuesOf,
   definedPropertiesOf,
+  displayLabel,
   hasStandardEdgeProperty,
   isRelationDataProperty,
   relationProperties,
@@ -11,13 +12,21 @@ import {
   type ModelRelationship,
   type RelationshipPropertyDefinition,
 } from '@simplearchitecture/shared';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { Icon } from '../../icons';
 import { EdgeSample, relationshipTypeLine, StateBadge, TypeMark } from '../../metamodel-ui';
 import { DataListLabel } from '../../modelling/DataListLabel';
-import { nameOf, relationshipSentence } from '../../modelling/relationships';
-import { Description, MetadataValue, PropertyValue } from './DetailsPanel';
+import { relationshipSentence } from '../../modelling/relationships';
+import { CollapsibleSection } from './CollapsibleSection';
+import {
+  byLabel,
+  Description,
+  MetadataValue,
+  PropertyList,
+  PropertyValue,
+  type PropertyListRow,
+} from './DetailsPanel';
 
 /** Metadata shown in its own row above, not under "Custom metadata". */
 const ownRows = new Set(['description', 'architectureState']);
@@ -25,8 +34,7 @@ const ownRows = new Set(['description', 'architectureState']);
 interface RelationshipDetailsProps {
   graph: ModelGraph;
   relationship: ModelRelationship;
-  /** The element the panel goes back to. */
-  backId: string;
+  /** Esc: back to the element. */
   onBack: () => void;
   onFocusElement: (id: string) => void;
   /** Modellers with editing available: where "Open in Modelling" goes. */
@@ -42,7 +50,6 @@ interface RelationshipDetailsProps {
 export function RelationshipDetails(props: RelationshipDetailsProps) {
   const { graph, relationship } = props;
   const heading = useRef<HTMLHeadingElement>(null);
-  const [status, setStatus] = useState('');
   const { focusHeading, onHeadingFocused } = props;
   useEffect(() => {
     if (!focusHeading) return;
@@ -53,12 +60,13 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
   const sentence = relationshipSentence(graph, relationship);
   const { metadata, architectureState: state } = relationship;
   const description = typeof metadata.description === 'string' ? metadata.description : '';
+  const label = displayLabel(relationship, graph);
   // A Relation's own properties (Identity to Target to source data); elsewhere such keys stay custom
   // metadata.
   const texts = relationProperties.filter((key) => hasStandardEdgeProperty(key, relationship.type));
   const lists = texts.filter(isRelationDataProperty);
   const listNames = dataListNames(graph, relationship.source, relationship.target);
-  // A Relation's defined properties, by name, always; on a Contains such values are custom.
+  // A Relation's defined properties, always; on a Contains such values are custom.
   const defined = definedPropertiesOf(relationship.type, graph.relationshipProperties);
   const definedKeys = new Set(defined.map((definition) => definition.key));
   const other = Object.entries(metadata)
@@ -69,84 +77,58 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const twoWay = relationship.twoWay === true;
 
-  return (
-    <div
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented) return;
-        event.preventDefault();
-        props.onBack();
-      }}
-    >
-      <div className="d-head rel-head">
-        <div className="rel-top">
-          <button
-            type="button"
-            className="linkbtn"
-            aria-label={`Back to ${nameOf(graph, props.backId)}`}
-            onClick={props.onBack}
-          >
-            <Icon name="back" size="sm" />
-            {nameOf(graph, props.backId)}
-          </button>
-          {props.openInModelling && (
-            <Link className="btn" to={props.openInModelling.to} state={props.openInModelling.state}>
-              <Icon name="pencil" size="sm" />
-              Open in Modelling
-            </Link>
-          )}
-        </div>
-        <div className="d-type">
-          <EdgeSample type={relationship.type} twoWay={twoWay} />
-          {relationshipTypeLine(relationship)}
-        </div>
-        <h2 ref={heading} tabIndex={-1}>
-          {sentence}
-        </h2>
-      </div>
-
-      {/* No visible heading: From and To follow the relationship's heading. */}
-      <section aria-label="Ends">
-        <EndLinks graph={graph} relationship={relationship} onFocusElement={props.onFocusElement} />
-      </section>
-
-      <section>
-        <h3>Properties</h3>
-        <dl className="props">
-          <div>
-            <dt>Type</dt>
-            <dd>
-              <EdgeSample type={relationship.type} twoWay={twoWay} /> {relationship.type}
-            </dd>
-          </div>
-          {canBeTwoWay(relationship.type) && (
-            <div>
-              <dt>Direction</dt>
-              <dd>{twoWay ? '↔ Both ways' : '→ One way'}</dd>
-            </div>
-          )}
-          <div>
-            <dt>Architecture state</dt>
-            <dd>
-              <StateBadge state={state} />
-            </dd>
-          </div>
-          {texts
-            .filter((key) => !isRelationDataProperty(key))
-            .map((key) => (
-              <div key={key}>
-                <dt>{standardProperties[key].label}</dt>
-                <dd>
-                  <PropertyValue
-                    row={{ key, label: standardProperties[key].label, value: metadata[key] }}
-                  />
-                </dd>
-              </div>
-            ))}
-          {lists.length > 0 && (
-            // One Data row: each list under its name, built from the ends.
-            <div>
-              <dt>Data</dt>
-              <dd>
+  // Label, Description, Architecture state and Type first; the rest by label.
+  const rows: PropertyListRow[] = [
+    {
+      key: 'label',
+      label: 'Label',
+      value: label ? (
+        <span className="pre-wrap">{label}</span>
+      ) : (
+        <span className="muted">Not set</span>
+      ),
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      value: description ? (
+        <Description key={relationship.id} text={description} />
+      ) : (
+        <span className="muted">Not set</span>
+      ),
+    },
+    { key: 'architectureState', label: 'Architecture state', value: <StateBadge state={state} /> },
+    {
+      key: 'type',
+      label: 'Type',
+      value: (
+        <>
+          <EdgeSample type={relationship.type} twoWay={twoWay} /> {relationship.type}
+        </>
+      ),
+    },
+    ...byLabel([
+      ...(canBeTwoWay(relationship.type)
+        ? [{ key: 'direction', label: 'Direction', value: twoWay ? '↔ Both ways' : '→ One way' }]
+        : []),
+      ...texts
+        .filter((key) => !isRelationDataProperty(key))
+        .map((key) => ({
+          key,
+          label: standardProperties[key].label,
+          value: (
+            <PropertyValue
+              row={{ key, label: standardProperties[key].label, value: metadata[key] }}
+            />
+          ),
+        })),
+      ...(lists.length > 0
+        ? [
+            {
+              // One Data row: each list under its name, built from the ends.
+              key: 'data',
+              label: 'Data',
+              value: (
                 <dl className="props is-stacked">
                   {lists.map((key) => (
                     <div key={key}>
@@ -159,32 +141,59 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
                     </div>
                   ))}
                 </dl>
-              </dd>
-            </div>
-          )}
-          {defined.map((definition) => (
-            <div key={definition.key}>
-              <dt>{definition.name}</dt>
-              <dd>
-                <DefinedValue
-                  definition={definition}
-                  value={
-                    Object.hasOwn(metadata, definition.key) ? metadata[definition.key] : undefined
-                  }
-                />
-              </dd>
-            </div>
-          ))}
-        </dl>
+              ),
+            },
+          ]
+        : []),
+      ...defined.map((definition) => ({
+        key: `defined:${definition.key}`,
+        label: definition.name,
+        value: (
+          <DefinedValue
+            definition={definition}
+            value={Object.hasOwn(metadata, definition.key) ? metadata[definition.key] : undefined}
+          />
+        ),
+      })),
+    ]),
+  ];
+
+  return (
+    <div
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        event.preventDefault();
+        props.onBack();
+      }}
+    >
+      <div className="d-head rel-head">
+        <div className="d-top">
+          <div className="d-type">
+            <EdgeSample type={relationship.type} twoWay={twoWay} />
+            {relationshipTypeLine(relationship)}
+          </div>
+        </div>
+        <h2 ref={heading} tabIndex={-1}>
+          {sentence}
+        </h2>
+        {props.openInModelling && (
+          <div className="d-links">
+            <Link className="btn" to={props.openInModelling.to} state={props.openInModelling.state}>
+              <Icon name="pencil" size="sm" />
+              Open in Modelling
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* No visible heading: From and To follow the relationship's heading. */}
+      <section aria-label="Ends">
+        <EndLinks graph={graph} relationship={relationship} onFocusElement={props.onFocusElement} />
       </section>
 
-      {description ? (
-        <Description key={relationship.id} text={description} />
-      ) : (
-        <section aria-label="Description">
-          <p className="muted">No description.</p>
-        </section>
-      )}
+      <CollapsibleSection label="Properties" defaultOpen>
+        <PropertyList rows={rows} />
+      </CollapsibleSection>
 
       {other.length > 0 && (
         <section>
@@ -203,30 +212,6 @@ export function RelationshipDetails(props: RelationshipDetailsProps) {
           </dl>
         </section>
       )}
-
-      <div className="d-foot">
-        <span>ID</span>
-        <code>{relationship.id}</code>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Copy relationship ID"
-          title="Copy relationship ID"
-          onClick={() => {
-            void navigator.clipboard.writeText(relationship.id).then(
-              () => {
-                setStatus('Relationship ID copied');
-              },
-              () => undefined,
-            );
-          }}
-        >
-          <Icon name="copy" size="sm" />
-        </button>
-        <p className="vh" role="status">
-          {status}
-        </p>
-      </div>
     </div>
   );
 }

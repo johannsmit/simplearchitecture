@@ -9,6 +9,7 @@ import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
   apiError,
   currentLocation,
+  expandRelationships,
   modeller,
   renderAt,
   requests,
@@ -170,11 +171,30 @@ async function openShop(answer?: Parameters<typeof api>[0]) {
 async function openRelationship(name: RegExp, index = 0) {
   // Parallel relationships each have their own button, in model order: e3, e4 and e8 to the
   // planner, e7 and e9 to the server.
+  await expandRelationships();
   fireEvent.click(within(details()).getAllByRole('button', { name })[index] as HTMLElement);
   return screen.findByRole('form', { name: /^Relationship / });
 }
 
 describe('Add relationship (details panel)', () => {
+  it('keeps Relationships closed until Add relationship opens it, with the button outside the toggle', async () => {
+    await openShop();
+    const toggle = within(details()).getByRole('button', { name: /^Relationships \d+$/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      within(details()).queryByRole('button', { name: /^Open relationship: Relates to Till/ }),
+    ).toBeNull();
+    const add = within(details()).getByRole('button', { name: 'Add relationship' });
+    expect(toggle.contains(add)).toBe(false);
+    expect(add.closest('[hidden]')).toBeNull();
+    fireEvent.click(add);
+    await screen.findByRole('group', { name: 'Add relationship' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      within(details()).getAllByRole('button', { name: /^Open relationship: / }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it('finds any element, adds the relationship, keeps the box open and lists the new row', async () => {
     const { sent } = await openShop();
     fireEvent.click(within(details()).getByRole('button', { name: 'Add relationship' }));
@@ -349,6 +369,7 @@ describe('The relationship form', () => {
     });
     await screen.findByRole('form', { name: /^Edit / });
     // e9 still relates Web Shop to the server.
+    await expandRelationships();
     expect(
       within(details()).queryAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,
@@ -360,7 +381,11 @@ describe('The relationship form', () => {
     const { sent } = await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
     fireEvent.click(within(form).getByRole('radio', { name: /Target/ }));
-    fireEvent.click(within(details()).getByRole('button', { name: 'Back to Web Shop' }));
+    // Back to the element, from the tree: the panel has no Back link.
+    expect(within(details()).queryByRole('button', { name: /^Back to/ })).toBeNull();
+    fireEvent.click(
+      within(screen.getByRole('tree', { name: 'Elements by type' })).getByText('Web Shop'),
+    );
     await screen.findByRole('form', { name: /^Edit / });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(sent.filter((r) => r.method === 'PATCH').map((r) => r.body)).toEqual([
@@ -646,6 +671,7 @@ describe('changing a relationship’s ends', () => {
     renderAt(`/viewing/models/${bakeryId}/elements/shop`);
     const panel = await screen.findByRole('complementary', { name: 'Details' });
     await within(panel).findByRole('heading', { name: 'Web Shop' });
+    await expandRelationships();
     fireEvent.click(
       within(panel).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,
@@ -784,6 +810,7 @@ describe('the From and To fields', () => {
           })
         : undefined,
     );
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Recipe Archive/,
@@ -921,6 +948,7 @@ describe('the label line is gone', () => {
     renderAt(`/viewing/models/${bakeryId}/elements/shop`);
     const panel = await screen.findByRole('complementary', { name: 'Details' });
     await within(panel).findByRole('heading', { name: 'Web Shop' });
+    await expandRelationships();
     fireEvent.click(
       within(panel).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,
@@ -1014,6 +1042,7 @@ describe('New element on the canvas', () => {
     expect(screen.queryByRole('button', { name: 'New element on the canvas' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add relationship' })).toBeNull();
     // Relationships open read-only in Viewing too (no server call, no edit actions).
+    await expandRelationships();
     expect(screen.getAllByRole('button', { name: /^Open relationship/ }).length).toBeGreaterThan(0);
     expect(requests(fetchMock).some((r) => r.includes('/relationships'))).toBe(false);
   });
@@ -1411,12 +1440,16 @@ describe('properties defined by an Admin on the form', () => {
       name: 'Criticality',
     });
     const response = dataField(form, 'targetToSourceData') as HTMLInputElement;
-    // After Target to source data and before Type, Criticality before Protocol.
+    const type = within(form).getByRole('group', { name: 'Type' });
+    // After Type, sorted by name with the other properties: Criticality, Data, …, Protocol.
     expect(
-      response.compareDocumentPosition(criticality) & Node.DOCUMENT_POSITION_FOLLOWING,
+      type.compareDocumentPosition(criticality) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      criticality.compareDocumentPosition(protocol) & Node.DOCUMENT_POSITION_FOLLOWING,
+      criticality.compareDocumentPosition(response) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      response.compareDocumentPosition(protocol) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect([...criticality.options].map((option) => option.text)).toEqual([
       'Not set',
@@ -1862,6 +1895,7 @@ describe('the form and what is stored', () => {
           })
         : undefined,
     );
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Recipe Archive/,
@@ -1958,6 +1992,7 @@ describe('unsaved changes and the links', () => {
       target: { value: 'Typed name' },
     });
 
+    await expandRelationships();
     fireEvent.click(
       (await within(details()).findAllByRole('button', { name: /^Relates to / }))[0] as HTMLElement,
     );
@@ -1976,13 +2011,74 @@ describe('unsaved changes and the links', () => {
 });
 
 describe('The relationship form layout', () => {
+  it('has a round Delete at the top right, and no Copy link, back link or ID', async () => {
+    await openShop();
+    await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const panel = details();
+    const remove = within(panel).getByRole('button', { name: 'Delete relationship' });
+    expect(remove.classList.contains('is-round')).toBe(true);
+    expect(remove.closest('.d-top')).not.toBeNull();
+    expect(remove.textContent).toBe('');
+    expect(within(panel).queryByRole('button', { name: 'Copy link' })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /^Back to/ })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /ID/ })).toBeNull();
+    expect(panel.querySelector('.d-foot')).toBeNull();
+  });
+
+  it('orders Properties: Label, Description, state and Type, then the rest by name', async () => {
+    await openShop();
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    const properties = within(form).getByRole('region', { name: 'Properties' });
+    const toggle = within(properties).getByRole('button', { name: 'Properties' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const names = [...properties.querySelectorAll(':scope > .coll-body > *')].map(
+      (field) => field.querySelector('label[for], legend, .field-label')?.textContent,
+    );
+    expect(names).toEqual([
+      'Label',
+      'Description',
+      'Architecture state',
+      'Type',
+      'Data',
+      'Direction',
+      'Identity',
+      'Identity Context',
+    ]);
+    // Ends and Reverse direction stay above Properties, and don't close.
+    const ends = within(details()).getByRole('region', { name: 'Ends' });
+    expect(
+      ends.compareDocumentPosition(properties) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(ends).getByRole('button', { name: 'Reverse direction' })).toBeDefined();
+  });
+
+  it('opens Properties again for a field the server refused', async () => {
+    await openShop((method) =>
+      method === 'PATCH'
+        ? apiError(422, 'Invalid', {
+            fields: [{ field: 'label', message: 'Enter a shorter label.' }],
+          })
+        : undefined,
+    );
+    const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
+    fireEvent.change(within(form).getByRole('combobox', { name: 'Label' }), {
+      target: { value: 'Too long' },
+    });
+    const toggle = within(form).getByRole('button', { name: 'Properties' });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.keyDown(form, { key: 'Enter', ctrlKey: true });
+    expect(await within(form).findByText('Enter a shorter label.')).toBeDefined();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('starts with Label, in the same field style as Name on the element form', async () => {
     await openShop();
     const form = await openRelationship(/^Open relationship: Relates to Back Office Server/);
     const label = within(form).getByRole('combobox', { name: 'Label' });
     // The first field, so the first stop in the tab order too.
     expect(form.querySelector('input, select, textarea')).toBe(label);
-    const firstField = form.querySelector('.form-block > .field');
+    const firstField = form.querySelector('.coll-body > .field');
     expect(firstField?.contains(label)).toBe(true);
     const type = within(form).getByRole('group', { name: 'Type' });
     expect(label.compareDocumentPosition(type) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

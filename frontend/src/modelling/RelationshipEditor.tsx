@@ -43,7 +43,8 @@ import {
 import { ApiRequestError, deleteRelationship, getRelationship, updateRelationship } from '../api';
 import { Icon } from '../icons';
 import { EdgeSample, relationshipTypeLine } from '../metamodel-ui';
-import { MetadataValue } from '../viewing/explorer/DetailsPanel';
+import { CollapsibleSection } from '../viewing/explorer/CollapsibleSection';
+import { byLabel, MetadataValue } from '../viewing/explorer/DetailsPanel';
 import { EndLinks } from '../viewing/explorer/RelationshipDetails';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { Modal } from './dialogs';
@@ -73,10 +74,7 @@ interface RelationshipEditorProps {
   graph: ModelGraph;
   /** The relationship as in the explorer's model (saved values). */
   relationship: ModelRelationship;
-  /** The element the panel goes back to. */
-  focusId: string;
   nest: boolean;
-  onBack: () => void;
   onFocusElement: (id: string) => void;
   onShow: (relationshipId: string) => void;
   handle: Ref<EditorHandle>;
@@ -286,6 +284,16 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   // The version the last save or reload gave: the next save sends it.
   const lastVersion = useRef<number | undefined>(undefined);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
+  // Properties starts open, and opens itself for a field's error (not the ends', a custom row's or
+  // the form's own).
+  const [propertiesOpen, setPropertiesOpen] = useState(true);
+  const [errorsSeen, setErrorsSeen] = useState(errors);
+  if (errorsSeen !== errors) {
+    setErrorsSeen(errors);
+    const inProperties = (slot: string) =>
+      slot !== '' && slot !== 'ends' && !slot.startsWith('row:');
+    if ([...errors.keys()].some(inProperties)) setPropertiesOpen(true);
+  }
   const [duplicateOf, setDuplicateOf] = useState<string | undefined>(undefined);
   const [conflict, setConflict] = useState<Conflict>(null);
   // The person may no longer edit the model (403): nothing more is sent.
@@ -800,37 +808,28 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
   return (
     <>
       <div className="d-head rel-head">
-        <div className="rel-top">
-          <button
-            type="button"
-            className="linkbtn"
-            aria-label={`Back to ${nameOf(graph, props.focusId)}`}
-            onClick={props.onBack}
-          >
-            <Icon name="back" size="sm" />
-            {nameOf(graph, props.focusId)}
-          </button>
+        <div className="d-top">
+          <div className="d-type">
+            <EdgeSample type={relationship.type} twoWay={relationship.twoWay === true} />
+            {relationshipTypeLine(relationship)}
+          </div>
           {editable && (
-            <div className="rel-top-actions">
+            <div className="d-actions">
               <SaveStatus saver={saver} />
               <button
                 ref={trash}
                 type="button"
-                className="icon-btn delete-element-btn"
+                className="icon-btn is-round delete-element-btn"
                 aria-label="Delete relationship"
                 title="Delete relationship"
                 onClick={() => {
                   setDeleting({ busy: false, error: null, stale: false });
                 }}
               >
-                <Icon name="trash" />
+                <Icon name="trash" size="sm" />
               </button>
             </div>
           )}
-        </div>
-        <div className="d-type">
-          <EdgeSample type={relationship.type} twoWay={relationship.twoWay === true} />
-          {relationshipTypeLine(relationship)}
         </div>
         <h2 ref={heading} tabIndex={-1}>
           {savedSentence}
@@ -1029,7 +1028,7 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               </div>
             </div>
           )}
-          <section className="form-block">
+          <CollapsibleSection label="Properties" open={propertiesOpen} onToggle={setPropertiesOpen}>
             <div className="field">
               <label htmlFor="rf-label">Label</label>
               <LabelField
@@ -1047,89 +1046,29 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               />
               {fieldError('label')}
             </div>
-            {textProperties
-              .filter((key) => fits(draft.type, key))
-              .map((key) => (
-                <div className="field" key={key}>
-                  <label htmlFor={`rf-${key}`}>{standardProperties[key].label}</label>
-                  <div className="value-anchor">
-                    <ValueField
-                      id={`rf-${key}`}
-                      value={draft.texts[key]}
-                      values={relationshipPropertyValues(graph).get(key) ?? noValues}
-                      label={standardProperties[key].label}
-                      aria-invalid={errors.has(key) || undefined}
-                      aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
-                      onValue={(text) => {
-                        edit({ ...draft, texts: { ...draft.texts, [key]: text } });
-                      }}
-                      onPick={(text) => {
-                        edit({ ...draft, texts: { ...draft.texts, [key]: text } }, 'now');
-                      }}
-                    />
-                  </div>
-                  {fieldError(key)}
-                </div>
-              ))}
-            {dataProperties.some((key) => fits(draft.type, key)) && (
-              // The lists are named after the ends as they will be saved; ids stay on the key, so
-              // error links and focus survive a Change or a Reverse.
-              <fieldset className="field-group">
-                <legend>Data</legend>
-                {dataProperties
-                  .filter((key) => fits(draft.type, key))
-                  .map((key) => (
-                    <div className="field" key={key}>
-                      <label htmlFor={`rf-${key}`}>
-                        <DataListLabel name={listNames[key]} />
-                      </label>
-                      <ValueListField
-                        id={`rf-${key}`}
-                        label={listNames[key].full}
-                        values={draft.data[key].values}
-                        text={draft.data[key].text}
-                        suggestions={relationshipPropertyValues(graph).get(key) ?? noValues}
-                        aria-invalid={errors.has(key) || undefined}
-                        aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
-                        onChange={(values, text) => {
-                          // Adding or removing a value goes now; what is typed after the pause.
-                          edit(
-                            { ...draft, data: { ...draft.data, [key]: { values, text } } },
-                            sameValues(values, draft.data[key].values) ? 'later' : 'now',
-                          );
-                        }}
-                      />
-                      {fieldError(key)}
-                    </div>
-                  ))}
-              </fieldset>
-            )}
-            {defined.map((definition, index) => (
-              <DefinedField
-                key={definition.key}
-                id={`rf-prop-${String(index)}`}
-                definition={definition}
-                row={rowOf(definition.key)}
-                stored={base.custom.find((row) => row.key === definition.key)}
-                suggestions={relationshipPropertyValues(graph).get(definition.key) ?? noValues}
-                readOnly={false}
-                error={fieldError(`prop:${definition.key}`)}
-                invalid={errors.has(`prop:${definition.key}`)}
-                onText={(text, now) => {
-                  const row = rowOf(definition.key);
-                  const custom = row
-                    ? draft.custom.map((other) => (other === row ? { ...row, text } : other))
-                    : [...draft.custom, { ...customRow(definition.key, ''), text }];
-                  edit({ ...draft, custom }, now === true ? 'now' : 'later');
-                }}
-                onRemove={() => {
-                  edit(
-                    { ...draft, custom: draft.custom.filter((row) => row.key !== definition.key) },
-                    'now',
-                  );
+            <div className="field">
+              <label htmlFor="rf-description">Description</label>
+              <textarea
+                id="rf-description"
+                className="desc-field"
+                value={draft.description}
+                aria-invalid={errors.has('description') || undefined}
+                onChange={(event) => {
+                  edit({ ...draft, description: event.target.value });
                 }}
               />
-            ))}
+              {fieldError('description')}
+            </div>
+            <div className="field">
+              <StateSegments
+                name="rf-state"
+                value={draft.state}
+                onChange={(state) => {
+                  edit({ ...draft, state }, 'now');
+                }}
+              />
+              {fieldError('architectureState')}
+            </div>
             <div className="field" id="rf-type" tabIndex={-1}>
               <TypeSegments
                 name="rf-type"
@@ -1177,46 +1116,137 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
               </TypeSegments>
               {fieldError('type')}
             </div>
-            {canBeTwoWay(draft.type) && (
-              <div className="field">
-                <DirectionSegments
-                  name="rf-direction"
-                  twoWay={draft.twoWay}
-                  onChange={(twoWay) => {
-                    // Reverse means nothing both ways: it is dropped.
-                    edit(
-                      { ...withReversed(draft, twoWay ? false : draft.reversed), twoWay },
-                      'now',
-                    );
-                  }}
-                />
-                {fieldError('twoWay')}
-              </div>
-            )}
-            <div className="field">
-              <StateSegments
-                name="rf-state"
-                value={draft.state}
-                onChange={(state) => {
-                  edit({ ...draft, state }, 'now');
-                }}
-              />
-              {fieldError('architectureState')}
-            </div>
-            <div className="field">
-              <label htmlFor="rf-description">Description</label>
-              <textarea
-                id="rf-description"
-                className="desc-field"
-                value={draft.description}
-                aria-invalid={errors.has('description') || undefined}
-                onChange={(event) => {
-                  edit({ ...draft, description: event.target.value });
-                }}
-              />
-              {fieldError('description')}
-            </div>
-          </section>
+            {byLabel([
+              ...(canBeTwoWay(draft.type)
+                ? [
+                    {
+                      label: 'Direction',
+                      field: (
+                        <div className="field" key="direction">
+                          <DirectionSegments
+                            name="rf-direction"
+                            twoWay={draft.twoWay}
+                            onChange={(twoWay) => {
+                              // Reverse means nothing both ways: it is dropped.
+                              edit(
+                                { ...withReversed(draft, twoWay ? false : draft.reversed), twoWay },
+                                'now',
+                              );
+                            }}
+                          />
+                          {fieldError('twoWay')}
+                        </div>
+                      ),
+                    },
+                  ]
+                : []),
+              ...textProperties
+                .filter((key) => fits(draft.type, key))
+                .map((key) => ({
+                  label: standardProperties[key].label,
+                  field: (
+                    <div className="field" key={key}>
+                      <label htmlFor={`rf-${key}`}>{standardProperties[key].label}</label>
+                      <div className="value-anchor">
+                        <ValueField
+                          id={`rf-${key}`}
+                          value={draft.texts[key]}
+                          values={relationshipPropertyValues(graph).get(key) ?? noValues}
+                          label={standardProperties[key].label}
+                          aria-invalid={errors.has(key) || undefined}
+                          aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
+                          onValue={(text) => {
+                            edit({ ...draft, texts: { ...draft.texts, [key]: text } });
+                          }}
+                          onPick={(text) => {
+                            edit({ ...draft, texts: { ...draft.texts, [key]: text } }, 'now');
+                          }}
+                        />
+                      </div>
+                      {fieldError(key)}
+                    </div>
+                  ),
+                })),
+              ...(dataProperties.some((key) => fits(draft.type, key))
+                ? [
+                    {
+                      label: 'Data',
+                      field: (
+                        // The lists are named after the ends as they will be saved; ids stay on
+                        // the key, so error links and focus survive a Change or a Reverse.
+                        <fieldset className="field-group" key="data">
+                          <legend>Data</legend>
+                          {dataProperties
+                            .filter((key) => fits(draft.type, key))
+                            .map((key) => (
+                              <div className="field" key={key}>
+                                <label htmlFor={`rf-${key}`}>
+                                  <DataListLabel name={listNames[key]} />
+                                </label>
+                                <ValueListField
+                                  id={`rf-${key}`}
+                                  label={listNames[key].full}
+                                  values={draft.data[key].values}
+                                  text={draft.data[key].text}
+                                  suggestions={
+                                    relationshipPropertyValues(graph).get(key) ?? noValues
+                                  }
+                                  aria-invalid={errors.has(key) || undefined}
+                                  aria-describedby={errors.has(key) ? `rf-${key}-error` : undefined}
+                                  onChange={(values, text) => {
+                                    // Adding or removing a value goes now; what is typed after the
+                                    // pause.
+                                    edit(
+                                      {
+                                        ...draft,
+                                        data: { ...draft.data, [key]: { values, text } },
+                                      },
+                                      sameValues(values, draft.data[key].values) ? 'later' : 'now',
+                                    );
+                                  }}
+                                />
+                                {fieldError(key)}
+                              </div>
+                            ))}
+                        </fieldset>
+                      ),
+                    },
+                  ]
+                : []),
+              ...defined.map((definition, index) => ({
+                label: definition.name,
+                field: (
+                  <DefinedField
+                    key={`defined:${definition.key}`}
+                    id={`rf-prop-${String(index)}`}
+                    definition={definition}
+                    row={rowOf(definition.key)}
+                    stored={base.custom.find((row) => row.key === definition.key)}
+                    suggestions={relationshipPropertyValues(graph).get(definition.key) ?? noValues}
+                    readOnly={false}
+                    error={fieldError(`prop:${definition.key}`)}
+                    invalid={errors.has(`prop:${definition.key}`)}
+                    onText={(text, now) => {
+                      const row = rowOf(definition.key);
+                      const custom = row
+                        ? draft.custom.map((other) => (other === row ? { ...row, text } : other))
+                        : [...draft.custom, { ...customRow(definition.key, ''), text }];
+                      edit({ ...draft, custom }, now === true ? 'now' : 'later');
+                    }}
+                    onRemove={() => {
+                      edit(
+                        {
+                          ...draft,
+                          custom: draft.custom.filter((row) => row.key !== definition.key),
+                        },
+                        'now',
+                      );
+                    }}
+                  />
+                ),
+              })),
+            ]).map((row) => row.field)}
+          </CollapsibleSection>
           {customRows.length > 0 && (
             <section className="form-block">
               <CustomMetadataFields
@@ -1262,27 +1292,6 @@ export function RelationshipEditor(props: RelationshipEditorProps) {
           </p>
         </form>
       )}
-
-      <div className="d-foot">
-        <span>ID</span>
-        <code>{relationship.id}</code>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Copy relationship ID"
-          title="Copy relationship ID"
-          onClick={() => {
-            void navigator.clipboard.writeText(relationship.id).then(
-              () => {
-                props.onAnnounce('Relationship ID copied');
-              },
-              () => undefined,
-            );
-          }}
-        >
-          <Icon name="copy" size="sm" />
-        </button>
-      </div>
 
       {deleting && (
         <DeleteRelationshipDialog

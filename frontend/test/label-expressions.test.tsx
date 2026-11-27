@@ -5,7 +5,7 @@ import type * as Labels from '../src/viewing/explorer/canvas/labels';
 import { linkText, mergeRelationships } from '../src/viewing/explorer/canvas/view';
 import { buildModelGraph } from '@simplearchitecture/shared';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
 // Property values in relationship labels. Made-up data (the bakery fixture).
 
@@ -97,6 +97,7 @@ async function openAt(space: 'viewing' | 'modelling') {
 
 async function openForm() {
   const opened = await openAt('modelling');
+  await expandRelationships();
   fireEvent.click(
     within(details()).getAllByRole('button', {
       name: /^Open relationship: Relates to Back Office Server/,
@@ -185,6 +186,7 @@ describe('in the details panel', () => {
     expect(shown).toContain('“svc-shop on”');
     expect(shown.some((text) => text.includes('{Identity}'))).toBe(false);
     expect(details().querySelector('.rlabel b')).toBeNull();
+    await expandRelationships();
     const row = within(details()).getAllByRole('button', { name: /Customer/ })[0];
     expect(row?.getAttribute('aria-label')).toContain(`"Places orders, Returns via ${markup}"`);
   });
@@ -192,6 +194,7 @@ describe('in the details panel', () => {
   // The “Label … · from the import” line is gone from the panel; the label stays on its line.
   it('keeps the filled-in label of an open relationship on the canvas, with no label line', async () => {
     await openAt('viewing');
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,

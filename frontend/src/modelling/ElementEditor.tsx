@@ -1,4 +1,5 @@
 import {
+  architectureStates,
   elementPropertyValues,
   isElementStandardKey,
   isIsoCountryCode,
@@ -28,7 +29,8 @@ import { Icon } from '../icons';
 import { choiceValues, TypeMark } from '../metamodel-ui';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { DefinedElementField } from './DefinedElementField';
-import { DetailsPanel, type RelationshipTools } from '../viewing/explorer/DetailsPanel';
+import { CollapsibleSection } from '../viewing/explorer/CollapsibleSection';
+import { byLabel, DetailsPanel, type RelationshipTools } from '../viewing/explorer/DetailsPanel';
 import {
   changesOf,
   clientErrors,
@@ -56,6 +58,7 @@ import {
 } from './draft';
 import { deleteSummary, DeleteElementDialog } from './dialogs';
 import { versionToSave } from './save';
+import { StateSegments } from './relationships';
 import { fixReason, SaveStatus } from './SaveStatus';
 import { useAutoSave, type SaveOutcome, type SaveRun } from './useAutoSave';
 import { ValueField } from './ValueField';
@@ -113,8 +116,6 @@ interface ElementEditorProps {
   onAnnounce: (text: string) => void;
   /** Add relationship and the rows' Open buttons. */
   relationships?: RelationshipTools;
-  /** Show on canvas in the head while the catalog shows. */
-  headExtra?: ReactNode;
   /** The "Used in views" section. */
   usedIn?: ReactNode;
   /** The element properties couldn't be read: their values aren't saved until they are. */
@@ -192,6 +193,15 @@ export function ElementEditor(props: ElementEditorProps) {
   const [initial, setInitial] = useState(() => draftOf(element));
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState<ReadonlyMap<ErrorSlot, string>>(new Map());
+  // Properties starts open; it opens itself for a field's error, and for focus sent into it.
+  const [propertiesOpen, setPropertiesOpen] = useState(true);
+  const [errorsSeen, setErrorsSeen] = useState(errors);
+  if (errorsSeen !== errors) {
+    setErrorsSeen(errors);
+    // Custom metadata rows (row:…) sit outside Properties.
+    if ([...errors.keys()].some((slot) => !slot.startsWith('row:'))) setPropertiesOpen(true);
+  }
+  if (props.focusName && !propertiesOpen) setPropertiesOpen(true);
   const [alert, setAlert] = useState<TopAlert | null>(null);
   const [conflict, setConflict] = useState<Conflict>(null);
   const [forbidden, setForbidden] = useState(false);
@@ -657,6 +667,36 @@ export function ElementEditor(props: ElementEditorProps) {
     </div>
   );
 
+  /** Architecture state as three options, saved at once; a stored value outside them is kept. */
+  const stateField = (): ReactNode => {
+    const slot = 'field:architectureState';
+    const id = slotId(slot);
+    const value = draft.fields.architectureState ?? '';
+    const known = architectureStates.find((state) => state === value);
+    const invalid = errors.has(slot);
+    const odd = value !== '' && known === undefined;
+    return (
+      <div className="field">
+        <StateSegments
+          name="ef-state"
+          id={id}
+          value={known}
+          invalid={invalid}
+          describedBy={describedBy(invalid && errorId(slot), odd && `${id}-hint`)}
+          onChange={(state) => {
+            setField('architectureState', state, 'now');
+          }}
+        />
+        {odd && (
+          <p className="hint" id={`${id}-hint`}>
+            Stored value “{value}” isn&apos;t Deprecate, Current or Target. Pick one to replace it.
+          </p>
+        )}
+        <FieldError slot={slot} errors={errors} />
+      </div>
+    );
+  };
+
   const form = (
     <form
       className="d-form"
@@ -741,7 +781,7 @@ export function ElementEditor(props: ElementEditorProps) {
         </div>
       )}
 
-      <section className="form-block">
+      <CollapsibleSection label="Properties" open={propertiesOpen} onToggle={setPropertiesOpen}>
         <div className="field">
           <label htmlFor={slotId('name')}>
             Name <span className="req">Required</span>
@@ -768,6 +808,21 @@ export function ElementEditor(props: ElementEditorProps) {
             </p>
           )}
         </div>
+        <div className="field">
+          <label htmlFor={slotId('description')}>Description</label>
+          <textarea
+            id={slotId('description')}
+            className="desc-field"
+            aria-invalid={errors.has('description') || undefined}
+            aria-describedby={describedBy(errors.has('description') && errorId('description'))}
+            value={draft.description}
+            onChange={(event) => {
+              edit('description', { ...draft, description: event.target.value });
+            }}
+          />
+          <FieldError slot="description" errors={errors} />
+        </div>
+        {keys.includes('architectureState') && stateField()}
         <div className="field">
           <label htmlFor={slotId('type')}>Type</label>
           <div className="select-wrap has-mark">
@@ -803,70 +858,56 @@ export function ElementEditor(props: ElementEditorProps) {
             )}
           </div>
         </div>
-        <div className="field">
-          <label htmlFor={slotId('description')}>Description</label>
-          <textarea
-            id={slotId('description')}
-            className="desc-field"
-            aria-invalid={errors.has('description') || undefined}
-            aria-describedby={describedBy(errors.has('description') && errorId('description'))}
-            value={draft.description}
-            onChange={(event) => {
-              edit('description', { ...draft, description: event.target.value });
-            }}
-          />
-          <FieldError slot="description" errors={errors} />
-        </div>
-      </section>
-
-      {(keys.length > 0 || definitions.length > 0) && (
-        <section className="form-block">
-          <h3>Properties</h3>
-          {keys.filter((key) => key !== 'functions').map((key) => standardField(key))}
-          {definitions.map((definition) => {
+        {byLabel([
+          ...keys
+            .filter((key) => key !== 'architectureState')
+            .map((key) => ({ label: standardProperties[key].label, field: standardField(key) })),
+          ...definitions.map((definition) => {
             const slot = propertySlot(definition.key);
             const id = propertyId(definition.key);
             const invalid = errors.has(slot);
-            return (
-              <DefinedElementField
-                key={definition.key}
-                id={id}
-                definition={definition}
-                row={rowOfKey(draft, definition.key)}
-                stored={
-                  Object.hasOwn(base.metadata, definition.key)
-                    ? base.metadata[definition.key]
-                    : undefined
-                }
-                graph={graph}
-                ownId={element.id}
-                suggestions={valuesOf(definition.key)}
-                readOnly={false}
-                error={
-                  invalid ? (
-                    <p className="field-error" id={`${id}-error`}>
-                      <Icon name="alert" size="sm" />
-                      <span className="pre-wrap">{errors.get(slot)}</span>
-                    </p>
-                  ) : null
-                }
-                errorId={invalid ? `${id}-error` : undefined}
-                onText={(text, now) => {
-                  edit(slot, withDefinedText(draft, definition.key, text), now ? 'now' : 'later');
-                }}
-                onReferences={(ids) => {
-                  edit(slot, withDefinedReferences(draft, definition.key, ids), 'now');
-                }}
-                onRemove={() => {
-                  edit(slot, withoutKey(draft, definition.key), 'now');
-                  setFocusTarget(id);
-                }}
-              />
-            );
-          })}
-          {keys.filter((key) => key === 'functions').map((key) => standardField(key))}
-        </section>
-      )}
+            return {
+              label: definition.name,
+              field: (
+                <DefinedElementField
+                  key={`defined:${definition.key}`}
+                  id={id}
+                  definition={definition}
+                  row={rowOfKey(draft, definition.key)}
+                  stored={
+                    Object.hasOwn(base.metadata, definition.key)
+                      ? base.metadata[definition.key]
+                      : undefined
+                  }
+                  graph={graph}
+                  ownId={element.id}
+                  suggestions={valuesOf(definition.key)}
+                  readOnly={false}
+                  error={
+                    invalid ? (
+                      <p className="field-error" id={`${id}-error`}>
+                        <Icon name="alert" size="sm" />
+                        <span className="pre-wrap">{errors.get(slot)}</span>
+                      </p>
+                    ) : null
+                  }
+                  errorId={invalid ? `${id}-error` : undefined}
+                  onText={(text, now) => {
+                    edit(slot, withDefinedText(draft, definition.key, text), now ? 'now' : 'later');
+                  }}
+                  onReferences={(ids) => {
+                    edit(slot, withDefinedReferences(draft, definition.key, ids), 'now');
+                  }}
+                  onRemove={() => {
+                    edit(slot, withoutKey(draft, definition.key), 'now');
+                    setFocusTarget(id);
+                  }}
+                />
+              ),
+            };
+          }),
+        ]).map((row) => row.field)}
+      </CollapsibleSection>
 
       {shownCustomRows.length > 0 && (
         <section className="form-block">
@@ -905,23 +946,20 @@ export function ElementEditor(props: ElementEditorProps) {
     </form>
   );
 
-  const headActions = (
-    <>
-      <SaveStatus saver={saver} />
-      <button
-        ref={trash}
-        id="ef-delete"
-        type="button"
-        className="icon-btn delete-element-btn"
-        aria-label="Delete element"
-        title="Delete element"
-        onClick={() => {
-          setDeleting({ deleting: false, error: null, stale: false });
-        }}
-      >
-        <Icon name="trash" />
-      </button>
-    </>
+  const deleteAction = (
+    <button
+      ref={trash}
+      id="ef-delete"
+      type="button"
+      className="icon-btn is-round delete-element-btn"
+      aria-label="Delete element"
+      title="Delete element"
+      onClick={() => {
+        setDeleting({ deleting: false, error: null, stale: false });
+      }}
+    >
+      <Icon name="trash" size="sm" />
+    </button>
   );
 
   return (
@@ -934,8 +972,7 @@ export function ElementEditor(props: ElementEditorProps) {
         focusHeading={props.focusHeading}
         onHeadingFocused={props.onHeadingFocused}
         headingId="ef-heading"
-        edit={{ headActions, form }}
-        headExtra={props.headExtra}
+        edit={{ saveStatus: <SaveStatus saver={saver} />, deleteAction, form }}
         usedIn={props.usedIn}
         {...(props.relationships ? { relationships: props.relationships } : {})}
       />

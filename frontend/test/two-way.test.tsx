@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mergeRelationships } from '../src/viewing/explorer/canvas/view';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { renderAt, stubApi, viewer, type Handler } from './helpers';
+import { expandRelationships, renderAt, stubApi, viewer, type Handler } from './helpers';
 
 // Two-way relationships on show. Made-up data: the bakery with "Hosted on"
 // (e7, Web Shop – Back Office Server) made two-way.
@@ -78,6 +78,7 @@ describe('two-way relationships in the details panel', () => {
     stubApi(viewer, api);
     renderAt(`/viewing/models/${bakeryId}/elements/server?depth=1`);
     await screen.findByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     const heading = await within(details()).findByRole('heading', {
       name: /^Relates both ways to/,
     });
@@ -95,6 +96,7 @@ describe('two-way relationships in the details panel', () => {
     stubApi(viewer, api);
     renderAt(`/viewing/models/${bakeryId}/elements/shop?depth=1`);
     await screen.findByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     fireEvent.click(
       await within(details()).findByRole('button', {
         name: /^Open relationship: Relates both ways to Back Office Server/,

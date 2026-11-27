@@ -4,6 +4,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
 import {
   currentLocation,
+  expandRelationships,
   modeller,
   renderAt,
   requests,
@@ -206,6 +207,7 @@ describe('Show relationships', () => {
     localStorage.setItem('sa-show-lines', 'false');
     await open('modelling');
     await screen.findByRole('form', { name: /^Edit / });
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Oven Planner/,
@@ -236,6 +238,12 @@ describe('Show relationships in Modelling', () => {
     await screen.findByRole('form', { name: /^Edit / });
     fireEvent.keyDown(card('customer')?.querySelector('.card-main') as HTMLElement, { key: 'r' });
     await screen.findByRole('group', { name: 'Add relationship' });
+    // The box opens the element's Relationships section, which starts closed.
+    expect(
+      within(details())
+        .getByRole('button', { name: /^Relationships/ })
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
     expect(linesSwitch().checked).toBe(true);
     await linesDrawn();
   });

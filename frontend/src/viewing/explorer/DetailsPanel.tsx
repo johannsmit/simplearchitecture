@@ -25,6 +25,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '../../icons';
 import { colourClass, StateBadge, TypeMark } from '../../metamodel-ui';
+import { CollapsibleSection } from './CollapsibleSection';
 
 /** Descriptions longer than this many lines (or characters) start clamped. */
 const clampLines = 8;
@@ -72,7 +73,7 @@ export function Description({ text }: { text: string }) {
   const long = text.split('\n').length > clampLines || text.length > clampChars;
   const [expanded, setExpanded] = useState(false);
   return (
-    <section aria-label="Description">
+    <div className="desc-box" role="region" aria-label="Description">
       <p className={`desc${long && !expanded ? ' clamped' : ''}`}>
         <LinkedText text={text} />
       </p>
@@ -88,7 +89,7 @@ export function Description({ text }: { text: string }) {
           {expanded ? 'Show less' : 'Show more'}
         </button>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -366,16 +367,14 @@ interface DetailsPanelProps {
   focusHeading?: boolean;
   onHeadingFocused?: () => void;
   /**
-   * Modelling with editing on: the head gets these actions (Delete, the Saved note) and the
-   * form takes the place of Description, Properties, Functions and Custom metadata.
+   * Modelling with editing on: the head gets the save status (before Copy link) and Delete (after
+   * it), and the form takes the place of Properties and Custom metadata.
    */
-  edit?: { headActions: ReactNode; form: ReactNode };
+  edit?: { saveStatus: ReactNode; deleteAction: ReactNode; form: ReactNode };
   /** An id for the name heading, so the form can put focus on it after a save. */
   headingId?: string;
   /** Editable Modelling: Add relationship and an Open button per row. */
   relationships?: RelationshipTools;
-  /** After Copy link: Show on canvas while the catalog shows. */
-  headExtra?: ReactNode;
   /** The "Used in views" section, after Relationships. */
   usedIn?: ReactNode;
 }
@@ -390,7 +389,74 @@ export interface RelationshipTools {
   highlightId?: string;
 }
 
-/** Everything about the focused element: properties, functions, relationships in words. */
+/** One row of a Properties list: its label (the sort key) and its value as shown. */
+export interface PropertyListRow {
+  key: string;
+  label: string;
+  value: ReactNode;
+}
+
+/** The rows after Name, Description, Architecture state and Type: by label, as names sort. */
+export const byLabel = <T extends { label: string }>(rows: readonly T[]): T[] =>
+  [...rows].sort((a, b) => compareNames(a.label, b.label));
+
+/** A Properties list: label and value per row, in the order given. */
+export function PropertyList({ rows }: { rows: readonly PropertyListRow[] }) {
+  return (
+    <dl className="props">
+      {rows.map((row) => (
+        <div key={row.key}>
+          <dt>{row.label}</dt>
+          <dd>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** The round Copy link button: copies the absolute deep link, and says so in the status region. */
+function CopyLinkButton({ copied, onCopy }: { copied: boolean; onCopy: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-btn is-round"
+      aria-label="Copy link"
+      title="Copy link"
+      onClick={onCopy}
+    >
+      <Icon name={copied ? 'check' : 'link'} size="sm" />
+    </button>
+  );
+}
+
+/** Functions as the panel lists them: the first few, then "Show all N". */
+function FunctionsValue({ functions }: { functions: readonly string[] }) {
+  const [all, setAll] = useState(false);
+  if (functions.length === 0) return <span className="muted">No functions.</span>;
+  return (
+    <>
+      <ul className="fn-list" aria-label={`Functions: ${functions.length}`}>
+        {(all ? functions : functions.slice(0, functionsShown)).map((name, index) => (
+          <li key={index}>{name}</li>
+        ))}
+      </ul>
+      {functions.length > functionsShown && (
+        <button
+          type="button"
+          className="linkbtn"
+          aria-expanded={all}
+          onClick={() => {
+            setAll(!all);
+          }}
+        >
+          {all ? 'Show fewer' : `Show all ${functions.length}`}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** Everything about the focused element: properties, relationships in words. */
 export function DetailsPanel({
   graph,
   element,
@@ -401,7 +467,6 @@ export function DetailsPanel({
   edit,
   headingId,
   relationships,
-  headExtra,
   usedIn,
 }: DetailsPanelProps) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -411,7 +476,6 @@ export function DetailsPanel({
     onHeadingFocused?.();
   }, [focusHeading, onHeadingFocused]);
   const [status, setStatus] = useState('');
-  const [allFunctions, setAllFunctions] = useState(false);
   useEffect(() => {
     if (status === '') return;
     const timer = setTimeout(() => {
@@ -422,17 +486,26 @@ export function DetailsPanel({
     };
   }, [status]);
 
+  // Relationships starts closed; opening the Add relationship box, or a relationship just added,
+  // opens it.
+  const boxOpen = relationships?.box !== undefined && relationships.box !== null;
+  const highlightId = relationships?.highlightId;
+  const [relationshipsOpen, setRelationshipsOpen] = useState(boxOpen || highlightId !== undefined);
+  const [seen, setSeen] = useState({ boxOpen, highlightId });
+  if (seen.boxOpen !== boxOpen || seen.highlightId !== highlightId) {
+    setSeen({ boxOpen, highlightId });
+    if (boxOpen || highlightId !== undefined) setRelationshipsOpen(true);
+  }
+
   const description = elementDescription(element);
   const state = elementArchitectureState(element);
+  const hasState = hasStandardProperty(element.type, 'architectureState');
   const sourcing = hasStandardProperty(element.type, 'sourcing')
     ? element.metadata.sourcing
     : undefined;
-  const properties = standardPropertyRows(element);
-  const hasFunctions = hasStandardProperty(element.type, 'functions');
-  const functions = elementFunctions(element);
   const groups = useMemo(() => relationshipGroups(graph, element.id), [graph, element]);
   const relationshipTotal = groups.reduce((sum, group) => sum + group.rows.length, 0);
-  // Every type has every element property, after the standard ones, by name.
+  // Every type has every element property, sorted with the type's other properties by label.
   const defined = sortElementDefinitions(graph.elementProperties);
   const custom = customMetadata(element, defined);
 
@@ -447,13 +520,106 @@ export function DetailsPanel({
     );
   };
 
+  // Name, Description, Architecture state and Type first; the rest by label.
+  const rows: PropertyListRow[] = edit
+    ? []
+    : [
+        {
+          key: 'name',
+          label: 'Name',
+          value: element.name.trim() ? (
+            <span className="pre-wrap">{element.name}</span>
+          ) : (
+            <span className="muted">(unnamed)</span>
+          ),
+        },
+        {
+          key: 'description',
+          label: 'Description',
+          value: description ? (
+            <Description key={element.id} text={description} />
+          ) : (
+            <span className="muted">Not set</span>
+          ),
+        },
+        ...(hasState
+          ? [
+              {
+                key: 'architectureState',
+                label: standardProperties.architectureState.label,
+                value: (
+                  <PropertyValue
+                    row={{
+                      key: 'architectureState',
+                      label: standardProperties.architectureState.label,
+                      value: element.metadata.architectureState,
+                    }}
+                  />
+                ),
+              },
+            ]
+          : []),
+        {
+          key: 'type',
+          label: 'Type',
+          value: (
+            <span className="type-value">
+              <TypeMark type={element.type} metadata={element.metadata} />
+              {element.type}
+            </span>
+          ),
+        },
+        ...byLabel([
+          ...standardPropertyRows(element)
+            .filter((row) => row.key !== 'architectureState')
+            .map((row) => ({ key: row.key, label: row.label, value: <PropertyValue row={row} /> })),
+          ...(hasStandardProperty(element.type, 'functions')
+            ? [
+                {
+                  key: 'functions',
+                  label: standardProperties.functions.label,
+                  value: <FunctionsValue functions={elementFunctions(element)} />,
+                },
+              ]
+            : []),
+          ...defined.map((definition) => ({
+            key: `defined:${definition.key}`,
+            label: definition.name,
+            value: (
+              <DefinedElementValue
+                definition={definition}
+                value={
+                  Object.hasOwn(element.metadata, definition.key)
+                    ? element.metadata[definition.key]
+                    : undefined
+                }
+                graph={graph}
+                onFocusElement={onFocusElement}
+              />
+            ),
+          })),
+        ]),
+      ];
+
   return (
     <>
       <div className={`d-head ${colourClass(element.type)}${edit ? ' is-editing' : ''}`}>
-        <div className="d-type">
-          <TypeMark type={element.type} metadata={element.metadata} />
-          {element.type}
-          {edit && <span> · Editing</span>}
+        <div className="d-top">
+          <div className="d-type">
+            <TypeMark type={element.type} metadata={element.metadata} />
+            {element.type}
+            {edit && <span> · Editing</span>}
+          </div>
+          <div className="d-actions">
+            {edit?.saveStatus}
+            <CopyLinkButton
+              copied={status === 'Link copied'}
+              onCopy={() => {
+                copy(new URL(link, window.location.origin).href, 'Link copied');
+              }}
+            />
+            {edit?.deleteAction}
+          </div>
         </div>
         <h2 ref={heading} id={headingId} tabIndex={-1}>
           {element.name || <i>(unnamed)</i>}
@@ -466,20 +632,6 @@ export function DetailsPanel({
             )}
           </div>
         )}
-        <div className="d-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              copy(new URL(link, window.location.origin).href, 'Link copied');
-            }}
-          >
-            <Icon name="link" size="sm" />
-            Copy link
-          </button>
-          {headExtra}
-          {edit?.headActions}
-        </div>
         <p className="vh" role="status">
           {status}
         </p>
@@ -487,87 +639,19 @@ export function DetailsPanel({
 
       {edit?.form}
 
-      {edit ? null : description ? (
-        <Description key={element.id} text={description} />
-      ) : (
-        <section aria-label="Description">
-          <p className="muted">No description.</p>
-        </section>
+      {!edit && (
+        <CollapsibleSection label="Properties" defaultOpen>
+          <PropertyList rows={rows} />
+        </CollapsibleSection>
       )}
 
-      {!edit && (properties.length > 0 || defined.length > 0) && (
-        <section>
-          <h3>Properties</h3>
-          <dl className="props">
-            {properties.map((row) => (
-              <div key={row.key}>
-                <dt>{row.label}</dt>
-                <dd>
-                  <PropertyValue row={row} />
-                </dd>
-              </div>
-            ))}
-            {defined.map((definition) => (
-              <div key={`defined:${definition.key}`}>
-                <dt>{definition.name}</dt>
-                <dd>
-                  <DefinedElementValue
-                    definition={definition}
-                    value={
-                      Object.hasOwn(element.metadata, definition.key)
-                        ? element.metadata[definition.key]
-                        : undefined
-                    }
-                    graph={graph}
-                    onFocusElement={onFocusElement}
-                  />
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
-
-      {!edit && hasFunctions && (
-        <section>
-          <h3>
-            Functions <span className="count">{functions.length}</span>
-          </h3>
-          {functions.length === 0 ? (
-            <p className="muted">No functions.</p>
-          ) : (
-            <>
-              <ul className="fn-list">
-                {(allFunctions ? functions : functions.slice(0, functionsShown)).map(
-                  (name, index) => (
-                    <li key={index}>{name}</li>
-                  ),
-                )}
-              </ul>
-              {functions.length > functionsShown && (
-                <button
-                  type="button"
-                  className="linkbtn"
-                  aria-expanded={allFunctions}
-                  onClick={() => {
-                    setAllFunctions(!allFunctions);
-                  }}
-                >
-                  {allFunctions ? 'Show fewer' : `Show all ${functions.length}`}
-                </button>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
-      <section>
-        <div className={relationships ? 'rel-h3row' : undefined}>
-          <h3>
-            Relationships <span className="count">{relationshipTotal}</span>
-          </h3>
-          {relationships?.action}
-        </div>
+      <CollapsibleSection
+        label="Relationships"
+        count={relationshipTotal}
+        open={relationshipsOpen}
+        onToggle={setRelationshipsOpen}
+        extra={relationships?.action}
+      >
         {relationships?.box}
         {groups.length === 0 && (
           <p className="muted">No relationships. This element stands alone.</p>
@@ -643,10 +727,10 @@ export function DetailsPanel({
             </ul>
           </div>
         ))}
-      </section>
+      </CollapsibleSection>
 
       <ReferencedBy
-        // Its own key: Description, a sibling, is keyed by the element's id.
+        // Its own key: Description is keyed by the element's id.
         key={`referenced-by:${element.id}`}
         graph={graph}
         element={element}
@@ -697,22 +781,6 @@ export function DetailsPanel({
           </details>
         </section>
       )}
-
-      <div className="d-foot">
-        <span>ID</span>
-        <code>{element.id}</code>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Copy element ID"
-          title="Copy element ID"
-          onClick={() => {
-            copy(element.id, 'Element ID copied');
-          }}
-        >
-          <Icon name="copy" size="sm" />
-        </button>
-      </div>
     </>
   );
 }

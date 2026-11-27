@@ -302,15 +302,28 @@ export function DirectionSegments(props: {
   );
 }
 
-/** Architecture state as a segmented radio group: Deprecate, Current, Target. */
+/**
+ * Architecture state as a segmented radio group: Deprecate, Current, Target. Without a value (not
+ * set, or a stored value outside the three) no option is checked.
+ */
 export function StateSegments(props: {
   name: string;
-  value: ArchitectureState;
+  value: ArchitectureState | undefined;
   onChange: (state: ArchitectureState) => void;
   disabled?: boolean;
+  /** On the group, which takes focus (tabIndex -1) when an error sends it there. */
+  id?: string;
+  invalid?: boolean;
+  describedBy?: string | undefined;
 }) {
   return (
-    <fieldset className="state-segs">
+    <fieldset
+      className="state-segs"
+      id={props.id}
+      tabIndex={props.id === undefined ? undefined : -1}
+      aria-invalid={props.invalid === true || undefined}
+      aria-describedby={props.describedBy}
+    >
       <legend>Architecture state</legend>
       <div className="seg-radios">
         {architectureStates.map((state) => (

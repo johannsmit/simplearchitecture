@@ -2,7 +2,7 @@ import type { JgfDocument } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { renderAt, stubApi, viewer } from './helpers';
+import { expandRelationships, renderAt, stubApi, viewer } from './helpers';
 
 // A relationship's text is shown as text, never as markup.
 
@@ -29,6 +29,7 @@ describe('relationship panel renders text as text', () => {
     });
     renderAt(`/viewing/models/${bakeryId}/elements/shop?depth=1`);
     const details = await screen.findByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     fireEvent.click(
       await within(details).findByRole('button', { name: /^Open relationship: .*Customer/ }),
     );
