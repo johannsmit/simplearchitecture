@@ -44,11 +44,11 @@ Some properties come from the models themselves. Those are marked **From models*
 
 ## On an element
 
-Every element shows every element property, after its type's standard properties and before Functions, in name order. A Text property offers the values it has in the model; a Choice is a list with "Not set" first; a Reference is the `@` field. Leave it empty, or pick Not set, to give an element no value. The details panel shows them the same way, with "Not set" where there is no value. See [Modelling](modelling.md#change-an-element).
+Every element shows every element property, sorted by name among its type's other standard properties, such as Owning team and Functions, after Name, Description, Architecture state and Type. A Text property offers the values it has in the model; a Choice is a list with "Not set" first; a Reference is the `@` field. Leave it empty, or pick Not set, to give an element no value. The details panel shows them the same way, with "Not set" where there is no value. See [Modelling](modelling.md#change-an-element).
 
 ## On a relationship
 
-On a Relation's form in Modelling, the relation properties follow the data lists, in name order, always. A text property is a field that offers the values it has in the model; a choice is a list with "Not set" first. Leave a field empty, or pick Not set, to give a relationship no value. The details panel shows them after the standard properties, with "Not set" where there is no value.
+On a Relation's form in Modelling, the relation properties are always there, sorted by name among Data, Direction, Identity and Identity Context, after Label, Description, Architecture state and Type. A text property is a field that offers the values it has in the model; a choice is a list with "Not set" first. Leave a field empty, or pick Not set, to give a relationship no value. The details panel shows them in the same order, with "Not set" where there is no value.
 
 **Relation and Contains.** A Contains has no defined properties. Changing a Relation to a Contains keeps their values as custom metadata on it (the form says which), and changing it back to a Relation shows them in their fields again.
 

@@ -18,9 +18,10 @@ In an open view, a new element is added to the view. If an element with the name
 
 ### Change an element
 
-Select the element and change its fields in the details panel: name, type, description, the standard properties of its type, such as Owning team or Architecture state, and the properties an Admin defined.
+Select the element and change its fields in the details panel, under **Properties**: Name, Description, Architecture state (for types that have it), Type, then the other standard properties of its type, such as Owning team or Functions, and the properties an Admin defined, all in name order. Properties opens itself when a field in it needs a fix, and when the form puts the cursor in a field, such as Name after **New element**.
 
-- **Properties defined by an Admin** come after the type's standard properties and before Functions, in name order, on every element of every type. A Text property is a field, a Choice a list with "Not set" first, and a Reference the `@` field (see [Reference properties](#reference-properties)). The form has no **Add field**: new properties are added by an Admin, on **Admin → Properties**. See [Properties](properties.md).
+- **Architecture state** is three options, Deprecate, Current and Target, as on a relationship. A pick is saved at once. A stored value that is none of the three checks no option, and the form says so; pick one to replace it.
+- **Properties defined by an Admin** sit among the type's standard properties, in name order, on every element of every type. A Text property is a field, a Choice a list with "Not set" first, and a Reference the `@` field (see [Reference properties](#reference-properties)). The form has no **Add field**: new properties are added by an Admin, on **Admin → Properties**. See [Properties](properties.md).
 - **Suggestions:** text fields such as Owning team, Supplier HQ Country and Text properties offer the values the model already has, most used first. Pick one, or type anything else.
 - **A Stakeholder's Kind:** Human (a person) or AI Agent (an AI agent acting as a stakeholder). A Stakeholder without a Kind is Human. An AI Agent is drawn with a robot icon wherever its type icon shows.
 - **Changing the type** keeps every value. A standard property the new type doesn't have, such as Sourcing when an Application becomes Infrastructure, is kept under **Custom metadata**, marked **Was a property**: the form says which. You can still change its value, or remove it with its bin. Changing back to a type that has the property shows the value in its field again. Properties an Admin defined don't change: every type has them.
@@ -44,14 +45,14 @@ A Reference property points an element at other elements of the same model, with
 
 ### Delete an element
 
-Deleting an element also deletes every relationship from or to it, removes it from every view, and takes it out of every Reference that holds it (one left with no element becomes Not set). The dialog says how many elements refer to it. The elements a deleted container held stay in the model, no longer nested.
+Choose the round **Delete element** button at the top right of the details panel, next to **Copy link**, and confirm. Deleting an element also deletes every relationship from or to it, removes it from every view, and takes it out of every Reference that holds it (one left with no element becomes Not set). The dialog says how many elements refer to it. The elements a deleted container held stay in the model, no longer nested.
 
 ## Relationships
 
 ### Create a relationship
 
 - Drag from a card's handle to another card. Drop it on empty canvas instead to create a new element at the other end.
-- Or select a card and press `R`, or choose **Add relationship** in the Relationships section of an element's details panel, then pick the type and the other element.
+- Or select a card and press `R`, or choose **Add relationship** in the heading of the Relationships section of an element's details panel, then pick the type and the other element. Both open the Relationships section, and a relationship just added opens it too.
 
 There are two types:
 
@@ -62,7 +63,7 @@ A new relationship runs one way, from the element you started at.
 
 ### Change a relationship
 
-Click the line, or its label, to open the relationship's form.
+Click the line, or its label, or choose the arrow next to a relationship in an element's Relationships section, to open the relationship's form. **From**, **To** and **Reverse direction** come first; then **Properties**: Label, Description, Architecture state, Type, then the rest in name order. To go back to the element, pick it in the list or on the canvas. To delete the relationship, choose the round **Delete relationship** button at the top right.
 
 - **From** and **To** are its two ends. Choose one to search the model's elements and pick another. The new end is saved as soon as you pick it. A new end that isn't on the canvas joins it at a free spot, and in a view it is added to the view.
 - **Reverse direction** swaps the two ends, and the two data lists with them, so the same data keeps flowing between the same two elements.
@@ -102,7 +103,7 @@ The label is stored as typed, so a JSON Graph Format export keeps the braces.
 Changes in the details panel are saved as you go. There is no **Save** button.
 
 - **Text fields**, such as Name, Description, Functions, a label or a property's value, are saved when you pause typing for a moment, or when you leave the field. A pause saves once, not every key you type, so the history has one entry per pause.
-- **Choices** are saved at once: a type, a list such as Architecture state, a Direction or State, **Reverse direction**, a new **From** or **To**, a suggestion you pick, and a chip you add or remove.
+- **Choices** are saved at once: a type, a list such as Sourcing, an Architecture state, a Direction, **Reverse direction**, a new **From** or **To**, a suggestion you pick, and a chip you add or remove.
 - **Save now:** `Ctrl` + `Enter` (`⌘` + `Enter` on a Mac) anywhere in the form saves a change that is waiting for the pause. `Enter` in a one-line field never saves.
 - The head of the panel says **Saving…** while a change is being saved, then **Saved** until your next change. Screen readers hear "Saved" once per save.
 - You can keep typing while a change is being saved: what you type meanwhile is saved next, in order.
