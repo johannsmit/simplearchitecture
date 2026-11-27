@@ -4,7 +4,7 @@ import { Icon } from '../../icons';
 import { ElementEditor, type EditorHandle, type EditorState } from '../../modelling/ElementEditor';
 import { RelationshipEditor } from '../../modelling/RelationshipEditor';
 import { AddRelationshipBox } from '../../modelling/relationships';
-import { elementPath, type ExplorerSpace, type ExplorerView } from '../paths';
+import { elementPath, type ExplorerSpace } from '../paths';
 import { DetailsPanel, type RelationshipTools } from './DetailsPanel';
 import { RelationshipDetails } from './RelationshipDetails';
 import { UsedInViews } from './UsedInViews';
@@ -16,7 +16,6 @@ interface ExplorerDetailsProps {
   space: ExplorerSpace;
   graph: ModelGraph;
   editable: boolean;
-  view: ExplorerView;
   elementId: string | undefined;
   viewId: string | undefined;
   depth: number;
@@ -60,7 +59,6 @@ export function ExplorerDetails({
   space,
   graph,
   editable,
-  view,
   elementId,
   viewId,
   depth,
@@ -144,20 +142,6 @@ export function ExplorerDetails({
     ...(litId === undefined ? {} : { highlightId: litId }),
   });
 
-  /** The pointer's way from a catalog row to the canvas. */
-  const showOnCanvas = (id: string): ReactNode =>
-    view === 'catalog' ? (
-      <button
-        type="button"
-        className="btn"
-        onClick={() => {
-          onFocusElement(id);
-        }}
-      >
-        Show on canvas
-      </button>
-    ) : null;
-
   /**
    * The views holding the element, read again after this person saves, renames or deletes a view,
    * and after each save of the open view (its contents may have gained or lost the element).
@@ -193,9 +177,7 @@ export function ExplorerDetails({
           modelId={modelId}
           graph={graph}
           relationship={selectedRelationship}
-          focusId={selected.id}
           nest={nest}
-          onBack={deselect}
           onFocusElement={followElement}
           onShow={openRelationship}
           handle={panelEditor}
@@ -213,7 +195,6 @@ export function ExplorerDetails({
           key={selectedRelationship.id}
           graph={graph}
           relationship={selectedRelationship}
-          backId={selected.id}
           onBack={deselect}
           onFocusElement={followElement}
           openInModelling={
@@ -251,7 +232,6 @@ export function ExplorerDetails({
           propertiesFailed={propertiesFailed}
           onPropertiesStale={onPropertiesStale}
           relationships={relationshipTools(selected)}
-          headExtra={showOnCanvas(selected.id)}
           usedIn={usedInViews(selected.id)}
         />
       ) : (
@@ -267,7 +247,6 @@ export function ExplorerDetails({
           focusHeading={headingFocusFor === selected.id}
           onHeadingFocused={clearHeadingFocus}
           relationships={{ action: null, box: null, onOpen: openRelationship }}
-          headExtra={showOnCanvas(selected.id)}
           usedIn={usedInViews(selected.id)}
         />
       )}

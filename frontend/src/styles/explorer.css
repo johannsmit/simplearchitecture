@@ -2034,6 +2034,13 @@
   white-space: pre-wrap;
 }
 
+/* The Type row in Properties: the type's mark, then its name. */
+.type-value {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
 .json {
   max-height: 240px;
   margin: 0;
@@ -2193,20 +2200,6 @@
   font-size: 12px;
 }
 
-.d-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.d-foot code {
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
 .explorer-message h1 {
   color: var(--text);
   font-size: 18px;
@@ -2236,6 +2229,11 @@
     right: 8px;
     z-index: 1;
     display: inline-grid;
+  }
+
+  /* Room for the close button, so the head's actions don't sit under it. */
+  .explorer .details .d-top {
+    padding-right: 36px;
   }
 
   .tree-panel {
@@ -2633,9 +2631,33 @@
   margin-top: 12px;
 }
 
+/* The head's top row: the type line, and the actions (save status, Copy link, Delete). */
+.d-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+
+.d-top .d-type {
+  min-width: 0;
+}
+
 .d-actions {
   display: flex;
+  flex: 0 1 auto;
   align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/* Under a relationship's sentence: Open in Modelling. */
+.d-links {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -2653,11 +2675,7 @@
   margin: 4px 0 8px;
 }
 
-.delete-element-btn {
-  margin-left: auto;
-}
-
-.delete-element-btn:hover,
+.icon-btn.delete-element-btn:hover,
 .danger-hover:hover {
   background: var(--critical-soft);
   color: var(--critical);
@@ -3242,19 +3260,6 @@
   border-top-color: var(--text-muted);
 }
 
-.save-status + .delete-element-btn {
-  margin-left: 0;
-}
-
-.rel-top-actions {
-  display: flex;
-  flex: 1;
-  gap: 8px;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
 .spinner.sm {
   width: 14px;
   height: 14px;
@@ -3697,13 +3702,53 @@
   color: var(--warning);
 }
 
-/* Add relationship in the Relationships section. */
-.rel-h3row {
+/* A section that opens and closes with its heading (CollapsibleSection), in the look of the
+ * Custom metadata disclosure; Add relationship sits at the end of the heading row. */
+.coll-head {
   display: flex;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
+  min-height: 28px;
 }
+
+.details .coll-head h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.coll-head h3 > button {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.coll-head h3 > button .ico {
+  color: var(--text-muted);
+  transition: transform var(--t-fast);
+}
+
+.coll-head h3 > button[aria-expanded='true'] .ico {
+  transform: rotate(90deg);
+}
+
+.coll-body {
+  margin-top: 10px;
+}
+
+/* Add relationship in the Relationships section. */
 
 .add-rel-btn {
   min-height: 28px;
@@ -3878,14 +3923,6 @@ li.is-new {
   padding: 12px 16px 14px;
   border-bottom: 3px solid var(--edge);
   background: var(--surface-2);
-}
-
-.rel-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 32px;
-  margin: -4px 0 4px -4px;
 }
 
 .rel-head h2 {

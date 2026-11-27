@@ -215,6 +215,21 @@ h4 {
   color: var(--accent);
 }
 
+/* A round action on a header (Copy link, Delete): its own surface, so it reads on any fill. */
+.icon-btn.is-round {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.icon-btn.is-round:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
 .linkbtn {
   padding: 0;
   border: 0;
