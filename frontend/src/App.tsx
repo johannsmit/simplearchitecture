@@ -2,18 +2,9 @@ import type { Space } from '@simplearchitecture/shared';
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router';
 import { onSessionEnded } from './api';
-import { BrandingPage } from './admin/BrandingPage';
-import { ConnectedAppsAdminPage } from './admin/ConnectedAppsAdminPage';
-import { DatabasePage } from './admin/DatabasePage';
-import { LogsPage } from './admin/LogsPage';
-import { PropertiesPage } from './admin/PropertiesPage';
 import { ConnectedAppsPage } from './agents/ConnectedAppsPage';
 import { ConsentPage } from './agents/ConsentPage';
 import { MeContext, useAuth, useMe } from './auth';
-import { AdminHelp } from './help/AdminHelp';
-import { HelpIndexPage } from './help/HelpIndexPage';
-import { ModellingHelp } from './help/ModellingHelp';
-import { ViewingHelp } from './help/ViewingHelp';
 import { Shell } from './Shell';
 import { NoAccessPage } from './routes/NoAccessPage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -21,10 +12,53 @@ import { SignedOutPage } from './routes/SignedOutPage';
 import { UnavailablePage } from './routes/UnavailablePage';
 import { ModelsPage } from './viewing/ModelsPage';
 
-// The explorer (React Flow, the layout) loads only when a model is opened.
+// Pages that load only when opened, so the first visit downloads less: the explorer (React
+// Flow, the layout) when a model is opened, and the Admin and Help pages. A page that fails to
+// load is caught by the Shell's error boundary.
 const ExplorerPage = lazy(async () => ({
   default: (await import('./viewing/ExplorerPage')).ExplorerPage,
 }));
+const PropertiesPage = lazy(async () => ({
+  default: (await import('./admin/PropertiesPage')).PropertiesPage,
+}));
+const DatabasePage = lazy(async () => ({
+  default: (await import('./admin/DatabasePage')).DatabasePage,
+}));
+const BrandingPage = lazy(async () => ({
+  default: (await import('./admin/BrandingPage')).BrandingPage,
+}));
+const ConnectedAppsAdminPage = lazy(async () => ({
+  default: (await import('./admin/ConnectedAppsAdminPage')).ConnectedAppsAdminPage,
+}));
+const LogsPage = lazy(async () => ({ default: (await import('./admin/LogsPage')).LogsPage }));
+const HelpIndexPage = lazy(async () => ({
+  default: (await import('./help/HelpIndexPage')).HelpIndexPage,
+}));
+const ViewingHelp = lazy(async () => ({
+  default: (await import('./help/ViewingHelp')).ViewingHelp,
+}));
+const ModellingHelp = lazy(async () => ({
+  default: (await import('./help/ModellingHelp')).ModellingHelp,
+}));
+const AdminHelp = lazy(async () => ({ default: (await import('./help/AdminHelp')).AdminHelp }));
+
+/**
+ * Shows Loading… while a page loads. Each route has its own boundary, so a link to a page that
+ * isn't loaded yet shows this at once, instead of keeping the previous page on screen.
+ */
+function Lazy({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <p className="app-message" role="status">
+          Loading…
+        </p>
+      }
+    >
+      {children}
+    </Suspense>
+  );
+}
 
 /**
  * Renders a space only for users whose roles open it. Otherwise the No access page is shown
@@ -58,10 +92,38 @@ function SignedInRoutes() {
           ask the API for nothing, and a user can read what a space they can't use offers.
         */}
         <Route path="help">
-          <Route index element={<HelpIndexPage />} />
-          <Route path="viewing" element={<ViewingHelp />} />
-          <Route path="modelling" element={<ModellingHelp />} />
-          <Route path="admin" element={<AdminHelp />} />
+          <Route
+            index
+            element={
+              <Lazy>
+                <HelpIndexPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="viewing"
+            element={
+              <Lazy>
+                <ViewingHelp />
+              </Lazy>
+            }
+          />
+          <Route
+            path="modelling"
+            element={
+              <Lazy>
+                <ModellingHelp />
+              </Lazy>
+            }
+          />
+          <Route
+            path="admin"
+            element={
+              <Lazy>
+                <AdminHelp />
+              </Lazy>
+            }
+          />
         </Route>
         <Route
           path="admin"
@@ -74,11 +136,46 @@ function SignedInRoutes() {
           {/* Users, roles and the metamodel follow. */}
           <Route index element={<Navigate to="models" replace />} />
           <Route path="models" element={<ModelsPage mode="manage" />} />
-          <Route path="properties" element={<PropertiesPage />} />
-          <Route path="database" element={<DatabasePage />} />
-          <Route path="branding" element={<BrandingPage />} />
-          <Route path="apps" element={<ConnectedAppsAdminPage />} />
-          <Route path="logs" element={<LogsPage />} />
+          <Route
+            path="properties"
+            element={
+              <Lazy>
+                <PropertiesPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="database"
+            element={
+              <Lazy>
+                <DatabasePage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="branding"
+            element={
+              <Lazy>
+                <BrandingPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="apps"
+            element={
+              <Lazy>
+                <ConnectedAppsAdminPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="logs"
+            element={
+              <Lazy>
+                <LogsPage />
+              </Lazy>
+            }
+          />
         </Route>
         <Route
           path="modelling"
@@ -93,15 +190,9 @@ function SignedInRoutes() {
           <Route
             path="models/:modelId/*"
             element={
-              <Suspense
-                fallback={
-                  <p className="app-message" role="status">
-                    Loading…
-                  </p>
-                }
-              >
+              <Lazy>
                 <ExplorerPage />
-              </Suspense>
+              </Lazy>
             }
           />
         </Route>
@@ -118,15 +209,9 @@ function SignedInRoutes() {
           <Route
             path="models/:modelId/*"
             element={
-              <Suspense
-                fallback={
-                  <p className="app-message" role="status">
-                    Loading…
-                  </p>
-                }
-              >
+              <Lazy>
                 <ExplorerPage />
-              </Suspense>
+              </Lazy>
             }
           />
         </Route>

@@ -29,7 +29,7 @@ Everything is in the PostgreSQL database set in `DATABASE_URL`.
 In the browser:
 
 - One session cookie, `__Host-sa_session`: a random id, `Secure`, `httpOnly` and `SameSite=Lax`, so scripts can't read it. During sign-in, a second cookie holds the encrypted sign-in state for up to 10 minutes.
-- The app's own files, cached by the service worker so the app loads quickly. API responses and model data are never cached.
+- The app's own files, cached by the service worker so the app loads quickly (the diagram layout engine the first time a diagram opens). API responses and model data are never cached.
 - Display preferences in local storage: the theme, panel sizes, depth, the canvas switches, the branding (colours, product title and image addresses), and which view folders are closed (as short hashes of their names). Never tokens, user data or model content.
 
 Treat the database, its backups and any exported model files (JGF) as confidential: they hold your organisation's architecture.
