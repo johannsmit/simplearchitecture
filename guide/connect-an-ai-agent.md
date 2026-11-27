@@ -78,7 +78,7 @@ For an Admin, the agent also gets **Get logs** (`get_logs`): what the app's serv
 - `from` and `to`: the first and last day, as `YYYY-MM-DD`, in UTC. Both are today (in UTC) when left out. At most 31 days.
 - `level` (optional): only entries at this level or above: `trace`, `debug`, `info`, `warn`, `error` or `fatal`.
 
-It returns the newest 1,000 entries at most, newest first, each with its `time` (UTC), `level`, `msg` and other fields (`extra`), and `truncated`: true when more matched, so the agent can narrow the days or raise the level. Entries are kept for 30 days and never hold credentials. Some fields, such as addresses, hold text anyone could send, so they are also passed as untrusted data.
+It returns the newest 1,000 entries at most, newest first, each with its `time` (UTC), `level`, `msg` and other fields (`extra`), and `truncated`: true when more matched, so the agent can narrow the days or raise the level. Entries are kept for 30 days and never hold credentials. User ids and client addresses are masked: `*****` and their last 4 characters (`203.0.113.45` becomes `*****3.45`; a value of 4 characters or fewer is `*****` alone). Admin → Logs shows them in full. Some fields, such as addresses, hold text anyone could send, so they are also passed as untrusted data.
 
 ## What the agent can change
 

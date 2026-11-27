@@ -29,15 +29,6 @@ function shownTime(iso: string, withDate: boolean): string {
   return withDate ? `${localDay(date)} ${time}` : time;
 }
 
-const levelClass: Record<LogLevelName, string> = {
-  trace: 'muted',
-  debug: 'muted',
-  info: 'info',
-  warn: 'warning',
-  error: 'critical',
-  fatal: 'critical',
-};
-
 function announcement(response: LogsResponse): string {
   const count = response.entries.length;
   if (count === 0) return 'No log entries for these dates.';
@@ -46,72 +37,17 @@ function announcement(response: LogsResponse): string {
   return count === 1 ? '1 log entry.' : `${count.toLocaleString('en')} log entries.`;
 }
 
-/** The whole message (the list cuts it to one line), then the entry's other fields. */
-function Details({ entry }: { entry: LogEntry }) {
-  const fields = Object.entries(entry.extra);
+/**
+ * One entry as one line of text, fields two spaces apart: time, level (padded to 5), the whole
+ * message, then the other fields as compact JSON (left out when there are none).
+ */
+function EntryLine({ entry, withDate }: { entry: LogEntry; withDate: boolean }) {
+  const fields = Object.keys(entry.extra).length === 0 ? '' : `  ${JSON.stringify(entry.extra)}`;
   return (
-    <>
-      <dl className="log-fields">
-        <div className="log-message">
-          <dt>Message</dt>
-          <dd>{entry.msg === '' ? '—' : entry.msg}</dd>
-        </div>
-        {fields.map(([name, value]) => (
-          <div key={name}>
-            <dt>{name}</dt>
-            <dd>
-              {typeof value === 'object' && value !== null ? (
-                <pre>{JSON.stringify(value, null, 2)}</pre>
-              ) : (
-                String(value)
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      {fields.length === 0 && <p className="muted log-no-fields">No other fields.</p>}
-    </>
-  );
-}
-
-function EntryRows({ entry, withDate }: { entry: LogEntry; withDate: boolean }) {
-  const [open, setOpen] = useState(false);
-  const detailsId = `log-entry-${entry.id}`;
-  const time = shownTime(entry.time, withDate);
-  return (
-    <>
-      <tr>
-        <td className="log-time">
-          <time dateTime={entry.time}>{time}</time>
-        </td>
-        <td>
-          <span className={`tag log-level level-${levelClass[entry.level]}`}>{entry.level}</span>
-        </td>
-        <td className="log-msg">
-          <span className="cut" title={entry.msg}>
-            {entry.msg}
-          </span>
-        </td>
-        <td className="act">
-          <button
-            className="btn"
-            type="button"
-            aria-expanded={open}
-            aria-controls={detailsId}
-            onClick={() => {
-              setOpen((was) => !was);
-            }}
-          >
-            Details <span className="vh">of the entry at {time}</span>
-          </button>
-        </td>
-      </tr>
-      <tr id={detailsId} className="log-details" hidden={!open}>
-        <td colSpan={4}>
-          <Details entry={entry} />
-        </td>
-      </tr>
-    </>
+    <span className="log-line">
+      <time dateTime={entry.time}>{shownTime(entry.time, withDate)}</time>
+      {`  ${entry.level.padEnd(5)}  ${entry.msg === '' ? '—' : entry.msg}${fields}`}
+    </span>
   );
 }
 
@@ -312,28 +248,17 @@ export function LogsPage() {
                 level to see the rest.
               </p>
             )}
-            <div className="table-card">
-              <table className="models-table logs-table" aria-busy={loading}>
-                <caption className="vh">Log entries</caption>
-                <thead>
-                  <tr>
-                    <th scope="col" className="log-time">
-                      Time
-                    </th>
-                    <th scope="col">Level</th>
-                    <th scope="col">Message</th>
-                    <th scope="col">
-                      <span className="vh">Details</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {response.entries.map((entry) => (
-                    <EntryRows key={entry.id} entry={entry} withDate={loaded?.withDate ?? false} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <pre
+              className="logs-text"
+              tabIndex={0}
+              role="region"
+              aria-label="Log entries"
+              aria-busy={loading}
+            >
+              {response.entries.map((entry) => (
+                <EntryLine key={entry.id} entry={entry} withDate={loaded?.withDate ?? false} />
+              ))}
+            </pre>
           </>
         )}
       </div>

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { LogEntry, LogsResponse } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -75,7 +77,8 @@ const ok = (body: LogsResponse) => () => Response.json(body);
 const logRequests = (fetchMock: ReturnType<typeof stubApi>) =>
   requests(fetchMock).filter((request) => request.startsWith('GET /api/admin/logs'));
 
-const table = () => screen.getByRole('table', { name: 'Log entries' });
+const panel = () => screen.getByRole('region', { name: 'Log entries' });
+const lines = () => Array.from(panel().querySelectorAll<HTMLElement>(':scope > .log-line'));
 
 async function openPage(
   answer: (params: URLSearchParams) => Response | Promise<Response>,
@@ -107,7 +110,7 @@ describe('Admin → Logs', () => {
 
   it('loads today in the browser’s time zone at first, and shows the entries', async () => {
     const fetchMock = await openPage(ok({ entries, truncated: false }));
-    await screen.findByRole('table', { name: 'Log entries' });
+    await screen.findByRole('region', { name: 'Log entries' });
 
     expect(screen.getByLabelText<HTMLInputElement>('From').value).toBe(today());
     expect(screen.getByLabelText<HTMLInputElement>('To').value).toBe(today());
@@ -116,73 +119,59 @@ describe('Admin → Logs', () => {
       `GET /api/admin/logs?from=${today()}&to=${today()}&${offsets(today(), today())}`,
     ]);
 
-    const rows = within(table())
-      .getAllByRole('row')
-      .filter((row) => !row.hidden);
-    // The header row and one row per entry; the details rows are hidden.
-    expect(rows).toHaveLength(4);
-    const first = rows[1] as HTMLElement;
-    const time = first.querySelector('time');
+    const region = panel();
+    expect(region.tagName).toBe('PRE');
+    expect(region.className).toBe('logs-text');
+    expect(region.getAttribute('tabindex')).toBe('0');
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Details/ })).toBeNull();
+
+    // One line per entry, in the order received (newest first).
+    const shown = lines();
+    expect(shown).toHaveLength(3);
+    expect(region.children).toHaveLength(3);
+    const time = shown[0]?.querySelector('time');
     expect(time?.getAttribute('datetime')).toBe('2026-03-10T11:00:05.000Z');
     expect(time?.textContent).toMatch(/^\d{2}:\d{2}:05$/);
-    expect(within(first).getByText('error').className).toContain('level-critical');
-    expect(within(first).getByText('request failed').getAttribute('title')).toBe('request failed');
-    expect(within(rows[2] as HTMLElement).getByText('warn').className).toContain('level-warning');
-    expect(within(rows[3] as HTMLElement).getByText('info').className).toContain('level-info');
+    const at = (index: number) => shown[index]?.querySelector('time')?.textContent ?? '';
+    expect(shown[0]?.textContent).toBe(
+      `${at(0)}  error  request failed  {"reqId":"req-9","err":{"type":"Error","message":"made-up failure"}}`,
+    );
+    expect(shown[1]?.textContent).toBe(
+      `${at(1)}  warn   cross-origin request refused  {"origin":"https://other.example.test"}`,
+    );
+    // No other fields: nothing after the message, not even spaces.
+    expect(shown[2]?.textContent).toBe(`${at(2)}  info   server listening`);
 
     await waitFor(() => {
       expect(screen.getByText('3 log entries.')).toBeTruthy();
     });
-    expect(table().getAttribute('aria-busy')).toBe('false');
+    expect(region.getAttribute('aria-busy')).toBe('false');
+    // Nothing moves focus on load; the panel is one Tab stop.
+    expect(document.activeElement).not.toBe(region);
+    region.focus();
+    expect(document.activeElement).toBe(region);
     await expectNoSeriousAxeViolations();
   });
 
-  it('opens and closes an entry’s details', async () => {
-    await openPage(ok({ entries, truncated: false }));
-    await screen.findByRole('table', { name: 'Log entries' });
-    const button = screen.getByRole('button', { name: /^Details of the entry at .*:05$/ });
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    const details = document.getElementById(button.getAttribute('aria-controls') ?? '');
-    expect(details?.hidden).toBe(true);
-
-    fireEvent.click(button);
-    expect(button.getAttribute('aria-expanded')).toBe('true');
-    expect(details?.hidden).toBe(false);
-    const fields = within(details as HTMLElement);
-    expect(fields.getByText('reqId').nextElementSibling?.textContent).toBe('req-9');
-    expect(fields.getByText('err').nextElementSibling?.textContent).toBe(
-      JSON.stringify({ type: 'Error', message: 'made-up failure' }, null, 2),
-    );
-
-    fireEvent.click(button);
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(details?.hidden).toBe(true);
-  });
-
-  it('shows the whole message in Details, for every entry, even one without other fields', async () => {
+  it('shows every message in full, and a dash for an empty one', async () => {
     const long = `cross-origin request refused ${'from a made-up origin '.repeat(20)}end`;
+    expect(long.length).toBeGreaterThan(400);
     await openPage(
       ok({
         entries: [
           { id: '7', time: '2026-03-10T08:00:00.000Z', level: 'warn', msg: long, extra: {} },
+          { id: '6', time: '2026-03-10T07:00:00.000Z', level: 'debug', msg: '', extra: {} },
           ...entries,
         ],
         truncated: false,
       }),
     );
-    await screen.findByRole('table', { name: 'Log entries' });
-    const buttons = screen.getAllByRole('button', { name: /^Details of the entry at / });
-    expect(buttons).toHaveLength(entries.length + 1);
-
-    const button = buttons[0] as HTMLElement;
-    fireEvent.click(button);
-    const details = within(
-      document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement,
-    );
-    const terms = details.getAllByRole('term').map((term) => term.textContent);
-    expect(terms[0]).toBe('Message');
-    expect(details.getByText('Message').nextElementSibling?.textContent).toBe(long);
-    expect(details.getByText('No other fields.')).toBeTruthy();
+    await screen.findByRole('region', { name: 'Log entries' });
+    const [first, second] = lines();
+    const time = (line: HTMLElement | undefined) => line?.querySelector('time')?.textContent ?? '';
+    expect(first?.textContent).toBe(`${time(first)}  warn   ${long}`);
+    expect(second?.textContent).toBe(`${time(second)}  debug  —`);
   });
 
   it('asks again for the dates and level chosen, with dates in times over several days', async () => {
@@ -192,7 +181,7 @@ describe('Admin → Logs', () => {
         truncated: false,
       }),
     );
-    await screen.findByRole('table', { name: 'Log entries' });
+    await screen.findByRole('region', { name: 'Log entries' });
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-03-01' } });
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-03-10' } });
     fireEvent.change(screen.getByLabelText('Level'), { target: { value: 'warn' } });
@@ -208,7 +197,7 @@ describe('Admin → Logs', () => {
     expect(logRequests(fetchMock).at(-1)).toBe(
       `GET /api/admin/logs?from=2026-03-01&to=2026-03-10&level=warn&${offsets('2026-03-01', '2026-03-10')}`,
     );
-    expect(table().querySelector('time')?.textContent).toMatch(/^2026-03-\d{2} \d{2}:\d{2}:05$/);
+    expect(panel().querySelector('time')?.textContent).toMatch(/^2026-03-\d{2} \d{2}:\d{2}:05$/);
     // Focus stays where it was.
     expect(document.activeElement).toBe(button);
   });
@@ -216,7 +205,7 @@ describe('Admin → Logs', () => {
   it('asks for each end of the range at its own offset when a clock change falls between', async () => {
     useTimeZone('Europe/Berlin');
     const fetchMock = await openPage(ok({ entries, truncated: false }));
-    await screen.findByRole('table', { name: 'Log entries' });
+    await screen.findByRole('region', { name: 'Log entries' });
 
     // Summer time ends during 2026-10-25: the range starts two hours ahead and ends one ahead.
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
@@ -241,7 +230,7 @@ describe('Admin → Logs', () => {
     ],
   ])('says what is wrong with %s, and asks for nothing', async (_name, values, field, message) => {
     const fetchMock = await openPage(ok({ entries, truncated: false }));
-    await screen.findByRole('table', { name: 'Log entries' });
+    await screen.findByRole('region', { name: 'Log entries' });
     for (const [name, value] of Object.entries(values)) {
       fireEvent.change(screen.getByLabelText(name === 'from' ? 'From' : 'To'), {
         target: { value },
@@ -263,17 +252,19 @@ describe('Admin → Logs', () => {
       selector: '.table-card.empty p',
     });
     expect(empty).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Log entries' })).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('says when only the newest 1,000 are shown', async () => {
     await openPage(ok({ entries, truncated: true }));
-    await screen.findByRole('table', { name: 'Log entries' });
-    expect(
-      screen.getByText(
-        'Showing the newest 1,000 entries. Narrow the dates or level to see the rest.',
-      ),
-    ).toBeTruthy();
+    const region = await screen.findByRole('region', { name: 'Log entries' });
+    const notice = screen.getByText(
+      'Showing the newest 1,000 entries. Narrow the dates or level to see the rest.',
+    );
+    expect(notice.className).toBe('muted logs-capped');
+    // Directly above the panel.
+    expect(notice.nextElementSibling).toBe(region);
   });
 
   it('says when the logs could not be loaded, and tries again', async () => {
@@ -290,7 +281,7 @@ describe('Admin → Logs', () => {
 
     fail = false;
     fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
-    await screen.findByRole('table', { name: 'Log entries' });
+    await screen.findByRole('region', { name: 'Log entries' });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(logRequests(fetchMock)).toHaveLength(2);
   });
@@ -309,8 +300,33 @@ describe('Admin → Logs', () => {
     renderAt('/admin/logs');
     expect((await screen.findByText('Loading…')).getAttribute('role')).toBe('status');
     release(Response.json({ entries, truncated: false }));
-    await screen.findByRole('table', { name: 'Log entries' });
+    await screen.findByRole('region', { name: 'Log entries' });
     expect(screen.queryByText('Loading…')).toBeNull();
+  });
+});
+
+describe('the log panel styles', () => {
+  const css = readFileSync(join(import.meta.dirname, '../src/styles/models.css'), 'utf8');
+  const rule = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    return at < 0 ? '' : css.slice(at, css.indexOf('}', at));
+  };
+
+  it('wrap the lines with a hanging indent, never sideways, and scroll the panel down', () => {
+    const text = rule('.logs-text');
+    expect(text).toContain('white-space: pre-wrap;');
+    expect(text).toContain('overflow-wrap: anywhere;');
+    expect(text).toContain('overflow-y: auto;');
+    expect(text).toContain('max-height: 70vh;');
+    expect(text).toContain('font: 12px/1.5 var(--mono);');
+    expect(text).toContain('background: var(--surface-2);');
+    expect(rule('.logs-text:focus-visible')).toContain('outline: 2px solid var(--focus);');
+    const line = rule('.log-line');
+    expect(line).toContain('display: block;');
+    expect(line).toContain('padding-left: 2ch;');
+    expect(line).toContain('text-indent: -2ch;');
+    // The table and its Details are gone.
+    expect(css).not.toMatch(/\.logs-table|\.log-fields|\.log-details/);
   });
 });
 

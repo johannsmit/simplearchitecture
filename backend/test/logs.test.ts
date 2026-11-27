@@ -11,6 +11,7 @@ import {
   idpOptions,
   signIn,
   startMockIdp,
+  webOrigin,
   withClaims,
 } from './helpers.js';
 import { callTool, connect, mcp } from './mcp-helpers.js';
@@ -181,6 +182,34 @@ describe('LogService', () => {
       userId: 'made-up-user',
     });
     expect(JSON.stringify(entry)).not.toMatch(/made-up-(token|password|secret|refresh)/);
+  });
+
+  it('masks user ids and client addresses for an agent, and keeps them in full on the web', async () => {
+    const extra = {
+      audit: 'model-saved',
+      userId: 'made-up-user-0001',
+      targetUserId: 'made-up-user-0002',
+      req: { method: 'GET', url: '/api/models', remoteAddress: '203.0.113.45', remotePort: 51234 },
+      nested: { list: [{ userId: 'made-up-user-0003' }] },
+      clientId: 'made-up-client',
+    };
+    await insert(noon, 30, 'request completed', extra);
+    const query = { from: '2026-03-10', to: '2026-03-10' };
+
+    const web = await service().query(reader, query);
+    expect(web.entries[0]?.extra).toEqual(extra);
+
+    const agent = await service().query({ ...reader, via: 'mcp' }, query);
+    expect(agent.entries[0]).toMatchObject({ msg: 'request completed', level: 'info' });
+    expect(agent.entries[0]?.extra).toEqual({
+      audit: 'model-saved',
+      userId: '*****0001',
+      targetUserId: '*****0002',
+      req: { method: 'GET', url: '/api/models', remoteAddress: '*****3.45', remotePort: 51234 },
+      nested: { list: [{ userId: '*****0003' }] },
+      clientId: 'made-up-client',
+    });
+    expect(JSON.stringify(agent)).not.toMatch(/made-up-user|203\.0\.113/);
   });
 
   it.each([
@@ -523,6 +552,15 @@ describe('GET /api/admin/logs', () => {
     expect(errors.json<LogsResponse>().entries.map((entry) => entry.msg)).toEqual(['error entry']);
   });
 
+  it('returns user ids and client addresses in full', async () => {
+    const extra = { userId: 'made-up-user-0001', req: { remoteAddress: '203.0.113.45' } };
+    await insert(noon, 30, 'signed in', extra);
+    const target = await started();
+    const res = await get(target, '?from=2026-03-10&to=2026-03-10', await cookieFor(target, admin));
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json<LogsResponse>().entries[0]?.extra).toEqual(extra);
+  });
+
   it('logs who read the logs, once per read, and nothing for a refused or invalid read', async () => {
     await insert(noon, 30, 'made-up entry text');
     const target = await started('info');
@@ -629,6 +667,79 @@ describe('get_logs (MCP)', () => {
 
     const twoDays = await callTool(target, token, 'get_logs', { from: '2026-03-09' });
     expect((twoDays.value as LogsResponse).entries).toHaveLength(3);
+  });
+
+  it('masks user ids and client addresses to their last 4 characters', async () => {
+    await insert(noon - hour, 30, 'signed in', {
+      userId: 'made-up-user-0001',
+      roles: ['Admin'],
+      req: { method: 'GET', remoteAddress: '203.0.113.45', remotePort: 51234 },
+    });
+    await insert(noon - 2 * hour, 30, 'mcp connections disconnected by an Admin', {
+      userId: 'abc',
+      targetUserId: 'made-up-user-0002',
+    });
+    const { target, token } = await agentFor(admin);
+    const result = await callTool(target, token, 'get_logs');
+    expect(result.isError, result.text).toBe(false);
+    expect((result.value as LogsResponse).entries.map((entry) => entry.extra)).toEqual([
+      {
+        userId: '*****0001',
+        roles: ['Admin'],
+        req: { method: 'GET', remoteAddress: '*****3.45', remotePort: 51234 },
+      },
+      { userId: '*****', targetUserId: '*****0002' },
+    ]);
+    expect(result.text).not.toMatch(/made-up-user|203\.0\.113|"abc"/);
+
+    const tools = (await mcp(target, token, 'tools/list')).json<{
+      result: { tools: { name: string; description: string }[] };
+    }>().result.tools;
+    expect(tools.find((tool) => tool.name === 'get_logs')?.description).toContain(
+      'User ids and client addresses are masked',
+    );
+  });
+
+  it('masks a user id in a request path, and Admin → Logs shows it in full', async () => {
+    const sink = new AppLogSink({ flushMs: 60_000 });
+    app = await buildTestApp(
+      { LOG_LEVEL: 'info' },
+      idpOptions(idp, {
+        database: DatabaseService.using(db, testConnection, silent),
+        appLogs: sink,
+      }),
+    );
+    captureLogs(app);
+    withClaims(idp, { roles: admin, oid: 'made-up-agent-user', name: 'Made-up Agent User' });
+    const { sessionCookie } = await signIn(app);
+    const { tokens } = await connect(app, sessionCookie);
+    const path = '/api/admin/agents/users/made-up-user-0002';
+    const ended = await app.inject({
+      method: 'DELETE',
+      url: path,
+      headers: { cookie: sessionCookie, origin: webOrigin },
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+    await sink.flush();
+
+    const urls = (logged: LogsResponse) =>
+      logged.entries
+        .map((entry) => (entry.extra.req as { url?: string } | undefined)?.url)
+        .filter((url) => url?.startsWith('/api/admin/agents/users/'));
+
+    const result = await callTool(app, tokens.access_token, 'get_logs');
+    expect(result.isError, result.text).toBe(false);
+    expect(urls(result.value as LogsResponse)).toEqual(['/api/admin/agents/users/*****0002']);
+    expect(result.text).not.toContain('made-up-user-0002');
+
+    const day = new Date().toISOString().slice(0, 10);
+    const web = await app.inject({
+      method: 'GET',
+      url: `/api/admin/logs?from=${day}&to=${day}`,
+      headers: { cookie: sessionCookie },
+    });
+    expect(web.statusCode, web.body).toBe(200);
+    expect(urls(web.json<LogsResponse>())).toEqual([path]);
   });
 
   it.each([

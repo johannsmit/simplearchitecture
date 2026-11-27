@@ -14,6 +14,7 @@ import {
 } from '@simplearchitecture/shared';
 import { z } from 'zod';
 import type { Queryable } from '../db/db.js';
+import { maskEntry } from './mask.js';
 import { redactSecrets } from './redact.js';
 
 /**
@@ -24,6 +25,8 @@ import { redactSecrets } from './redact.js';
  * differ at the two ends when the range crosses a clock change: `tzOffset` is the one at the start
  * of `from`, `toTzOffset` the one at the end of `to` (the same as `tzOffset` when left out).
  * Each answered read is logged with the reader's user id (audit 'logs-read'), never the entries.
+ * An agent's read ('mcp') gets user ids and client addresses masked (see mask.ts): the entries go
+ * to its model provider. Admin → Logs ('web') gets them in full.
  */
 
 /** The request can't be answered as asked. The message is safe to show. */
@@ -150,7 +153,8 @@ export class LogService {
         maxLogEntries + 1,
       ],
     );
-    const entries = rows.slice(0, maxLogEntries).map(entryOf);
+    const read = rows.slice(0, maxLogEntries).map(entryOf);
+    const entries = reader.via === 'mcp' ? read.map(maskEntry) : read;
     const truncated = rows.length > maxLogEntries;
     // Who read which days: ids and counts only, never what the entries say. The level asked for
     // is `minLevel`: `level` is the log line's own.
