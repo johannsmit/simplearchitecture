@@ -9,7 +9,15 @@ import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-l
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { linePath } from '../src/viewing/explorer/canvas/edgeLine';
 import { getElk } from '../src/viewing/explorer/canvas/elkEngine';
-import { apiError, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import {
+  apiError,
+  expandRelationships,
+  modeller,
+  renderAt,
+  stubApi,
+  viewer,
+  type Handler,
+} from './helpers';
 import { settle } from './settle';
 
 // A view keeps its cards where they were put: only the person's moves, resizes, adds, removes and
@@ -456,6 +464,7 @@ describe('a relationship’s new end in a view', () => {
     const { calls } = await open('modelling', watering(left));
     fireEvent.click(mainOf('sensors'));
     const panel = screen.getByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     fireEvent.click(
       await within(panel).findByRole('button', { name: /^Open relationship: Relates to Pump/ }),
     );
@@ -1150,6 +1159,7 @@ describe('moving a line', () => {
     );
     fireEvent.click(mainOf('sensors'));
     const panel = details();
+    await expandRelationships();
     fireEvent.click(
       await within(panel).findByRole('button', { name: /^Open relationship: Relates to Pump/ }),
     );

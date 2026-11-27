@@ -4,7 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Labels from '../src/viewing/explorer/canvas/labels';
 import { elementPath } from '../src/viewing/paths';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { currentLocation, renderAt, stubApi, viewer, type Handler } from './helpers';
+import {
+  currentLocation,
+  expandRelationships,
+  renderAt,
+  stubApi,
+  viewer,
+  type Handler,
+} from './helpers';
 
 // Every relationship on the canvas, and labels at rest. Made-up data
 // (the bakery fixture). A viewpoint is now a selection of properties: see line-views.test.tsx.
@@ -76,6 +83,7 @@ describe('the canvas without fixed viewpoints', () => {
     stubApi(viewer, api());
     renderAt(shop);
     await cardCount(6);
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', { name: /Back Office Server/ })[0] as HTMLElement,
     );
@@ -151,6 +159,7 @@ describe('the details panel', () => {
     stubApi(viewer, api());
     renderAt(shop);
     await cardCount(6);
+    await expandRelationships();
     const headings = within(details())
       .getAllByRole('heading', { level: 4 })
       .map((heading) => heading.textContent.replace(/\s*\d+$/, ''));

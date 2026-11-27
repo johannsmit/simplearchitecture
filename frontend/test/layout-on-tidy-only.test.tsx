@@ -2,7 +2,7 @@ import type { JgfDocument, JgfEdge, ModelSummary, StoredView } from '@simplearch
 import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 import { settle } from './settle';
 
 // The canvas is laid out only for a new canvas: adding or taking off cards, and
@@ -260,6 +260,7 @@ describe('editing on the canvas (Modelling)', () => {
     const before = await openBakery('modelling', 'shop', aroundShop);
     const lines = () => canvasEl().querySelectorAll('.react-flow__edge').length;
     const count = lines();
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,

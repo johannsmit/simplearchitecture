@@ -209,7 +209,9 @@ describe('the details panel', () => {
         element={elementOf(g, id)}
         link={`/x/${id}`}
         onFocusElement={(to) => went.push(to)}
-        {...(edit ? { edit: { headActions: null, form: <form aria-label="Form" /> } } : {})}
+        {...(edit
+          ? { edit: { saveStatus: null, deleteAction: null, form: <form aria-label="Form" /> } }
+          : {})}
       />,
     );
     return went;
@@ -297,7 +299,8 @@ describe('the details panel', () => {
     fireEvent.click(more);
     expect(within(list).getAllByRole('button')).toHaveLength(12);
     expect(screen.getByRole('button', { name: 'Show fewer' })).toBeTruthy();
-    expect(screen.getByText('Not set')).toBeTruthy();
+    // Empty, and the Description.
+    expect(screen.getAllByText('Not set')).toHaveLength(2);
     expect(
       within(screen.getByRole('list', { name: 'Stale: 1 element' })).getByText('Element not found'),
     ).toBeTruthy();

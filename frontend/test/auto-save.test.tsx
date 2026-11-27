@@ -6,7 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { changesOf, clientErrors, draftOf, withoutInvalid, withType } from '../src/modelling/draft';
 import { autoSaveDelayMillis } from '../src/modelling/useAutoSave';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { apiError, currentLocation, modeller, renderAt, stubApi, type Handler } from './helpers';
+import {
+  apiError,
+  currentLocation,
+  expandRelationships,
+  modeller,
+  renderAt,
+  stubApi,
+  type Handler,
+} from './helpers';
 import { settle } from './settle';
 
 // Auto-save in the details panel of Modelling. Made-up data (the bakery fixture).
@@ -161,8 +169,11 @@ const nameField = (form: HTMLElement) =>
   within(form).getByRole<HTMLInputElement>('textbox', { name: /^Name/ });
 const descriptionField = (form: HTMLElement) =>
   within(form).getByRole<HTMLTextAreaElement>('textbox', { name: 'Description' });
-const stateField = (form: HTMLElement) =>
-  within(form).getByRole<HTMLSelectElement>('combobox', { name: 'Architecture state' });
+/** Picks an Architecture state: three options, saved at once. */
+const pickState = (form: HTMLElement, state: string) => {
+  const group = within(form).getByRole('group', { name: 'Architecture state' });
+  fireEvent.click(within(group).getByRole('radio', { name: state }));
+};
 /** The status line in the panel's head, as shown. */
 const shownStatus = () => details().querySelector('.save-status')?.textContent ?? '';
 /** What the status region says to screen readers (spaces trimmed: a repeat adds one). */
@@ -253,7 +264,7 @@ describe('auto-save on the element form', () => {
 
   it('saves a pick at once: a choice, and the type', async () => {
     const { form, server } = await openForm(at('till'));
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(server.patches.map((patch) => patch.body)).toEqual([
         { version: 1, metadata: { architectureState: 'Current' } },
@@ -280,10 +291,10 @@ describe('auto-save on the element form', () => {
       expect(server.patches).toHaveLength(1);
     });
     // While the first is on its way: a pick, more typing, and another pick.
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     fireEvent.change(nameField(form), { target: { value: 'Till AB' } });
     fireEvent.change(descriptionField(form), { target: { value: 'Takes orders at the counter' } });
-    fireEvent.change(stateField(form), { target: { value: 'Target' } });
+    pickState(form, 'Target');
     await settle();
     expect(server.patches).toHaveLength(1);
     await server.release();
@@ -351,7 +362,7 @@ describe('auto-save on the element form', () => {
 
   it('shows Saving… during a save and Saved until the next edit; says Saved once a save, never Saving…', async () => {
     const { form, server } = await openForm(at('till'), { hold: true });
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(shownStatus()).toBe('Saving…');
     });
@@ -362,7 +373,7 @@ describe('auto-save on the element form', () => {
     const region = details().querySelector('.save-status ~ [role="status"]');
     const first = region?.textContent;
 
-    fireEvent.change(stateField(form), { target: { value: 'Target' } });
+    pickState(form, 'Target');
     await waitFor(() => {
       expect(shownStatus()).toBe('Saving…');
     });
@@ -446,7 +457,7 @@ describe('auto-save on the element form', () => {
         return undefined;
       },
     });
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(shownStatus()).toBe("Couldn't save: check your connection");
     });
@@ -459,7 +470,7 @@ describe('auto-save on the element form', () => {
       answer: (method) =>
         method === 'PATCH' ? apiError(400, 'The model is being moved.') : undefined,
     });
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(shownStatus()).toBe("Couldn't save: The model is being moved.");
     });
@@ -492,7 +503,7 @@ describe('auto-save on the element form', () => {
     // The conflict box is the alert: the status region doesn't say it again.
     expect(saidStatus()).toBe('');
 
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     fireEvent.change(nameField(form), { target: { value: 'Till (mine) 2' } });
     fireEvent.keyDown(nameField(form), { key: 'Enter', ctrlKey: true });
     await settle();
@@ -577,7 +588,7 @@ describe('auto-save on the element form', () => {
     const { form } = await openForm(at('till'), {
       answer: (method) => (method === 'PATCH' ? apiError(500, 'Broken') : undefined),
     });
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(shownStatus()).toBe("Couldn't save: check your connection");
     });
@@ -619,7 +630,7 @@ describe('auto-save on the element form', () => {
     expect(closing()).toBe(false);
 
     failing = true;
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(shownStatus()).toBe("Couldn't save: check your connection");
     });
@@ -659,7 +670,7 @@ describe('closing the details panel', () => {
 
   it('still saves a change typed while a save was on its way', async () => {
     const { form, server } = await openForm(at('till'), { hold: true });
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(server.patches).toHaveLength(1);
     });
@@ -680,11 +691,11 @@ describe('closing the details panel', () => {
 
   it('still saves a pick made while a save was on its way', async () => {
     const { form, server } = await openForm(at('till'), { hold: true });
-    fireEvent.change(stateField(form), { target: { value: 'Current' } });
+    pickState(form, 'Current');
     await waitFor(() => {
       expect(server.patches).toHaveLength(1);
     });
-    fireEvent.change(stateField(form), { target: { value: 'Target' } });
+    pickState(form, 'Target');
     close();
     await settle();
     await server.release();
@@ -711,6 +722,7 @@ describe('closing the details panel', () => {
 describe('auto-save on the relationship form', () => {
   async function openRelationship(options: Parameters<typeof api>[0] = {}) {
     const result = await openForm(at('shop'), options);
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', {
         name: /^Open relationship: Relates to Back Office Server/,
@@ -843,7 +855,8 @@ describe('auto-save on the relationship form', () => {
     fireEvent.change(label, { target: { value: 'Stock levels' } });
     fireEvent.keyDown(label, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(within(details()).getByRole('button', { name: 'Back to Web Shop' }));
+    // Back to the element, from the tree.
+    fireEvent.click(within(tree()).getByText('Web Shop'));
     await screen.findByRole('form', { name: /^Edit / });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(server.patches.map((patch) => patch.body)).toEqual([

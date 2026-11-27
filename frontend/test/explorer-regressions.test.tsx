@@ -6,6 +6,7 @@ import {
   admin,
   apiError,
   currentLocation,
+  expandRelationships,
   renderAt,
   stubApi,
   viewer,
@@ -366,6 +367,7 @@ describe('regressions', () => {
     stubApi(viewer, modelApi([[bakerySummary, bakeryModel]]));
     renderAt(elementUrl(bakeryId, 'shop'));
     const details = await screen.findByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     const till = within(details).getByRole('button', {
       name: 'Is related to Till, Application',
     });

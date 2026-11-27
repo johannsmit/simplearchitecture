@@ -2,7 +2,7 @@ import type { JgfDocument, JgfEdge } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // A typed value is never changed or lost, and a stored number stays one. Made-up data.
 
@@ -81,6 +81,7 @@ async function openForm(kind: 'element' | 'relationship') {
   if (kind === 'element') return { form: elementForm, sent };
   const details = screen.getByRole('complementary', { name: 'Details' });
   // e7 and then e9 relate the shop to the server: e9 is the one under test.
+  await expandRelationships();
   fireEvent.click(
     within(details).getAllByRole('button', {
       name: /^Open relationship: Relates to Back Office Server/,

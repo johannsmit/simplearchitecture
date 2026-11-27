@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ValueField } from '../src/modelling/ValueField';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { cpuMs, modeller, renderAt, stubApi, type Handler } from './helpers';
+import { cpuMs, expandRelationships, modeller, renderAt, stubApi, type Handler } from './helpers';
 
 // Pick a metadata value, or type a new one. Made-up data only.
 
@@ -439,6 +439,7 @@ describe('element property fields', () => {
     stubApi(modeller, defined, server.handler);
     renderAt(shopAt);
     await screen.findByRole('form', { name: /^Edit / });
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', { name: /^Open relationship: / })[0] as HTMLElement,
     );
@@ -452,6 +453,7 @@ describe('element property fields', () => {
 describe('metadata names', () => {
   it('has no names to offer on a relationship: it takes no new keys', async () => {
     await openShop();
+    await expandRelationships();
     fireEvent.click(
       within(details()).getAllByRole('button', { name: /^Open relationship: / })[0] as HTMLElement,
     );

@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 const styles = join(import.meta.dirname, '../src/styles');
 const tokensCss = readFileSync(join(styles, 'tokens.css'), 'utf8');
 const explorerCss = readFileSync(join(styles, 'explorer.css'), 'utf8');
+const baseCss = readFileSync(join(styles, 'base.css'), 'utf8');
 
 type Theme = 'light' | 'dark';
 const themes: Theme[] = ['light', 'dark'];
@@ -159,6 +160,17 @@ describe('colour contrast of the design tokens (WCAG 2.x)', () => {
       expect(contrast(t('text'), head)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(t('critical'), head)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(t('positive'), head)).toBeGreaterThanOrEqual(3);
+    });
+
+    // The round buttons in the details panel head (Copy link, Delete): the icon on their own
+    // surface, on hover, and Delete's red hover, each at least 3:1.
+    it('the round buttons in the details panel head', () => {
+      const rule = /\.icon-btn\.is-round \{([^}]*)\}/.exec(baseCss)?.[1] ?? '';
+      expect(rule).toContain('background: var(--surface);');
+      expect(rule).toContain('color: var(--text-muted);');
+      expect(contrast(t('text-muted'), t('surface'))).toBeGreaterThanOrEqual(3);
+      expect(contrast(t('text'), t('surface-2'))).toBeGreaterThanOrEqual(3);
+      expect(contrast(t('critical'), t('critical-soft'))).toBeGreaterThanOrEqual(3);
     });
 
     it('status colours on the surface and on their soft backgrounds (chips, badges)', () => {

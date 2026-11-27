@@ -4,7 +4,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { dataArrow } from '../src/viewing/explorer/canvas/dataArrows';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
 // The two lists of data named after the relationship's ends ("Web Shop to Back Office Server"), on
 // the form, in the details panel and on the canvas, with arrows that point the way the data flows.
@@ -92,6 +92,7 @@ async function openHostedOn(space: 'modelling' | 'viewing', change: Change = {})
   await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
   // The relationship from Web Shop to the server, whatever the server is called.
   const server = (change.serverName ?? 'Back Office Server').trim().split(/\s+/).join('\\s+');
+  await expandRelationships();
   fireEvent.click(
     within(details()).getAllByRole('button', {
       name: new RegExp(

@@ -3,7 +3,14 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest';
 import { forgetElementFilters } from '../src/viewing/explorer/ElementTree';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { expectNoSeriousAxeViolations, renderAt, stubApi, viewer, type Handler } from './helpers';
+import {
+  expandRelationships,
+  expectNoSeriousAxeViolations,
+  renderAt,
+  stubApi,
+  viewer,
+  type Handler,
+} from './helpers';
 
 // The element list filter and edge states on the canvas.
 // Made-up data only. Rendered in StrictMode (renderAt).
@@ -349,6 +356,7 @@ describe('Architecture state on edges', () => {
     expect([...(rows ?? [])].map((row) => row.textContent)).toEqual(['Target', 'Deprecate']);
 
     const details = screen.getByRole('complementary', { name: 'Details' });
+    await expandRelationships();
     const till = within(details).getByRole('button', { name: /Till, Deprecate, Application/ });
     expect(till.querySelector('.badge.state-deprecate')?.textContent).toBe('Deprecate');
     // Current relationships show no badge.

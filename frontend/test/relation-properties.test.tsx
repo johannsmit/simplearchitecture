@@ -2,7 +2,7 @@ import type { JgfDocument, JgfEdge } from '@simplearchitecture/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bakeryId, bakeryModel, bakerySummary } from './fixtures';
-import { modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
+import { expandRelationships, modeller, renderAt, stubApi, viewer, type Handler } from './helpers';
 
 // Identity, Identity Context and the two lists of data on the relationship form and in the details
 // panel. The lists, named after the ends, hold values edited as chips. Made-up data.
@@ -65,6 +65,7 @@ async function openHostedOn(
   stubApi(space === 'modelling' ? modeller : viewer, handler);
   renderAt(at(space));
   await screen.findByRole('heading', { level: 2, name: 'Web Shop' });
+  await expandRelationships();
   fireEvent.click(
     within(details()).getAllByRole('button', {
       name: /^Open relationship: Relates to Back Office Server/,
@@ -77,13 +78,15 @@ describe('on the relationship form', () => {
   it('shows the four under the label, with suggestions, and saves only what changed', async () => {
     const { sent } = await openHostedOn('modelling');
     const form = await screen.findByRole('form', { name: /^Relationship / });
-    const labels = [...form.querySelectorAll('label')].map((label) => label.textContent);
-    expect(labels.slice(0, 5)).toEqual([
+    const labels = [...form.querySelectorAll('label[for]')].map((label) => label.textContent);
+    // Label and Description first; after Architecture state and Type, the rest by name.
+    expect(labels.slice(0, 6)).toEqual([
       'Label',
-      'Identity',
-      'Identity Context',
+      'Description',
       'Web Shop to Back Office Server',
       'Back Office Server to Web Shop',
+      'Identity',
+      'Identity Context',
     ]);
     expect(labels).not.toContain('Data');
     const identity = within(form).getByRole<HTMLInputElement>('combobox', { name: 'Identity' });
