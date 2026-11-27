@@ -4,6 +4,7 @@ import { loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 import { devServiceWorkerCleanup } from './vite/dev-service-worker.js';
+import { workboxOptions } from './vite/pwa.js';
 import { thirdPartyLicenses } from './vite/third-party-licenses.js';
 
 /**
@@ -62,30 +63,37 @@ export default defineConfig(({ command, mode }) => {
         // Admin → Branding (see backend/src/routes/branding.ts): the build makes none, and
         // index.html links it. So the service worker never precaches a manifest either.
         manifest: false,
-        workbox: {
-          // Precache the app shell (build output) only. No runtimeCaching: API and auth responses
-          // (the branding, its images and the manifest included) are never cached by the service
-          // worker.
-          globPatterns: ['**/*.{js,css,html,svg,png,txt}'],
-          navigateFallback: '/index.html',
-          // Navigations to the API or auth endpoints (e.g. the OIDC callback, or an AI agent's
-          // authorize page) must reach the server, not be answered with the cached app shell.
-          navigateFallbackDenylist: [
-            /^\/api(\/|$)/,
-            /^\/auth(\/|$)/,
-            /^\/oauth(\/|$)/,
-            /^\/mcp(\/|$)/,
-            /^\/\.well-known\//,
-            /^\/manifest\.webmanifest$/,
-          ],
-          cleanupOutdatedCaches: true,
-        },
+        // What it precaches and the one runtime cache: see vite/pwa.ts.
+        workbox: workboxOptions,
       }),
     ],
     build: {
       // Browsers with native light-dark() (the design tokens). A lower target would make the build
       // rewrite it into a fixed scheme, and the theme switch would stop working.
       cssTarget: ['chrome123', 'edge123', 'firefox120', 'safari17.5'],
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // React Flow and its d3 parts in a chunk of their own, loaded with the explorer, so no
+            // chunk is over 500 kB. A group takes the modules its own import too, so React goes in
+            // a group of its own first (it is part of the first load either way). Both change less
+            // often than the app, so the browser keeps them across most updates.
+            groups: [
+              {
+                name: 'react',
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+                priority: 2,
+              },
+              {
+                name: 'canvas',
+                // Scripts only: React Flow's base.css stays in the app's stylesheet (main.tsx).
+                test: /[\\/]node_modules[\\/](@xyflow|d3-[a-z]+)[\\/].*\.m?js$/,
+                priority: 1,
+              },
+            ],
+          },
+        },
+      },
     },
     server,
     preview: server,
