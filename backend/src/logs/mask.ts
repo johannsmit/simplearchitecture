@@ -7,6 +7,9 @@ import type { LogEntry } from '@simplearchitecture/shared';
  * What the app logs: `userId` (sign-in, MCP, audit and refusal lines), `targetUserId` (an Admin
  * disconnecting a user's agents) and `req.remoteAddress` (the client address of each request).
  * Names close to these are masked too, so a field added later under a similar name is covered.
+ * A user id can also be part of a request's path (`req.url`): the routes in `userIdPaths` have
+ * that segment masked. Free text (a message, an error's details) is not searched, so a value an
+ * error quotes stays as it is.
  */
 
 export const maskPrefix = '*****';
@@ -16,6 +19,21 @@ const personalName =
   /user[-_]?id$|^sub$|remote[-_]?address|client[-_]?address|^ip$|ip[-_]?address/i;
 
 const maxDepth = 12;
+
+/** Routes with a user id in their path: the prefix before it, and the id segment itself. */
+const userIdPaths: readonly RegExp[] = [/^(\/api\/admin\/agents\/users\/)([^/?#]+)/];
+
+/** A logged path with the user id of a route in `userIdPaths` masked; the rest as it was. */
+export function maskUrl(url: string): string {
+  for (const pattern of userIdPaths) {
+    const found = pattern.exec(url);
+    if (found !== null) {
+      const [whole, prefix = '', id = ''] = found;
+      return `${prefix}${maskValue(id)}${url.slice(whole.length)}`;
+    }
+  }
+  return url;
+}
 
 export function isPersonalName(name: string): boolean {
   return personalName.test(name);
@@ -36,7 +54,11 @@ export function maskPersonal(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) return value.map((item) => maskPersonal(item, depth + 1));
   const copy: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    copy[key] = isPersonalName(key) ? maskField(item, depth + 1) : maskPersonal(item, depth + 1);
+    copy[key] = isPersonalName(key)
+      ? maskField(item, depth + 1)
+      : key === 'url' && typeof item === 'string'
+        ? maskUrl(item)
+        : maskPersonal(item, depth + 1);
   }
   return copy;
 }

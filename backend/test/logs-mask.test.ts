@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPersonalName, maskEntry, maskPersonal, maskValue } from '../src/logs/mask.js';
+import { isPersonalName, maskEntry, maskPersonal, maskUrl, maskValue } from '../src/logs/mask.js';
 
 /** What get_logs hides of a stored entry: user ids and client addresses, all but 4 characters. */
 
@@ -30,12 +30,27 @@ describe('isPersonalName', () => {
     },
   );
 
+  // `url` is not masked as a whole: only a user id in its path is (see maskUrl).
   it.each(['clientId', 'connectionId', 'modelId', 'reqId', 'remotePort', 'url', 'zip', 'subject'])(
-    'leaves %s alone',
+    'does not mask %s as a whole',
     (name) => {
       expect(isPersonalName(name)).toBe(false);
     },
   );
+});
+
+describe('maskUrl', () => {
+  it.each([
+    ['/api/admin/agents/users/made-up-user-0002', '/api/admin/agents/users/*****0002'],
+    ['/api/admin/agents/users/made-up-user-0002?x=1', '/api/admin/agents/users/*****0002?x=1'],
+    ['/api/admin/agents/users/abc', '/api/admin/agents/users/*****'],
+    ['/api/admin/agents/made-up-connection', '/api/admin/agents/made-up-connection'],
+    ['/api/admin/agents', '/api/admin/agents'],
+    ['/api/models/made-up-model-0001', '/api/models/made-up-model-0001'],
+    ['/other/api/admin/agents/users/made-up-user', '/other/api/admin/agents/users/made-up-user'],
+  ])('gives %j as %j', (url, masked) => {
+    expect(maskUrl(url)).toBe(masked);
+  });
 });
 
 describe('maskPersonal', () => {
@@ -46,6 +61,7 @@ describe('maskPersonal', () => {
       targetUserId: 'made-up-user-0002',
       clientId: 'made-up-client',
       req: { method: 'GET', url: '/api/models', remoteAddress: '198.51.100.23', remotePort: 51234 },
+      disconnect: { req: { method: 'DELETE', url: '/api/admin/agents/users/made-up-user-0004' } },
       nested: [{ deeper: { userId: 'made-up-user-0003' } }],
       roles: ['Admin'],
     };
@@ -55,6 +71,7 @@ describe('maskPersonal', () => {
       targetUserId: '*****0002',
       clientId: 'made-up-client',
       req: { method: 'GET', url: '/api/models', remoteAddress: '*****0.23', remotePort: 51234 },
+      disconnect: { req: { method: 'DELETE', url: '/api/admin/agents/users/*****0004' } },
       nested: [{ deeper: { userId: '*****0003' } }],
       roles: ['Admin'],
     });

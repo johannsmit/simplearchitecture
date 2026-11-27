@@ -11,6 +11,7 @@ import {
   idpOptions,
   signIn,
   startMockIdp,
+  webOrigin,
   withClaims,
 } from './helpers.js';
 import { callTool, connect, mcp } from './mcp-helpers.js';
@@ -697,6 +698,48 @@ describe('get_logs (MCP)', () => {
     expect(tools.find((tool) => tool.name === 'get_logs')?.description).toContain(
       'User ids and client addresses are masked',
     );
+  });
+
+  it('masks a user id in a request path, and Admin → Logs shows it in full', async () => {
+    const sink = new AppLogSink({ flushMs: 60_000 });
+    app = await buildTestApp(
+      { LOG_LEVEL: 'info' },
+      idpOptions(idp, {
+        database: DatabaseService.using(db, testConnection, silent),
+        appLogs: sink,
+      }),
+    );
+    captureLogs(app);
+    withClaims(idp, { roles: admin, oid: 'made-up-agent-user', name: 'Made-up Agent User' });
+    const { sessionCookie } = await signIn(app);
+    const { tokens } = await connect(app, sessionCookie);
+    const path = '/api/admin/agents/users/made-up-user-0002';
+    const ended = await app.inject({
+      method: 'DELETE',
+      url: path,
+      headers: { cookie: sessionCookie, origin: webOrigin },
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+    await sink.flush();
+
+    const urls = (logged: LogsResponse) =>
+      logged.entries
+        .map((entry) => (entry.extra.req as { url?: string } | undefined)?.url)
+        .filter((url) => url?.startsWith('/api/admin/agents/users/'));
+
+    const result = await callTool(app, tokens.access_token, 'get_logs');
+    expect(result.isError, result.text).toBe(false);
+    expect(urls(result.value as LogsResponse)).toEqual(['/api/admin/agents/users/*****0002']);
+    expect(result.text).not.toContain('made-up-user-0002');
+
+    const day = new Date().toISOString().slice(0, 10);
+    const web = await app.inject({
+      method: 'GET',
+      url: `/api/admin/logs?from=${day}&to=${day}`,
+      headers: { cookie: sessionCookie },
+    });
+    expect(web.statusCode, web.body).toBe(200);
+    expect(urls(web.json<LogsResponse>())).toEqual([path]);
   });
 
   it.each([
