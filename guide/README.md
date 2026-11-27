@@ -38,6 +38,7 @@ Every page of the guide, grouped by who it is for. The [front page](../README.md
 
 - [The default metamodel](../metamodel/default-metamodel.md): the element and relationship types and their standard properties, and the JSON Graph Format template.
 - Release notes: what each version brings. Read them before you upgrade.
+  - [0.76.0](releases/v0.76.0.md): One layout for the details panel: round Copy link and Delete buttons, one collapsible Properties section in a shared order, Relationships collapsed, and a three-option Architecture state for elements.
   - [0.75.0](releases/v0.75.0.md): Admin → Logs shows the entries as text, one per line; `get_logs` masks user ids and client addresses for AI agents.
   - [0.74.6](releases/v0.74.6.md): The app downloads much less before first use; Admin and Help pages and the diagram layout engine load when first needed.
   - [0.74.4](releases/v0.74.4.md): A failed save in the details panel is announced once to screen-reader users, not twice.
