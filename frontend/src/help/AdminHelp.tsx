@@ -111,8 +111,10 @@ export function AdminHelp() {
           <h3>Logs</h3>
           <p>
             Read what the server recorded, newest first, for a range of days (today by default, at
-            most 31 days), at all levels or only the more serious ones. <b>Details</b> opens an
-            entry&apos;s other fields. Entries are kept for 30 days, and never hold credentials.
+            most 31 days), at all levels or only the more serious ones. The entries are shown as
+            text, one per line: time, level, message and the entry&apos;s other fields. Entries are
+            kept for 30 days, and never hold credentials. An Admin&apos;s AI agent sees user ids and
+            client addresses masked to their last 4 characters.
           </p>
         </>
       }
