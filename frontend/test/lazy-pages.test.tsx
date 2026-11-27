@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { admin, renderAt, stubApi } from './helpers';
 
@@ -64,6 +64,21 @@ describe('pages that load on first use', () => {
     expect(screen.getByRole('link', { name: 'Go to the start page' })).toBeTruthy();
     // The header stays usable.
     expect(screen.getByRole('navigation', { name: 'Spaces' })).toBeTruthy();
+    consoleError.mockRestore();
+  });
+
+  it('reloads the app on Try again after a page fails to load', async () => {
+    // React keeps a failed load: rendering the page again would only fail again.
+    const reload = vi.fn();
+    // jsdom's location.reload can't be replaced, so the test's location is a stand-in.
+    vi.stubGlobal('location', { reload, pathname: '/help/admin', origin: window.location.origin });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubApi(admin);
+    renderAt('/help/admin');
+
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(reload).toHaveBeenCalledOnce();
     consoleError.mockRestore();
   });
 });

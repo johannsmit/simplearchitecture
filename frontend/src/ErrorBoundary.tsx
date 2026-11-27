@@ -15,6 +15,19 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   failedFor: string | null;
+  /** A page's code failed to load: Try again reloads the app. */
+  reload: boolean;
+}
+
+/**
+ * A page's code (a chunk loaded on first use) couldn't be fetched, e.g. offline, or in a tab left
+ * open across an update that replaced it. React keeps the failure, so only a reload tries again.
+ */
+export class PageLoadError extends Error {
+  constructor(cause: unknown) {
+    super("A page's code couldn't be loaded.", { cause });
+    this.name = 'PageLoadError';
+  }
 }
 
 /**
@@ -22,10 +35,10 @@ interface ErrorBoundaryState {
  * with a way out and Try again, instead of an empty page. The header stays usable.
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  override state: ErrorBoundaryState = { failedFor: null };
+  override state: ErrorBoundaryState = { failedFor: null, reload: false };
 
-  static getDerivedStateFromError(): Partial<ErrorBoundaryState> {
-    return { failedFor: '' };
+  static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
+    return { failedFor: '', reload: error instanceof PageLoadError };
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
@@ -49,7 +62,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               type="button"
               className="btn primary"
               onClick={() => {
-                this.setState({ failedFor: null });
+                if (this.state.reload) window.location.reload();
+                else this.setState({ failedFor: null });
               }}
             >
               Try again

@@ -1,10 +1,11 @@
 import type { Space } from '@simplearchitecture/shared';
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router';
 import { onSessionEnded } from './api';
 import { ConnectedAppsPage } from './agents/ConnectedAppsPage';
 import { ConsentPage } from './agents/ConsentPage';
 import { MeContext, useAuth, useMe } from './auth';
+import { PageLoadError } from './ErrorBoundary';
 import { Shell } from './Shell';
 import { NoAccessPage } from './routes/NoAccessPage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -14,33 +15,32 @@ import { ModelsPage } from './viewing/ModelsPage';
 
 // Pages that load only when opened, so the first visit downloads less: the explorer (React
 // Flow, the layout) when a model is opened, and the Admin and Help pages. A page that fails to
-// load is caught by the Shell's error boundary.
-const ExplorerPage = lazy(async () => ({
-  default: (await import('./viewing/ExplorerPage')).ExplorerPage,
-}));
-const PropertiesPage = lazy(async () => ({
-  default: (await import('./admin/PropertiesPage')).PropertiesPage,
-}));
-const DatabasePage = lazy(async () => ({
-  default: (await import('./admin/DatabasePage')).DatabasePage,
-}));
-const BrandingPage = lazy(async () => ({
-  default: (await import('./admin/BrandingPage')).BrandingPage,
-}));
-const ConnectedAppsAdminPage = lazy(async () => ({
-  default: (await import('./admin/ConnectedAppsAdminPage')).ConnectedAppsAdminPage,
-}));
-const LogsPage = lazy(async () => ({ default: (await import('./admin/LogsPage')).LogsPage }));
-const HelpIndexPage = lazy(async () => ({
-  default: (await import('./help/HelpIndexPage')).HelpIndexPage,
-}));
-const ViewingHelp = lazy(async () => ({
-  default: (await import('./help/ViewingHelp')).ViewingHelp,
-}));
-const ModellingHelp = lazy(async () => ({
-  default: (await import('./help/ModellingHelp')).ModellingHelp,
-}));
-const AdminHelp = lazy(async () => ({ default: (await import('./help/AdminHelp')).AdminHelp }));
+// load is caught by the Shell's error boundary, whose Try again then reloads the app (React
+// keeps a failed load, so only a reload fetches the page again).
+function loadPage(load: () => Promise<ComponentType>) {
+  return lazy(async () => {
+    try {
+      return { default: await load() };
+    } catch (error) {
+      throw new PageLoadError(error);
+    }
+  });
+}
+
+const ExplorerPage = loadPage(async () => (await import('./viewing/ExplorerPage')).ExplorerPage);
+const PropertiesPage = loadPage(
+  async () => (await import('./admin/PropertiesPage')).PropertiesPage,
+);
+const DatabasePage = loadPage(async () => (await import('./admin/DatabasePage')).DatabasePage);
+const BrandingPage = loadPage(async () => (await import('./admin/BrandingPage')).BrandingPage);
+const ConnectedAppsAdminPage = loadPage(
+  async () => (await import('./admin/ConnectedAppsAdminPage')).ConnectedAppsAdminPage,
+);
+const LogsPage = loadPage(async () => (await import('./admin/LogsPage')).LogsPage);
+const HelpIndexPage = loadPage(async () => (await import('./help/HelpIndexPage')).HelpIndexPage);
+const ViewingHelp = loadPage(async () => (await import('./help/ViewingHelp')).ViewingHelp);
+const ModellingHelp = loadPage(async () => (await import('./help/ModellingHelp')).ModellingHelp);
+const AdminHelp = loadPage(async () => (await import('./help/AdminHelp')).AdminHelp);
 
 /**
  * Shows Loading… while a page loads. Each route has its own boundary, so a link to a page that
