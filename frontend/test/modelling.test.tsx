@@ -534,6 +534,32 @@ describe('the element panel in Modelling', () => {
     expect(document.activeElement).toBe(group);
   });
 
+  it('checks no option and shows no hint when the state is not set', async () => {
+    const unset: JgfNode = { label: 'Till', metadata: { type: 'Application' } };
+    const document_ = {
+      ...bakeryModel,
+      graph: { ...bakeryModel.graph, nodes: { ...bakeryModel.graph.nodes, till: unset } },
+    };
+    const { form } = await openForm(at('till'), {
+      answer: ({ method, url }) =>
+        method !== 'GET'
+          ? undefined
+          : url === `/api/models/${bakeryId}`
+            ? Response.json(document_)
+            : url === `/api/models/${bakeryId}/elements/till`
+              ? Response.json({ element: { id: 'till', version: 1, node: unset }, warnings: [] })
+              : undefined,
+    });
+    const group = within(form).getByRole('group', { name: 'Architecture state' });
+    expect(
+      within(group)
+        .getAllByRole<HTMLInputElement>('radio')
+        .some((radio) => radio.checked),
+    ).toBe(false);
+    expect(within(form).queryByText(/^Stored value/)).toBeNull();
+    expect(group.getAttribute('aria-describedby')).toBeNull();
+  });
+
   it('closes Properties with its heading, and opens it again for a field that needs a fix', async () => {
     const { form, server } = await openForm(at('till'));
     const properties = within(form).getByRole('region', { name: 'Properties' });
